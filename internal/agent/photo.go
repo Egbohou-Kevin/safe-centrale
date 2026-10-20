@@ -94,14 +94,9 @@ func (r *Relay) photoTaken(now time.Time, env contract.Envelope) []Action {
 // photoUpload takes the cloud's address for a photo. It returns why it is refused,
 // or "".
 func (r *Relay) photoUpload(now time.Time, env contract.Envelope) string {
-	d, err := contract.DecodeData[contract.PhotoUploadData](env)
-	switch {
-	case err != nil:
-		return err.Error()
-	case d.Validate() != nil:
-		return d.Validate().Error()
-	case !now.Before(d.Exp.Time):
-		return "expired order"
+	d, why := valid[contract.PhotoUploadData](env)
+	if why = orExpired(why, now, &d.Exp); why != "" {
+		return why
 	}
 	p, ok := r.s.Photos[d.Photo]
 	if !ok {
@@ -203,13 +198,17 @@ func (r *Relay) oldestPhoto(match func(string, photo) bool) string {
 	return best
 }
 
-// photoWakes lists when the photos need the relay's attention.
+// photoWakes lists when the photos need the relay's attention. The address of the
+// photo being sent is left out: its expiry waits for the upload's result (Uploaded),
+// and a wake-up already past would tick the loop without a pause.
 func (r *Relay) photoWakes() []time.Time {
 	var out []time.Time
-	for _, p := range r.s.Photos {
+	for id, p := range r.s.Photos {
 		out = append(out, p.Taken.Add(photoAge))
 		if p.URL != "" {
-			out = append(out, p.Exp)
+			if id != r.sending {
+				out = append(out, p.Exp)
+			}
 			if !p.RetryAt.IsZero() {
 				out = append(out, p.RetryAt)
 			}

@@ -416,6 +416,10 @@ func TestOrdersFromTheCloud(t *testing.T) {
 			return a
 		},
 		"config of another type": func() []Action { _, _, a := h.cloud(topic("config", "set"), contract.TypeHealth, health); return a },
+		"video stop without session": func() []Action {
+			_, _, a := h.cloud(topic("video", "cmd"), contract.TypeVideoStop, contract.VideoStopData{})
+			return a
+		},
 		"config without version": func() []Action {
 			_, _, a := h.cloud(topic("config", "set"), contract.TypeConfigSet, contract.ConfigSetData{EntryDelayS: 30})
 			return a

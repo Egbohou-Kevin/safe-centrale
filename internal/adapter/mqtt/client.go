@@ -10,14 +10,11 @@ package mqtt
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"net/url"
-	"os"
 	"sync/atomic"
 	"time"
 
@@ -29,66 +26,6 @@ import (
 // caller decides whether to retry: for an alarm event, the answer is usually yes.
 var ErrDown = errors.New("mqtt: broker unreachable")
 
-// Message is one MQTT message, as sent or received.
-type Message struct {
-	Topic   string
-	Payload []byte
-	QoS     byte // 0, 1 or 2; the contract uses 1 for events and orders
-	Retain  bool // the broker keeps the last retained message of a topic (states)
-}
-
-// Subscription is a topic filter to listen to, with the best QoS wanted.
-type Subscription struct {
-	Filter string // for example "safehome/tg-lom-0001/device/+/event"
-	QoS    byte
-	// NoLocal: the client does not receive what it publishes itself on this filter
-	// (the link agent, which republishes between two brokers, must not hear itself).
-	NoLocal bool
-}
-
-// Options configures a client.
-type Options struct {
-	BrokerURL string // "mqtt://127.0.0.1:1883"; "mqtts://" and "wss://" use TLS
-	// FallbackURLs are tried in turn when BrokerURL cannot be reached: for example
-	// MQTT in a WebSocket on port 443, where a network blocks port 8883.
-	FallbackURLs []string
-	// CAFile, when set, is the authority (PEM) that must have signed the broker's TLS
-	// certificate; otherwise the system's authorities are trusted.
-	CAFile string
-	// ClientID must be stable and unique on the broker. With a stable id, the broker
-	// keeps the QoS 1 messages published while the client was away.
-	ClientID string
-	Username string
-	Password string
-	// Ephemeral asks the broker to forget the session at disconnection: nothing is
-	// queued for the client while it is away. For short-lived tools (the installer's),
-	// whose next run must not receive the messages of the past day.
-	Ephemeral bool
-
-	Subscriptions []Subscription
-	// OnMessage receives every message that matches a subscription. It is called
-	// from the client's own goroutine: it must return quickly (hand the message to
-	// the driver's queue) and must not call Publish synchronously.
-	OnMessage func(Message)
-	// OnSubscribed, when set, is called each time the subscriptions are active
-	// (after every connection): retained messages follow right after.
-	OnSubscribed func()
-	// OnLinkChange, when set, is told when the connection is up and subscribed,
-	// with the scheme of the URL in use ("mqtts", "wss"...), and when it drops.
-	// It must return quickly and must not call Publish synchronously.
-	OnLinkChange func(up bool, scheme string)
-	// Will, when set, gives the message the broker publishes if the connection drops
-	// without a clean disconnection (the site went offline). It is called before
-	// each connection attempt, so the message can be fresh (a new id, the time).
-	Will func() Message
-	// Spread waits a random part of each reconnection delay, the first one included
-	// (up to 2 s): hundreds of sites that lose the cloud at the same instant do not
-	// all come back at the same instant. Not worth it for the hub's own broker.
-	Spread bool
-
-	Logger *slog.Logger // nil discards the logs
-}
-
 const (
 	keepAliveSeconds = 30
 	// The broker keeps the session (subscriptions and queued messages) for a day
@@ -99,56 +36,7 @@ const (
 
 // Client is a connection to the broker.
 type Client struct {
-	cm  *autopaho.ConnectionManager
-	log *slog.Logger
-}
-
-// validate checks the options and returns the parsed broker URL.
-func (o Options) validate() ([]*url.URL, error) {
-	var urls []*url.URL
-	for _, raw := range append([]string{o.BrokerURL}, o.FallbackURLs...) {
-		u, err := url.Parse(raw)
-		if err != nil || u.Host == "" {
-			return nil, fmt.Errorf("mqtt: invalid broker URL %q", raw)
-		}
-		switch u.Scheme {
-		case "mqtt", "mqtts", "tls", "ws", "wss":
-		default:
-			return nil, fmt.Errorf("mqtt: unsupported scheme %q in %q", u.Scheme, raw)
-		}
-		if u.User != nil {
-			return nil, fmt.Errorf("mqtt: put the credentials in Username and Password, not in %q", u.Redacted())
-		}
-		urls = append(urls, u)
-	}
-	if o.ClientID == "" {
-		return nil, fmt.Errorf("mqtt: ClientID is required")
-	}
-	if len(o.Subscriptions) > 0 && o.OnMessage == nil {
-		return nil, fmt.Errorf("mqtt: OnMessage is required when there are subscriptions")
-	}
-	for _, s := range o.Subscriptions {
-		if s.Filter == "" || s.QoS > 2 {
-			return nil, fmt.Errorf("mqtt: invalid subscription %+v", s)
-		}
-	}
-	return urls, nil
-}
-
-// tlsConfig returns the TLS settings: nil (the system's authorities) without CAFile.
-func (o Options) tlsConfig() (*tls.Config, error) {
-	if o.CAFile == "" {
-		return nil, nil
-	}
-	pem, err := os.ReadFile(o.CAFile)
-	if err != nil {
-		return nil, fmt.Errorf("mqtt: %w", err)
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(pem) {
-		return nil, fmt.Errorf("mqtt: no certificate in %s", o.CAFile)
-	}
-	return &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}, nil
+	cm *autopaho.ConnectionManager
 }
 
 // Dial starts a connection that lives until ctx is cancelled. It returns at once;
@@ -159,97 +47,15 @@ func Dial(ctx context.Context, o Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	tlsCfg, err := o.tlsConfig()
+	cfg, err := newSession(o, urls).config()
 	if err != nil {
 		return nil, err
 	}
-	log := o.Logger
-	if log == nil {
-		log = slog.New(slog.DiscardHandler)
-	}
-	c := &Client{log: log}
-
-	expiry := uint32(sessionExpirySeconds)
-	if o.Ephemeral {
-		expiry = 0
-	}
-	var trying atomic.Value // the URL of the current connection attempt
-	trying.Store(urls[0])
-	linkUp := func() {
-		if o.OnLinkChange != nil {
-			o.OnLinkChange(true, trying.Load().(*url.URL).Scheme)
-		}
-		if o.OnSubscribed != nil {
-			o.OnSubscribed()
-		}
-	}
-	cfg := autopaho.ClientConfig{
-		ServerUrls:                    urls,
-		TlsCfg:                        tlsCfg,
-		AttemptConnection:             dialBroker,
-		KeepAlive:                     keepAliveSeconds,
-		CleanStartOnInitialConnection: o.Ephemeral,
-		SessionExpiryInterval:         expiry,
-		ReconnectBackoff:              reconnectDelay(o.Spread),
-		ConnectUsername:               o.Username,
-		ConnectPacketBuilder: func(cp *paho.Connect, u *url.URL) (*paho.Connect, error) {
-			trying.Store(u)
-			if o.Will != nil {
-				w := o.Will()
-				cp.WillMessage = &paho.WillMessage{Topic: w.Topic, Payload: w.Payload, QoS: w.QoS, Retain: w.Retain}
-			}
-			return cp, nil
-		},
-		OnConnectionUp: func(cm *autopaho.ConnectionManager, _ *paho.Connack) {
-			log.Info("mqtt connected", "broker", trying.Load().(*url.URL).Redacted())
-			if len(o.Subscriptions) == 0 {
-				linkUp()
-				return
-			}
-			ack, err := cm.Subscribe(context.Background(), subscribePacket(o.Subscriptions))
-			if err != nil {
-				log.Error("mqtt subscribe failed: no message will be received", "err", err)
-				return
-			}
-			for i, r := range ack.Reasons {
-				if failed(r) {
-					log.Error("mqtt subscription refused", "filter", o.Subscriptions[i].Filter, "reason", r)
-				}
-			}
-			linkUp()
-		},
-		OnConnectionDown: func() bool {
-			log.Warn("mqtt connection lost, reconnecting")
-			if o.OnLinkChange != nil {
-				o.OnLinkChange(false, "")
-			}
-			return true
-		},
-		OnConnectError: func(err error) { log.Warn("mqtt connection attempt failed", "err", err) },
-		ClientConfig: paho.ClientConfig{
-			ClientID: o.ClientID,
-			OnPublishReceived: []func(paho.PublishReceived) (bool, error){
-				func(pr paho.PublishReceived) (bool, error) {
-					o.OnMessage(fromPaho(pr.Packet))
-					return true, nil
-				},
-			},
-			OnClientError: func(err error) { log.Warn("mqtt client error", "err", err) },
-			OnServerDisconnect: func(d *paho.Disconnect) {
-				log.Warn("mqtt broker asked to disconnect", "reason", d.ReasonCode)
-			},
-		},
-	}
-	if o.Password != "" {
-		cfg.ConnectPassword = []byte(o.Password)
-	}
-
 	cm, err := autopaho.NewConnection(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("mqtt: %w", err)
 	}
-	c.cm = cm
-	return c, nil
+	return &Client{cm: cm}, nil
 }
 
 // Await blocks until the client is connected, or ctx is done.
@@ -280,7 +86,119 @@ func (c *Client) Close(ctx context.Context) error {
 	return nil
 }
 
-// --- translation to and from the library's types -------------------------------
+// --- the library's callbacks ------------------------------------------------------
+
+// session holds what the library's callbacks share for one client.
+type session struct {
+	o      Options
+	urls   []*url.URL
+	log    *slog.Logger
+	trying atomic.Pointer[url.URL] // the URL of the current connection attempt
+}
+
+func newSession(o Options, urls []*url.URL) *session {
+	s := &session{o: o, urls: urls, log: o.Logger}
+	if s.log == nil {
+		s.log = slog.New(slog.DiscardHandler)
+	}
+	s.trying.Store(urls[0])
+	return s
+}
+
+// config translates the options into the library's settings.
+func (s *session) config() (autopaho.ClientConfig, error) {
+	tlsCfg, err := s.o.tlsConfig()
+	if err != nil {
+		return autopaho.ClientConfig{}, err
+	}
+	expiry := uint32(sessionExpirySeconds)
+	if s.o.Ephemeral {
+		expiry = 0
+	}
+	cfg := autopaho.ClientConfig{
+		ServerUrls:                    s.urls,
+		TlsCfg:                        tlsCfg,
+		AttemptConnection:             dialBroker,
+		KeepAlive:                     keepAliveSeconds,
+		CleanStartOnInitialConnection: s.o.Ephemeral,
+		SessionExpiryInterval:         expiry,
+		ReconnectBackoff:              reconnectDelay(s.o.Spread),
+		ConnectUsername:               s.o.Username,
+		ConnectPacketBuilder:          s.connectPacket,
+		OnConnectionUp:                s.connectionUp,
+		OnConnectionDown:              s.connectionDown,
+		OnConnectError:                func(err error) { s.log.Warn("mqtt connection attempt failed", "err", err) },
+		ClientConfig: paho.ClientConfig{
+			ClientID:          s.o.ClientID,
+			OnPublishReceived: []func(paho.PublishReceived) (bool, error){s.received},
+			OnClientError:     func(err error) { s.log.Warn("mqtt client error", "err", err) },
+			OnServerDisconnect: func(d *paho.Disconnect) {
+				s.log.Warn("mqtt broker asked to disconnect", "reason", d.ReasonCode)
+			},
+		},
+	}
+	if s.o.Password != "" {
+		cfg.ConnectPassword = []byte(s.o.Password)
+	}
+	return cfg, nil
+}
+
+// connectPacket notes the URL being tried and adds a fresh will.
+func (s *session) connectPacket(cp *paho.Connect, u *url.URL) (*paho.Connect, error) {
+	s.trying.Store(u)
+	if s.o.Will != nil {
+		w := s.o.Will()
+		cp.WillMessage = &paho.WillMessage{Topic: w.Topic, Payload: w.Payload, QoS: w.QoS, Retain: w.Retain}
+	}
+	return cp, nil
+}
+
+// connectionUp subscribes, then says the link is up.
+func (s *session) connectionUp(cm *autopaho.ConnectionManager, _ *paho.Connack) {
+	s.log.Info("mqtt connected", "broker", s.trying.Load().Redacted())
+	if len(s.o.Subscriptions) > 0 && !s.subscribe(cm) {
+		return
+	}
+	if s.o.OnLinkChange != nil {
+		s.o.OnLinkChange(true, s.trying.Load().Scheme)
+	}
+	if s.o.OnSubscribed != nil {
+		s.o.OnSubscribed()
+	}
+}
+
+// subscribe asks for the subscriptions and reports whether the broker answered. A
+// filter it refuses is logged; the others work. The library bounds the wait for the
+// answer (10 s).
+func (s *session) subscribe(cm *autopaho.ConnectionManager) bool {
+	ack, err := cm.Subscribe(context.Background(), subscribePacket(s.o.Subscriptions))
+	if ack == nil {
+		// No answer: the connection is breaking, the next one subscribes again.
+		s.log.Error("mqtt subscribe failed: no message will be received", "err", err)
+		return false
+	}
+	for i, reason := range ack.Reasons {
+		if failed(reason) && i < len(s.o.Subscriptions) {
+			s.log.Error("mqtt subscription refused", "filter", s.o.Subscriptions[i].Filter, "reason", reason)
+		}
+	}
+	return true
+}
+
+func (s *session) connectionDown() bool {
+	s.log.Warn("mqtt connection lost, reconnecting")
+	if s.o.OnLinkChange != nil {
+		s.o.OnLinkChange(false, "")
+	}
+	return true // keep reconnecting
+}
+
+func (s *session) received(pr paho.PublishReceived) (bool, error) {
+	s.o.OnMessage(fromPaho(pr.Packet))
+	return true, nil
+}
+
+// --- reconnection delays and translation to and from the library's types -----------
 
 // backoff is the wait before connection attempt n: none for the first one (n = 0,
 // as the library counts), then 1 s, 2 s, 4 s... up to 30 s. A hub that boots before

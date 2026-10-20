@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -57,28 +56,6 @@ func (c Config) Validate() error {
 	}
 	return c.Relay.Validate()
 }
-
-// Photos is the photos' folder, which the video service fills.
-type Photos interface {
-	// Open returns a photo and its size; an error wrapping ErrNoPhoto says it is gone.
-	Open(id string) (io.ReadCloser, int64, error)
-	Remove(id string) error
-}
-
-// Uploader sends a photo to the cloud over HTTPS.
-type Uploader interface {
-	// Put sends the photo to url with the token (never log it). An error wrapping
-	// ErrUploadExpired says the address or the token were refused, one wrapping
-	// ErrUploadRefused that the file was; any other is worth another try.
-	Put(ctx context.Context, url, token string, body io.Reader, size int64) error
-}
-
-// The errors of the photos' ports.
-var (
-	ErrNoPhoto       = errors.New("agentapp: no such photo")
-	ErrUploadExpired = errors.New("agentapp: upload address refused")
-	ErrUploadRefused = errors.New("agentapp: photo refused")
-)
 
 // Deps are the ports the agent needs.
 type Deps struct {
@@ -200,25 +177,19 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.New("agentapp: Run called twice")
 	}
 	defer a.stop()
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	const workers = 4
-	done := make(chan struct{}, workers)
-	start := func(f func(context.Context)) { go func() { f(runCtx); done <- struct{}{} }() }
-	start(func(c context.Context) { a.loop.Run(c) })
-	start(a.out.Run)
+	var workers sync.WaitGroup
+	workers.Go(func() { a.loop.Run(ctx) })
+	workers.Go(func() { a.out.Run(ctx) })
 	// The status at start: the link is down until the cloud's broker answers.
-	a.loop.Do(runCtx, func(now time.Time) []agent.Action {
+	a.loop.Do(ctx, func(now time.Time) []agent.Action {
 		a.publishStatus(now, a.core.Status(now))
 		return nil
 	})
-	start(a.statusRepeater)
-	start(a.sender)
-	<-runCtx.Done()
+	workers.Go(func() { a.statusRepeater(ctx) })
+	workers.Go(func() { a.sender(ctx) })
+	<-ctx.Done()
 	a.stop() // an upload under way gives up; it is tried again at the next start
-	for range workers {
-		<-done
-	}
+	workers.Wait()
 	a.uploads.Wait()
 	a.out.Flush(3 * time.Second)
 	return nil
@@ -266,214 +237,4 @@ func (a *App) submit(build func(now time.Time) agent.Input) {
 	if err != nil && !errors.Is(err, driver.ErrStopped) && !errors.Is(err, context.Canceled) {
 		a.log.Error("the agent's loop refused an input", "err", err)
 	}
-}
-
-// --- outbound ----------------------------------------------------------------------
-
-// dispatch carries out what the core decided. It runs on the loop's goroutine.
-func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action) error {
-	for _, act := range actions {
-		switch v := act.(type) {
-		case agent.PublishLocal:
-			a.out.Put(&outbox.Item{Topic: v.Topic, Data: v.Payload, QoS: 1, Raw: true})
-		case agent.FailAlert:
-			a.log.Warn("an alert for the app could not reach the cloud: the hub turns to the GSM", "ref", v.Ref)
-			a.publishOwn(now, contract.AlertResultTopic(a.cfg.Site), contract.TypeAlertResult, contract.AlertResultData{
-				Ref: v.Ref, Status: contract.ResultFailed, Reason: contract.ReasonNoUplink,
-			}, false)
-		case agent.StatusChanged:
-			if v.Status.Up {
-				a.log.Info("connected to the cloud", "transport", v.Status.Transport, "queued", v.Status.Queued)
-			} else {
-				a.log.Warn("the cloud cannot be reached", "queued", v.Status.Queued)
-			}
-			a.publishStatus(now, v.Status)
-			signal(a.relink)
-		case agent.Refused:
-			a.log.Warn("refused a message from the cloud", "topic", v.Topic, "reason", v.Reason)
-		case agent.Dropped:
-			a.log.Error("messages for the cloud were dropped", "count", v.Count, "reason", v.Reason)
-		case agent.Replayed:
-			a.log.Info("the cloud asked for messages again", "from", v.Report.From, "to", v.Report.To,
-				"resent", v.Report.Resent, "missing_ranges", len(v.Report.Missing))
-			a.publishOwn(now, contract.AgentReplayedTopic(a.cfg.Site), contract.TypeAgentReplayed, v.Report, false)
-		case agent.Upload:
-			a.upload(v)
-		case agent.RemovePhoto:
-			if err := a.deps.Photos.Remove(v.Photo); err != nil {
-				a.log.Warn("a photo could not be removed", "photo", v.Photo, "err", err)
-			}
-		case agent.PhotoReport:
-			if v.Status == contract.PhotoSent {
-				a.log.Info("photo sent to the cloud", "photo", v.Photo)
-			} else {
-				a.log.Warn("photo not sent", "photo", v.Photo, "reason", v.Reason)
-			}
-			a.publishOwn(now, contract.PhotoSentTopic(a.cfg.Site), contract.TypePhotoSent,
-				contract.PhotoSentData{Photo: v.Photo, Status: v.Status, Reason: v.Reason}, false)
-		}
-	}
-	a.poke()
-	return nil
-}
-
-// upload sends a photo away from the loop, and tells the core how it went.
-func (a *App) upload(u agent.Upload) {
-	a.uploads.Add(1)
-	go func() {
-		defer a.uploads.Done()
-		result := a.put(u)
-		a.submit(func(now time.Time) agent.Input { return agent.Uploaded{Now: now, Photo: u.Photo, Result: result} })
-	}()
-}
-
-func (a *App) put(u agent.Upload) agent.UploadResult {
-	f, size, err := a.deps.Photos.Open(u.Photo)
-	if errors.Is(err, ErrNoPhoto) {
-		return agent.UploadMissing
-	}
-	if err != nil {
-		a.log.Warn("a photo could not be read", "photo", u.Photo, "err", err)
-		return agent.UploadRetry
-	}
-	defer f.Close()
-	ctx, cancel := context.WithTimeout(a.life, a.cfg.PhotoWait)
-	defer cancel()
-	err = a.deps.Uploader.Put(ctx, u.URL, u.Token, f, size)
-	switch {
-	case err == nil:
-		return agent.UploadOK
-	case errors.Is(err, ErrUploadExpired):
-		return agent.UploadExpired
-	case errors.Is(err, ErrUploadRefused):
-		a.log.Warn("the cloud refused a photo", "photo", u.Photo, "err", err)
-		return agent.UploadRefused
-	}
-	if a.life.Err() == nil {
-		a.log.Warn("a photo could not be sent, trying again later", "photo", u.Photo, "err", err)
-	}
-	return agent.UploadRetry
-}
-
-// poke wakes the sender: something may be ready for the cloud.
-func (a *App) poke() { signal(a.kick) }
-
-func signal(c chan struct{}) {
-	select {
-	case c <- struct{}{}:
-	default:
-	}
-}
-
-// publishStatus publishes agent.status on the hub, and queues it for the cloud.
-func (a *App) publishStatus(now time.Time, st agent.Status) {
-	uplink := contract.UplinkDown
-	if st.Up {
-		uplink = contract.UplinkUp
-	}
-	a.publishOwn(now, contract.AgentStatusTopic(a.cfg.Site), contract.TypeAgentStatus, contract.AgentStatusData{
-		Uplink: uplink, Transport: st.Transport, Queued: st.Queued, OldestS: int(st.Oldest / time.Second), Dropped: st.Dropped,
-		Economy: a.cfg.Relay.Economy > 0,
-	}, true)
-}
-
-// publishOwn publishes a message of the agent on the hub's broker and hands it to the
-// core for the cloud: the agent does not hear its own publications (NoLocal). It runs
-// on the loop's goroutine.
-func (a *App) publishOwn(now time.Time, topic, typ string, data any, retain bool) {
-	env, err := contract.NewEnvelope(a.cfg.Site, src, a.seq.Next(), a.deps.NewID(), now, typ, data)
-	if err != nil {
-		a.log.Error("building a message failed", "type", typ, "err", err)
-		return
-	}
-	b, err := json.Marshal(env)
-	if err != nil {
-		a.log.Error("encoding a message failed", "type", typ, "err", err)
-		return
-	}
-	a.out.Put(&outbox.Item{Topic: topic, Data: b, QoS: 1, Retain: retain, Raw: true})
-	// On the loop: safe, and saved with this task. A full queue may answer with
-	// actions of its own.
-	if acts := a.core.Handle(agent.Own{Now: now, Topic: topic, Payload: b}); len(acts) > 0 {
-		a.dispatch(a.life, now, acts)
-	}
-}
-
-// statusRepeater sends the status again every StatusEvery, through the core's loop:
-// a loop that hangs stops the repetition, and the hub notices.
-func (a *App) statusRepeater(ctx context.Context) {
-	for {
-		fired, stop := a.deps.Clock.Timer(a.cfg.StatusEvery)
-		select {
-		case <-ctx.Done():
-			stop()
-			return
-		case <-fired:
-			a.loop.Do(ctx, func(now time.Time) []agent.Action {
-				a.publishStatus(now, a.core.Status(now))
-				return nil
-			})
-		}
-	}
-}
-
-// sender sends the queue to the cloud, one message at a time, alarms first. A message
-// leaves the queue only once the cloud's broker acknowledged it: after a power cut,
-// what was not acknowledged goes again (the cloud drops duplicates by id).
-func (a *App) sender(ctx context.Context) {
-	delay := a.cfg.RetryMin
-	for {
-		var it agent.Item
-		var ok bool
-		if err := a.loop.Do(ctx, func(time.Time) []agent.Action {
-			if a.core.Up() {
-				it, ok = a.core.Next()
-			}
-			return nil
-		}); err != nil {
-			return
-		}
-		if !ok {
-			select {
-			case <-ctx.Done():
-				return
-			case <-a.kick:
-			case <-a.relink:
-			}
-			continue
-		}
-		sendCtx, cancel := context.WithTimeout(ctx, a.cfg.SendTimeout)
-		err := a.deps.Cloud.Publish(sendCtx, it.Topic, it.Payload, 1, it.Retain)
-		cancel()
-		if err == nil {
-			delay = a.cfg.RetryMin
-			a.submit(func(now time.Time) agent.Input { return agent.Sent{Now: now, ID: it.ID} })
-			continue
-		}
-		if ctx.Err() != nil {
-			return
-		}
-		if !errors.Is(err, outbox.ErrUnavailable) {
-			a.log.Warn("the cloud did not take a message, trying again", "topic", it.Topic, "err", err)
-		}
-		if !a.wait(ctx, delay) {
-			return
-		}
-		delay = min(delay*2, a.cfg.RetryMax)
-	}
-}
-
-// wait waits d on the agent's clock, or less if the link changes. New messages do
-// not cut it short: the cloud's broker refused the last one, and must not be pressed
-// at every new message.
-func (a *App) wait(ctx context.Context, d time.Duration) bool {
-	fired, stop := a.deps.Clock.Timer(d)
-	defer stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-fired:
-	case <-a.relink:
-	}
-	return true
 }

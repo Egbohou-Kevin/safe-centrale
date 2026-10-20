@@ -9,8 +9,8 @@
 package agent
 
 import (
-	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -145,18 +145,10 @@ func (r *Relay) Snapshot() Snapshot {
 	s := r.s
 	s.Queue = slices.Clone(s.Queue)
 	s.Seen = slices.Clone(s.Seen)
-	s.Pending = clone(s.Pending)
-	s.Incidents = clone(s.Incidents)
-	s.Photos = clone(s.Photos)
+	s.Pending = maps.Clone(s.Pending)
+	s.Incidents = maps.Clone(s.Incidents)
+	s.Photos = maps.Clone(s.Photos)
 	return s
-}
-
-func clone[K comparable, V any](m map[K]V) map[K]V {
-	out := make(map[K]V, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
 }
 
 // Restore puts a saved state back. The link is down until told otherwise.
@@ -261,123 +253,6 @@ func (r *Relay) Handle(in Input) []Action {
 	return append(out, r.uploads(in.at())...)
 }
 
-// --- from the hub to the cloud -------------------------------------------------
-
-// local takes a message of the hub's broker and queues it for the cloud if it goes
-// there.
-func (r *Relay) local(now time.Time, topic string, payload []byte) []Action {
-	site, parts, ok := contract.ParseTopic(topic)
-	if !ok || site != r.cfg.Site {
-		return nil
-	}
-	route, ok := upRoutes[routeKey(parts)]
-	if !ok {
-		return nil
-	}
-	env, err := contract.ParseEnvelope(payload)
-	if err != nil || env.Site != r.cfg.Site || !slices.Contains(route.types, env.Type) {
-		return nil // the components that read it log what is wrong with it
-	}
-	if route.device {
-		d, err := contract.DecodeData[contract.DeviceEventData](env)
-		if err != nil || !slices.Contains(upCapabilities, d.Capability) || d.Code != "" {
-			return nil
-		}
-	}
-	if slices.ContainsFunc(r.s.Queue, func(it Item) bool { return it.ID == env.ID }) {
-		return nil // the same message again (QoS 1)
-	}
-	if inc := incidentOf(env); inc != "" {
-		r.s.Incidents[inc] = now
-	}
-
-	if env.Type == contract.TypeAlertRequest {
-		if d, err := contract.DecodeData[contract.AlertRequestData](env); err == nil && cloudChannel(d.Channel) {
-			if !r.up {
-				// The hub would wait for a confirmation that cannot come: tell it now,
-				// its escalation goes to the GSM and sends this again when the link
-				// returns.
-				return []Action{FailAlert{Ref: env.ID}}
-			}
-			r.s.Pending[env.ID] = pendingAlert{Deadline: now.Add(r.cfg.ConfirmWait), Forget: now.Add(alertMemory), Incident: d.Incident}
-		}
-	}
-
-	it := Item{ID: env.ID, Topic: topic, Payload: json.RawMessage(payload), Prio: route.prio, Retain: route.retain, At: now}
-	if route.retain || env.Type == contract.TypeHeartbeat {
-		if r.thinned(now, env, topic) {
-			return nil // economy: the cloud got one a moment ago
-		}
-		it.Key = topic
-		// An older one may have been tried without an acknowledgement: the newer takes
-		// its number, so that replacing it leaves no hole in the cloud.
-		for _, q := range r.s.Queue {
-			if q.Key == it.Key && q.Seq != 0 {
-				stamp(&it, q.Seq)
-			}
-		}
-		r.s.Queue = slices.DeleteFunc(r.s.Queue, func(q Item) bool { return q.Key == it.Key })
-	}
-	r.s.Queue = append(r.s.Queue, it)
-	out := r.bound()
-	if env.Type == contract.TypePhotoTaken {
-		out = append(out, r.photoTaken(now, env)...)
-	}
-	return out
-}
-
-func cloudChannel(ch string) bool { return ch == contract.ChannelApp || ch == contract.ChannelWhatsApp }
-
-// incidentOf reads the incident a message is about, if any.
-func incidentOf(env contract.Envelope) string {
-	var d struct {
-		Incident string `json:"incident"`
-	}
-	if json.Unmarshal(env.Data, &d) != nil {
-		return ""
-	}
-	return d.Incident
-}
-
-// bound keeps the queue within its limits: it drops the least important items
-// first, the oldest of them first.
-func (r *Relay) bound() []Action {
-	size := 0
-	for _, it := range r.s.Queue {
-		size += len(it.Payload)
-	}
-	dropped := 0
-	var out []Action
-	for len(r.s.Queue) > r.cfg.QueueItems || (size > r.cfg.QueueBytes && len(r.s.Queue) > 1) {
-		victim := r.victim()
-		id := r.s.Queue[victim].ID
-		size -= len(r.s.Queue[victim].Payload)
-		r.s.Queue = slices.Delete(r.s.Queue, victim, victim+1)
-		dropped++
-		if _, ok := r.s.Pending[id]; ok {
-			delete(r.s.Pending, id) // an alert that will not reach the cloud: the hub must know
-			out = append(out, FailAlert{Ref: id})
-		}
-	}
-	if dropped == 0 {
-		return out
-	}
-	r.s.Dropped += dropped
-	return append(out, Dropped{Count: dropped, Reason: "queue full"})
-}
-
-// victim is the index of the item to drop: the oldest of the lowest priority.
-func (r *Relay) victim() int {
-	for _, p := range []Priority{PriorityState, PriorityNormal, PriorityAlarm} {
-		for i, it := range r.s.Queue {
-			if it.Prio == p {
-				return i
-			}
-		}
-	}
-	return 0
-}
-
 // --- the link --------------------------------------------------------------------
 
 func (r *Relay) link(l Link) []Action {
@@ -439,157 +314,4 @@ func (r *Relay) expire(now time.Time) []Action {
 		out = append(out, Dropped{Count: old, Reason: "too old"})
 	}
 	return append(out, r.expirePhotos(now)...)
-}
-
-// --- from the cloud to the hub ---------------------------------------------------
-
-// cloud checks a message from the cloud and passes it to the hub if it may go.
-func (r *Relay) cloud(c Cloud) []Action {
-	refuse := func(reason string) []Action { return []Action{Refused{Topic: c.Topic, Reason: reason}} }
-	site, parts, ok := contract.ParseTopic(c.Topic)
-	if !ok || site != r.cfg.Site {
-		return refuse("not a topic of this site")
-	}
-	types, ok := downRoutes[routeKey(parts)]
-	if !ok {
-		return refuse("the cloud may not publish there")
-	}
-	env, err := contract.ParseEnvelope(c.Payload)
-	switch {
-	case err != nil:
-		return refuse("invalid message: " + err.Error())
-	case env.Site != r.cfg.Site:
-		return refuse("message for another site")
-	case !slices.Contains(types, env.Type):
-		return refuse("wrong type for the topic: " + env.Type)
-	case slices.Contains(r.s.Seen, env.ID):
-		return nil // a duplicate: already passed on
-	case !r.allow(c.Now):
-		return refuse("too many messages from the cloud")
-	}
-	if reason := r.check(c.Now, env); reason != "" {
-		return refuse(reason)
-	}
-	r.s.Seen = append(r.s.Seen, env.ID)
-	if over := len(r.s.Seen) - r.cfg.SeenSize; over > 0 {
-		r.s.Seen = slices.Delete(r.s.Seen, 0, over)
-	}
-	switch env.Type {
-	case contract.TypePhotoUpload:
-		return nil // for the agent itself: its address never reaches the hub
-	case contract.TypeAgentReplay:
-		d, _ := contract.DecodeData[contract.ReplayData](env) // checked above
-		return r.replayRange(d)
-	}
-	return []Action{PublishLocal{Topic: c.Topic, Payload: c.Payload}}
-}
-
-// check applies the rules of each type. It returns why the message is refused, or
-// "".
-func (r *Relay) check(now time.Time, env contract.Envelope) string {
-	expired := func(exp *contract.Timestamp) bool { return exp != nil && !now.Before(exp.Time) }
-	switch env.Type {
-	case contract.TypeAlarmCommand:
-		d, err := contract.DecodeData[contract.AlarmCommandData](env)
-		switch {
-		case err != nil:
-			return err.Error()
-		case d.Origin != contract.OriginApp:
-			return "an order from the cloud must come from the app, not " + d.Origin
-		case expired(d.Exp):
-			return "expired order"
-		}
-	case contract.TypeVideoRequest:
-		d, err := contract.DecodeData[contract.VideoRequestData](env)
-		switch {
-		case err != nil:
-			return err.Error()
-		case d.Validate() != nil:
-			return d.Validate().Error()
-		case expired(&d.Exp):
-			return "expired order"
-		}
-	case contract.TypePhotoUpload:
-		return r.photoUpload(now, env)
-	case contract.TypeMaintOpen:
-		d, err := contract.DecodeData[contract.MaintOpenData](env)
-		switch {
-		case err != nil:
-			return err.Error()
-		case d.Validate() != nil:
-			return d.Validate().Error()
-		case expired(&d.Exp):
-			return "expired order"
-		}
-	case contract.TypeMaintClose:
-		d, err := contract.DecodeData[contract.MaintCloseData](env)
-		switch {
-		case err != nil:
-			return err.Error()
-		case d.Validate() != nil:
-			return d.Validate().Error()
-		}
-	case contract.TypeAgentReplay:
-		d, err := contract.DecodeData[contract.ReplayData](env)
-		switch {
-		case err != nil:
-			return err.Error()
-		case d.Validate() != nil:
-			return d.Validate().Error()
-		}
-	case contract.TypeConfigSet:
-		d, err := contract.DecodeData[contract.ConfigSetData](env)
-		switch {
-		case err != nil:
-			return err.Error()
-		case d.Validate() != nil:
-			return d.Validate().Error()
-		}
-	case contract.TypeAlertResult:
-		d, err := contract.DecodeData[contract.AlertResultData](env)
-		if err != nil {
-			return err.Error()
-		}
-		p, ok := r.s.Pending[d.Ref]
-		if !ok {
-			return "result for an alert the agent did not send to the cloud"
-		}
-		switch d.Status {
-		case contract.ResultQueued, contract.ResultSent:
-			p.Confirmed, p.Deadline = true, time.Time{}
-			r.s.Pending[d.Ref] = p
-		case contract.ResultDelivered, contract.ResultFailed:
-			delete(r.s.Pending, d.Ref) // the last word on it
-		default:
-			return "unknown status " + d.Status
-		}
-	case contract.TypeAlertAck:
-		d, err := contract.DecodeData[contract.AlertAckData](env)
-		switch {
-		case err != nil:
-			return err.Error()
-		case d.Via != contract.ChannelApp:
-			return "an acknowledgement from the cloud comes from the app, not " + d.Via
-		case d.Incident == "" || r.s.Incidents[d.Incident].IsZero():
-			return "acknowledgement of an incident the cloud was not told about"
-		}
-	}
-	return ""
-}
-
-// allow takes one message from the cloud's allowance, refilled DownPerMinute per
-// minute up to DownBurst.
-func (r *Relay) allow(now time.Time) bool {
-	if !r.s.TokensAt.IsZero() && now.After(r.s.TokensAt) {
-		r.s.Tokens += now.Sub(r.s.TokensAt).Minutes() * float64(r.cfg.DownPerMinute)
-	}
-	r.s.Tokens = min(r.s.Tokens, float64(r.cfg.DownBurst))
-	if r.s.TokensAt.IsZero() || now.After(r.s.TokensAt) {
-		r.s.TokensAt = now
-	}
-	if r.s.Tokens < 1 {
-		return false
-	}
-	r.s.Tokens--
-	return true
 }

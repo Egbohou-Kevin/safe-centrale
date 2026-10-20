@@ -99,6 +99,27 @@ func TestAFailedUploadIsTriedAgainLater(t *testing.T) {
 	}
 }
 
+func TestAnAddressThatExpiresDuringItsUploadDoesNotSpinTheLoop(t *testing.T) {
+	h := newHarness(t)
+	h.linkUp()
+	h.photo("p1")
+	h.sendQueue()
+	if len(of[Upload](h.address("p1", time.Minute))) != 1 {
+		t.Fatal("upload at once")
+	}
+	// The upload is slow: the address expires while it is under way. The relay waits
+	// for its result; a wake-up in the past would tick the loop without a pause.
+	h.advance(2 * time.Minute)
+	if w := h.r.NextWake(); !w.After(h.now) {
+		t.Fatalf("wake %v at %v: the loop would spin until the upload ends", w, h.now)
+	}
+	acts := h.r.Handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadRetry})
+	acts = append(acts, h.advance(time.Second)...)
+	if r := reports(acts); len(r) != 1 || r[0].Reason != contract.PhotoURLExpired {
+		t.Fatalf("%+v: once the upload ended, the stale address is dropped", acts)
+	}
+}
+
 func TestAnAddressThatExpires(t *testing.T) {
 	h := newHarness(t)
 	h.photo("p1")

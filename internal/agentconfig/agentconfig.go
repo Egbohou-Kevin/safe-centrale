@@ -131,18 +131,26 @@ func parse(data []byte, dir string) (Result, error) {
 		return Result{}, err
 	}
 
-	app := agentapp.DefaultConfig(f.Site)
-	if err := duration("status_every", f.StatusEvery, &app.StatusEvery); err != nil {
+	if r.App, err = appConfig(f); err != nil {
 		return Result{}, err
 	}
+	return r, nil
+}
+
+// appConfig reads the agent's settings over the defaults.
+func appConfig(f file) (agentapp.Config, error) {
+	app := agentapp.DefaultConfig(f.Site)
+	if err := duration("status_every", f.StatusEvery, &app.StatusEvery); err != nil {
+		return agentapp.Config{}, err
+	}
 	if err := duration("confirm_wait", f.ConfirmWait, &app.Relay.ConfirmWait); err != nil {
-		return Result{}, err
+		return agentapp.Config{}, err
 	}
 	if q := f.Queue; q != nil {
 		setInt(&app.Relay.QueueItems, q.MaxItems)
 		setInt(&app.Relay.QueueBytes, q.MaxBytes)
 		if err := duration("queue.max_age", q.MaxAge, &app.Relay.QueueAge); err != nil {
-			return Result{}, err
+			return agentapp.Config{}, err
 		}
 	}
 	if d := f.Down; d != nil {
@@ -155,13 +163,9 @@ func parse(data []byte, dir string) (Result, error) {
 		// Economy: the data is paid by the client (as in videoconfig).
 		app.Relay.Economy = agent.EconomyEvery
 	default:
-		return Result{}, fmt.Errorf(`uplink %q: use "fixed" (the shop's box) or "mobile" (a 4G router)`, f.Uplink)
+		return agentapp.Config{}, fmt.Errorf(`uplink %q: use "fixed" (the shop's box) or "mobile" (a 4G router)`, f.Uplink)
 	}
-	if err := app.Validate(); err != nil {
-		return Result{}, err
-	}
-	r.App = app
-	return r, nil
+	return app, app.Validate()
 }
 
 // cloud reads how to reach the cloud. The connection is always encrypted: mqtts or
