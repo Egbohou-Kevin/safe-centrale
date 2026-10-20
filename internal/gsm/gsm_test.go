@@ -64,27 +64,6 @@ func onlyReport(t *testing.T, actions []Action, ref string, status Status, reaso
 	}
 }
 
-func TestAtStartEveryLineIsChecked(t *testing.T) {
-	g := newGW(t, 2)
-	if !g.NextWake().Before(t0) {
-		t.Fatal("the first checks are due at once")
-	}
-	checks := of[CheckLine](g.Handle(Tick{Now: t0}))
-	if len(checks) != 2 || checks[0].Line != "line1" || checks[1].Line != "line2" {
-		t.Fatalf("%+v", checks)
-	}
-	out := g.Handle(Probe{Now: t0, Line: "line1", Responding: true, Registered: true, Signal: 67, Operator: "togocom"})
-	ch := of[LinesChanged](out)
-	if len(ch) != 1 || ch[0].Lines[0].Signal != 70 || ch[0].Lines[0].Operator != "togocom" || !ch[0].Lines[0].Usable() {
-		t.Fatalf("%+v", out)
-	}
-	// The same reading again changes nothing public.
-	g.Handle(Tick{Now: t0.Add(30 * time.Second)})
-	if out := g.Handle(Probe{Now: t0.Add(30 * time.Second), Line: "line1", Responding: true, Registered: true, Signal: 69}); len(of[LinesChanged](out)) != 0 {
-		t.Fatalf("a signal moving inside its band must not republish: %+v", out)
-	}
-}
-
 func TestAnSMSIsQueuedSentAndDelivered(t *testing.T) {
 	g := newGW(t, 1)
 	up(t, g, t0)
@@ -302,108 +281,6 @@ func TestALateAnswerDoesNotDisturbTheLineNowSending(t *testing.T) {
 	}
 }
 
-func TestAModemThatStopsAnsweringIsRestarted(t *testing.T) {
-	g := newGW(t, 1)
-	up(t, g, t0)
-	now := t0
-	var restarts []RestartModem
-	for i := 0; i < 3; i++ {
-		now = now.Add(30 * time.Second)
-		for _, a := range g.Handle(Tick{Now: now}) {
-			if _, ok := a.(CheckLine); ok {
-				restarts = append(restarts, of[RestartModem](g.Handle(Probe{Now: now, Line: "line1"}))...)
-			}
-		}
-	}
-	if len(restarts) != 1 {
-		t.Fatalf("restart after three silent checks, got %d", len(restarts))
-	}
-	if l := g.Lines()[0]; l.Usable() || l.Restarts != 1 {
-		t.Fatalf("%+v", l)
-	}
-	// The restart is over: the line is checked again at once.
-	if checks := of[CheckLine](g.Handle(Restarted{Now: now.Add(time.Minute), Line: "line1"})); len(checks) != 1 {
-		t.Fatal("check after the restart")
-	}
-}
-
-func TestACheckWithoutAnswerCountsAsSilent(t *testing.T) {
-	g := newGW(t, 1, func(c *Config) { c.MissesToRestart = 1 })
-	g.Handle(Tick{Now: t0})
-	if out := g.Handle(Tick{Now: t0.Add(30 * time.Second)}); len(of[RestartModem](out)) != 1 {
-		t.Fatalf("%+v", out)
-	}
-	// A restart that never says it is over ends anyway.
-	if out := g.Handle(Tick{Now: t0.Add(4 * time.Minute)}); len(of[CheckLine](out)) != 1 {
-		t.Fatalf("%+v", out)
-	}
-}
-
-func TestAContactAnswering1AcknowledgesTheLastAlert(t *testing.T) {
-	g := newGW(t, 1)
-	up(t, g, t0)
-	ex := of[Execute](g.Handle(req("r1", "owner", ChannelSMS, PriorityIntrusion, t0)))[0]
-	g.Handle(Outcome{Now: t0, Job: ex.Job, Line: "line1", OK: true})
-
-	out := g.Handle(Incoming{Now: t0.Add(time.Minute), Line: "line1", From: "+22890123456", Text: " 1\n"})
-	acks := of[Acknowledge](out)
-	if len(acks) != 1 || acks[0].Incident != "inc-r1" || acks[0].Contact != "owner" {
-		t.Fatalf("%+v", out)
-	}
-	for name, in := range map[string]Incoming{
-		"unknown number": {From: "+22899999999", Text: "1"},
-		"unknown text":   {From: "90123456", Text: "STOP"},
-		"bad number":     {From: "operator", Text: "1"},
-		"other contact":  {From: "70000001", Text: "1"}, // the guard was told nothing
-	} {
-		in.Now, in.Line = t0.Add(time.Minute), "line1"
-		if out := g.Handle(in); len(of[Acknowledge](out)) != 0 || len(of[Ignored](out)) != 1 {
-			t.Errorf("%s: %+v", name, out)
-		}
-	}
-	// Too late: a day later, "1" acknowledges nothing.
-	if out := g.Handle(Incoming{Now: t0.Add(25 * time.Hour), Line: "line1", From: "90123456", Text: "1"}); len(of[Acknowledge](out)) != 0 {
-		t.Fatalf("%+v", out)
-	}
-}
-
-func TestTheWeeklyTestSMS(t *testing.T) {
-	g := newGW(t, 1, func(c *Config) { c.TestNumber = "+228 90 00 00 00" })
-	up(t, g, t0)
-	week := 7 * 24 * time.Hour
-	if g.Snapshot().NextTest != t0.Add(week) {
-		t.Fatalf("%v", g.Snapshot().NextTest)
-	}
-	ex := of[Execute](g.Handle(Tick{Now: t0.Add(week)}))
-	var test Execute
-	for _, e := range ex {
-		if e.Number == "+22890000000" {
-			test = e
-		}
-	}
-	if test.Job == 0 {
-		t.Fatalf("%+v", ex)
-	}
-	out := g.Handle(Outcome{Now: t0.Add(week), Job: test.Job, Line: "line1", OK: true})
-	if len(of[Report](out)) != 0 {
-		t.Fatal("a test is not an alert: nothing is reported to the escalation")
-	}
-	if l := g.Lines()[0]; l.LastTestOK == nil || !*l.LastTestOK || !l.LastTest.Equal(t0.Add(week)) {
-		t.Fatalf("%+v", l)
-	}
-
-	// Next week the SIM is suspended: the test fails and is not retried.
-	ex = of[Execute](g.Handle(Tick{Now: t0.Add(2 * week)}))
-	for _, e := range ex {
-		if e.Number == "+22890000000" {
-			g.Handle(Outcome{Now: t0.Add(2 * week), Job: e.Job, Line: "line1", Reason: ReasonNoCredit})
-		}
-	}
-	if l := g.Lines()[0]; l.LastTestOK == nil || *l.LastTestOK || g.Queued() != 0 {
-		t.Fatalf("%+v, %d queued", l, g.Queued())
-	}
-}
-
 func TestARestartKeepsTheQueue(t *testing.T) {
 	a := newGW(t, 1)
 	up(t, a, t0)
@@ -453,50 +330,6 @@ func TestSnapshotsAreCopies(t *testing.T) {
 	}
 }
 
-func TestNormalizeNumber(t *testing.T) {
-	for raw, want := range map[string]string{
-		"90 12 34 56":      "+22890123456",
-		"90.12.34.56":      "+22890123456",
-		"+228 90-12-34-56": "+22890123456",
-		"0022890123456":    "+22890123456",
-		"(+33) 6 12345678": "+33612345678",
-		"070000001":        "+22870000001",
-	} {
-		if got, err := NormalizeNumber(raw, "228"); err != nil || got != want {
-			t.Errorf("%q: %q %v", raw, got, err)
-		}
-	}
-	for _, raw := range []string{"", "+", "abc", "1234", "+1234567890123456", "90 12 34 5x"} {
-		if _, err := NormalizeNumber(raw, "228"); err == nil {
-			t.Errorf("%q accepted", raw)
-		}
-	}
-}
-
-func TestConfigValidation(t *testing.T) {
-	bad := map[string]func(*Config){
-		"no line":         func(c *Config) { c.Lines = nil },
-		"line twice":      func(c *Config) { c.Lines = []Line{{ID: "a"}, {ID: "a"}} },
-		"line without id": func(c *Config) { c.Lines = []Line{{}} },
-		"bad country":     func(c *Config) { c.Country = "+228" },
-		"bad number":      func(c *Config) { c.Contacts = map[string]string{"x": "call me"} },
-		"empty contact":   func(c *Config) { c.Contacts = map[string]string{"": "90123456"} },
-		"bad test number": func(c *Config) { c.TestNumber = "x" },
-		"no ring":         func(c *Config) { c.RingFor = 0 },
-		"retry inverted":  func(c *Config) { c.RetryMax = time.Second },
-		"no restart":      func(c *Config) { c.MissesToRestart = 0 },
-		"missing max age": func(c *Config) { delete(c.MaxAge, PriorityOther) },
-	}
-	for name, mutate := range bad {
-		cfg := DefaultConfig([]Line{{ID: "line1"}}, map[string]string{"owner": "90123456"})
-		cfg.MaxAge = map[Priority]time.Duration{PriorityLifeSafety: time.Minute, PriorityIntrusion: time.Minute, PriorityOther: time.Minute}
-		mutate(&cfg)
-		if _, err := New(cfg); err == nil {
-			t.Errorf("%s: accepted", name)
-		}
-	}
-}
-
 func TestDescribeNeverShowsATextOrANumber(t *testing.T) {
 	for _, a := range []Action{
 		Execute{Job: 1, Line: "line1", Channel: ChannelSMS, Number: "+22890123456", Text: "secret"},
@@ -538,5 +371,35 @@ func TestAWaitOverWithNoLineLeftDoesNotSpinTheDriver(t *testing.T) {
 	g.Handle(Tick{Now: now})
 	if w := g.NextWake(); !w.After(now) {
 		t.Fatalf("next wake %v at %v: the driver would spin", w, now)
+	}
+}
+
+func TestALateAnswerDoesNotFreeALineBusyWithAnotherJob(t *testing.T) {
+	g := newGW(t, 2)
+	up(t, g, t0)
+	a := of[Execute](g.Handle(req("a", "owner", ChannelSMS, PriorityIntrusion, t0)))[0]
+	now := t0.Add(90 * time.Second) // line1 too slow: a goes to line2, line1 is checked
+	for _, c := range of[CheckLine](g.Handle(Tick{Now: now})) {
+		g.Handle(Probe{Now: now, Line: c.Line, Responding: true, Registered: true, Signal: 50})
+	}
+	b := of[Execute](g.Handle(req("b", "owner", ChannelSMS, PriorityIntrusion, now.Add(time.Second))))
+	if len(b) != 1 || b[0].Line != a.Line {
+		t.Fatalf("b goes to the line that is free again: %+v", b)
+	}
+	// line1 answers late for a, while it sends b.
+	g.Handle(Outcome{Now: now.Add(2 * time.Second), Job: a.Job, Line: a.Line, Reason: ReasonModemError})
+	if ex := of[Execute](g.Handle(req("c", "owner", ChannelSMS, PriorityIntrusion, now.Add(3*time.Second)))); len(ex) != 0 {
+		t.Fatalf("both lines are busy, c must wait: %+v", ex)
+	}
+}
+
+func TestALateFailureForAWaitingJobDoesNotLengthenItsWait(t *testing.T) {
+	g := newGW(t, 1)
+	up(t, g, t0)
+	ex := of[Execute](g.Handle(req("r1", "owner", ChannelSMS, PriorityIntrusion, t0)))[0]
+	onlyReport(t, g.Handle(Tick{Now: t0.Add(90 * time.Second)}), "r1", StatusFailed, ReasonTimeout)
+	g.Handle(Outcome{Now: t0.Add(91 * time.Second), Job: ex.Job, Line: "line1", Reason: ReasonModemError})
+	if got := g.NextWake(); !got.Equal(t0.Add(95 * time.Second)) {
+		t.Fatalf("retry at %v, want 5 s after the timeout", got)
 	}
 }

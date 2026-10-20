@@ -11,8 +11,9 @@ type RecentIDs struct {
 	next int
 }
 
-// NewRecentIDs remembers up to size ids.
+// NewRecentIDs remembers up to size ids, at least one.
 func NewRecentIDs(size int) *RecentIDs {
+	size = max(size, 1)
 	return &RecentIDs{ring: make([]string, size), set: make(map[string]bool, size)}
 }
 

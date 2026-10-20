@@ -16,22 +16,26 @@ import (
 // Sim answers like a modem over an in-memory pipe. Each open gives a new
 // connection, as a USB modem does after a restart.
 type Sim struct {
-	Mu        sync.Mutex // guards the fields below
-	conn      net.Conn
-	echo      bool   // echo commands, until ATE0
-	Silent    bool   // read and never answer
-	CREG      string // answer to AT+CREG?
-	CSQ       string
-	COPS      string
-	CMGS      string // error line for AT+CMGS, empty for success
-	Dial      string // final line of ATD, "OK" by default
-	AfterDial string // call progress sent after ATD's OK, empty for none
-	AfterWait time.Duration
-	Inbox     map[int][2]string // index -> from, text
-	commands  []string
-	Sent      [][2]string // number, text
-	ref       int
-	Opens     int
+	Mu     sync.Mutex // guards the fields below
+	conn   net.Conn
+	echo   bool   // echo commands, until ATE0
+	Silent bool   // read and never answer
+	CREG   string // answer to AT+CREG?
+	CSQ    string
+	COPS   string
+	CMGS   string // error line for AT+CMGS, empty for success
+	// BeforePrompt is a line sent before the SMS prompt, as a late answer to an
+	// earlier command would be.
+	BeforePrompt string
+	Dial         string // final line of ATD, "OK" by default
+	AfterDial    string // call progress sent after ATD's OK, empty for none
+	AfterWait    time.Duration
+	Inbox        map[int][2]string // index -> from, text
+	commands     []string
+	Sent         [][2]string // number, text
+	ref          int
+	Opens        int
+	Hangups      int // connections closed by the other end
 }
 
 // New returns a modem registered on the network, with a good signal.
@@ -77,6 +81,9 @@ func (s *Sim) serve(c net.Conn) {
 	for {
 		cmd, err := r.ReadString('\r')
 		if err != nil {
+			s.Mu.Lock()
+			s.Hangups++
+			s.Mu.Unlock()
 			return
 		}
 		cmd = strings.TrimSpace(cmd)
@@ -108,22 +115,7 @@ func (s *Sim) answer(c net.Conn, r *bufio.Reader, cmd string) {
 	case cmd == "AT+COPS?":
 		s.write(c, "+COPS: "+s.COPS, "OK")
 	case strings.HasPrefix(cmd, "AT+CMGS="):
-		number := strings.Trim(strings.TrimPrefix(cmd, "AT+CMGS="), `"`)
-		io.WriteString(c, "\r\n> ")
-		s.Mu.Unlock()
-		text, err := r.ReadString('\x1a')
-		s.Mu.Lock()
-		if err != nil {
-			return
-		}
-		text = strings.TrimSuffix(text, "\x1a")
-		if s.CMGS != "" {
-			s.write(c, s.CMGS)
-			return
-		}
-		s.ref++
-		s.Sent = append(s.Sent, [2]string{number, text})
-		s.write(c, fmt.Sprintf("+CMGS: %d", s.ref), "OK")
+		s.takeSMS(c, r, cmd)
 	case strings.HasPrefix(cmd, "ATD"):
 		s.write(c, s.Dial)
 		if s.Dial == "OK" && s.AfterDial != "" {
@@ -150,4 +142,28 @@ func (s *Sim) answer(c net.Conn, r *bufio.Reader, cmd string) {
 	default:
 		s.write(c, "OK") // AT, ATH, AT+CMGF=1, ...
 	}
+}
+
+// takeSMS prompts for the text of an AT+CMGS and keeps it. s.Mu is held, and
+// released while the text is read.
+func (s *Sim) takeSMS(c net.Conn, r *bufio.Reader, cmd string) {
+	number := strings.Trim(strings.TrimPrefix(cmd, "AT+CMGS="), `"`)
+	if s.BeforePrompt != "" {
+		s.write(c, s.BeforePrompt)
+	}
+	io.WriteString(c, "\r\n> ")
+	s.Mu.Unlock()
+	text, err := r.ReadString('\x1a')
+	s.Mu.Lock()
+	if err != nil {
+		return
+	}
+	text = strings.TrimSuffix(text, "\x1a")
+	if s.CMGS != "" {
+		s.write(c, s.CMGS)
+		return
+	}
+	s.ref++
+	s.Sent = append(s.Sent, [2]string{number, text})
+	s.write(c, fmt.Sprintf("+CMGS: %d", s.ref), "OK")
 }

@@ -28,34 +28,6 @@ import (
 	"safehome/internal/outbox"
 )
 
-// Modem is what the gateway needs from one modem. Errors may wrap one of the Err
-// values below to say why; any other error counts as a modem error.
-type Modem interface {
-	// SendSMS sends a text and returns the operator's reference, used to match the
-	// delivery report (empty if none).
-	SendSMS(ctx context.Context, number, text string) (ref string, err error)
-	// Call rings a number for ringFor, then hangs up.
-	Call(ctx context.Context, number string, ringFor time.Duration) error
-	Check(ctx context.Context) (LineInfo, error)
-	Restart(ctx context.Context) error
-}
-
-// LineInfo is what a modem says about its network.
-type LineInfo struct {
-	Registered bool
-	Signal     int // 0 to 100
-	Operator   string
-}
-
-// Why a modem failed.
-var (
-	ErrNoNetwork   = errors.New("gateway: no network")
-	ErrNoCredit    = errors.New("gateway: no credit")
-	ErrBusy        = errors.New("gateway: busy")
-	ErrUnreachable = errors.New("gateway: unreachable")
-	ErrTimeout     = errors.New("gateway: timeout")
-)
-
 // Config holds what the gateway needs to know.
 type Config struct {
 	Site       string
@@ -157,7 +129,6 @@ func New(cfg Config, deps Deps) (*Gateway, error) {
 		log = slog.New(slog.DiscardHandler)
 	}
 	g := &Gateway{cfg: cfg, deps: deps, log: log, seen: outbox.NewRecentIDs(cfg.DedupeSize), workers: map[string]chan func(context.Context){}}
-	g.life, g.stop = context.WithCancel(context.Background())
 	for _, l := range cfg.GSM.Lines {
 		g.workers[l.ID] = make(chan func(context.Context), lineQueue)
 	}
@@ -183,6 +154,7 @@ func New(cfg Config, deps Deps) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
+	g.life, g.stop = context.WithCancel(context.Background())
 	return g, nil
 }
 
@@ -248,17 +220,6 @@ func (g *Gateway) repeatStatus(ctx context.Context) {
 	})
 }
 
-func worker(ctx context.Context, tasks <-chan func(context.Context)) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case t := <-tasks:
-			t(ctx)
-		}
-	}
-}
-
 // --- inbound -----------------------------------------------------------------------------
 
 // HandleMessage takes a message from the broker. It returns quickly. Payloads are
@@ -280,13 +241,11 @@ func (g *Gateway) HandleMessage(m Message) {
 		g.log.Warn("ignoring an alert request with a damaged payload", "id", env.ID)
 		return
 	}
-	if _, ok := gsmwire.Request(d, env.ID, time.Time{}); !ok {
+	r, ok := gsmwire.Request(d, env.ID, time.Time{})
+	if !ok {
 		return // for another channel
 	}
-	g.submit(func(now time.Time) gsm.Input {
-		r, _ := gsmwire.Request(d, env.ID, now)
-		return r
-	})
+	g.submit(func(now time.Time) gsm.Input { r.Now = now; return r })
 }
 
 // Incoming is an SMS a modem received. The composition root wires the modems'
@@ -332,84 +291,6 @@ func (g *Gateway) dispatch(_ context.Context, now time.Time, actions []gsm.Actio
 		}
 	}
 	return nil
-}
-
-func (g *Gateway) toLine(line string, task func(context.Context)) {
-	select {
-	case g.workers[line] <- task:
-	default:
-		// The domain gives a line one thing at a time; a full queue means a modem stuck
-		// far longer than its deadlines. The domain's timers will recover.
-		g.log.Error("the line's work queue is full", "line", line)
-	}
-}
-
-func (g *Gateway) execute(ctx context.Context, ex gsm.Execute) {
-	timeout := g.cfg.GSM.SMSTimeout
-	if ex.Channel == gsm.ChannelCall {
-		timeout += ex.RingFor
-	}
-	cctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	var ref string
-	var err error
-	if ex.Channel == gsm.ChannelCall {
-		err = g.deps.Lines[ex.Line].Call(cctx, ex.Number, ex.RingFor)
-	} else {
-		ref, err = g.deps.Lines[ex.Line].SendSMS(cctx, ex.Number, ex.Text)
-	}
-	if ctx.Err() != nil {
-		return // shutting down: the job stays queued on disk
-	}
-	o := gsm.Outcome{Job: ex.Job, Line: ex.Line, OK: err == nil, MsgRef: ref}
-	if err != nil {
-		o.Reason = reason(err)
-		g.log.Warn("a line could not send", "line", ex.Line, "channel", ex.Channel, "reason", o.Reason, "err", err)
-	}
-	g.submit(func(now time.Time) gsm.Input { o.Now = now; return o })
-}
-
-func reason(err error) gsm.Reason {
-	switch {
-	case errors.Is(err, ErrNoNetwork):
-		return gsm.ReasonNoNetwork
-	case errors.Is(err, ErrNoCredit):
-		return gsm.ReasonNoCredit
-	case errors.Is(err, ErrBusy):
-		return gsm.ReasonBusy
-	case errors.Is(err, ErrUnreachable):
-		return gsm.ReasonUnreachable
-	case errors.Is(err, ErrTimeout), errors.Is(err, context.DeadlineExceeded):
-		return gsm.ReasonTimeout
-	}
-	return gsm.ReasonModemError
-}
-
-func (g *Gateway) check(ctx context.Context, line string) {
-	cctx, cancel := context.WithTimeout(ctx, g.cfg.GSM.CheckTimeout)
-	defer cancel()
-	info, err := g.deps.Lines[line].Check(cctx)
-	if ctx.Err() != nil {
-		return
-	}
-	if err != nil {
-		g.log.Warn("a line check failed", "line", line, "err", err)
-	}
-	g.submit(func(now time.Time) gsm.Input {
-		return gsm.Probe{Now: now, Line: line, Responding: err == nil, Registered: info.Registered, Signal: info.Signal, Operator: info.Operator}
-	})
-}
-
-func (g *Gateway) restart(ctx context.Context, line string) {
-	cctx, cancel := context.WithTimeout(ctx, g.cfg.GSM.RestartTimeout)
-	defer cancel()
-	if err := g.deps.Lines[line].Restart(cctx); err != nil && ctx.Err() == nil {
-		g.log.Error("restarting the modem failed", "line", line, "err", err)
-	}
-	if ctx.Err() != nil {
-		return
-	}
-	g.submit(func(now time.Time) gsm.Input { return gsm.Restarted{Now: now, Line: line} })
 }
 
 // publishStatus publishes the lines and the queue, retained, when they changed (or

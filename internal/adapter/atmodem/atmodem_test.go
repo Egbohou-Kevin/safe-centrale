@@ -288,3 +288,52 @@ func TestHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestAModemThatRefusesItsSetupIsClosedAgain(t *testing.T) {
+	s := attest.New()
+	s.Silent = true // the port opens, the modem does not answer
+	_, err := Open(context.Background(), Options{Open: s.Open, CommandTimeout: 50 * time.Millisecond})
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("%v", err)
+	}
+	waitFor(t, "the port to be closed", func() bool { s.Mu.Lock(); defer s.Mu.Unlock(); return s.Hangups == 1 })
+}
+
+func TestARestartAfterCloseDoesNotReopenThePort(t *testing.T) {
+	s := attest.New()
+	m, _ := openSim(t, s)
+	m.Close()
+	if err := m.Restart(context.Background()); !errors.Is(err, ErrClosed) {
+		t.Fatalf("%v", err)
+	}
+	waitFor(t, "every port closed", func() bool { s.Mu.Lock(); defer s.Mu.Unlock(); return s.Hangups == s.Opens })
+}
+
+func TestALateOKBeforeThePromptIsNotTakenForTheSMS(t *testing.T) {
+	s := attest.New()
+	m, _ := openSim(t, s)
+	s.Mu.Lock()
+	s.BeforePrompt = "OK"
+	s.Mu.Unlock()
+	ref, err := m.SendSMS(context.Background(), "+22890123456", "ALARME")
+	s.Mu.Lock()
+	sent := len(s.Sent)
+	s.Mu.Unlock()
+	if err != nil || ref != "1" || sent != 1 {
+		t.Fatalf("ref %q, err %v, %d sent: the SMS must really leave", ref, err, sent)
+	}
+}
+
+func TestAnOverlongLineIsDropped(t *testing.T) {
+	s := attest.New()
+	_, ev := openSim(t, s)
+	s.Push(`+CDS: 6,7,"+22890123456",145,"26/10/17,21:05:00+00","26/10/17,21:05:03+00",0` + strings.Repeat(" ", maxLine))
+	s.Push(`+CDS: 6,8,"+22890123456",145,"26/10/17,21:05:00+00","26/10/17,21:05:03+00",0`)
+	waitFor(t, "the next report", func() bool { ev.mu.Lock(); defer ev.mu.Unlock(); return slices.Contains(ev.reports, "8:ok") })
+	time.Sleep(20 * time.Millisecond) // a report wrongly taken would be in by now
+	ev.mu.Lock()
+	defer ev.mu.Unlock()
+	if len(ev.reports) != 1 || ev.reports[0] != "8:ok" {
+		t.Fatalf("%v", ev.reports)
+	}
+}

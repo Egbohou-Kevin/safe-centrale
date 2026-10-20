@@ -283,6 +283,13 @@ func TestRecentIDsForgetsTheOldest(t *testing.T) {
 	}
 }
 
+func TestRecentIDsOfSizeZeroDoesNotPanic(t *testing.T) {
+	r := NewRecentIDs(0)
+	if !r.FirstTime("a") || r.FirstTime("a") {
+		t.Fatal("it still remembers the last id")
+	}
+}
+
 func TestSleep(t *testing.T) {
 	if !Sleep(context.Background(), time.Millisecond) {
 		t.Fatal("a full wait")

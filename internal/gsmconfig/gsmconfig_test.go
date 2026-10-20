@@ -62,6 +62,7 @@ func TestMistakes(t *testing.T) {
 		"no state dir":      `{"site": "tg-lom-0001", "lines": [{"id": "l", "port": "/p"}]}`,
 		"no line":           `{"site": "tg-lom-0001", "state_dir": "/s"}`,
 		"no port":           `{"site": "tg-lom-0001", "state_dir": "/s", "lines": [{"id": "l"}]}`,
+		"negative baud":     `{"site": "tg-lom-0001", "state_dir": "/s", "lines": [{"id": "l", "port": "/p", "baud": -9600}]}`,
 		"bad site":          `{"site": "Lome", "state_dir": "/s", "lines": [{"id": "l", "port": "/p"}]}`,
 		"bad number":        `{"site": "tg-lom-0001", "state_dir": "/s", "lines": [{"id": "l", "port": "/p"}], "contacts": {"u": "abc"}}`,
 		"bad duration":      `{"site": "tg-lom-0001", "state_dir": "/s", "lines": [{"id": "l", "port": "/p"}], "ring_for": "long"}`,

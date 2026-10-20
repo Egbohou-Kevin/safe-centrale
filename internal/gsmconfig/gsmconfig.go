@@ -4,6 +4,7 @@ package gsmconfig
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -82,13 +83,14 @@ func Load(path string) (Result, error) {
 		return Result{}, fmt.Errorf("gsmconfig: %w", err)
 	}
 	f, err := decode(data)
-	if err == nil {
-		var r Result
-		if r, err = build(f); err == nil {
-			return withSite(r, f), nil
-		}
+	if err != nil {
+		return Result{}, fmt.Errorf("gsmconfig: %s: %w", path, err)
 	}
-	return Result{}, fmt.Errorf("gsmconfig: %s: %w", path, err)
+	r, err := build(f)
+	if err != nil {
+		return Result{}, fmt.Errorf("gsmconfig: %s: %w", path, err)
+	}
+	return withSite(r, f), nil
 }
 
 // withSite lays the cloud's contacts over the file's: the contacts with a phone
@@ -142,64 +144,25 @@ func build(f file) (Result, error) {
 	if f.StateDir == "" {
 		return Result{}, errors.New("state_dir is required (where the gateway keeps its queue)")
 	}
-	r := Result{BrokerURL: f.BrokerURL, ClientID: f.ClientID, StateDir: f.StateDir, Ports: map[string]Port{}}
-	if r.BrokerURL == "" {
-		r.BrokerURL = "mqtt://127.0.0.1:1883"
+	r := Result{
+		BrokerURL: cmp.Or(f.BrokerURL, "mqtt://127.0.0.1:1883"),
+		ClientID:  cmp.Or(f.ClientID, "safehome-gsm-"+f.Site),
+		StateDir:  f.StateDir,
 	}
-	if r.ClientID == "" {
-		r.ClientID = "safehome-gsm-" + f.Site
+	var err error
+	if r.LogLevel, err = parseLevel(f.LogLevel); err != nil {
+		return Result{}, err
 	}
-	level, err := parseLevel(f.LogLevel)
+	lines, ports, err := parseLines(f.Lines)
 	if err != nil {
 		return Result{}, err
 	}
-	r.LogLevel = level
-
-	var lines []gsm.Line
-	for _, l := range f.Lines {
-		if l.Port == "" {
-			return Result{}, fmt.Errorf("line %q: port is required", l.ID)
-		}
-		baud := l.Baud
-		if baud == 0 {
-			baud = 115200
-		}
-		configure := l.Configure == nil || *l.Configure
-		r.Ports[l.ID] = Port{Path: l.Port, Baud: baud, Configure: configure}
-		lines = append(lines, gsm.Line{ID: l.ID, Operator: l.Operator})
-	}
+	r.Ports = ports
 	g := gsm.DefaultConfig(lines, f.Contacts)
-	if f.Country != "" {
-		g.Country = f.Country
-	}
+	g.Country = cmp.Or(f.Country, g.Country)
 	g.TestNumber = f.TestNumber
-	for _, d := range []struct {
-		name, value string
-		dst         *time.Duration
-	}{
-		{"ring_for", f.RingFor, &g.RingFor},
-		{"check_every", f.CheckEvery, &g.CheckEvery},
-		{"test_every", f.TestEvery, &g.TestEvery},
-	} {
-		if err := duration(d.name, d.value, d.dst); err != nil {
-			return Result{}, err
-		}
-	}
-	if f.MaxAge != nil {
-		for _, d := range []struct {
-			name, value string
-			p           gsm.Priority
-		}{
-			{"max_age.life_safety", f.MaxAge.LifeSafety, gsm.PriorityLifeSafety},
-			{"max_age.intrusion", f.MaxAge.Intrusion, gsm.PriorityIntrusion},
-			{"max_age.other", f.MaxAge.Other, gsm.PriorityOther},
-		} {
-			v := g.MaxAge[d.p]
-			if err := duration(d.name, d.value, &v); err != nil {
-				return Result{}, err
-			}
-			g.MaxAge[d.p] = v
-		}
+	if err := parseDurations(f, &g); err != nil {
+		return Result{}, err
 	}
 	r.Gateway = gateway.DefaultConfig(f.Site, g)
 	if err := duration("status_every", f.StatusEvery, &r.Gateway.StatusEvery); err != nil {
@@ -209,6 +172,59 @@ func build(f file) (Result, error) {
 		return Result{}, err
 	}
 	return r, nil
+}
+
+// parseLines returns the lines, in order of preference, and their ports.
+func parseLines(in []lineFile) ([]gsm.Line, map[string]Port, error) {
+	var lines []gsm.Line
+	ports := map[string]Port{}
+	for _, l := range in {
+		if l.Port == "" {
+			return nil, nil, fmt.Errorf("line %q: port is required", l.ID)
+		}
+		if l.Baud < 0 {
+			return nil, nil, fmt.Errorf("line %q: baud must be positive", l.ID)
+		}
+		baud := cmp.Or(l.Baud, 115200)
+		configure := l.Configure == nil || *l.Configure
+		ports[l.ID] = Port{Path: l.Port, Baud: baud, Configure: configure}
+		lines = append(lines, gsm.Line{ID: l.ID, Operator: l.Operator})
+	}
+	return lines, ports, nil
+}
+
+// parseDurations lays the file's durations over the defaults in g.
+func parseDurations(f file, g *gsm.Config) error {
+	for _, d := range []struct {
+		name, value string
+		dst         *time.Duration
+	}{
+		{"ring_for", f.RingFor, &g.RingFor},
+		{"check_every", f.CheckEvery, &g.CheckEvery},
+		{"test_every", f.TestEvery, &g.TestEvery},
+	} {
+		if err := duration(d.name, d.value, d.dst); err != nil {
+			return err
+		}
+	}
+	if f.MaxAge == nil {
+		return nil
+	}
+	for _, d := range []struct {
+		name, value string
+		p           gsm.Priority
+	}{
+		{"max_age.life_safety", f.MaxAge.LifeSafety, gsm.PriorityLifeSafety},
+		{"max_age.intrusion", f.MaxAge.Intrusion, gsm.PriorityIntrusion},
+		{"max_age.other", f.MaxAge.Other, gsm.PriorityOther},
+	} {
+		v := g.MaxAge[d.p]
+		if err := duration(d.name, d.value, &v); err != nil {
+			return err
+		}
+		g.MaxAge[d.p] = v
+	}
+	return nil
 }
 
 func duration(name, value string, dst *time.Duration) error {
