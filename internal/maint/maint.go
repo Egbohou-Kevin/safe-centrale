@@ -171,11 +171,12 @@ func (v *Service) tick(now time.Time) []Action {
 	return nil
 }
 
-// end closes the session and says so.
+// end closes the session and says so. The time it was open never goes past its end:
+// a session found over after a restart was not open while the service was down.
 func (v *Service) end(now time.Time, why Reason) []Action {
 	r := Report{Session: v.s.Session, User: v.s.User, Status: Closed, Reason: why}
 	if !v.s.OpenedAt.IsZero() {
-		r.Duration = now.Sub(v.s.OpenedAt)
+		r.Duration = min(now.Sub(v.s.OpenedAt), v.s.Until.Sub(v.s.OpenedAt))
 	}
 	acts := []Action{}
 	if v.running {

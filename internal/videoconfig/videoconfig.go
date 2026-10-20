@@ -6,6 +6,7 @@ package videoconfig
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -109,7 +110,11 @@ func withSite(r Result) Result {
 	}
 	merged := r
 	if q := o.Video.QuotaMB; q != nil {
-		merged.App.Video.Quota = int64(*q) << 20
+		var err error
+		if merged.App.Video.Quota, err = quota(*q); err != nil {
+			r.SiteErr = err
+			return r
+		}
 	}
 	if m := o.Video.MaxS; m != nil {
 		merged.App.Video.MaxLength = time.Duration(*m) * time.Second
@@ -134,69 +139,69 @@ func parse(data []byte) (Result, error) {
 	if f.StateDir == "" {
 		return Result{}, errors.New("state_dir is required (where the month's usage is kept)")
 	}
-	r := Result{BrokerURL: f.BrokerURL, ClientID: f.ClientID, StateDir: f.StateDir, Go2rtc: f.Go2rtc, Sources: map[string]string{}}
-	if r.BrokerURL == "" {
-		r.BrokerURL = "mqtt://127.0.0.1:1883"
-	}
-	if r.ClientID == "" {
-		r.ClientID = "safehome-video-" + f.Site
-	}
-	if r.Go2rtc == "" {
-		r.Go2rtc = "/usr/local/bin/go2rtc"
-	}
-	r.FFmpeg = f.FFmpeg
-	if r.FFmpeg == "" {
-		r.FFmpeg = "/usr/bin/ffmpeg"
-	}
-	r.PhotoDir = filepath.Join(f.StateDir, "photos")
+	r := withDefaults(f)
 	var err error
 	if r.LogLevel, err = parseLevel(f.LogLevel); err != nil {
 		return Result{}, err
 	}
-
 	var cams []video.Camera
-	for i, c := range f.Cameras {
+	if r.Sources, cams, err = parseCameras(f.Cameras); err != nil {
+		return Result{}, err
+	}
+	v, err := videoSettings(f, cams)
+	if err != nil {
+		return Result{}, err
+	}
+	r.App = videoapp.DefaultConfig(f.Site, v)
+	if err := r.App.Validate(); err != nil {
+		return Result{}, err
+	}
+	return r, nil
+}
+
+// withDefaults fills in the programs, the broker and the folders.
+func withDefaults(f file) Result {
+	return Result{
+		BrokerURL: cmp.Or(f.BrokerURL, "mqtt://127.0.0.1:1883"),
+		ClientID:  cmp.Or(f.ClientID, "safehome-video-"+f.Site),
+		StateDir:  f.StateDir,
+		Go2rtc:    cmp.Or(f.Go2rtc, "/usr/local/bin/go2rtc"),
+		FFmpeg:    cmp.Or(f.FFmpeg, "/usr/bin/ffmpeg"),
+		PhotoDir:  filepath.Join(f.StateDir, "photos"),
+	}
+}
+
+// parseCameras checks the cameras: at least one, each with its own id and an RTSP
+// address. The errors never repeat an address.
+func parseCameras(list []cameraFile) (map[string]string, []video.Camera, error) {
+	sources := map[string]string{}
+	var cams []video.Camera
+	for i, c := range list {
 		where := fmt.Sprintf("cameras[%d]", i)
 		if !cameraID.MatchString(c.ID) {
-			return Result{}, fmt.Errorf("%s: id %q: lower-case letters, digits and _, 32 at most, such as cam_caisse", where, c.ID)
+			return nil, nil, fmt.Errorf("%s: id %q: lower-case letters, digits and _, 32 at most, such as cam_caisse", where, c.ID)
 		}
-		if _, ok := r.Sources[c.ID]; ok {
-			return Result{}, fmt.Errorf("%s: id %q is repeated", where, c.ID)
+		if _, ok := sources[c.ID]; ok {
+			return nil, nil, fmt.Errorf("%s: id %q is repeated", where, c.ID)
 		}
 		if err := checkSource(c.Source); err != nil {
-			return Result{}, fmt.Errorf("%s (%s): source: %w", where, c.ID, err)
+			return nil, nil, fmt.Errorf("%s (%s): source: %w", where, c.ID, err)
 		}
-		r.Sources[c.ID] = c.Source
+		sources[c.ID] = c.Source
 		cams = append(cams, video.Camera{ID: c.ID, Name: c.Name})
 	}
 	if len(cams) == 0 {
-		return Result{}, errors.New("cameras: at least one camera (a site without camera does not run the video service)")
+		return nil, nil, errors.New("cameras: at least one camera (a site without camera does not run the video service)")
 	}
+	return sources, cams, nil
+}
 
+// videoSettings builds the core's settings: the defaults for the uplink, then what
+// the file changes.
+func videoSettings(f file, cams []video.Camera) (video.Config, error) {
 	v := video.DefaultConfig(cams)
-	switch f.Uplink {
-	case "fixed", "":
-		if (f.QuotaMB != nil && *f.QuotaMB != 0) || (f.MaxSession != nil && *f.MaxSession != "" && *f.MaxSession != "0") {
-			return Result{}, errors.New(`quota_mb and max_session apply only to "uplink": "mobile" (on a fixed line, watching costs the client nothing)`)
-		}
-	case "mobile":
-		// Economy: the data is paid by the client.
-		v.Mobile, v.Quota, v.MaxLength, v.Photos = true, video.MobileQuota, video.MobileMaxLength, video.EconomyPhotos
-		if q := f.QuotaMB; q != nil {
-			if *q < 0 {
-				return Result{}, errors.New("quota_mb cannot be negative (0: no allowance)")
-			}
-			v.Quota = int64(*q) << 20
-		}
-		if m := f.MaxSession; m != nil && *m != "" {
-			if *m == "0" {
-				v.MaxLength = 0
-			} else if err := duration("max_session", *m, &v.MaxLength); err != nil {
-				return Result{}, err
-			}
-		}
-	default:
-		return Result{}, fmt.Errorf(`uplink %q: use "fixed" (the shop's box) or "mobile" (a 4G router)`, f.Uplink)
+	if err := uplink(f, &v); err != nil {
+		return v, err
 	}
 	if f.Photos != nil && !*f.Photos {
 		v.Photos = video.PhotoPolicy{}
@@ -209,14 +214,52 @@ func parse(data []byte) (Result, error) {
 		dst         *time.Duration
 	}{{"start_timeout", f.StartTimeout, &v.StartTimeout}, {"stall_after", f.StallAfter, &v.StallAfter}, {"probe_every", f.ProbeEvery, &v.ProbeEvery}} {
 		if err := duration(d.name, d.value, d.dst); err != nil {
-			return Result{}, err
+			return v, err
 		}
 	}
-	r.App = videoapp.DefaultConfig(f.Site, v)
-	if err := r.App.Validate(); err != nil {
-		return Result{}, err
+	return v, nil
+}
+
+// uplink sets what depends on the uplink: on mobile data, paid by the client, an
+// allowance, a longest session and fewer photos (economy).
+func uplink(f file, v *video.Config) error {
+	switch f.Uplink {
+	case "fixed", "":
+		if (f.QuotaMB != nil && *f.QuotaMB != 0) || (f.MaxSession != nil && *f.MaxSession != "" && *f.MaxSession != "0") {
+			return errors.New(`quota_mb and max_session apply only to "uplink": "mobile" (on a fixed line, watching costs the client nothing)`)
+		}
+		return nil
+	case "mobile":
+	default:
+		return fmt.Errorf(`uplink %q: use "fixed" (the shop's box) or "mobile" (a 4G router)`, f.Uplink)
 	}
-	return r, nil
+	v.Mobile, v.Quota, v.MaxLength, v.Photos = true, video.MobileQuota, video.MobileMaxLength, video.EconomyPhotos
+	if q := f.QuotaMB; q != nil {
+		var err error
+		if v.Quota, err = quota(*q); err != nil {
+			return err
+		}
+	}
+	switch m := f.MaxSession; {
+	case m == nil || *m == "":
+	case *m == "0":
+		v.MaxLength = 0
+	default:
+		return duration("max_session", *m, &v.MaxLength)
+	}
+	return nil
+}
+
+// maxQuotaMB bounds the allowance far above any client's (8 TB), so that it never
+// overflows once in bytes.
+const maxQuotaMB = 1 << 23
+
+// quota turns quota_mb into bytes.
+func quota(mb int) (int64, error) {
+	if mb < 0 || mb > maxQuotaMB {
+		return 0, fmt.Errorf("quota_mb from 0 (no allowance) to %d", maxQuotaMB)
+	}
+	return int64(mb) << 20, nil
 }
 
 // checkSource accepts an RTSP address. The error never repeats it: it may hold a

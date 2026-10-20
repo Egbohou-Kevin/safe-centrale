@@ -152,8 +152,8 @@ func TestASessionSurvivesARestart(t *testing.T) {
 	v3 := newCore(t)
 	v3.Restore(saved)
 	acts := v3.Handle(Boot{Now: t0.Add(2 * time.Hour)})
-	if len(acts) != 1 || acts[0].(Report).Reason != Timeout || acts[0].(Report).Duration != 2*time.Hour {
-		t.Fatalf("%+v", acts)
+	if len(acts) != 1 || acts[0].(Report).Reason != Timeout || acts[0].(Report).Duration != time.Hour {
+		t.Fatalf("%+v: open an hour at most, not while the service was down", acts)
 	}
 	if newCore(t).Handle(Boot{Now: t0}) != nil {
 		t.Fatal("nothing saved")

@@ -172,6 +172,20 @@ func TestAProcessThatDiesIsSeen(t *testing.T) {
 	}
 }
 
+// TestWhyGo2rtcStoppedIsLogged: the last lines go2rtc prints before it exits are
+// the reason, and they reach the logs, masked, before Start returns.
+func TestWhyGo2rtcStoppedIsLogged(t *testing.T) {
+	for range 20 {
+		r, logs := fake(t, map[string]string{"cam": "rtsp://admin:camPW@crash.local/s"})
+		if _, err := r.Start(context.Background(), "cam", target); !errors.Is(err, ErrExited) {
+			t.Fatalf("%v", err)
+		}
+		if l := logs.String(); !strings.Contains(l, "cannot start source=***") || strings.Contains(l, "camPW") {
+			t.Fatalf("logs:\n%s", l)
+		}
+	}
+}
+
 func TestAMissingBinaryFails(t *testing.T) {
 	r, err := New(Options{Binary: filepath.Join(t.TempDir(), "go2rtc"), Sources: map[string]string{"cam": good}})
 	if err != nil {
@@ -229,7 +243,7 @@ func TestOptions(t *testing.T) {
 		t.Error("no binary accepted")
 	}
 	for src, want := range map[string]string{"rtsp://h/x": "h:554", "rtsps://h/x": "h:322", "rtsp://h:8554/x": "h:8554"} {
-		if _, got, _ := hostPort(src); got != want {
+		if got, _ := hostPort(src); got != want {
 			t.Errorf("%s: %s, want %s", src, got, want)
 		}
 	}

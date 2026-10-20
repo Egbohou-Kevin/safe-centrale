@@ -3,6 +3,8 @@
 // RunIfFake first, and the test points the adapter at os.Args[0] after Enable.
 //
 // The fake answers like go2rtc v1.9's API on its Unix socket:
+//   - a camera whose address holds "crash" makes it print why, address included,
+//     and exit before it answers;
 //   - a camera whose address holds "deadcam" does not answer (500 "streams: dial...");
 //   - one whose address holds "h265" sends H.265 (500 "streams: codecs not matched");
 //   - otherwise the push starts, and bytes_send grows by 1000 every 10 ms, unless the
@@ -64,76 +66,25 @@ func serve(path string) error {
 	if err != nil {
 		return err
 	}
-	var cfg config
-	if err := json.Unmarshal(raw, &cfg); err != nil {
+	f := &fake{}
+	if err := json.Unmarshal(raw, &f.cfg); err != nil {
 		return err
 	}
-	if cfg.API.UnixListen == "" || cfg.API.Listen != "" {
-		return fmt.Errorf("the API must listen on a Unix socket only: %+v", cfg.API)
+	if f.cfg.API.UnixListen == "" || f.cfg.API.Listen != "" {
+		return fmt.Errorf("the API must listen on a Unix socket only: %+v", f.cfg.API)
 	}
-	source := cfg.Streams["cam"]
-	l, err := net.Listen("unix", cfg.API.UnixListen)
+	f.source = f.cfg.Streams["cam"]
+	if strings.Contains(f.source, "crash") {
+		fmt.Println("FTL [streams] cannot start source=" + f.source)
+		os.Exit(1)
+	}
+	l, err := net.Listen("unix", f.cfg.API.UnixListen)
 	if err != nil {
 		return err
 	}
-	var mu sync.Mutex
-	var pushedAt time.Time
-	var target string
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/streams", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		switch {
-		case r.Method == http.MethodGet && q.Get("src") == "":
-			json.NewEncoder(w).Encode(map[string]any{"cam": map[string]any{"producers": []any{map[string]string{"url": source}}}})
-		case r.Method == http.MethodGet:
-			mu.Lock()
-			defer mu.Unlock()
-			consumers := []map[string]any{}
-			if !pushedAt.IsZero() {
-				c := map[string]any{"format_name": "rtmp"} // as go2rtc 1.9.14 says it
-				if !strings.Contains(target, "norelay") {
-					c["bytes_send"] = time.Since(pushedAt).Milliseconds() / 10 * 1000
-				}
-				consumers = append(consumers, c)
-			}
-			json.NewEncoder(w).Encode(map[string]any{"producers": []any{}, "consumers": consumers})
-		case r.Method == http.MethodPost:
-			if strings.Contains(source, "deadcam") {
-				http.Error(w, "streams: dial tcp 10.0.0.9:554: connect: connection refused", http.StatusInternalServerError)
-				return
-			}
-			if strings.Contains(source, "h265") {
-				http.Error(w, "streams: codecs not matched: video:H265 => video:H264, audio:AAC", http.StatusInternalServerError)
-				return
-			}
-			mu.Lock()
-			pushedAt, target = time.Now(), q.Get("dst")
-			mu.Unlock()
-			os.WriteFile(filepath.Join(filepath.Dir(cfg.API.UnixListen), "pushed"), []byte(target), 0o600)
-			fmt.Println("WRN [publish] url=" + target + " source=" + source)
-		default:
-			http.Error(w, "", http.StatusBadRequest)
-		}
-	})
-	mux.HandleFunc("/api/frame.jpeg", func(w http.ResponseWriter, r *http.Request) {
-		if !slices.Contains(cfg.API.AllowPaths, "/api/frame.jpeg") {
-			http.NotFound(w, r)
-			return
-		}
-		src, ok := cfg.Streams[r.URL.Query().Get("src")]
-		width, _ := strconv.Atoi(r.URL.Query().Get("w"))
-		switch {
-		case !ok || strings.Contains(src, "deadcam"):
-			return // 200, empty
-		case strings.Contains(src, "h265"):
-			http.Error(w, "exec: ffmpeg failed", http.StatusInternalServerError)
-			return
-		}
-		jpeg := make([]byte, max(width, 1)*10)
-		jpeg[0], jpeg[1], jpeg[len(jpeg)-2], jpeg[len(jpeg)-1] = 0xFF, 0xD8, 0xFF, 0xD9
-		w.Header().Set("Content-Type", "image/jpeg")
-		w.Write(jpeg)
-	})
+	mux.HandleFunc("/api/streams", f.streams)
+	mux.HandleFunc("/api/frame.jpeg", f.frame)
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	go func() { <-stop; l.Close() }()
@@ -142,4 +93,80 @@ func serve(path string) error {
 		return nil
 	}
 	return err
+}
+
+// fake is one fake go2rtc process.
+type fake struct {
+	cfg    config
+	source string // the camera of a stream's process
+
+	mu       sync.Mutex
+	pushedAt time.Time // zero until the push starts
+	target   string
+}
+
+// streams answers /api/streams: the list, one stream's consumers, or a push.
+func (f *fake) streams(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	switch {
+	case r.Method == http.MethodGet && q.Get("src") == "":
+		json.NewEncoder(w).Encode(map[string]any{"cam": map[string]any{"producers": []any{map[string]string{"url": f.source}}}})
+	case r.Method == http.MethodGet:
+		json.NewEncoder(w).Encode(map[string]any{"producers": []any{}, "consumers": f.consumers()})
+	case r.Method == http.MethodPost:
+		f.push(w, q.Get("dst"))
+	default:
+		http.Error(w, "", http.StatusBadRequest)
+	}
+}
+
+func (f *fake) consumers() []map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	consumers := []map[string]any{}
+	if !f.pushedAt.IsZero() {
+		c := map[string]any{"format_name": "rtmp"} // as go2rtc 1.9.14 says it
+		if !strings.Contains(f.target, "norelay") {
+			c["bytes_send"] = time.Since(f.pushedAt).Milliseconds() / 10 * 1000
+		}
+		consumers = append(consumers, c)
+	}
+	return consumers
+}
+
+func (f *fake) push(w http.ResponseWriter, target string) {
+	if strings.Contains(f.source, "deadcam") {
+		http.Error(w, "streams: dial tcp 10.0.0.9:554: connect: connection refused", http.StatusInternalServerError)
+		return
+	}
+	if strings.Contains(f.source, "h265") {
+		http.Error(w, "streams: codecs not matched: video:H265 => video:H264, audio:AAC", http.StatusInternalServerError)
+		return
+	}
+	f.mu.Lock()
+	f.pushedAt, f.target = time.Now(), target
+	f.mu.Unlock()
+	os.WriteFile(filepath.Join(filepath.Dir(f.cfg.API.UnixListen), "pushed"), []byte(target), 0o600)
+	fmt.Println("WRN [publish] url=" + target + " source=" + f.source)
+}
+
+// frame answers /api/frame.jpeg, when the configuration allows it.
+func (f *fake) frame(w http.ResponseWriter, r *http.Request) {
+	if !slices.Contains(f.cfg.API.AllowPaths, "/api/frame.jpeg") {
+		http.NotFound(w, r)
+		return
+	}
+	src, ok := f.cfg.Streams[r.URL.Query().Get("src")]
+	width, _ := strconv.Atoi(r.URL.Query().Get("w"))
+	switch {
+	case !ok || strings.Contains(src, "deadcam"):
+		return // 200, empty
+	case strings.Contains(src, "h265"):
+		http.Error(w, "exec: ffmpeg failed", http.StatusInternalServerError)
+		return
+	}
+	jpeg := make([]byte, max(width, 1)*10)
+	jpeg[0], jpeg[1], jpeg[len(jpeg)-2], jpeg[len(jpeg)-1] = 0xFF, 0xD8, 0xFF, 0xD9
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Write(jpeg)
 }

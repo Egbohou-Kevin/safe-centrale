@@ -5,6 +5,7 @@ package maintconfig
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -85,12 +86,11 @@ func parse(data []byte) (Result, error) {
 	if f.StateDir == "" {
 		return Result{}, errors.New("state_dir is required (where a session is kept across a restart)")
 	}
-	r := Result{BrokerURL: f.BrokerURL, ClientID: f.ClientID, StateDir: f.StateDir}
-	if r.BrokerURL == "" {
-		r.BrokerURL = "mqtt://127.0.0.1:1883"
-	}
-	if r.ClientID == "" {
-		r.ClientID = "safehome-maint-" + f.Site
+	r := Result{
+		BrokerURL: cmp.Or(f.BrokerURL, "mqtt://127.0.0.1:1883"),
+		ClientID:  cmp.Or(f.ClientID, "safehome-maint-"+f.Site),
+		StateDir:  f.StateDir,
+		Tunnel:    tunnel(f),
 	}
 	var err error
 	if r.LogLevel, err = parseLevel(f.LogLevel); err != nil {
@@ -109,32 +109,33 @@ func parse(data []byte) (Result, error) {
 	if err := r.App.Validate(); err != nil {
 		return Result{}, err
 	}
-	r.Tunnel = Tunnel{
-		SSH: f.SSH, Host: f.Bastion.Host, Port: f.Bastion.Port, User: f.Bastion.User,
-		KeyFile: f.KeyFile, KnownHosts: f.KnownHosts, RemotePort: f.Bastion.RemotePort, LocalPort: f.LocalPort,
-	}
-	if r.Tunnel.SSH == "" {
-		r.Tunnel.SSH = "/usr/bin/ssh"
-	}
-	if r.Tunnel.Port == 0 {
-		r.Tunnel.Port = 22
-	}
-	if r.Tunnel.LocalPort == 0 {
-		r.Tunnel.LocalPort = 22
-	}
 	if !m.Enabled && f.Bastion.Host == "" {
 		return r, nil // switched off: no bastion needed
 	}
-	t := r.Tunnel
-	switch {
-	case t.Host == "" || t.User == "":
-		return Result{}, errors.New("bastion: host and user are required")
-	case t.RemotePort < 1024 || t.RemotePort > 65535:
-		return Result{}, errors.New("bastion: remote_port from 1024 to 65535, one per site (docs/maintenance.md)")
-	case t.KeyFile == "" || t.KnownHosts == "":
-		return Result{}, errors.New("key_file and known_hosts are required (the hub's key, the bastion's host key)")
+	if err := checkTunnel(r.Tunnel); err != nil {
+		return Result{}, err
 	}
 	return r, nil
+}
+
+// tunnel reads how to reach the bastion, with the defaults.
+func tunnel(f file) Tunnel {
+	return Tunnel{
+		SSH: cmp.Or(f.SSH, "/usr/bin/ssh"), Host: f.Bastion.Host, Port: cmp.Or(f.Bastion.Port, 22), User: f.Bastion.User,
+		KeyFile: f.KeyFile, KnownHosts: f.KnownHosts, RemotePort: f.Bastion.RemotePort, LocalPort: cmp.Or(f.LocalPort, 22),
+	}
+}
+
+func checkTunnel(t Tunnel) error {
+	switch {
+	case t.Host == "" || t.User == "":
+		return errors.New("bastion: host and user are required")
+	case t.RemotePort < 1024 || t.RemotePort > 65535:
+		return errors.New("bastion: remote_port from 1024 to 65535, one per site (docs/maintenance.md)")
+	case t.KeyFile == "" || t.KnownHosts == "":
+		return errors.New("key_file and known_hosts are required (the hub's key, the bastion's host key)")
+	}
+	return nil
 }
 
 func parseLevel(s string) (slog.Level, error) {

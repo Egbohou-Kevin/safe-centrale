@@ -131,6 +131,7 @@ func (t *fakeTunnel) breaks() { t.once.Do(func() { close(t.done) }) }
 type fakeTunneler struct {
 	mu      sync.Mutex
 	err     error
+	flash   bool // the tunnels it opens are up and already down
 	tunnels []*fakeTunnel
 }
 
@@ -141,6 +142,10 @@ func (f *fakeTunneler) Open(context.Context) (Tunnel, error) {
 		return nil, f.err
 	}
 	t := &fakeTunnel{up: make(chan struct{}), done: make(chan struct{})}
+	if f.flash {
+		close(t.up)
+		t.breaks()
+	}
 	f.tunnels = append(f.tunnels, t)
 	return t, nil
 }
@@ -287,6 +292,21 @@ func TestATunnelThatBreaksIsOpenedAgain(t *testing.T) {
 	close(r.tun.last().up)
 	r.settle()
 	r.steps("opening", "open")
+}
+
+// TestATunnelUpThenDownAtOnceIsOpenedAgain: when the tunnel is seen up and down at
+// the same time, it was up: the session is open and the tunnel is tried again,
+// it does not fail.
+func TestATunnelUpThenDownAtOnceIsOpenedAgain(t *testing.T) {
+	for range 20 {
+		r := start(t, nil, nil)
+		r.tun.flash = true
+		r.open("m1")
+		r.waitFor("the break said", func() bool { return strings.Contains(r.logs.String(), "tunnel stopped") })
+		r.settle()
+		r.steps("opening", "open")
+		r.stop()
+	}
 }
 
 func TestABastionThatRefuses(t *testing.T) {

@@ -103,8 +103,9 @@ type App struct {
 	out  *outbox.Outbox
 	seen *outbox.RecentIDs
 
-	mu      sync.Mutex
-	base    context.Context // the tunnels' parent, set by Run
+	// base is the tunnels' parent, set by Run before the loop starts; cancel stops
+	// the tunnel under way. Both belong to the loop's goroutine.
+	base    context.Context
 	cancel  context.CancelFunc
 	tunnels sync.WaitGroup
 
@@ -168,9 +169,7 @@ func (a *App) Run(ctx context.Context) error {
 	defer a.stop()
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	a.mu.Lock()
 	a.base = runCtx
-	a.mu.Unlock()
 	var wg sync.WaitGroup
 	start := func(f func(context.Context)) {
 		wg.Add(1)
@@ -198,10 +197,7 @@ func (a *App) HandleMessage(m Message) {
 	}
 	switch env.Type {
 	case contract.TypeMaintOpen:
-		d, err := contract.DecodeData[contract.MaintOpenData](env)
-		if err == nil {
-			err = d.Validate()
-		}
+		d, err := decodeOrder[contract.MaintOpenData](env)
 		if err != nil {
 			a.log.Warn("ignoring an invalid maintenance order", "id", env.ID, "err", err)
 			return
@@ -209,16 +205,22 @@ func (a *App) HandleMessage(m Message) {
 		a.log.Info("remote maintenance asked", "session", d.Session, "user", d.User, "reason", d.Reason, "duration_s", d.DurationS)
 		a.submit(func(now time.Time) maint.Input { return maintwire.Open(d, now) })
 	case contract.TypeMaintClose:
-		d, err := contract.DecodeData[contract.MaintCloseData](env)
-		if err == nil {
-			err = d.Validate()
-		}
+		d, err := decodeOrder[contract.MaintCloseData](env)
 		if err != nil {
 			a.log.Warn("ignoring an invalid maintenance order", "id", env.ID, "err", err)
 			return
 		}
 		a.submit(func(now time.Time) maint.Input { return maintwire.Close(d, now) })
 	}
+}
+
+// decodeOrder decodes an order's data and checks it.
+func decodeOrder[T interface{ Validate() error }](env contract.Envelope) (T, error) {
+	d, err := contract.DecodeData[T](env)
+	if err == nil {
+		err = d.Validate()
+	}
+	return d, err
 }
 
 func (a *App) submit(build func(time.Time) maint.Input) {
@@ -244,11 +246,8 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []maint.Action)
 	return nil
 }
 
-// startTunnel opens the tunnel away from the loop, and tells the core when it is up
-// and when it stopped by itself.
+// startTunnel opens the tunnel away from the loop. It runs on the loop's goroutine.
 func (a *App) startTunnel(session string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.base == nil || a.base.Err() != nil {
 		return
 	}
@@ -261,35 +260,54 @@ func (a *App) startTunnel(session string) {
 	go func() {
 		defer a.tunnels.Done()
 		defer cancel()
-		t, err := a.deps.Tunneler.Open(ctx)
-		if err != nil {
-			a.log.Warn("the maintenance tunnel could not start", "session", session, "err", err)
-			a.submit(func(now time.Time) maint.Input { return maint.Down{Now: now, Session: session} })
-			return
-		}
-		defer t.Stop()
-		up := t.Up()
-		for {
-			select {
-			case <-ctx.Done():
-				return // closed on purpose
-			case <-up:
-				up = nil
-				a.submit(func(now time.Time) maint.Input { return maint.Up{Now: now, Session: session} })
-			case <-t.Done():
-				if ctx.Err() == nil {
-					a.log.Warn("the maintenance tunnel stopped", "session", session)
-					a.submit(func(now time.Time) maint.Input { return maint.Down{Now: now, Session: session} })
-				}
-				return
-			}
-		}
+		a.runTunnel(ctx, session)
 	}()
 }
 
+// runTunnel opens the tunnel and tells the core when it is up and when it stopped
+// by itself, until ctx closes it on purpose.
+func (a *App) runTunnel(ctx context.Context, session string) {
+	down := func() { a.submit(func(now time.Time) maint.Input { return maint.Down{Now: now, Session: session} }) }
+	t, err := a.deps.Tunneler.Open(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			a.log.Warn("the maintenance tunnel could not start", "session", session, "err", err)
+			down()
+		}
+		return
+	}
+	defer t.Stop()
+	up := t.Up()
+	sayUp := func() {
+		up = nil
+		a.submit(func(now time.Time) maint.Input { return maint.Up{Now: now, Session: session} })
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return // closed on purpose
+		case <-up:
+			sayUp()
+		case <-t.Done():
+			if ctx.Err() != nil {
+				return
+			}
+			// Up then down at once: up first, or the session would fail instead of
+			// being opened again.
+			select {
+			case <-up:
+				sayUp()
+			default:
+			}
+			a.log.Warn("the maintenance tunnel stopped", "session", session)
+			down()
+			return
+		}
+	}
+}
+
+// stopTunnel closes the tunnel under way. It runs on the loop's goroutine.
 func (a *App) stopTunnel() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.cancel != nil {
 		a.cancel()
 		a.cancel = nil

@@ -43,7 +43,10 @@ type Runner struct {
 	log *slog.Logger
 }
 
-const stopGrace = 3 * time.Second
+const (
+	stopGrace   = 3 * time.Second
+	outputGrace = time.Second // for ssh's output once it exited
+)
 
 // New checks the options.
 func New(o Options) (*Runner, error) {
@@ -101,14 +104,13 @@ type Tunnel struct {
 // Open starts ssh and returns at once: Up is closed once the bastion granted the
 // port, Done once ssh exited.
 func (r *Runner) Open(ctx context.Context) (*Tunnel, error) {
+	// A pipe of our own rather than StderrPipe: Wait must not close ssh's output
+	// before its last line, which says why it stopped, is read.
+	stderr, sink := io.Pipe()
 	cmd := exec.Command(r.o.Binary, r.Args()...)
 	cmd.SysProcAttr = sysProcAttr()
-	cmd.Stdin = nil
-	cmd.Stdout = io.Discard
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("sshtunnel: %w", err)
-	}
+	cmd.Stdout, cmd.Stderr = io.Discard, sink
+	cmd.WaitDelay = outputGrace
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("sshtunnel: %w", err)
 	}
@@ -117,6 +119,7 @@ func (r *Runner) Open(ctx context.Context) (*Tunnel, error) {
 	go func() { t.read(stderr, r.log); close(logs) }()
 	go func() {
 		err := cmd.Wait()
+		sink.Close()
 		<-logs
 		r.log.Info("ssh stopped", "err", err)
 		close(t.done)
@@ -132,8 +135,10 @@ func (r *Runner) Open(ctx context.Context) (*Tunnel, error) {
 }
 
 // read follows what ssh says (-v): the line that grants the port means the tunnel is
-// up. Its warnings and errors go to the logs; its debug chatter does not.
+// up. Its warnings and errors go to the logs; its debug chatter does not. What the
+// scanner cannot take (a line too long) is drained, so that ssh never blocks on it.
 func (t *Tunnel) read(r io.Reader, log *slog.Logger) {
+	defer io.Copy(io.Discard, r)
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())

@@ -137,11 +137,6 @@ const (
 	maxPayload = 16 * 1024
 )
 
-// running is a session whose stream the application drives.
-type running struct {
-	cancel context.CancelFunc
-}
-
 // App is the application.
 type App struct {
 	cfg  Config
@@ -153,10 +148,11 @@ type App struct {
 	out  *outbox.Outbox
 	seen *outbox.RecentIDs
 
-	mu       sync.Mutex
-	base     context.Context     // the streams' parent, set by Run
-	sessions map[string]*running // owned by the loop's goroutine, read at the end
-	streams  sync.WaitGroup      // the streams' goroutines
+	// base is the parent of the work done away from the loop (streams, probes,
+	// photos), set by Run before the loop starts; work is the goroutines doing it.
+	base     context.Context
+	sessions map[string]context.CancelFunc // the streams under way; owned by the loop's goroutine
+	work     sync.WaitGroup
 
 	last contract.VideoStatusData // the last status published, owned by the loop
 	sent bool
@@ -179,7 +175,7 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	a := &App{cfg: cfg, deps: deps, log: log, seen: outbox.NewRecentIDs(cfg.DedupeSize), sessions: map[string]*running{}}
+	a := &App{cfg: cfg, deps: deps, log: log, seen: outbox.NewRecentIDs(cfg.DedupeSize), sessions: map[string]context.CancelFunc{}}
 	a.life, a.stop = context.WithCancel(context.Background())
 	var err error
 	if a.core, err = video.New(cfg.Video); err != nil {
@@ -225,9 +221,7 @@ func (a *App) Run(ctx context.Context) error {
 	defer a.stop()
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	a.mu.Lock()
 	a.base = runCtx
-	a.mu.Unlock()
 	var wg sync.WaitGroup
 	start := func(f func(context.Context)) {
 		wg.Add(1)
@@ -240,7 +234,7 @@ func (a *App) Run(ctx context.Context) error {
 	<-runCtx.Done()
 	cancel()
 	wg.Wait()
-	a.streams.Wait() // every stream stopped
+	a.work.Wait() // every stream stopped
 	a.out.Flush(3 * time.Second)
 	return nil
 }
@@ -266,78 +260,6 @@ func (a *App) repeatStatus(ctx context.Context) {
 	})
 }
 
-// --- inbound -----------------------------------------------------------------------
-
-// HandleMessage takes a message from the broker. It returns quickly. Payloads are
-// never logged: a request holds the relay's token.
-func (a *App) HandleMessage(m Message) {
-	if len(m.Payload) > maxPayload {
-		return
-	}
-	if m.Topic == contract.AlarmEventTopic(a.cfg.Site) {
-		a.alarmEvent(m.Payload)
-		return
-	}
-	if m.Topic != contract.VideoCmdTopic(a.cfg.Site) {
-		return
-	}
-	env, err := contract.ParseEnvelope(m.Payload)
-	if err != nil || env.Site != a.cfg.Site {
-		a.log.Warn("ignoring an invalid video order", "err", err)
-		return
-	}
-	if !a.seen.FirstTime(env.ID) {
-		return
-	}
-	switch env.Type {
-	case contract.TypeVideoRequest:
-		d, err := contract.DecodeData[contract.VideoRequestData](env)
-		if err == nil {
-			err = d.Validate()
-		}
-		if err != nil {
-			a.log.Warn("ignoring an invalid video request", "id", env.ID, "err", err)
-			return
-		}
-		a.log.Info("video requested", "request", d) // d masks its token
-		a.submit(func(now time.Time) video.Input { return videowire.Request(d, now) })
-	case contract.TypeVideoStop:
-		d, err := contract.DecodeData[contract.VideoStopData](env)
-		if err == nil {
-			err = d.Validate()
-		}
-		if err != nil {
-			a.log.Warn("ignoring an invalid video stop", "id", env.ID, "err", err)
-			return
-		}
-		a.submit(func(now time.Time) video.Input { return videowire.Stop(d, now) })
-	default:
-		a.log.Warn("ignoring an unknown video order", "type", env.Type)
-	}
-}
-
-// alarmEvent takes the alarm's events: only alarm.triggered matters, for photos.
-func (a *App) alarmEvent(payload []byte) {
-	env, err := contract.ParseEnvelope(payload)
-	if err != nil || env.Site != a.cfg.Site || env.Type != contract.TypeAlarmTriggered || !a.seen.FirstTime(env.ID) {
-		return
-	}
-	d, err := contract.DecodeData[contract.TriggeredData](env)
-	if err != nil || d.Incident == "" {
-		a.log.Warn("ignoring an invalid alarm.triggered", "err", err)
-		return
-	}
-	a.submit(func(now time.Time) video.Input { return videowire.Alarm(d, now) })
-}
-
-func (a *App) submit(build func(time.Time) video.Input) {
-	if err := a.loop.Submit(a.life, build); err != nil && a.life.Err() == nil {
-		a.log.Error("handing an input to the video service failed", "err", err)
-	}
-}
-
-// --- outbound ----------------------------------------------------------------------
-
 // dispatch runs on the loop's goroutine: it starts and stops streams in their own
 // goroutines, and queues the messages, without ever waiting for a camera.
 func (a *App) dispatch(_ context.Context, now time.Time, actions []video.Action) error {
@@ -346,8 +268,8 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []video.Action)
 		case video.Start:
 			a.startStream(v)
 		case video.Halt:
-			if r, ok := a.sessions[v.Session]; ok {
-				r.cancel()
+			if stop, ok := a.sessions[v.Session]; ok {
+				stop()
 				delete(a.sessions, v.Session)
 			}
 		case video.Report:
@@ -363,156 +285,6 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []video.Action)
 	}
 	a.publishStatus(now) // sessions started or ended
 	return nil
-}
-
-func (a *App) startStream(s video.Start) {
-	a.mu.Lock()
-	base := a.base
-	a.mu.Unlock()
-	if base == nil || base.Err() != nil {
-		return // stopping: the session will not start, and nothing is pushed
-	}
-	ctx, cancel := context.WithCancel(base)
-	a.sessions[s.Session] = &running{cancel: cancel}
-	a.streams.Add(1)
-	go func() {
-		defer a.streams.Done()
-		defer cancel()
-		a.stream(ctx, s)
-	}()
-}
-
-// stream starts one session's stream, reads its bytes until the core halts it, then
-// stops it.
-func (a *App) stream(ctx context.Context, s video.Start) {
-	startCtx, cancel := context.WithTimeout(ctx, a.cfg.StartWait)
-	st, err := a.deps.Streamer.Start(startCtx, s.Camera, s.Target)
-	cancel()
-	if err != nil {
-		if ctx.Err() != nil {
-			return // halted meanwhile
-		}
-		why := video.RelayUnreachable
-		if errors.Is(err, ErrCameraUnreachable) {
-			why = video.CameraUnreachable
-		}
-		a.log.Warn("a video stream could not start", "session", s.Session, "camera", s.Camera, "err", err)
-		a.submit(func(now time.Time) video.Input { return video.StreamFailed{Now: now, Session: s.Session, Reason: why} })
-		return
-	}
-	defer st.Stop()
-	for {
-		fired, stop := a.deps.Clock.Timer(a.cfg.ProgressEvery)
-		select {
-		case <-ctx.Done():
-			stop()
-			return
-		case <-fired:
-		}
-		n, err := st.Sent(ctx)
-		if ctx.Err() != nil {
-			return
-		}
-		if err != nil {
-			a.log.Warn("a video stream broke", "session", s.Session, "err", err)
-			a.submit(func(now time.Time) video.Input {
-				return video.StreamFailed{Now: now, Session: s.Session, Reason: video.RelayUnreachable}
-			})
-			return
-		}
-		a.submit(func(now time.Time) video.Input { return video.Progress{Now: now, Session: s.Session, Bytes: n} })
-	}
-}
-
-// checkCameras probes every camera, one after the other, away from the loop.
-func (a *App) checkCameras() {
-	a.mu.Lock()
-	base := a.base
-	a.mu.Unlock()
-	if base == nil || base.Err() != nil {
-		return
-	}
-	a.streams.Add(1)
-	go func() {
-		defer a.streams.Done()
-		for _, c := range a.cfg.Video.Cameras {
-			ctx, cancel := context.WithTimeout(base, a.cfg.ProbeWait)
-			err := a.deps.Streamer.Probe(ctx, c.ID)
-			cancel()
-			if base.Err() != nil {
-				return
-			}
-			if err != nil {
-				a.log.Warn("a camera does not answer", "camera", c.ID, "err", err)
-			}
-			a.submit(func(now time.Time) video.Input { return video.Probe{Now: now, Camera: c.ID, Reachable: err == nil} })
-		}
-	}()
-}
-
-// takePhotos takes an alarm's photos away from the loop: Count rounds Every apart,
-// one picture of each camera per round. A camera that gives no picture is left out of
-// the next rounds. Each photo is kept, then announced.
-func (a *App) takePhotos(tp video.TakePhotos) {
-	a.mu.Lock()
-	base := a.base
-	a.mu.Unlock()
-	if base == nil || base.Err() != nil {
-		return
-	}
-	a.streams.Add(1)
-	go func() {
-		defer a.streams.Done()
-		ctx, cancel := context.WithTimeout(base, a.cfg.PhotoWait)
-		sh, err := a.deps.Camera.Open(ctx)
-		cancel()
-		if err != nil {
-			a.log.Warn("the photos of the alarm could not be taken", "incident", tp.Incident, "err", err)
-			return
-		}
-		defer sh.Close()
-		var taken int
-		var bytes int64
-		failed := map[string]bool{}
-		for round := range tp.Count {
-			if round > 0 {
-				fired, stop := a.deps.Clock.Timer(tp.Every)
-				select {
-				case <-base.Done():
-					stop()
-					return
-				case <-fired:
-				}
-			}
-			for _, cam := range tp.Cameras {
-				if failed[cam] || base.Err() != nil {
-					continue
-				}
-				ctx, cancel := context.WithTimeout(base, a.cfg.PhotoWait)
-				jpeg, err := sh.Frame(ctx, cam, tp.Width)
-				cancel()
-				if err != nil {
-					a.log.Warn("a camera gave no photo", "incident", tp.Incident, "camera", cam, "err", err)
-					failed[cam] = true
-					continue
-				}
-				id := a.deps.NewID()
-				if err := a.deps.Photos.Save(id, jpeg); err != nil {
-					a.log.Error("a photo could not be kept", "incident", tp.Incident, "camera", cam, "err", err)
-					continue
-				}
-				taken++
-				bytes += int64(len(jpeg))
-				a.enqueue(contract.PhotoTakenTopic(a.cfg.Site), contract.TypePhotoTaken, contract.PhotoTakenData{
-					Photo: id, Incident: tp.Incident, Camera: cam, Bytes: int64(len(jpeg)), Width: tp.Width,
-				}, false, a.deps.Clock.Now())
-			}
-		}
-		a.log.Info("photos of the alarm taken", "incident", tp.Incident, "photos", taken, "bytes", bytes)
-		if bytes > 0 {
-			a.submit(func(now time.Time) video.Input { return video.PhotosTaken{Now: now, Bytes: bytes} })
-		}
-	}()
 }
 
 // publishStatus publishes video.status, retained, when it changed (or when sent is

@@ -245,7 +245,7 @@ func (v *Service) Handle(in Input) []Action {
 			v.s.Used += in.Bytes // on mobile data, the client pays for them too
 		}
 	case Probe:
-		if slices.ContainsFunc(v.cfg.Cameras, func(c Camera) bool { return c.ID == in.Camera }) {
+		if v.hasCamera(in.Camera) {
 			v.s.Reachable[in.Camera] = in.Reachable
 		}
 	case Tick:
@@ -264,7 +264,7 @@ func (v *Service) request(r Request) []Action {
 	switch {
 	case r.Now.After(r.Exp):
 		return refuse(Expired)
-	case !slices.ContainsFunc(v.cfg.Cameras, func(c Camera) bool { return c.ID == r.Camera }):
+	case !v.hasCamera(r.Camera):
 		return refuse(UnknownCamera)
 	case len(v.sessions) >= v.cfg.MaxSessions:
 		return refuse(Busy)
@@ -276,6 +276,10 @@ func (v *Service) request(r Request) []Action {
 		Start{Session: r.Session, Camera: r.Camera, Target: r.Target},
 		Report{Session: r.Session, Camera: r.Camera, Status: Starting},
 	}
+}
+
+func (v *Service) hasCamera(id string) bool {
+	return slices.ContainsFunc(v.cfg.Cameras, func(c Camera) bool { return c.ID == id })
 }
 
 // shortest returns the shorter of two limits, where 0 means none.

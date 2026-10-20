@@ -105,23 +105,28 @@ func TestATunnelOpensAndCloses(t *testing.T) {
 
 func TestABastionThatRefusesOrDrops(t *testing.T) {
 	t.Setenv(fakeEnv, "1")
+	// ssh's last line before it exits is the cause: it is logged by the time Done
+	// is closed, every time.
+	for range 10 {
+		logs := &syncBuffer{}
+		r, _ := New(options("deadhost", logs))
+		tun, err := r.Open(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		wait(t, tun.Done(), "the exit")
+		select {
+		case <-tun.Up():
+			t.Fatal("never up")
+		default:
+		}
+		if !strings.Contains(logs.String(), "Connection refused") {
+			t.Fatalf("the cause is logged:\n%s", logs.String())
+		}
+	}
 	logs := &syncBuffer{}
-	r, _ := New(options("deadhost", logs))
-	tun, err := r.Open(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	wait(t, tun.Done(), "the exit")
-	select {
-	case <-tun.Up():
-		t.Fatal("never up")
-	default:
-	}
-	if !strings.Contains(logs.String(), "Connection refused") {
-		t.Fatalf("the cause is logged:\n%s", logs.String())
-	}
 	r2, _ := New(options("flaky.example", logs))
-	tun, _ = r2.Open(context.Background())
+	tun, _ := r2.Open(context.Background())
 	wait(t, tun.Up(), "up")
 	wait(t, tun.Done(), "the drop")
 	// A cancelled context closes it too.

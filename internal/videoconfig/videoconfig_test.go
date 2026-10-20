@@ -97,7 +97,8 @@ func TestMistakesAreRefused(t *testing.T) {
 		"apply only":             cfg(`, "quota_mb": 100`),
 		"apply only to":          cfg(`, "uplink": "fixed", "max_session": "5m"`),
 		`uplink "4g"`:            cfg(`, "uplink": "4g"`),
-		"cannot be negative":     cfg(`, "uplink": "mobile", "quota_mb": -1`),
+		"quota_mb from 0":        cfg(`, "uplink": "mobile", "quota_mb": -1`),
+		"from 0 (no allowance)":  cfg(`, "uplink": "mobile", "quota_mb": 8388609`),
 		"max_session":            cfg(`, "uplink": "mobile", "max_session": "long"`),
 		"stall_after":            cfg(`, "stall_after": "soon"`),
 		"MaxSessions":            cfg(`, "max_sessions": 0`),
@@ -140,6 +141,11 @@ func TestTheClientsVideoSettingsFromTheCloud(t *testing.T) {
 	siteconfig.Write(state, contract.ConfigSetData{Version: 10})
 	if r, _ := Load(write(t, body("mobile"))); r.App.Video.Quota != video.MobileQuota || r.SiteVersion != 10 {
 		t.Fatalf("without video settings, the file's: %+v", r.App.Video)
+	}
+	huge := maxQuotaMB + 1
+	siteconfig.Write(state, contract.ConfigSetData{Version: 11, Video: &contract.ConfigVideo{QuotaMB: &huge}})
+	if r, err := Load(write(t, body("mobile"))); err != nil || r.SiteErr == nil || r.App.Video.Quota != video.MobileQuota {
+		t.Fatalf("a huge allowance from the cloud is refused, the file's kept: %v %v %d", err, r.SiteErr, r.App.Video.Quota)
 	}
 	os.WriteFile(filepath.Join(state, siteconfig.FileName), []byte("{"), 0o600)
 	if r, err := Load(write(t, body("mobile"))); err != nil || r.SiteErr == nil {
