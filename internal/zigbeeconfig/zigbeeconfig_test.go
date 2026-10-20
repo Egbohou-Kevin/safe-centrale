@@ -141,6 +141,7 @@ func TestProfilesAreCheckedAgainstTheContract(t *testing.T) {
 		"empty command":       `{"name": "p", "models": ["M"], "capabilities": {"link": {"from": "linkquality"}}, "commands": {"siren.on": {}}}`,
 		"bad offline":         `{"name": "p", "models": ["M"], "capabilities": {"link": {"from": "linkquality"}}, "offline_after": "later"}`,
 		"no model":            `{"name": "p", "capabilities": {"link": {"from": "linkquality"}}}`,
+		"confirm a raw value": `{"name": "p", "models": ["M"], "capabilities": {"siren": {"from": "alarm", "map": {"ON": "on", "OFF": "off"}}}, "commands": {"siren.on": {"payload": {"a": 1}, "confirm": {"capability": "siren", "value": "ON"}}}}`,
 		"confirm unknown cap": `{"name": "p", "models": ["M"], "capabilities": {"link": {"from": "linkquality"}}, "commands": {"siren.off": {"payload": {"a": 1}, "confirm": {"capability": "siren", "value": "off"}}}}`,
 	} {
 		if _, err := ParseProfile([]byte(body)); err == nil {

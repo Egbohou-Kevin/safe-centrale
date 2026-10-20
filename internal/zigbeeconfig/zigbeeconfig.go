@@ -123,45 +123,47 @@ func parse(data []byte, dir string) (Result, error) {
 		return Result{}, err
 	}
 	r.LogLevel = level
+	if r.App, err = f.app(dir); err != nil {
+		return Result{}, err
+	}
+	return r, nil
+}
 
+// app builds the adapter's settings: the defaults, with what the file overrides.
+func (f file) app(dir string) (zigbeeapp.Config, error) {
 	profilesDir := f.ProfilesDir
 	if !filepath.IsAbs(profilesDir) {
 		profilesDir = filepath.Join(dir, profilesDir)
 	}
 	profiles, err := LoadProfiles(profilesDir)
 	if err != nil {
-		return Result{}, err
+		return zigbeeapp.Config{}, err
 	}
 	z := zigbee.DefaultConfig(profiles)
-	for _, d := range []struct {
-		name, value string
-		dst         *time.Duration
-	}{
-		{"confirm_wait", f.ConfirmWait, &z.ConfirmWait},
-		{"offline_after", f.OfflineAfter, &z.OfflineAfter},
-		{"pair_max", f.PairMax, &z.PairMax},
-	} {
-		if err := duration(d.name, d.value, d.dst); err != nil {
-			return Result{}, err
-		}
-	}
 	if f.Attempts != nil {
 		z.Attempts = *f.Attempts
 	}
 	if f.Step != nil {
 		z.Step = *f.Step
 	}
-	r.App = zigbeeapp.DefaultConfig(f.Site, z)
+	app := zigbeeapp.DefaultConfig(f.Site, z)
 	if f.BaseTopic != "" {
-		r.App.Base = f.BaseTopic
+		app.Base = f.BaseTopic
 	}
-	if err := duration("status_every", f.StatusEvery, &r.App.StatusEvery); err != nil {
-		return Result{}, err
+	for _, d := range []struct {
+		name, value string
+		dst         *time.Duration
+	}{
+		{"confirm_wait", f.ConfirmWait, &app.Zigbee.ConfirmWait},
+		{"offline_after", f.OfflineAfter, &app.Zigbee.OfflineAfter},
+		{"pair_max", f.PairMax, &app.Zigbee.PairMax},
+		{"status_every", f.StatusEvery, &app.StatusEvery},
+	} {
+		if err := duration(d.name, d.value, d.dst); err != nil {
+			return zigbeeapp.Config{}, err
+		}
 	}
-	if err := r.App.Validate(); err != nil {
-		return Result{}, err
-	}
-	return r, nil
+	return app, app.Validate()
 }
 
 // LoadProfiles reads every *.json file of dir as a profile.

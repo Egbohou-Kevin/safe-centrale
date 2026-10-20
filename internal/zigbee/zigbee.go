@@ -259,11 +259,16 @@ func (n *Network) Handle(in Input) []Action {
 	return append(out, n.due(now)...)
 }
 
-func (n *Network) offlineAfter(d Device) time.Duration {
-	if p, ok := n.byName[d.Profile]; ok && p.OfflineAfter > 0 {
-		return p.OfflineAfter
+// due runs what the clock has made due: the end of a pairing window, commands not
+// confirmed in time, devices silent for too long.
+func (n *Network) due(now time.Time) []Action {
+	var out []Action
+	if !n.s.PairUntil.IsZero() && !now.Before(n.s.PairUntil) {
+		n.s.PairUntil, n.s.PairRef = time.Time{}, ""
+		out = append(out, PermitJoin{})
 	}
-	return n.cfg.OfflineAfter
+	out = append(out, n.retryPending(now)...)
+	return append(out, n.markSilent(now)...)
 }
 
 // resolve finds a device by its name in Zigbee2MQTT: its id once renamed, its IEEE
@@ -272,12 +277,7 @@ func (n *Network) resolve(name string) (Device, bool) {
 	if d, ok := n.s.Devices[name]; ok {
 		return d, true
 	}
-	for _, d := range n.s.Devices {
-		if d.IEEE == name {
-			return d, true
-		}
-	}
-	return Device{}, false
+	return n.byIEEE(name)
 }
 
 func (n *Network) byIEEE(ieee string) (Device, bool) {
@@ -287,236 +287,4 @@ func (n *Network) byIEEE(ieee string) (Device, bool) {
 		}
 	}
 	return Device{}, false
-}
-
-// --- reports -----------------------------------------------------------------
-
-// report reads a device's message. Only changes are announced: Zigbee2MQTT repeats
-// the whole state in every message. The first value of a state is recorded without
-// an event (nothing changed that anyone saw), except for numbers, which the
-// supervision needs to know. Actions are announced every time.
-func (n *Network) report(r Report) []Action {
-	d, ok := n.resolve(r.Name)
-	if !ok {
-		return []Action{Ignored{What: "a message from a device that is not registered"}}
-	}
-	p, ok := n.byName[d.Profile]
-	if !ok {
-		return []Action{Ignored{What: "a message from a device whose profile is gone: " + d.Profile}}
-	}
-	var out []Action
-	if !r.Retained {
-		n.seen[d.ID] = r.Now
-		if n.s.Offline[d.ID] {
-			delete(n.s.Offline, d.ID)
-			out = append(out, Presence{DeviceID: d.ID, Online: true, Since: r.Now})
-		}
-	}
-	for _, c := range p.capabilities() {
-		rule := p.Capabilities[c]
-		raw, present := r.Fields[rule.From]
-		if !present {
-			continue
-		}
-		v, ok := rule.read(raw)
-		if !ok {
-			continue
-		}
-		if rule.Momentary {
-			if r.Retained {
-				continue
-			}
-			ch := Changed{DeviceID: d.ID, Capability: c, Value: v, Since: r.Now, Notify: true}
-			if rule.CodeFrom != "" {
-				ch.Code = text(r.Fields[rule.CodeFrom])
-			}
-			out = append(out, ch)
-			continue
-		}
-		prev, known := n.s.States[d.ID][c]
-		if known && !rule.moved(prev.Value, v, n.cfg.Step) {
-			continue
-		}
-		if n.s.States[d.ID] == nil {
-			n.s.States[d.ID] = map[string]State{}
-		}
-		n.s.States[d.ID][c] = State{Value: v, Since: r.Now}
-		out = append(out, Changed{
-			DeviceID: d.ID, Capability: c, Value: v, Numeric: rule.numeric(), Since: r.Now,
-			State: true, Notify: !r.Retained && (known || rule.numeric()),
-		})
-	}
-	if !r.Retained {
-		out = append(out, n.confirm(d, p, r)...)
-	}
-	return out
-}
-
-// confirm completes the command waiting on the device if the message reports the
-// state it waits for, changed or not.
-func (n *Network) confirm(d Device, p Profile, r Report) []Action {
-	pend, ok := n.s.Pending[d.ID]
-	if !ok {
-		return nil
-	}
-	e := p.Commands[pend.Name].Confirm
-	if e == nil {
-		return nil
-	}
-	if _, present := r.Fields[p.Capabilities[e.Capability].From]; !present || n.s.States[d.ID][e.Capability].Value != e.Value {
-		return nil
-	}
-	delete(n.s.Pending, d.ID)
-	return []Action{Ack{Ref: pend.Ref, DeviceID: d.ID, Status: AckDone}}
-}
-
-func (n *Network) left(l Left) []Action {
-	d, ok := n.byIEEE(l.IEEE)
-	if !ok || n.s.Offline[d.ID] {
-		return nil
-	}
-	n.s.Offline[d.ID] = true
-	return []Action{Presence{DeviceID: d.ID, Since: l.Now}}
-}
-
-// --- commands ----------------------------------------------------------------
-
-func (n *Network) command(c Command) []Action {
-	d, ok := n.s.Devices[c.DeviceID]
-	if !ok {
-		return []Action{Ack{Ref: c.Ref, DeviceID: c.DeviceID, Status: AckFailed, Reason: ReasonUnknownDevice}}
-	}
-	if !c.Exp.IsZero() && !c.Now.Before(c.Exp) {
-		return []Action{Ack{Ref: c.Ref, DeviceID: d.ID, Status: AckExpired}}
-	}
-	spec, ok := n.byName[d.Profile].Commands[c.Name]
-	if !ok {
-		return []Action{Ack{Ref: c.Ref, DeviceID: d.ID, Status: AckFailed, Reason: ReasonUnsupported}}
-	}
-	var out []Action
-	if old, ok := n.s.Pending[d.ID]; ok {
-		delete(n.s.Pending, d.ID)
-		out = append(out, Ack{Ref: old.Ref, DeviceID: d.ID, Status: AckFailed, Reason: ReasonSuperseded})
-	}
-	out = append(out,
-		Send{IEEE: d.IEEE, Payload: spec.payload(c.DurationS)},
-		Ack{Ref: c.Ref, DeviceID: d.ID, Status: AckAccepted})
-	if spec.Confirm == nil {
-		return append(out, Ack{Ref: c.Ref, DeviceID: d.ID, Status: AckDone})
-	}
-	n.s.Pending[d.ID] = Pending{
-		Ref: c.Ref, Name: c.Name, DurationS: c.DurationS, Attempt: 1,
-		Deadline: c.Now.Add(n.cfg.ConfirmWait), Exp: c.Exp,
-	}
-	return out
-}
-
-// --- pairing and removal -------------------------------------------------------
-
-func (n *Network) pair(p Pair) []Action {
-	if p.For <= 0 {
-		n.s.PairUntil, n.s.PairRef = time.Time{}, ""
-		return []Action{PermitJoin{}}
-	}
-	d := min(p.For, n.cfg.PairMax)
-	n.s.PairUntil, n.s.PairRef = p.Now.Add(d), p.Ref
-	return []Action{PermitJoin{Seconds: int(d / time.Second)}}
-}
-
-// interviewed decides about a device that joined. Only a model with a profile, during
-// a pairing window, is kept: a device we cannot read is a device we cannot watch.
-func (n *Network) interviewed(i Interviewed) []Action {
-	if _, known := n.byIEEE(i.IEEE); known {
-		return []Action{Ignored{What: "a registered device was questioned again"}}
-	}
-	reject := func(reason, ref string) []Action {
-		return []Action{Expel{IEEE: i.IEEE}, Rejected{Ref: ref, Model: i.Model, Reason: reason}}
-	}
-	switch p, ok := n.byModel[i.Model]; {
-	case n.s.PairUntil.IsZero():
-		return reject(RejectNotPairing, "")
-	case !i.OK:
-		return reject(RejectInterviewFailed, n.s.PairRef)
-	case !ok:
-		return reject(RejectUnknownModel, n.s.PairRef)
-	default:
-		id := n.freshID()
-		if id == "" {
-			return append(reject(RejectInterviewFailed, n.s.PairRef), Ignored{What: "no free device id"})
-		}
-		d := Device{ID: id, IEEE: i.IEEE, Model: i.Model, Profile: p.Name, Capabilities: p.capabilities()}
-		n.s.Devices[id] = d
-		n.seen[id] = i.Now
-		return []Action{Rename{IEEE: i.IEEE, To: id}, Added{Ref: n.s.PairRef, Device: d}, RegistryChanged{Devices: n.Devices()}}
-	}
-}
-
-func (n *Network) freshID() string {
-	for range 100 {
-		id := n.newID()
-		if id != "" && !n.s.Retired[id] {
-			if _, taken := n.s.Devices[id]; !taken {
-				return id
-			}
-		}
-	}
-	return ""
-}
-
-func (n *Network) remove(r Remove) []Action {
-	d, ok := n.s.Devices[r.DeviceID]
-	if !ok {
-		return []Action{Ignored{What: "removal of a device that is not registered"}}
-	}
-	out := []Action{Expel{IEEE: d.IEEE}}
-	if pend, ok := n.s.Pending[d.ID]; ok {
-		out = append(out, Ack{Ref: pend.Ref, DeviceID: d.ID, Status: AckFailed, Reason: ReasonRemoved})
-	}
-	delete(n.s.Devices, d.ID)
-	delete(n.s.States, d.ID)
-	delete(n.s.Offline, d.ID)
-	delete(n.s.Pending, d.ID)
-	delete(n.seen, d.ID)
-	n.s.Retired[d.ID] = true
-	return append(out, Removed{Ref: r.Ref, Device: d}, RegistryChanged{Devices: n.Devices()})
-}
-
-// --- timers --------------------------------------------------------------------
-
-// due runs what the clock has made due: the end of a pairing window, commands not
-// confirmed in time, devices silent for too long.
-func (n *Network) due(now time.Time) []Action {
-	var out []Action
-	if !n.s.PairUntil.IsZero() && !now.Before(n.s.PairUntil) {
-		n.s.PairUntil, n.s.PairRef = time.Time{}, ""
-		out = append(out, PermitJoin{})
-	}
-	for _, id := range slices.Sorted(maps.Keys(n.s.Pending)) {
-		p := n.s.Pending[id]
-		if now.Before(p.Deadline) {
-			continue
-		}
-		switch {
-		case !p.Exp.IsZero() && !now.Before(p.Exp):
-			delete(n.s.Pending, id)
-			out = append(out, Ack{Ref: p.Ref, DeviceID: id, Status: AckExpired})
-		case p.Attempt < n.cfg.Attempts:
-			d := n.s.Devices[id]
-			p.Attempt++
-			p.Deadline = now.Add(n.cfg.ConfirmWait)
-			n.s.Pending[id] = p
-			out = append(out, Send{IEEE: d.IEEE, Payload: n.byName[d.Profile].Commands[p.Name].payload(p.DurationS)})
-		default:
-			delete(n.s.Pending, id)
-			out = append(out, Ack{Ref: p.Ref, DeviceID: id, Status: AckFailed, Reason: ReasonNoConfirmation})
-		}
-	}
-	for _, id := range slices.Sorted(maps.Keys(n.s.Devices)) {
-		if n.s.Offline[id] || now.Before(n.seen[id].Add(n.offlineAfter(n.s.Devices[id]))) {
-			continue
-		}
-		n.s.Offline[id] = true
-		out = append(out, Presence{DeviceID: id, Since: now})
-	}
-	return out
 }

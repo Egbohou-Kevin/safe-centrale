@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -187,59 +188,80 @@ type PairNews struct {
 	Rejected *contract.RegistryDeviceRejectedData
 }
 
-// Pair opens the network for d and reports each device added or refused until the
-// window closes. If ctx ends first (Ctrl-C), it closes the network at once. It
-// returns ErrNoAnswer if the adapter does not confirm the opening.
+// Pair opens the network for d (whole seconds, at least one) and reports each device
+// added or refused until the window closes. If ctx ends first (Ctrl-C), it closes the
+// network at once. It returns ErrNoAnswer if the adapter does not confirm the opening.
 func (s *Session) Pair(ctx context.Context, d time.Duration, report func(PairNews)) error {
-	if d <= 0 {
-		return errors.New("install: the pairing duration must be positive")
+	seconds := int(d / time.Second)
+	if seconds < 1 {
+		// Zero seconds is the order that closes the network.
+		return errors.New("install: the pairing duration must be at least one second")
 	}
-	ref, err := s.send(ctx, contract.TypeRegistryPair, contract.RegistryPairData{DurationS: int(d / time.Second)})
+	ref, err := s.send(ctx, contract.TypeRegistryPair, contract.RegistryPairData{DurationS: seconds})
 	if err != nil {
 		return err
 	}
-	confirmed := false
 	confirmCtx, stopConfirm := context.WithTimeout(ctx, s.timing.Confirm)
 	defer stopConfirm()
-	windowCtx, stopWindow := context.WithTimeout(ctx, d+s.timing.Grace)
+	windowCtx, stopWindow := context.WithTimeout(ctx, time.Duration(seconds)*time.Second+s.timing.Grace)
 	defer stopWindow()
+	w := pairWindow{ref: ref, report: report}
 	for {
-		wait := windowCtx
-		if !confirmed {
-			wait = confirmCtx
+		wait := confirmCtx
+		if w.confirmed {
+			wait = windowCtx
 		}
 		r, err := s.next(wait)
 		switch {
 		case err != nil && ctx.Err() != nil:
 			return s.closeNetwork() // interrupted by the installer
-		case err != nil && !confirmed:
+		case err != nil && !w.confirmed:
 			return ErrNoAnswer
 		case err != nil:
 			return nil // the window is over
 		}
-		switch r.env.Type {
-		case contract.TypeZigbeeStatus:
-			if r.retain {
-				continue // a status from before the order says nothing about it
-			}
-			if s.status.Pairing {
-				confirmed = true
-			} else if confirmed {
-				return nil // the adapter closed the network: the window is over
-			}
-		case contract.TypeRegistryDeviceAdded:
-			if a, err := contract.DecodeData[contract.RegistryDeviceAddedData](r.env); err == nil && a.Ref == ref {
-				confirmed = true
-				report(PairNews{Added: &a})
-			}
-		case contract.TypeRegistryDeviceRejected:
-			// A refusal outside any window has no ref: report it too, it tells the
-			// installer a device tried to join.
-			if j, err := contract.DecodeData[contract.RegistryDeviceRejectedData](r.env); err == nil && (j.Ref == ref || j.Ref == "") {
-				report(PairNews{Rejected: &j})
-			}
+		if w.read(r) {
+			return nil // the adapter closed the network: the window is over
 		}
 	}
+}
+
+// pairWindow follows what the adapter says about one pairing order.
+type pairWindow struct {
+	ref       string
+	report    func(PairNews)
+	confirmed bool // the adapter opened the network for this order
+}
+
+// read takes one message and reports whether the adapter closed the network.
+func (w *pairWindow) read(r received) (closed bool) {
+	switch r.env.Type {
+	case contract.TypeZigbeeStatus:
+		if r.retain {
+			return false // a status from before the order says nothing about it
+		}
+		st, err := contract.DecodeData[contract.ZigbeeStatusData](r.env)
+		if err != nil {
+			return false
+		}
+		if st.Pairing {
+			w.confirmed = true
+			return false
+		}
+		return w.confirmed
+	case contract.TypeRegistryDeviceAdded:
+		if a, err := contract.DecodeData[contract.RegistryDeviceAddedData](r.env); err == nil && a.Ref == w.ref {
+			w.confirmed = true
+			w.report(PairNews{Added: &a})
+		}
+	case contract.TypeRegistryDeviceRejected:
+		// A refusal outside any window has no ref: report it too, it tells the
+		// installer a device tried to join.
+		if j, err := contract.DecodeData[contract.RegistryDeviceRejectedData](r.env); err == nil && (j.Ref == w.ref || j.Ref == "") {
+			w.report(PairNews{Rejected: &j})
+		}
+	}
+	return false
 }
 
 // closeNetwork sends "pair for 0 s", which closes the network, even though the
@@ -263,7 +285,7 @@ func (s *Session) Remove(ctx context.Context, deviceID string) error {
 	if err != nil {
 		return err
 	}
-	if !registered(view.Devices, deviceID) {
+	if !slices.ContainsFunc(view.Devices, func(d contract.RegistryDevice) bool { return d.DeviceID == deviceID }) {
 		return fmt.Errorf("%w: %s", ErrNotPaired, deviceID)
 	}
 	ref, err := s.send(ctx, contract.TypeRegistryRemove, contract.RegistryRemoveData{DeviceID: deviceID})
@@ -289,15 +311,6 @@ func (s *Session) Remove(ctx context.Context, deviceID string) error {
 	}
 }
 
-func registered(devices []contract.RegistryDevice, id string) bool {
-	for _, d := range devices {
-		if d.DeviceID == id {
-			return true
-		}
-	}
-	return false
-}
-
 // Current returns what the session knows of the Zigbee side now, without waiting;
 // false before the registry arrived.
 func (s *Session) Current() (View, bool) {
@@ -320,11 +333,7 @@ func (s *Session) Follow(ctx context.Context, view func(View), event func(at tim
 		if v, ok := s.Current(); ok {
 			view(v)
 		}
-		if r.env.Type != contract.TypeDeviceEvent {
-			continue
-		}
-		if e, err := contract.DecodeData[contract.DeviceEventData](r.env); err == nil {
-			e.Code = ""
+		if e, ok := deviceEvent(r); ok {
 			event(r.env.TS.Time, e)
 		}
 	}
@@ -339,14 +348,22 @@ func (s *Session) Watch(ctx context.Context, deviceID string, report func(at tim
 		if err != nil {
 			return nil
 		}
-		if r.env.Type != contract.TypeDeviceEvent {
-			continue
+		if e, ok := deviceEvent(r); ok && (deviceID == "" || e.DeviceID == deviceID) {
+			report(r.env.TS.Time, e)
 		}
-		e, err := contract.DecodeData[contract.DeviceEventData](r.env)
-		if err != nil || (deviceID != "" && e.DeviceID != deviceID) {
-			continue
-		}
-		e.Code = ""
-		report(r.env.TS.Time, e)
 	}
+}
+
+// deviceEvent decodes a device event, without the keypad's code: the tools show
+// events to people, and a code must never be shown or logged.
+func deviceEvent(r received) (contract.DeviceEventData, bool) {
+	if r.env.Type != contract.TypeDeviceEvent {
+		return contract.DeviceEventData{}, false
+	}
+	e, err := contract.DecodeData[contract.DeviceEventData](r.env)
+	if err != nil {
+		return contract.DeviceEventData{}, false
+	}
+	e.Code = ""
+	return e, true
 }

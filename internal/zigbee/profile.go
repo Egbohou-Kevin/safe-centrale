@@ -69,6 +69,16 @@ func (r Rule) read(raw any) (string, bool) {
 	return strconv.Itoa(min(max(n, 0), 100)), true
 }
 
+// produces tells whether read can return v. A command waiting for a value its rule
+// never gives would fail every time, after sending again and again.
+func (r Rule) produces(v string) bool {
+	if !r.numeric() {
+		return v != "" && slices.Contains(slices.Collect(maps.Values(r.Map)), v)
+	}
+	n, err := strconv.Atoi(v)
+	return err == nil && n >= 0 && n <= 100 && strconv.Itoa(n) == v
+}
+
 // moved tells whether a new value is worth announcing.
 func (r Rule) moved(prev, next string, step int) bool {
 	if !r.numeric() {
@@ -131,47 +141,62 @@ func fill(v any, durationS int) any {
 func (p Profile) capabilities() []string { return slices.Sorted(maps.Keys(p.Capabilities)) }
 
 func (p Profile) validate() error {
-	if p.Name == "" {
+	switch {
+	case p.Name == "":
 		return fmt.Errorf("zigbee: a profile has no name")
-	}
-	if len(p.Models) == 0 {
+	case len(p.Models) == 0:
 		return fmt.Errorf("zigbee: profile %s applies to no model", p.Name)
-	}
-	if len(p.Capabilities) == 0 {
+	case len(p.Capabilities) == 0:
 		return fmt.Errorf("zigbee: profile %s reads nothing", p.Name)
-	}
-	if p.OfflineAfter < 0 {
+	case p.OfflineAfter < 0:
 		return fmt.Errorf("zigbee: profile %s: negative offline delay", p.Name)
 	}
 	for c, r := range p.Capabilities {
-		if c == "" || r.From == "" {
-			return fmt.Errorf("zigbee: profile %s: a capability and its field are required", p.Name)
-		}
-		if r.Momentary && r.numeric() {
-			return fmt.Errorf("zigbee: profile %s: %s is an action, it needs a map of values", p.Name, c)
-		}
-		if r.CodeFrom != "" && !r.Momentary {
-			return fmt.Errorf("zigbee: profile %s: %s carries a code, it must be an action", p.Name, c)
-		}
-		if r.Max < 0 || r.Step < 0 {
-			return fmt.Errorf("zigbee: profile %s: %s has a negative scale or step", p.Name, c)
-		}
-		for raw, v := range r.Map {
-			if v == "" {
-				return fmt.Errorf("zigbee: profile %s: %s maps %q to nothing", p.Name, c, raw)
-			}
+		if err := r.validate(c); err != nil {
+			return fmt.Errorf("zigbee: profile %s: %w", p.Name, err)
 		}
 	}
 	for name, cmd := range p.Commands {
-		if name == "" || len(cmd.Payload) == 0 {
-			return fmt.Errorf("zigbee: profile %s: command %q sends nothing", p.Name, name)
+		if err := p.validateCommand(name, cmd); err != nil {
+			return fmt.Errorf("zigbee: profile %s: %w", p.Name, err)
 		}
-		if e := cmd.Confirm; e != nil {
-			r, ok := p.Capabilities[e.Capability]
-			if !ok || r.Momentary || e.Value == "" {
-				return fmt.Errorf("zigbee: profile %s: command %s waits for %s, which the profile does not keep", p.Name, name, e.Capability)
-			}
+	}
+	return nil
+}
+
+func (r Rule) validate(capability string) error {
+	switch {
+	case capability == "" || r.From == "":
+		return fmt.Errorf("a capability and its field are required")
+	case r.Momentary && r.numeric():
+		return fmt.Errorf("%s is an action, it needs a map of values", capability)
+	case r.CodeFrom != "" && !r.Momentary:
+		return fmt.Errorf("%s carries a code, it must be an action", capability)
+	case r.Max < 0 || r.Step < 0:
+		return fmt.Errorf("%s has a negative scale or step", capability)
+	}
+	for raw, v := range r.Map {
+		if v == "" {
+			return fmt.Errorf("%s maps %q to nothing", capability, raw)
 		}
+	}
+	return nil
+}
+
+func (p Profile) validateCommand(name string, cmd ProfileCommand) error {
+	if name == "" || len(cmd.Payload) == 0 {
+		return fmt.Errorf("command %q sends nothing", name)
+	}
+	e := cmd.Confirm
+	if e == nil {
+		return nil
+	}
+	r, ok := p.Capabilities[e.Capability]
+	if !ok || r.Momentary {
+		return fmt.Errorf("command %s waits for %s, which the profile does not keep", name, e.Capability)
+	}
+	if !r.produces(e.Value) {
+		return fmt.Errorf("command %s waits for %s %q, which the profile never reads", name, e.Capability, e.Value)
 	}
 	return nil
 }

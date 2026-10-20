@@ -11,11 +11,9 @@ package zigbeeapp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"reflect"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -24,7 +22,6 @@ import (
 	"safehome/internal/driver"
 	"safehome/internal/outbox"
 	"safehome/internal/zigbee"
-	"safehome/internal/zigbee/wire"
 	"safehome/internal/zigbee/z2m"
 )
 
@@ -55,13 +52,20 @@ func (c Config) Validate() error {
 	if !contract.ValidSite(c.Site) {
 		return fmt.Errorf("zigbeeapp: invalid site %q", c.Site)
 	}
-	if c.Base == "" || strings.ContainsAny(c.Base, "#+") || strings.HasSuffix(c.Base, "/") {
+	if c.Base == "" || strings.ContainsAny(c.Base, "#+") || strings.HasSuffix(c.Base, "/") || overlapsContract(c.Base) {
 		return fmt.Errorf("zigbeeapp: invalid base topic %q", c.Base)
 	}
 	if c.DedupeSize < 1 || c.OutboxSize < 1 || c.RetryMin <= 0 || c.RetryMax < c.RetryMin || c.StatusEvery <= 0 {
 		return errors.New("zigbeeapp: DedupeSize, OutboxSize, RetryMin, RetryMax and StatusEvery must be set")
 	}
 	return c.Zigbee.Validate()
+}
+
+// overlapsContract tells whether a base topic would take in the contract's own
+// topics: the adapter would read its own messages as Zigbee devices.
+func overlapsContract(base string) bool {
+	root, _, _ := strings.Cut(contract.Topic("x"), "/")
+	return base == root || strings.HasPrefix(base, root+"/")
 }
 
 // Deps are the ports the adapter needs.
@@ -182,8 +186,7 @@ func (a *App) Run(ctx context.Context) error {
 	// The registry and the status, even if nothing changed since the last run.
 	a.loop.Do(runCtx, func(now time.Time) []zigbee.Action {
 		a.publishRegistry(now, a.core.Devices())
-		a.sent = false
-		a.publishStatus(now)
+		a.repeatStatus(now)
 		return nil
 	})
 	start(a.statusRepeater)
@@ -206,219 +209,9 @@ func (a *App) statusRepeater(ctx context.Context) {
 			return
 		case <-fired:
 			a.loop.Do(ctx, func(now time.Time) []zigbee.Action {
-				a.sent = false
-				a.publishStatus(now)
+				a.repeatStatus(now)
 				return nil
 			})
 		}
 	}
-}
-
-// --- inbound -------------------------------------------------------------------
-
-// HandleMessage takes a message from the broker. It returns at once: the work is
-// queued on the core's loop.
-func (a *App) HandleMessage(m Message) {
-	if len(m.Payload) > maxPayload {
-		a.log.Warn("ignoring an oversized message", "topic", m.Topic, "bytes", len(m.Payload))
-		return
-	}
-	if strings.HasPrefix(m.Topic, a.cfg.Base+"/") {
-		a.fromBridge(m)
-		return
-	}
-	site, parts, ok := contract.ParseTopic(m.Topic)
-	if !ok || site != a.cfg.Site {
-		return
-	}
-	switch {
-	case len(parts) == 3 && parts[0] == "device" && parts[2] == "cmd":
-		a.deviceCommand(parts[1], m)
-	case len(parts) == 2 && parts[0] == "registry" && parts[1] == "cmd":
-		a.registryOrder(m)
-	}
-}
-
-func (a *App) fromBridge(m Message) {
-	if req, reason, failed := z2m.ResponseError(a.cfg.Base, m.Topic, m.Payload); failed {
-		a.log.Error("Zigbee2MQTT refused a request", "request", req, "error", reason)
-		return
-	}
-	if _, ok, err := z2m.Parse(a.cfg.Base, m.Topic, m.Payload, m.Retain, time.Time{}); err != nil || !ok {
-		if err != nil {
-			a.log.Warn("ignoring a message from Zigbee2MQTT", "topic", m.Topic, "err", err)
-		}
-		return
-	}
-	a.submit(func(now time.Time) zigbee.Input {
-		in, _, _ := z2m.Parse(a.cfg.Base, m.Topic, m.Payload, m.Retain, now)
-		return in
-	})
-}
-
-// envelope parses and checks the envelope of an order, and drops a duplicate.
-func (a *App) envelope(m Message, types ...string) (contract.Envelope, bool) {
-	env, err := contract.ParseEnvelope(m.Payload)
-	if err != nil || env.Site != a.cfg.Site {
-		a.log.Warn("ignoring an invalid order", "topic", m.Topic, "err", err)
-		return contract.Envelope{}, false
-	}
-	known := false
-	for _, t := range types {
-		known = known || env.Type == t
-	}
-	if !known {
-		a.log.Warn("ignoring a message of the wrong type for its topic", "topic", m.Topic, "type", env.Type)
-		return contract.Envelope{}, false
-	}
-	return env, a.seen.FirstTime(env.ID)
-}
-
-func (a *App) deviceCommand(deviceID string, m Message) {
-	env, ok := a.envelope(m, contract.TypeCommand)
-	if !ok {
-		return
-	}
-	d, err := contract.DecodeData[contract.DeviceCommandData](env)
-	if err == nil {
-		err = d.Validate()
-	}
-	if err == nil && d.DeviceID != deviceID {
-		err = fmt.Errorf("topic for %s, command for %s", deviceID, d.DeviceID)
-	}
-	if err != nil {
-		a.log.Warn("ignoring an invalid device command", "topic", m.Topic, "err", err)
-		return
-	}
-	a.submit(func(now time.Time) zigbee.Input { return wire.Command(d, env.ID, now) })
-}
-
-func (a *App) registryOrder(m Message) {
-	env, ok := a.envelope(m, contract.TypeRegistryPair, contract.TypeRegistryRemove)
-	if !ok {
-		return
-	}
-	if env.Type == contract.TypeRegistryPair {
-		d, err := contract.DecodeData[contract.RegistryPairData](env)
-		if err == nil {
-			err = d.Validate()
-		}
-		if err != nil {
-			a.log.Warn("ignoring an invalid pairing order", "err", err)
-			return
-		}
-		a.log.Info("pairing order", "seconds", d.DurationS)
-		a.submit(func(now time.Time) zigbee.Input { return wire.Pair(d, env.ID, now) })
-		return
-	}
-	d, err := contract.DecodeData[contract.RegistryRemoveData](env)
-	if err == nil {
-		err = d.Validate()
-	}
-	if err != nil {
-		a.log.Warn("ignoring an invalid removal order", "err", err)
-		return
-	}
-	a.log.Info("removal order", "device", d.DeviceID)
-	a.submit(func(now time.Time) zigbee.Input { return wire.Remove(d, env.ID, now) })
-}
-
-func (a *App) submit(build func(time.Time) zigbee.Input) {
-	if err := a.loop.Submit(a.life, build); err != nil && a.life.Err() == nil {
-		a.log.Error("handing an input to the core failed", "err", err)
-	}
-}
-
-// --- outbound ------------------------------------------------------------------
-
-// dispatch runs on the loop's goroutine and only queues messages.
-func (a *App) dispatch(_ context.Context, now time.Time, actions []zigbee.Action) error {
-	site := a.cfg.Site
-	for _, act := range actions {
-		switch v := act.(type) {
-		case zigbee.Changed:
-			out, err := wire.Changed(v)
-			if err != nil {
-				a.log.Error("a value refused by the contract: check the profile", "device", v.DeviceID, "err", err)
-				continue
-			}
-			a.publishDevice(now, out)
-		case zigbee.Presence:
-			a.log.Info("device presence", "device", v.DeviceID, "online", v.Online)
-			a.publishDevice(now, wire.Presence(v))
-		case zigbee.Ack:
-			ack, err := wire.Ack(v)
-			if err != nil {
-				return err
-			}
-			if v.Status == zigbee.AckFailed || v.Status == zigbee.AckExpired {
-				a.log.Warn("a device command did not succeed", "device", v.DeviceID, "status", v.Status, "reason", v.Reason)
-			}
-			a.enqueue(contract.DeviceAckTopic(site, v.DeviceID), contract.TypeCommandAck, ack, false, now)
-		case zigbee.Added:
-			a.log.Info("device added", "device", v.Device.ID, "profile", v.Device.Profile)
-			a.enqueue(contract.RegistryEventTopic(site), contract.TypeRegistryDeviceAdded, wire.Added(v), false, now)
-		case zigbee.Rejected:
-			r, err := wire.Rejected(v)
-			if err != nil {
-				return err
-			}
-			a.log.Warn("device refused", "model", v.Model, "reason", v.Reason)
-			a.enqueue(contract.RegistryEventTopic(site), contract.TypeRegistryDeviceRejected, r, false, now)
-		case zigbee.Removed:
-			a.log.Info("device removed", "device", v.Device.ID)
-			a.enqueue(contract.RegistryEventTopic(site), contract.TypeRegistryDeviceRemoved, wire.Removed(v), false, now)
-			for _, c := range wire.StateCapabilities(v.Device) {
-				// An empty retained message clears the state: a removed door left
-				// "open" would otherwise block every arming.
-				a.out.Put(&outbox.Item{Topic: contract.DeviceStateTopic(site, v.Device.ID, c), QoS: 1, Retain: true, Raw: true})
-			}
-		case zigbee.RegistryChanged:
-			a.publishRegistry(now, v.Devices)
-		case zigbee.Ignored:
-			a.log.Debug("ignored", "what", v.What)
-		default:
-			msg, ok, err := z2m.Build(a.cfg.Base, act)
-			if err != nil {
-				return err
-			}
-			if ok {
-				a.out.Put(&outbox.Item{Topic: msg.Topic, Data: msg.Payload, QoS: 1, Raw: true})
-			}
-		}
-	}
-	return nil
-}
-
-func (a *App) publishDevice(now time.Time, d wire.Device) {
-	if d.Event != nil {
-		a.enqueue(contract.DeviceEventTopic(a.cfg.Site, d.Event.DeviceID), contract.TypeDeviceEvent, *d.Event, false, now)
-	}
-	if d.State != nil {
-		a.enqueue(contract.DeviceStateTopic(a.cfg.Site, d.State.DeviceID, d.State.Capability), contract.TypeDeviceState, *d.State, true, now)
-	}
-}
-
-func (a *App) publishRegistry(now time.Time, devices []zigbee.Device) {
-	a.enqueue(contract.RegistryDevicesTopic(a.cfg.Site), contract.TypeRegistrySnapshot, wire.Snapshot(devices), true, now)
-}
-
-// publishStatus publishes zigbee.status, retained, when it changed (or when sent is
-// cleared, to repeat it). It runs on the loop's goroutine.
-func (a *App) publishStatus(now time.Time) {
-	st := wire.Status(a.core.Status())
-	if a.sent && reflect.DeepEqual(st, a.last) {
-		return
-	}
-	a.last, a.sent = st, true
-	a.enqueue(contract.ZigbeeStatusTopic(a.cfg.Site), contract.TypeZigbeeStatus, st, true, now)
-}
-
-func (a *App) enqueue(topic, typ string, data any, retain bool, ts time.Time) {
-	raw, err := json.Marshal(data)
-	if err != nil {
-		a.log.Error("encoding a message failed", "type", typ, "err", err)
-		return
-	}
-	a.out.Put(&outbox.Item{Topic: topic, Src: src, Type: typ, Data: raw, QoS: 1, Retain: retain, ID: a.deps.NewID(), TS: ts})
 }

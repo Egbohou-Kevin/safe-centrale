@@ -9,6 +9,7 @@ package install
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"unicode"
@@ -119,69 +120,78 @@ func ValidName(name string) error {
 
 // Check compares the site with the registry of paired devices.
 func Check(site Site, devices []contract.RegistryDevice) []Finding {
-	devices = slices.Clone(devices) // sorted below
-	byID := map[string]contract.RegistryDevice{}
+	byID := make(map[string]contract.RegistryDevice, len(devices))
 	for _, d := range devices {
 		byID[d.DeviceID] = d
 	}
-	var out []Finding
-	add := func(l Level, id, format string, args ...any) {
-		out = append(out, Finding{Level: l, DeviceID: id, Text: fmt.Sprintf(format, args...)})
+	var f findings
+	f.zones(site, byID)
+	f.sirens(site, byID)
+	f.unused(site, devices)
+	if len(site.Zones) == 0 {
+		f.add(Warning, "", "no zone: nothing is watched")
 	}
+	if len(site.SirenIDs) == 0 {
+		f.add(Warning, "", "no siren: an alarm will only send messages")
+	}
+	return f
+}
 
-	for _, id := range sortedKeys(site.Zones) {
+// findings collects the remarks of Check, in order.
+type findings []Finding
+
+func (f *findings) add(l Level, id, format string, args ...any) {
+	*f = append(*f, Finding{Level: l, DeviceID: id, Text: fmt.Sprintf(format, args...)})
+}
+
+// zones checks each zone: a valid name and kind, a paired device that can trigger it.
+func (f *findings) zones(site Site, byID map[string]contract.RegistryDevice) {
+	for _, id := range slices.Sorted(maps.Keys(site.Zones)) {
 		z := site.Zones[id]
 		if err := ValidName(z.Name); err != nil {
-			add(Problem, id, "%v", err)
+			f.add(Problem, id, "%v", err)
 		}
 		d, paired := byID[id]
 		if err := ValidKind(z.Kind); err != nil {
-			add(Problem, id, "zone %q: %v", z.Name, err)
+			f.add(Problem, id, "zone %q: %v", z.Name, err)
 		} else if paired {
 			if err := CanServe(z.Kind, d.Capabilities); err != nil {
-				add(Problem, id, "zone %q can never trigger: %v", z.Name, err)
+				f.add(Problem, id, "zone %q can never trigger: %v", z.Name, err)
 			}
 		}
 		if !paired {
-			add(Warning, id, "zone %q: the device is not paired (removed, misspelt, or from another adapter)", z.Name)
+			f.add(Warning, id, "zone %q: the device is not paired (removed, misspelt, or from another adapter)", z.Name)
 		}
 	}
+}
+
+// sirens checks that each siren is paired and can sound.
+func (f *findings) sirens(site Site, byID map[string]contract.RegistryDevice) {
 	for _, id := range site.SirenIDs {
 		d, paired := byID[id]
 		switch {
 		case !paired:
-			add(Warning, id, "siren: the device is not paired (removed, misspelt, or from another adapter)")
+			f.add(Warning, id, "siren: the device is not paired (removed, misspelt, or from another adapter)")
 		case !slices.Contains(d.Capabilities, contract.CapSiren):
-			add(Problem, id, "listed as a siren but cannot sound (it has %s)", strings.Join(d.Capabilities, ", "))
+			f.add(Problem, id, "listed as a siren but cannot sound (it has %s)", strings.Join(d.Capabilities, ", "))
 		}
 	}
+}
+
+// unused lists the paired devices given no use. A keypad needs none.
+func (f *findings) unused(site Site, devices []contract.RegistryDevice) {
+	devices = slices.Clone(devices) // the caller's order is kept
 	slices.SortFunc(devices, func(a, b contract.RegistryDevice) int { return strings.Compare(a.DeviceID, b.DeviceID) })
 	for _, d := range devices {
 		_, zoned := site.Zones[d.DeviceID]
 		if zoned || slices.Contains(site.SirenIDs, d.DeviceID) || slices.Contains(d.Capabilities, contract.CapKeypad) {
 			continue
 		}
-		add(Warning, d.DeviceID, "paired (%s) but used for nothing: give it a zone, make it a siren, or remove it", d.Model)
+		f.add(Warning, d.DeviceID, "paired (%s) but used for nothing: give it a zone, make it a siren, or remove it", d.Model)
 	}
-	if len(site.Zones) == 0 {
-		add(Warning, "", "no zone: nothing is watched")
-	}
-	if len(site.SirenIDs) == 0 {
-		add(Warning, "", "no siren: an alarm will only send messages")
-	}
-	return out
 }
 
 // HasProblem says whether a finding must be fixed.
 func HasProblem(findings []Finding) bool {
 	return slices.ContainsFunc(findings, func(f Finding) bool { return f.Level == Problem })
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
 }
