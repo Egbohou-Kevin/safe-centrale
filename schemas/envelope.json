@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/envelope.json",
+  "title": "Enveloppe",
+  "description": "Enveloppe commune à tous les messages. Les champs inconnus sont tolérés.",
+  "type": "object",
+  "properties": {
+    "v": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Version du contrat. Un récepteur ignore un v plus récent que le sien."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+      "description": "ULID"
+    },
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
+    },
+    "src": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, à la milliseconde"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "device.event",
+        "device.state",
+        "command",
+        "command.ack",
+        "alarm.command",
+        "alarm.ack",
+        "alarm.arming",
+        "alarm.armed",
+        "alarm.disarmed",
+        "alarm.entry_delay",
+        "alarm.triggered",
+        "alarm.siren_cycle",
+        "alarm.cleared",
+        "alarm.arming_scheduled",
+        "alarm.postponed",
+        "alarm.auth_failed",
+        "alarm.state",
+        "alert.request",
+        "alert.result",
+        "alert.ack",
+        "registry.pair",
+        "registry.remove",
+        "registry.snapshot",
+        "registry.device_added",
+        "registry.device_rejected",
+        "registry.device_removed",
+        "system.heartbeat",
+        "system.health",
+        "gsm.status",
+        "zigbee.status",
+        "agent.status",
+        "video.request",
+        "video.stop",
+        "video.session",
+        "video.status",
+        "config.set",
+        "config.applied",
+        "photo.taken",
+        "photo.upload",
+        "photo.sent",
+        "maint.open",
+        "maint.close",
+        "install.mode",
+        "install.close",
+        "maint.session",
+        "agent.replay",
+        "agent.replayed"
+      ]
+    },
+    "data": {
+      "type": "object"
+    },
+    "sig": {
+      "type": "string",
+      "description": "Réservé : signature, phase fermée"
+    },
+    "kid": {
+      "type": "string",
+      "description": "Réservé : identifiant de la clé de signature"
+    }
+  },
+  "required": [
+    "v",
+    "id",
+    "site",
+    "src",
+    "seq",
+    "ts",
+    "type",
+    "data"
+  ]
+}

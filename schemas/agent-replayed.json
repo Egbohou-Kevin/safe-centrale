@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/agent-replayed.json",
+  "title": "agent.replayed",
+  "description": "Réponse de l'agent de liaison à agent.replay (topic agent/replayed) : ce qu'il renvoie, et les numéros qu'il n'a plus.",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "to": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "last": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Le plus grand numéro donné jusqu'ici."
+    },
+    "resent": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "missing": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "first",
+          "last"
+        ]
+      }
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "last",
+    "resent"
+  ]
+}

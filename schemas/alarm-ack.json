@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alarm-ack.json",
+  "title": "alarm.ack",
+  "description": "Ne contient jamais le code.",
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "id de l'ordre"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "done",
+        "refused",
+        "expired",
+        "failed"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "zone_open",
+        "bad_code",
+        "locked_out",
+        "wrong_state",
+        "postpone_limit",
+        "unknown_command"
+      ]
+    },
+    "detail": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "ref",
+    "status"
+  ]
+}

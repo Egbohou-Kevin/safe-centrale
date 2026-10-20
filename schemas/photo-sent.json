@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/photo-sent.json",
+  "title": "photo.sent",
+  "description": "Résultat de l'envoi d'une photo, publié par l'agent de liaison (topic photo/sent).",
+  "type": "object",
+  "properties": {
+    "photo": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "sent",
+        "failed"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "url_expired",
+        "missing",
+        "too_old",
+        "refused"
+      ],
+      "description": "Pour failed. url_expired : le cloud peut renvoyer un photo.upload"
+    }
+  },
+  "required": [
+    "photo",
+    "status"
+  ]
+}

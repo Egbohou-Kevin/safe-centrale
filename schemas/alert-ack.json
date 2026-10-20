@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alert-ack.json",
+  "title": "alert.ack",
+  "type": "object",
+  "properties": {
+    "incident": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contact": {
+      "type": "string",
+      "minLength": 1
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "sms",
+        "app"
+      ]
+    }
+  },
+  "required": [
+    "incident",
+    "contact",
+    "via"
+  ]
+}

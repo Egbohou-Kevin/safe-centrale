@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/registry-device-removed.json",
+  "title": "registry.device_removed",
+  "description": "Appareil retiré.",
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "id de l'ordre de retrait"
+    },
+    "device_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "device_id"
+  ]
+}

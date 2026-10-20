@@ -1,0 +1,12 @@
+{
+  "name": "develco.keypad.kepzb110",
+  "models": ["KEPZB-110"],
+  "note": "Develco keypad. The code typed comes in action_code. Key names to check on the real device.",
+  "capabilities": {
+    "keypad":  { "from": "action", "map": { "disarm": "disarm", "arm_all_zones": "arm" }, "momentary": true, "code_from": "action_code" },
+    "panic":   { "from": "action", "map": { "emergency": "pressed" }, "momentary": true },
+    "tamper":  { "from": "tamper", "map": { "true": "triggered", "false": "clear" } },
+    "battery": { "from": "battery" },
+    "link":    { "from": "linkquality", "max": 255, "step": 20 }
+  }
+}

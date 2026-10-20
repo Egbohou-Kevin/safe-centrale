@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/config-set.json",
+  "title": "config.set",
+  "description": "Configuration du site réglée depuis l'application, entière à chaque fois et numérotée ; une partie absente garde la valeur des fichiers du site",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Croissante : le site refuse une version plus ancienne que celle appliquée"
+    },
+    "site_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Nom du site dans les messages d'alerte"
+    },
+    "contacts": {
+      "type": "array",
+      "maxItems": 5,
+      "description": "Remplace toute la liste des contacts",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+          "name": { "type": "string", "minLength": 1 },
+          "role": { "type": "string", "enum": ["owner", "deputy", "guard", "manager", "other"] },
+          "channels": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "enum": ["app", "whatsapp", "sms", "call"] }
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+[1-9][0-9]{7,14}$",
+            "description": "Format international, nécessaire pour les SMS et les appels"
+          }
+        },
+        "required": ["id", "name", "role", "channels"],
+        "additionalProperties": false
+      }
+    },
+    "closing": {
+      "type": "object",
+      "description": "Heures de fermeture : daily, mon à sun ; HH:MM ou off",
+      "propertyNames": { "enum": ["daily", "mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
+      "additionalProperties": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$|^off$" }
+    },
+    "exit_delay_s": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 300,
+      "description": "Délai de sortie"
+    },
+    "entry_delay_s": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 180,
+      "description": "Délai d'entrée"
+    },
+    "video": {
+      "type": "object",
+      "description": "Réglages du client en données mobiles, ignorés en liaison fixe",
+      "properties": {
+        "quota_mb": { "type": "integer", "minimum": 0, "description": "Plafond du mois, 0 pour aucun" },
+        "max_s": { "type": "integer", "minimum": 0, "maximum": 86400, "description": "Durée maximale d'une session, 0 pour aucune" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["version"]
+}

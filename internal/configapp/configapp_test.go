@@ -1,0 +1,322 @@
+package configapp
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"safehome/internal/contract"
+	"safehome/internal/driver"
+	"safehome/internal/schematest"
+)
+
+const site = "tg-lom-0001"
+
+type memStore struct {
+	mu   sync.Mutex
+	docs map[string][]byte
+}
+
+func (s *memStore) Save(name string, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.docs[name] = append([]byte(nil), data...)
+	return nil
+}
+
+func (s *memStore) Load(name string) ([]byte, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, ok := s.docs[name]
+	return d, ok, nil
+}
+
+type broker struct {
+	mu      sync.Mutex
+	answers []contract.ConfigAppliedData
+	retain  []bool
+}
+
+func (b *broker) Publish(_ context.Context, topic string, payload []byte, _ byte, retain bool) error {
+	env, err := contract.ParseEnvelope(payload)
+	if err != nil {
+		return err
+	}
+	if topic != contract.ConfigAppliedTopic(site) || env.Type != contract.TypeConfigApplied || env.Src != "config" {
+		return errors.New("unexpected " + topic)
+	}
+	if err := schematest.Check("config-applied.json", env.Data); err != nil {
+		return err
+	}
+	d, _ := contract.DecodeData[contract.ConfigAppliedData](env)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.answers = append(b.answers, d)
+	b.retain = append(b.retain, retain)
+	return nil
+}
+
+func (b *broker) last() (contract.ConfigAppliedData, int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.answers) == 0 {
+		return contract.ConfigAppliedData{}, 0
+	}
+	return b.answers[len(b.answers)-1], len(b.answers)
+}
+
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
+
+type rig struct {
+	t        *testing.T
+	app      *App
+	broker   *broker
+	logs     *syncBuffer
+	ids      *contract.IDGenerator
+	mu       sync.Mutex
+	saved    []contract.ConfigSetData
+	restarts int
+	checkErr error
+	saveErr  error
+}
+
+func start(t *testing.T, cfg Config) *rig {
+	t.Helper()
+	r := &rig{t: t, broker: &broker{}, logs: &syncBuffer{}, ids: contract.NewIDGenerator()}
+	cfg.RetryMin, cfg.RetryMax = 5*time.Millisecond, 20*time.Millisecond
+	app, err := New(cfg, Deps{
+		Clock: driver.SystemClock(), Store: &memStore{docs: map[string][]byte{}}, Publisher: r.broker, NewID: r.ids.New,
+		Check: func(contract.ConfigSetData) error { r.mu.Lock(); defer r.mu.Unlock(); return r.checkErr },
+		Save: func(d contract.ConfigSetData) error {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if r.saveErr != nil {
+				return r.saveErr
+			}
+			r.saved = append(r.saved, d)
+			return nil
+		},
+		Restart: func() { r.mu.Lock(); r.restarts++; r.mu.Unlock() },
+		Logger:  slog.New(slog.NewTextHandler(r.logs, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.app = app
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { app.Run(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+	return r
+}
+
+func (r *rig) send(topic, typ string, data any) {
+	r.t.Helper()
+	env, err := contract.NewEnvelope(site, "cloud", 1, r.ids.New(), time.Now(), typ, data)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	b, _ := json.Marshal(env)
+	r.app.HandleMessage(Message{Topic: topic, Payload: b})
+}
+
+func (r *rig) config(d contract.ConfigSetData) {
+	r.send(contract.ConfigSetTopic(site), contract.TypeConfigSet, d)
+}
+
+func (r *rig) alarm(state string) {
+	r.send(contract.AlarmStateTopic(site), contract.TypeAlarmState, contract.AlarmStateData{State: state, Since: contract.TS(time.Now())})
+}
+
+func (r *rig) restarted() int { r.mu.Lock(); defer r.mu.Unlock(); return r.restarts }
+
+func (r *rig) waitAnswer(n int) contract.ConfigAppliedData {
+	r.t.Helper()
+	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if d, got := r.broker.last(); got >= n {
+			return d
+		}
+		if time.Now().After(deadline) {
+			r.t.Fatalf("no answer %d\nlogs:\n%s", n, r.logs.String())
+		}
+	}
+}
+
+func phoneConfig(version int) contract.ConfigSetData {
+	return contract.ConfigSetData{Version: version, Contacts: []contract.ConfigContact{
+		{ID: "u_owner", Name: "Ama", Role: "owner", Channels: []string{"sms"}, Phone: "+22890000001"},
+	}}
+}
+
+func TestAConfigurationIsKeptThenAppliedAtAQuietMoment(t *testing.T) {
+	r := start(t, DefaultConfig(site, 3))
+	if d := r.waitAnswer(1); d.Version != 3 || d.Status != contract.ConfigApplied {
+		t.Fatalf("at start, the version running: %+v", d)
+	}
+	r.alarm(contract.StateTriggered)
+	r.config(phoneConfig(4))
+	if len(r.saved) != 1 || r.saved[0].Version != 4 {
+		t.Fatalf("%+v", r.saved)
+	}
+	if r.restarted() != 0 {
+		t.Fatal("never during an alarm")
+	}
+	r.alarm(contract.StateEntryDelay)
+	if r.restarted() != 0 {
+		t.Fatal("never during a delay")
+	}
+	r.config(phoneConfig(4)) // the cloud asks again: kept already
+	if len(r.saved) != 1 {
+		t.Fatal("kept once")
+	}
+	r.alarm(contract.StateDisarmed)
+	if r.restarted() != 1 {
+		t.Fatal("restart once quiet")
+	}
+	r.alarm(contract.StateArmed)
+	if r.restarted() != 1 {
+		t.Fatal("once only")
+	}
+	if _, n := r.broker.last(); n != 1 {
+		t.Fatal("applied is said by the hub after its restart, not before")
+	}
+	if strings.Contains(r.logs.String(), "+228") {
+		t.Fatalf("a phone in the logs:\n%s", r.logs.String())
+	}
+	if !r.broker.retain[0] {
+		t.Fatal("config.applied is retained: a program that starts later sees it")
+	}
+}
+
+func TestAQuietHubRestartsAtOnce(t *testing.T) {
+	r := start(t, DefaultConfig(site, 0))
+	r.alarm(contract.StateArmed)
+	r.config(phoneConfig(1))
+	if r.restarted() != 1 {
+		t.Fatal("armed is quiet")
+	}
+}
+
+func TestNewZonesRestartTheHubAtAQuietMoment(t *testing.T) {
+	r := start(t, DefaultConfig(site, 0))
+	r.alarm(contract.StateArming) // the installation mode closed because the alarm is arming
+	r.app.RestartWhenQuiet()
+	if r.restarted() != 0 {
+		t.Fatal("never during a delay")
+	}
+	r.alarm(contract.StateArmed)
+	if r.restarted() != 1 {
+		t.Fatal("restart once quiet")
+	}
+	r.app.RestartWhenQuiet()
+	if r.restarted() != 1 {
+		t.Fatal("once only")
+	}
+	if _, n := r.broker.last(); n != 0 {
+		t.Fatal("new zones are no configuration from the cloud: nothing to answer")
+	}
+}
+
+func TestAnUnknownAlarmStateWaits(t *testing.T) {
+	r := start(t, DefaultConfig(site, 0))
+	r.config(phoneConfig(1))
+	if r.restarted() != 0 {
+		t.Fatal("the alarm's state is not known yet")
+	}
+}
+
+func TestRefusals(t *testing.T) {
+	r := start(t, DefaultConfig(site, 5))
+	r.waitAnswer(1)
+	r.alarm(contract.StateDisarmed)
+
+	r.config(phoneConfig(4))
+	if d := r.waitAnswer(2); d.Status != contract.ConfigRejected || d.Version != 4 || !strings.Contains(d.Reason, "older than version 5") {
+		t.Fatalf("%+v", d)
+	}
+	r.config(phoneConfig(5))
+	if d := r.waitAnswer(3); d.Status != contract.ConfigApplied || d.Version != 5 {
+		t.Fatalf("the version running, asked again: %+v", d)
+	}
+	bad := phoneConfig(6)
+	bad.EntryDelayS = 900
+	r.config(bad)
+	if d := r.waitAnswer(4); d.Status != contract.ConfigRejected || !strings.Contains(d.Reason, "entry_delay_s") {
+		t.Fatalf("%+v", d)
+	}
+	r.mu.Lock()
+	r.checkErr = errors.New("escalation: there must be an owner")
+	r.mu.Unlock()
+	r.config(phoneConfig(7))
+	if d := r.waitAnswer(5); d.Status != contract.ConfigRejected || d.Reason != "escalation: there must be an owner" {
+		t.Fatalf("%+v", d)
+	}
+	r.mu.Lock()
+	r.checkErr, r.saveErr = nil, errors.New("disk full")
+	r.mu.Unlock()
+	r.config(phoneConfig(8))
+	if d := r.waitAnswer(6); d.Status != contract.ConfigRejected || d.Reason != "the hub could not keep it" {
+		t.Fatalf("%+v", d)
+	}
+	r.send(contract.ConfigSetTopic(site), contract.TypeConfigSet, map[string]any{"version": "seven"})
+	if d := r.waitAnswer(7); d.Status != contract.ConfigRejected {
+		t.Fatalf("%+v", d)
+	}
+	if r.restarted() != 0 || len(r.saved) != 0 {
+		t.Fatal("nothing refused is kept or applied")
+	}
+	// Ignored: another site, another type, a duplicate, garbage.
+	env, _ := contract.NewEnvelope("tg-lom-9999", "cloud", 1, r.ids.New(), time.Now(), contract.TypeConfigSet, phoneConfig(9))
+	b, _ := json.Marshal(env)
+	r.app.HandleMessage(Message{Topic: contract.ConfigSetTopic(site), Payload: b})
+	r.app.HandleMessage(Message{Topic: contract.ConfigSetTopic(site), Payload: []byte("{")})
+	time.Sleep(50 * time.Millisecond)
+	if _, n := r.broker.last(); n != 7 {
+		t.Fatalf("%d answers", n)
+	}
+}
+
+func TestAConfigurationThatCouldNotBeLoadedIsRefusedAtStart(t *testing.T) {
+	cfg := DefaultConfig(site, 0)
+	cfg.Refused, cfg.RefusedBecause = 4, "escalation: there must be an owner"
+	r := start(t, cfg)
+	if d := r.waitAnswer(1); d.Version != 4 || d.Status != contract.ConfigRejected || d.Reason != cfg.RefusedBecause {
+		t.Fatalf("%+v", d)
+	}
+}
+
+func TestNothingToSayWithoutConfiguration(t *testing.T) {
+	r := start(t, DefaultConfig(site, 0))
+	time.Sleep(50 * time.Millisecond)
+	if _, n := r.broker.last(); n != 0 {
+		t.Fatal("no configuration from the cloud: no answer")
+	}
+	if subs := r.app.Subscriptions(); len(subs) != 2 {
+		t.Fatalf("%+v", subs)
+	}
+}
+
+func TestNewChecks(t *testing.T) {
+	if _, err := New(Config{Site: "X"}, Deps{}); err == nil {
+		t.Fatal("bad site")
+	}
+	if _, err := New(DefaultConfig(site, 0), Deps{}); err == nil {
+		t.Fatal("missing ports")
+	}
+}

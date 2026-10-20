@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/maint-open.json",
+  "title": "maint.open",
+  "description": "Ouverture d'un tunnel de maintenance, du cloud vers la centrale (topic maint/cmd). La centrale se connecte à notre bastion en SSH ; se connecter ensuite à la centrale demande la clé des administrateurs, que le cloud n'a pas.",
+  "type": "object",
+  "properties": {
+    "session": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Choisi par le cloud"
+    },
+    "user": {
+      "type": "string",
+      "minLength": 1,
+      "description": "L'administrateur qui demande, montré au propriétaire"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Pourquoi, en quelques mots, montré au propriétaire"
+    },
+    "duration_s": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 3600
+    },
+    "exp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Un ordre vu après exp est refusé"
+    }
+  },
+  "required": [
+    "session",
+    "user",
+    "reason",
+    "duration_s",
+    "exp"
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/agent-status.json",
+  "title": "agent.status",
+  "description": "Liaison avec le cloud, retenu, publié à chaque changement et répété chaque minute",
+  "type": "object",
+  "properties": {
+    "uplink": {
+      "type": "string",
+      "enum": [
+        "up",
+        "down"
+      ],
+      "description": "Connexion au broker du cloud"
+    },
+    "transport": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Protocole utilisé : mqtts, ou wss en repli"
+    },
+    "queued": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Messages en attente du cloud"
+    },
+    "oldest_s": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Ancienneté du plus vieux, en secondes"
+    },
+    "dropped": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Messages supprimés depuis le démarrage, file pleine"
+    },
+    "economy": {
+      "type": "boolean",
+      "description": "Données mobiles payées par le client : le heartbeat et cet état n'arrivent au cloud que toutes les 5 minutes"
+    }
+  },
+  "required": [
+    "uplink",
+    "queued",
+    "oldest_s",
+    "dropped"
+  ]
+}

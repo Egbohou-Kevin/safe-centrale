@@ -1,0 +1,21 @@
+{
+  "site": "tg-lom-0001",
+  "broker_url": "mqtt://127.0.0.1:1883",
+  "client_id": "safehome-maint-tg-lom-0001",
+  "state_dir": "/var/lib/safehome",
+  "log_level": "info",
+
+  "enabled": true,
+  "max_length": "1h",
+  "ssh": "/usr/bin/ssh",
+  "key_file": "/etc/safehome/maint.key",
+  "known_hosts": "/etc/safehome/maint_known_hosts",
+  "local_port": 22,
+
+  "bastion": {
+    "host": "bastion.safehome.example",
+    "port": 22,
+    "user": "tunnel",
+    "remote_port": 22001
+  }
+}

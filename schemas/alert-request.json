@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alert-request.json",
+  "title": "alert.request",
+  "type": "object",
+  "properties": {
+    "incident": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "intrusion",
+        "fire",
+        "panic",
+        "tamper",
+        "auth_failed",
+        "battery_low_hub",
+        "mains_restored",
+        "device_offline",
+        "battery_low",
+        "arming_bypassed",
+        "gsm_degraded",
+        "zigbee_down"
+      ]
+    },
+    "urgency": {
+      "type": "string",
+      "enum": [
+        "critical",
+        "high",
+        "low"
+      ]
+    },
+    "devices": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "percent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Niveau de batterie, pour les alertes de batterie"
+    },
+    "wave": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "contact": {
+      "type": "string"
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "app",
+        "whatsapp",
+        "sms",
+        "call"
+      ]
+    },
+    "text": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "incident",
+    "kind",
+    "urgency"
+  ]
+}

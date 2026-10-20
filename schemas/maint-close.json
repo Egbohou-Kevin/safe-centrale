@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/maint-close.json",
+  "title": "maint.close",
+  "description": "Fermeture d'un tunnel de maintenance, du cloud vers la centrale (topic maint/cmd).",
+  "type": "object",
+  "properties": {
+    "session": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "session"
+  ]
+}

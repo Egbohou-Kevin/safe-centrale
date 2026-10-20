@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alarm-state.json",
+  "title": "alarm.state",
+  "description": "Publié en retenu sur alarm/state.",
+  "type": "object",
+  "properties": {
+    "state": {
+      "type": "string",
+      "enum": [
+        "disarmed",
+        "arming",
+        "armed",
+        "entry_delay",
+        "triggered"
+      ]
+    },
+    "since": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, à la milliseconde"
+    },
+    "ends_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, à la milliseconde"
+    },
+    "cycle": {
+      "type": "integer"
+    },
+    "of": {
+      "type": "integer"
+    },
+    "locked_until": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, à la milliseconde"
+    },
+    "next_scheduled": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, à la milliseconde"
+    }
+  },
+  "required": [
+    "state",
+    "since"
+  ]
+}

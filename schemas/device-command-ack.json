@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/device-command-ack.json",
+  "title": "command.ack",
+  "description": "Réponse d'un appareil à une commande (topic device/{id}/ack).",
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "L'id de la commande"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "done",
+        "failed",
+        "expired"
+      ]
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "ref",
+    "status"
+  ]
+}

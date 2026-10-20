@@ -1,0 +1,18 @@
+// /etc/polkit-1/rules.d/50-safehome-console.rules
+// The local console (user safehome) makes and removes the hub's own Wi-Fi network
+// through NetworkManager, during the installation mode only (docs/security-install.md).
+// Only these actions: it cannot touch the other connections' secrets nor sleep the
+// machine.
+polkit.addRule(function(action, subject) {
+    if (subject.user !== "safehome") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    switch (action.id) {
+    case "org.freedesktop.NetworkManager.settings.modify.system":
+    case "org.freedesktop.NetworkManager.network-control":
+    case "org.freedesktop.NetworkManager.wifi.share.protected":
+    case "org.freedesktop.NetworkManager.enable-disable-wifi":
+        return polkit.Result.YES;
+    }
+    return polkit.Result.NOT_HANDLED;
+});

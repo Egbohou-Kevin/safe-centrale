@@ -1,0 +1,32 @@
+[Unit]
+Description=safeHome Zigbee adapter
+After=network.target mosquitto.service
+Wants=mosquitto.service
+# Restart forever: an alarm that gives up after a few failures is worse than one that keeps trying.
+StartLimitIntervalSec=0
+
+[Service]
+# The program says when it is ready, then that it still works: a program stuck for
+# 30 s is killed with SIGABRT (its goroutines go to the journal) and started again.
+Type=notify
+NotifyAccess=main
+WatchdogSec=30s
+User=safehome
+Group=safehome
+ExecStart=/usr/local/bin/safehome-zigbee run -config /etc/safehome/zigbee.json
+Restart=always
+RestartSec=2
+# A clean stop sends what is left and removes the pid file (3 s of grace in the program).
+TimeoutStopSec=15
+
+# Hardening: the program writes only its state directory.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/safehome
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target

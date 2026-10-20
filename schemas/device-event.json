@@ -1,0 +1,365 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/device-event.json",
+  "title": "device.event et device.state",
+  "type": "object",
+  "properties": {
+    "device_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capability": {
+      "type": "string",
+      "enum": [
+        "contact",
+        "motion",
+        "smoke",
+        "vibration",
+        "glass_break",
+        "panic",
+        "tamper",
+        "keypad",
+        "siren",
+        "mains",
+        "availability",
+        "battery",
+        "link"
+      ]
+    },
+    "value": {
+      "type": [
+        "string",
+        "integer"
+      ]
+    },
+    "since": {
+      "type": "string",
+      "format": "date-time",
+      "description": "device.state seulement : date du dernier changement"
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[0-9]{1,16}$",
+      "description": "Code saisi sur le clavier, seulement avec keypad disarm ou silence. Ne part jamais vers le cloud."
+    }
+  },
+  "required": [
+    "device_id",
+    "capability",
+    "value"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "contact"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "motion"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "detected",
+              "clear"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "smoke"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "alarm",
+              "clear"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "vibration"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "detected",
+              "clear"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "glass_break"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "detected",
+              "clear"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "panic"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "pressed"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "tamper"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "triggered",
+              "clear"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "keypad"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "arm",
+              "arm_now",
+              "disarm",
+              "silence",
+              "postpone"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "siren"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "mains"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "present",
+              "lost"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "availability"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "online",
+              "offline"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "battery"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "link"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      }
+    }
+  ],
+  "dependentSchemas": {
+    "code": {
+      "properties": {
+        "capability": {
+          "const": "keypad"
+        },
+        "value": {
+          "enum": [
+            "disarm",
+            "silence"
+          ]
+        }
+      }
+    }
+  }
+}

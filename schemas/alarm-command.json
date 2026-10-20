@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alarm-command.json",
+  "title": "alarm.command",
+  "type": "object",
+  "properties": {
+    "command": {
+      "type": "string",
+      "description": "alarm.arm, alarm.arm_now, alarm.disarm, alarm.silence, alarm.bypass, alarm.postpone"
+    },
+    "args": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Code d'accès. Jamais écrit dans un journal, jamais renvoyé."
+        },
+        "force": {
+          "type": "boolean"
+        },
+        "devices": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "origin": {
+      "type": "string",
+      "enum": [
+        "keypad",
+        "app",
+        "schedule"
+      ]
+    },
+    "user": {
+      "type": "string"
+    },
+    "exp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, à la milliseconde"
+    }
+  },
+  "required": [
+    "command",
+    "args",
+    "origin"
+  ]
+}

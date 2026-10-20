@@ -1,0 +1,92 @@
+package main
+
+import (
+	"errors"
+	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"safehome/internal/adapter/filestore"
+	"safehome/internal/consoleapp"
+	"safehome/internal/hub"
+	"safehome/internal/hubconfig"
+)
+
+func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
+	_, hubPath, _ := setup(t, "mqtt://127.0.0.1:1883", 80)
+	cfg, err := hubconfig.Load(hubPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := &syncBuffer{}
+	c := codes{hubConfig: hubPath, log: slog.New(slog.NewTextHandler(logs, nil))}
+
+	people, err := c.People()
+	if err != nil || len(people) != 4 || people[0].ID != "u_owner" || people[0].Role != "owner" || people[0].HasCode {
+		t.Fatalf("%+v %v", people, err)
+	}
+
+	store, err := filestore.Open(cfg.StateDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installer, err := hub.OpenInstallerCode(cfg.Hub.Access, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := installer.Set(hub.InstallerUser, "3691"); err != nil {
+		t.Fatal(err)
+	}
+	for code, want := range map[string]error{
+		"3691": consoleapp.ErrCodeTaken, // the installer's: one code opens one thing
+		"1234": consoleapp.ErrCodeWeak,
+		"12":   consoleapp.ErrCodeInvalid,
+	} {
+		if err := c.Set("u_owner", code); !errors.Is(err, want) {
+			t.Errorf("%s: %v", code, err)
+		}
+	}
+
+	// A running hub is told to read the codes again (SIGHUP): a stand-in process here.
+	stand := exec.Command("sleep", "30")
+	if err := stand.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stand.Process.Kill() })
+	os.WriteFile(filepath.Join(cfg.StateDir, hubPidName), []byte(strconv.Itoa(stand.Process.Pid)+"\n"), 0o600)
+	if err := c.Set("u_owner", "2580"); err != nil {
+		t.Fatal(err)
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- stand.Wait() }()
+	select {
+	case err := <-waited:
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) || exit.Sys().(syscall.WaitStatus).Signal() != syscall.SIGHUP {
+			t.Fatalf("the hub was not sent SIGHUP: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the hub was not told")
+	}
+
+	people, _ = c.People()
+	if !people[0].HasCode {
+		t.Fatalf("%+v", people[0])
+	}
+	reg, err := hub.OpenCodes(cfg.Hub.Access, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user, ok := reg.Verify("2580"); !ok || user != "u_owner" {
+		t.Fatalf("the hub does not know the code: %q %v", user, ok)
+	}
+	if strings.Contains(logs.String(), "2580") {
+		t.Fatal("the code shows in the logs")
+	}
+}

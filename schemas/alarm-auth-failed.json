@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alarm-auth-failed.json",
+  "title": "alarm.auth_failed",
+  "type": "object",
+  "properties": {
+    "origin": {
+      "type": "string",
+      "enum": [
+        "keypad",
+        "app",
+        "schedule"
+      ]
+    },
+    "attempts": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "locked_until": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, à la milliseconde"
+    }
+  },
+  "required": [
+    "origin",
+    "attempts"
+  ]
+}

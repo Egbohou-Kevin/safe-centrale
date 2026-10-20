@@ -1,0 +1,5 @@
+# Binaries built by hand at the root (go build without -o) and bundles
+/safehome-*
+/dist/
+*.test
+.DS_Store

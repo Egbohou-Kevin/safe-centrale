@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/photo-taken.json",
+  "title": "photo.taken",
+  "description": "Photo prise à l'alarme par le service vidéo (topic photo/taken). Le ts de l'enveloppe est l'heure de la prise. L'image elle-même ne passe jamais par MQTT.",
+  "type": "object",
+  "properties": {
+    "photo": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ULID choisi par le site"
+    },
+    "incident": {
+      "type": "string",
+      "minLength": 1,
+      "description": "L'alarme"
+    },
+    "camera": {
+      "type": "string",
+      "minLength": 1
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Taille du JPEG"
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Largeur en pixels"
+    }
+  },
+  "required": [
+    "photo",
+    "incident",
+    "camera",
+    "bytes",
+    "width"
+  ]
+}

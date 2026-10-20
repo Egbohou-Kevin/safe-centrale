@@ -1,0 +1,114 @@
+package hubconfig
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"safehome/internal/contract"
+	"safehome/internal/engine"
+	"safehome/internal/siteconfig"
+)
+
+// exampleWithState copies the example configuration with its state in a temporary
+// folder, and returns the file and the folder.
+func exampleWithState(t *testing.T) (string, string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "..", "config", "hub.example.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	data = []byte(strings.Replace(string(data), `"/var/lib/safehome"`, `"`+state+`"`, 1))
+	path := filepath.Join(t.TempDir(), "hub.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path, state
+}
+
+func cloudConfig() contract.ConfigSetData {
+	return contract.ConfigSetData{
+		Version: 4, SiteName: "Boutique Be",
+		Contacts: []contract.ConfigContact{
+			{ID: "u_owner", Name: "Ama", Role: "owner", Channels: []string{"app", "sms"}, Phone: "+22890000001"},
+			{ID: "u_night", Name: "Kofi", Role: "guard", Channels: []string{"sms", "call"}, Phone: "+22870000002"},
+		},
+		Closing:    map[string]string{"daily": "19:30", "sun": "off"},
+		ExitDelayS: 60, EntryDelayS: 30,
+	}
+}
+
+func TestTheCloudConfigurationIsLaidOverTheFile(t *testing.T) {
+	path, state := exampleWithState(t)
+	base, err := Load(path)
+	if err != nil || base.SiteVersion != 0 || base.SiteErr != nil {
+		t.Fatalf("%v %d %v", err, base.SiteVersion, base.SiteErr)
+	}
+	if err := siteconfig.Write(state, cloudConfig()); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Load(path)
+	if err != nil || r.SiteErr != nil || r.SiteVersion != 4 {
+		t.Fatalf("%v %v %d", err, r.SiteErr, r.SiteVersion)
+	}
+	e := r.Hub.Escalation
+	if e.SiteName != "Boutique Be" || len(e.Contacts) != 2 || e.Contacts[1].ID != "u_night" || e.Contacts[1].Role != "guard" {
+		t.Fatalf("%+v", e.Contacts)
+	}
+	eng := r.Hub.Engine
+	if eng.ExitDelay != time.Minute || eng.EntryDelay != 30*time.Second {
+		t.Fatalf("%v %v", eng.ExitDelay, eng.EntryDelay)
+	}
+	if (eng.Closing[time.Monday] != engine.TimeOfDay{Hour: 19, Minute: 30}) || len(eng.Closing) != 6 {
+		t.Fatalf("%v", eng.Closing)
+	}
+	// What the cloud does not set stays as the file says.
+	if eng.SirenCycle != base.Hub.Engine.SirenCycle || len(eng.Zones) != len(base.Hub.Engine.Zones) || r.StateDir != state {
+		t.Fatal("the rest of the file must not change")
+	}
+
+	// Only the version: everything from the file.
+	siteconfig.Write(state, contract.ConfigSetData{Version: 5})
+	r, _ = Load(path)
+	if r.SiteVersion != 5 || len(r.Hub.Escalation.Contacts) != len(base.Hub.Escalation.Contacts) || r.Hub.Engine.EntryDelay != base.Hub.Engine.EntryDelay {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestACloudConfigurationThatDoesNotFitNeverStopsTheHub(t *testing.T) {
+	path, state := exampleWithState(t)
+	base, _ := Load(path)
+
+	// No owner: the escalation refuses it.
+	noOwner := cloudConfig()
+	noOwner.Contacts = noOwner.Contacts[1:]
+	if _, err := WithSiteConfig(path, noOwner); err == nil {
+		t.Fatal("a configuration without owner was accepted")
+	}
+	siteconfig.Write(state, noOwner)
+	r, err := Load(path)
+	if err != nil || r.SiteErr == nil || r.SiteVersion != 4 {
+		t.Fatalf("%v %v %d", err, r.SiteErr, r.SiteVersion)
+	}
+	if len(r.Hub.Escalation.Contacts) != len(base.Hub.Escalation.Contacts) {
+		t.Fatal("the hub runs on its own file")
+	}
+
+	// A damaged file too.
+	os.WriteFile(filepath.Join(state, siteconfig.FileName), []byte("{"), 0o600)
+	if r, err := Load(path); err != nil || r.SiteErr == nil || r.SiteVersion != 0 {
+		t.Fatalf("%v %v", err, r.SiteErr)
+	}
+	// A bad closing time, which only the hub knows how to read.
+	bad := cloudConfig()
+	bad.Closing = map[string]string{"someday": "20:00"}
+	if _, err := WithSiteConfig(path, bad); err == nil || !strings.Contains(err.Error(), "someday") {
+		t.Fatalf("%v", err)
+	}
+	if _, err := WithSiteConfig(filepath.Join(t.TempDir(), "none.json"), cloudConfig()); err == nil {
+		t.Fatal("a missing file")
+	}
+}

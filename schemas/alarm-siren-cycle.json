@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alarm-siren-cycle.json",
+  "title": "alarm.siren_cycle",
+  "type": "object",
+  "properties": {
+    "incident": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cycle": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "of": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "incident",
+    "cycle",
+    "of"
+  ]
+}

@@ -1,0 +1,132 @@
+package agent
+
+import (
+	"encoding/json"
+	"time"
+
+	"safehome/internal/contract"
+)
+
+// Input is what the relay is told. Every input carries the time it happened.
+type Input interface{ at() time.Time }
+
+// Local is a message read on the hub's broker.
+type Local struct {
+	Now     time.Time
+	Topic   string
+	Payload []byte
+}
+
+// Own is a message the agent itself publishes on the hub's broker (its status, a
+// failed alert): the agent does not read its own publications back, so it hands
+// them to the relay to go up like the others.
+type Own struct {
+	Now     time.Time
+	Topic   string
+	Payload []byte
+}
+
+// Cloud is a message read on the cloud's broker.
+type Cloud struct {
+	Now     time.Time
+	Topic   string
+	Payload []byte
+}
+
+// Sent says the cloud's broker acknowledged an item.
+type Sent struct {
+	Now time.Time
+	ID  string
+}
+
+// Link says the connection to the cloud came up or went down. Transport is the URL
+// scheme in use ("mqtts", "wss").
+type Link struct {
+	Now       time.Time
+	Up        bool
+	Transport string
+}
+
+// Tick says time has passed.
+type Tick struct{ Now time.Time }
+
+func (i Local) at() time.Time { return i.Now }
+func (i Own) at() time.Time   { return i.Now }
+func (i Cloud) at() time.Time { return i.Now }
+func (i Sent) at() time.Time  { return i.Now }
+func (i Link) at() time.Time  { return i.Now }
+func (i Tick) at() time.Time  { return i.Now }
+
+// Action is what the relay asks the application to do.
+type Action interface{ action() }
+
+// PublishLocal: publish this message from the cloud on the hub's broker, as it came.
+type PublishLocal struct {
+	Topic   string
+	Payload []byte
+}
+
+// FailAlert: tell the hub that an alert for a cloud channel will not get through
+// (alert.result failed, no_uplink), so that its escalation turns to the GSM now.
+type FailAlert struct {
+	Ref string // the alert.request
+}
+
+// StatusChanged: the link changed, publish agent.status.
+type StatusChanged struct{ Status Status }
+
+// Refused: a message from the cloud was refused, for the logs.
+type Refused struct {
+	Topic  string
+	Reason string
+}
+
+// Dropped: items left the queue without reaching the cloud (full, or too old).
+type Dropped struct {
+	Count  int
+	Reason string
+}
+
+func (PublishLocal) action()  {}
+func (FailAlert) action()     {}
+func (StatusChanged) action() {}
+func (Refused) action()       {}
+func (Dropped) action()       {}
+func (Replayed) action()      {}
+
+// Replayed: the cloud asked for messages again; publish agent.replayed.
+type Replayed struct{ Report contract.ReplayedData }
+
+// Priority orders the queue: what matters most leaves first.
+type Priority int
+
+const (
+	PriorityState  Priority = iota // retained states and the heartbeat: only the latest counts
+	PriorityNormal                 // device events, video sessions
+	PriorityAlarm                  // alarm and alert messages
+)
+
+// Item is a message waiting for the cloud.
+type Item struct {
+	ID      string          `json:"id"` // the envelope's id
+	Topic   string          `json:"topic"`
+	Payload json.RawMessage `json:"payload"`
+	Prio    Priority        `json:"prio"`
+	Retain  bool            `json:"retain"`
+	// Key, when set, makes a newer item with the same key replace this one: a
+	// retained state or the heartbeat, of which only the latest is worth sending.
+	Key string    `json:"key,omitempty"`
+	At  time.Time `json:"at"` // when it entered the queue
+	// Seq is its number for the cloud, given at its first attempt to leave (also
+	// written in Payload); 0 before.
+	Seq uint64 `json:"seq,omitempty"`
+}
+
+// Status is the state of the link, as agent.status says it.
+type Status struct {
+	Up        bool
+	Transport string
+	Queued    int
+	Oldest    time.Duration
+	Dropped   int
+}

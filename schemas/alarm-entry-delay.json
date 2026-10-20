@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alarm-entry-delay.json",
+  "title": "alarm.entry_delay",
+  "type": "object",
+  "properties": {
+    "device_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ends_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, à la milliseconde"
+    }
+  },
+  "required": [
+    "device_id",
+    "ends_at"
+  ]
+}

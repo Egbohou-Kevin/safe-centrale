@@ -1,0 +1,77 @@
+{{define "head"}}<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{if .Refresh}}<meta http-equiv="refresh" content="{{.Refresh}}">{{end}}
+<title>safeHome — installation</title>
+<style>
+  body { font: 16px/1.4 system-ui, sans-serif; margin: 0; padding: 0 12px 40px; background: #f6f6f4; color: #1d1d1b; }
+  header { position: sticky; top: 0; background: #1f4e5f; color: #fff; margin: 0 -12px 12px; padding: 10px 12px; }
+  header h1 { font-size: 18px; margin: 0; }
+  header p { margin: 2px 0 0; font-size: 14px; opacity: .9; }
+  nav a { color: #fff; margin-right: 14px; }
+  section { background: #fff; border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  h2 { font-size: 16px; margin: 0 0 8px; }
+  .ok { background: #e3f4e5; border-left: 4px solid #2e7d32; }
+  .err { background: #fdecea; border-left: 4px solid #c62828; }
+  .warn { color: #8a5a00; }
+  .problem { color: #c62828; }
+  .muted { color: #666; font-size: 14px; }
+  .device { border-top: 1px solid #eee; padding: 10px 0; }
+  .device:first-of-type { border-top: 0; }
+  .id { font-family: ui-monospace, monospace; font-weight: 600; }
+  form { margin: 6px 0 0; }
+  input[type=text], input[type=password], select { font-size: 16px; padding: 6px; width: 100%; box-sizing: border-box; margin: 2px 0 6px; }
+  button { font-size: 16px; padding: 8px 12px; border-radius: 6px; border: 1px solid #1f4e5f; background: #1f4e5f; color: #fff; }
+  button.light { background: #fff; color: #1f4e5f; }
+  button.danger { background: #fff; color: #c62828; border-color: #c62828; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  ul { margin: 4px 0; padding-left: 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td { border-top: 1px solid #eee; padding: 6px 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>safeHome — installation</h1>
+  {{with .Overview}}{{if .Open}}<p>Mode installation ouvert jusqu'à {{hour .Until}}</p>{{else}}<p>Mode installation fermé</p>{{end}}{{end}}
+  <nav><a href="/">Appareils</a><a href="/tests">Tests</a></nav>
+</header>
+{{end}}
+
+{{define "kind"}}{{if eq . "entry"}}Entrée (avec délai){{else if eq . "instant"}}Immédiate{{else if eq . "interior"}}Intérieure (mouvement){{else if eq . "24h_fire"}}Incendie (24 h/24){{else if eq . "24h_panic"}}Panique (24 h/24){{else if eq . "24h_tamper"}}Sabotage (24 h/24){{else}}{{.}}{{end}}{{end}}
+
+{{define "reject"}}{{if eq . "unknown_model"}}modèle inconnu (pas de profil){{else if eq . "not_pairing"}}hors appairage{{else if eq . "interview_failed"}}modèle illisible{{else}}{{.}}{{end}}{{end}}
+
+{{define "outcome"}}{{if .OK}}<section class="ok">
+  {{if eq .Code "pair"}}Appairage ouvert : mettez les appareils en mode appairage, ils apparaissent ici.
+  {{else if eq .Code "zone"}}{{.ID}} : zone enregistrée.
+  {{else if eq .Code "unzone"}}{{.ID}} : zone retirée.
+  {{else if eq .Code "siren"}}{{if .On}}{{.ID}} sert maintenant de sirène.{{else}}{{.ID}} ne sert plus de sirène.{{end}}
+  {{else if eq .Code "remove"}}{{.ID}} est retiré du réseau.
+  {{else if eq .Code "code"}}Code enregistré ({{.ID}}) : la centrale le prend aussitôt.
+  {{else if eq .Code "finish"}}Installation terminée : la centrale ferme le mode installation et redémarre si les zones ont changé. Ce réseau Wi-Fi va disparaître.
+  {{else}}C'est fait.{{end}}
+</section>{{else}}<section class="err">
+  {{if eq .Code "closed"}}Le mode installation est fermé : retapez le code installateur au clavier.
+  {{else if eq .Code "busy"}}Un appairage est en cours : attendez sa fin.
+  {{else if eq .Code "unknown"}}{{.ID}} n'est pas appairé.
+  {{else if eq .Code "not_siren"}}{{.ID}} ne peut pas sonner.
+  {{else if eq .Code "no_registry"}}La liste des appareils n'est pas encore connue : l'adaptateur Zigbee tourne-t-il ?
+  {{else if eq .Code "empty_name"}}Donnez un nom à la zone.
+  {{else if eq .Code "long_name"}}Nom de zone trop long : 32 caractères au plus.
+  {{else if eq .Code "last_siren"}}Il faut garder au moins une sirène : ajoutez-en une autre d'abord.
+  {{else if eq .Code "cannot_serve"}}{{.ID}} ne peut pas servir à ce type de zone.
+  {{else if eq .Code "no_zone"}}{{.ID}} n'a pas de zone.
+  {{else if eq .Code "no_answer"}}L'adaptateur Zigbee n'a pas répondu : tourne-t-il ?
+  {{else if eq .Code "not_contact"}}{{.ID}} n'est pas un contact du site.
+  {{else if eq .Code "code_mismatch"}}Les deux codes tapés diffèrent : recommencez.
+  {{else if eq .Code "code_invalid"}}Un code fait de 4 à 8 chiffres.
+  {{else if eq .Code "code_weak"}}Code trop facile à deviner : pas de chiffres répétés ni de suite (1234, 1111).
+  {{else if eq .Code "code_taken"}}Ce code est déjà pris : choisissez-en un autre.
+  {{else if eq .Code "code_full"}}Le site a déjà le nombre maximal de codes.
+  {{else}}Refusé : {{.Detail}}{{end}}
+</section>{{end}}{{end}}
+
+{{define "role"}}{{if eq . "owner"}}propriétaire{{else if eq . "deputy"}}responsable{{else if eq . "guard"}}gardien{{else if eq . "manager"}}gérant{{else}}{{.}}{{end}}{{end}}

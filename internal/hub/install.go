@@ -1,0 +1,161 @@
+package hub
+
+import (
+	"slices"
+	"time"
+
+	"safehome/internal/access"
+	"safehome/internal/contract"
+	"safehome/internal/driver"
+	"safehome/internal/engine"
+	engwire "safehome/internal/engine/wire"
+)
+
+// The installation mode (docs/security-install.md): the installer opens it on site by
+// typing the installer code then "disarm" at the keypad, while the alarm is disarmed.
+// The local console serves its Wi-Fi and its page while it lasts. It is owned by the
+// engine's loop, which knows whether the alarm is disarmed.
+
+// InstallerUser is the user of the installer code. That code is apart from the
+// people's codes: it takes none of their places, and never disarms.
+const InstallerUser = "installer"
+
+// installLength is how long the mode lasts.
+const installLength = contract.InstallLength * time.Second
+
+const (
+	keyInstaller = "installer"
+	srcInstall   = "install"
+)
+
+// installMode is the state of the mode. Only the engine's loop touches it.
+type installMode struct {
+	open    bool
+	until   time.Time
+	session int // counts the openings: the timer of an older one does nothing
+}
+
+// OpenInstallerCode opens the installer code saved in store, as OpenCodes does the
+// people's codes.
+func OpenInstallerCode(cfg access.Config, store driver.Store) (*access.Registry, error) {
+	cfg.MaxUsers = 1
+	return openRegistry(cfg, store, keyInstaller)
+}
+
+// installerCode tells whether a code that is nobody's is the installer's. Only a
+// "disarm" from a keypad may open the mode: never an order from the app.
+func (h *Hub) installerCode(cmd contract.AlarmCommandData) bool {
+	if cmd.Command != contract.CmdDisarm || cmd.Origin != contract.OriginKeypad {
+		return false
+	}
+	user, ok := h.installer.Verify(cmd.Args.Code)
+	return ok && user == InstallerUser
+}
+
+// openInstall opens the mode, if the alarm is disarmed and the keypad not locked.
+// Otherwise the code counts as a wrong one: it is nobody's, and must not help guess.
+func (h *Hub) openInstall(ref string, cmd contract.AlarmCommandData) {
+	cmd.Args.Code = ""
+	err := h.engLoop.Post(h.life, func(now time.Time) []engine.Action {
+		st := h.eng.State(now)
+		if st.Mode != engine.ModeDisarmed || !st.LockedUntil.IsZero() {
+			h.log.Warn("installer code refused: the alarm is not disarmed, or the keypad is locked", "alarm", st.Mode)
+			return h.eng.Handle(engwire.Command(cmd, ref, now, engine.Auth{Checked: true}))
+		}
+		h.inst.session++
+		h.inst.open, h.inst.until = true, now.Add(installLength)
+		h.log.Warn("installation mode opened at the keypad", "until", h.inst.until.Format(time.RFC3339))
+		h.enqueue(srcEngine, contract.AlarmAckTopic(h.cfg.Site), contract.TypeAlarmAck, contract.AlarmAckData{
+			Ref: ref, Status: contract.AckDone, Detail: map[string]any{"install": contract.InstallOpen},
+		}, 1, false, now)
+		h.publishInstall(now, "")
+		go h.installTimer(h.inst.session)
+		return nil
+	})
+	h.submitFailed(err)
+}
+
+// installTimer closes the mode when its time is up.
+func (h *Hub) installTimer(session int) {
+	fired, stop := h.deps.Clock.Timer(installLength)
+	defer stop()
+	select {
+	case <-h.life.Done():
+	case <-fired:
+		err := h.engLoop.Post(h.life, func(now time.Time) []engine.Action {
+			if h.inst.session == session {
+				h.closeInstall(now, contract.InstallTimeout)
+			}
+			return nil
+		})
+		h.submitFailed(err)
+	}
+}
+
+// installFollowsAlarm closes the mode once the alarm leaves the disarmed state (an
+// arming, an alarm of a 24-hour zone). It runs on the engine's loop after each change.
+func (h *Hub) installFollowsAlarm(now time.Time) {
+	if h.inst.open && h.eng.Mode() != engine.ModeDisarmed {
+		h.closeInstall(now, contract.InstallArmed)
+	}
+}
+
+// closeInstall ends the mode. If the installer changed the zones or the sirens, the
+// hub restarts to load them, at a quiet moment. It runs on the engine's loop.
+func (h *Hub) closeInstall(now time.Time, reason string) {
+	if !h.inst.open {
+		return
+	}
+	h.inst.open = false
+	h.log.Info("installation mode closed", "reason", reason)
+	h.publishInstall(now, reason)
+	if h.deps.DevicesChanged != nil && h.deps.DevicesChanged() {
+		h.log.Info("the zones or the sirens changed: the hub restarts to apply them at a quiet moment")
+		h.deps.RestartWhenQuiet()
+	}
+}
+
+// quietTamper drops the tamper alerts while the installation mode is open: the
+// installer opens the devices (a battery, a fixing) and nobody must be woken for it.
+// The engine still sees the signals, so what it knows of the devices stays right;
+// fire and panic are never dropped. It runs on the engine's loop.
+func (h *Hub) quietTamper(actions []engine.Action) []engine.Action {
+	if !h.inst.open {
+		return actions
+	}
+	return slices.DeleteFunc(actions, func(a engine.Action) bool {
+		if al, ok := a.(engine.Alert); ok && al.Kind == engine.AlertTamper {
+			h.log.Info("tamper during the installation mode: not reported", "device", deviceOf(al))
+			return true
+		}
+		return false
+	})
+}
+
+func deviceOf(a engine.Alert) string {
+	if a.Cause == nil {
+		return ""
+	}
+	return a.Cause.DeviceID
+}
+
+// publishInstall publishes the mode, retained: open when reason is empty.
+func (h *Hub) publishInstall(now time.Time, reason string) {
+	d := contract.InstallModeData{Status: contract.InstallClosed, Reason: reason}
+	if reason == "" {
+		d = contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(h.inst.until)}
+	}
+	h.enqueue(srcInstall, contract.InstallModeTopic(h.cfg.Site), contract.TypeInstallMode, d, 1, true, now)
+}
+
+// installMessage takes an order of the local console: install.close.
+func (h *Hub) installMessage(m Message) {
+	if _, ok := h.envelope(m, contract.TypeInstallClose); !ok {
+		return
+	}
+	err := h.engLoop.Post(h.life, func(now time.Time) []engine.Action {
+		h.closeInstall(now, contract.InstallStopped)
+		return nil
+	})
+	h.submitFailed(err)
+}

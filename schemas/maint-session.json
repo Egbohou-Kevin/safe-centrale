@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/maint-session.json",
+  "title": "maint.session",
+  "description": "Étapes d'une session de maintenance, publiées par la centrale (topic maint/session). Le propriétaire les voit dans l'application.",
+  "type": "object",
+  "properties": {
+    "session": {
+      "type": "string",
+      "minLength": 1
+    },
+    "user": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "opening",
+        "open",
+        "closed",
+        "failed"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "stopped",
+        "timeout",
+        "busy",
+        "expired",
+        "disabled",
+        "unreachable"
+      ]
+    },
+    "until": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Pour opening et open : quand le tunnel se ferme de lui-même"
+    },
+    "duration_s": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Pour closed : combien de temps il est resté ouvert"
+    }
+  },
+  "required": [
+    "session",
+    "status"
+  ]
+}

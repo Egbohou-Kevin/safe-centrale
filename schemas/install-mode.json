@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/install-mode.json",
+  "title": "install.mode",
+  "description": "Mode installation de la centrale (topic install/mode, retenu). Ouvert au clavier avec le code installateur, alarme désarmée, 30 minutes au plus.",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["open", "closed"]
+    },
+    "until": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Ouvert : l'heure de fermeture au plus tard"
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["timeout", "armed", "stopped", "restart"],
+      "description": "Fermé : durée écoulée, alarme sortie de l'état désarmé, fermé par la console, centrale redémarrée"
+    }
+  },
+  "required": ["status"],
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "open" } } },
+      "then": { "required": ["until"], "not": { "required": ["reason"] } },
+      "else": { "required": ["reason"], "not": { "required": ["until"] } }
+    }
+  ]
+}

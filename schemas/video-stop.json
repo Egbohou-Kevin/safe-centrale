@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/video-stop.json",
+  "title": "video.stop",
+  "description": "Arrêt d'une session vidéo, du cloud vers le site (topic video/cmd).",
+  "type": "object",
+  "properties": {
+    "session": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "session"
+  ]
+}

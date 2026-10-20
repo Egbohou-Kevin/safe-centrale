@@ -1,0 +1,26 @@
+[Unit]
+Description=Zigbee2MQTT (bridge between the Zigbee stick and the broker)
+After=network.target mosquitto.service
+Wants=mosquitto.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=safehome
+Group=safehome
+# The Zigbee stick's serial port.
+SupplementaryGroups=dialout
+WorkingDirectory=/opt/zigbee2mqtt
+# Its data (network key, devices) lives on the writable partition.
+Environment=ZIGBEE2MQTT_DATA=/var/lib/zigbee2mqtt
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /opt/zigbee2mqtt/index.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

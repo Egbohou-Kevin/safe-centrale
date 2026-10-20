@@ -1,0 +1,37 @@
+[Unit]
+Description=safeHome video service (live sessions through go2rtc)
+After=network-online.target mosquitto.service
+Wants=network-online.target mosquitto.service
+# Restart forever: an alarm that gives up after a few failures is worse than one that keeps trying.
+StartLimitIntervalSec=0
+
+[Service]
+# The program says when it is ready, then that it still works: a program stuck for
+# 30 s is killed with SIGABRT (its goroutines go to the journal) and started again.
+Type=notify
+NotifyAccess=main
+WatchdogSec=30s
+User=safehome
+Group=safehome
+ExecStart=/usr/local/bin/safehome-video run -config /etc/safehome/video.json
+Restart=always
+RestartSec=2
+# A clean stop ends every go2rtc process; whatever is left in the service's group is
+# killed with it (KillMode=control-group, the default), so no stream outlives it.
+TimeoutStopSec=15
+KillMode=control-group
+
+# Hardening: the program writes only its state directory, and go2rtc's sockets in a
+# private /tmp.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/safehome
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+# go2rtc and its children use little memory; a runaway one must not starve the alarm.
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

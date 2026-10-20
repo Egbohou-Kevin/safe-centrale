@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/system-heartbeat.json",
+  "title": "system.heartbeat",
+  "description": "Signe de vie périodique.",
+  "type": "object",
+  "properties": {
+    "boot_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "uptime_s": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "engine": {
+      "type": "string",
+      "enum": [
+        "disarmed",
+        "arming",
+        "armed",
+        "entry_delay",
+        "triggered"
+      ]
+    },
+    "queue_depth": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fw": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "clock_ok": {
+      "type": "boolean",
+      "description": "Horloge de la centrale synchronisée (NTP). Absent si inconnu."
+    }
+  },
+  "required": [
+    "boot_id",
+    "uptime_s",
+    "engine",
+    "queue_depth"
+  ]
+}

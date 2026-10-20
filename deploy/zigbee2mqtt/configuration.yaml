@@ -1,0 +1,25 @@
+# Zigbee2MQTT for the safeHome hub: /var/lib/zigbee2mqtt/configuration.yaml
+# Written for Zigbee2MQTT 2.x and the Sonoff ZBDongle-E. To check against the installed
+# version before the first site (see docs/systeme.md).
+mqtt:
+  server: mqtt://127.0.0.1:1883
+  base_topic: zigbee2mqtt   # must match base_topic in /etc/safehome/zigbee.json
+  client_id: zigbee2mqtt
+serial:
+  port: /dev/serial/by-id/CHANGE-ME   # the stick, by its stable name (ls /dev/serial/by-id)
+  adapter: ember                       # ZBDongle-E (EFR32); "zstack" for a ZBDongle-P
+advanced:
+  network_key: GENERATE   # created at the first start, then saved: back it up (docs/systeme.md)
+  pan_id: GENERATE
+  ext_pan_id: GENERATE
+  log_level: warning
+  log_output:
+    - console              # to the journal, kept in memory
+# Our adapter watches presence itself and decides about pairing: Zigbee2MQTT's own
+# availability feature and web interface stay off (less memory, nothing exposed).
+availability:
+  enabled: false
+frontend:
+  enabled: false
+homeassistant:
+  enabled: false

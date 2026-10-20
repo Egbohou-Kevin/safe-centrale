@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alarm-arming-scheduled.json",
+  "title": "alarm.arming_scheduled",
+  "description": "Préavis de l'armement automatique.",
+  "type": "object",
+  "properties": {
+    "scheduled_for": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, à la milliseconde"
+    }
+  },
+  "required": [
+    "scheduled_for"
+  ]
+}

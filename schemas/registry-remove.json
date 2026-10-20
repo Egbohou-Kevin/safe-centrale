@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/registry-remove.json",
+  "title": "registry.remove",
+  "description": "Retire un appareil (local seulement, topic registry/cmd).",
+  "type": "object",
+  "properties": {
+    "device_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "device_id"
+  ]
+}

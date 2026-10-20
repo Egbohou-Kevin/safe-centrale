@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/video-session.json",
+  "title": "video.session",
+  "description": "Étapes d'une session vidéo, du site vers le cloud (topic video/session).",
+  "type": "object",
+  "properties": {
+    "session": {
+      "type": "string",
+      "minLength": 1
+    },
+    "camera": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "starting",
+        "live",
+        "ended",
+        "failed"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "stopped",
+        "timeout",
+        "quota",
+        "busy",
+        "unknown_camera",
+        "camera_unreachable",
+        "relay_unreachable",
+        "expired"
+      ]
+    },
+    "duration_s": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Pour ended : durée en direct"
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Pour ended : données envoyées"
+    }
+  },
+  "required": [
+    "session",
+    "camera",
+    "status"
+  ]
+}

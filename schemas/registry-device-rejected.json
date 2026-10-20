@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/registry-device-rejected.json",
+  "title": "registry.device_rejected",
+  "description": "Appareil refusé et retiré du réseau.",
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string",
+      "description": "Modèle du matériel, vide s'il n'a pas pu être lu"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "unknown_model",
+        "not_pairing",
+        "interview_failed"
+      ]
+    }
+  },
+  "required": [
+    "model",
+    "reason"
+  ]
+}

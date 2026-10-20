@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/registry-pair.json",
+  "title": "registry.pair",
+  "description": "Ouvre le réseau Zigbee à de nouveaux appareils (local seulement, topic registry/cmd).",
+  "type": "object",
+  "properties": {
+    "duration_s": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Durée d'ouverture en secondes, 0 pour refermer"
+    }
+  },
+  "required": [
+    "duration_s"
+  ]
+}

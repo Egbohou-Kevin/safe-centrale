@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/config-applied.json",
+  "title": "config.applied",
+  "description": "Réponse du site à une configuration : appliquée (après le redémarrage qui la charge) ou refusée",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "La version concernée"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["applied", "rejected"]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Pourquoi elle est refusée"
+    }
+  },
+  "required": ["version", "status"]
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alarm-arming.json",
+  "title": "alarm.arming",
+  "type": "object",
+  "properties": {
+    "origin": {
+      "type": "string",
+      "enum": [
+        "keypad",
+        "app",
+        "schedule"
+      ]
+    },
+    "user": {
+      "type": "string"
+    },
+    "ends_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, à la milliseconde"
+    },
+    "forced": {
+      "type": "boolean"
+    },
+    "bypassed": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "offline": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Appareils muets au moment de l'armement (avertissement)"
+    },
+    "low_battery": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Appareils à pile faible au moment de l'armement (avertissement)"
+    }
+  },
+  "required": [
+    "origin",
+    "ends_at",
+    "forced",
+    "bypassed"
+  ]
+}

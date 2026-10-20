@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/video-request.json",
+  "title": "video.request",
+  "description": "Demande de session vidéo en direct, du cloud vers le site (topic video/cmd). Le jeton n'apparaît jamais dans les journaux.",
+  "type": "object",
+  "properties": {
+    "session": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Choisi par le cloud, repris dans chaque message de la session"
+    },
+    "camera": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifiant de caméra à nous ; l'adresse de la caméra reste sur le site"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "alarm",
+        "demand"
+      ]
+    },
+    "user": {
+      "type": "string",
+      "description": "Qui a demandé"
+    },
+    "incident": {
+      "type": "string",
+      "description": "L'alarme, pour reason alarm"
+    },
+    "max_s": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400,
+      "description": "Durée maximale en secondes, absente ou 0 : sans limite (liaison fixe)"
+    },
+    "push_url": {
+      "type": "string",
+      "pattern": "^rtmps://[^?#]+$",
+      "description": "Relais du cloud où envoyer le flux (RTMPS, sans requête : le jeton est ajouté en ?token=)"
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Jeton du relais, valable pour cette session seulement"
+    },
+    "exp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Une demande vue après exp est refusée"
+    }
+  },
+  "required": [
+    "session",
+    "camera",
+    "reason",
+    "push_url",
+    "token",
+    "exp"
+  ]
+}

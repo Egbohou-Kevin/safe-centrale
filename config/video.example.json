@@ -1,0 +1,20 @@
+{
+  "site": "tg-lom-0001",
+  "broker_url": "mqtt://127.0.0.1:1883",
+  "client_id": "safehome-video-tg-lom-0001",
+  "state_dir": "/var/lib/safehome",
+  "log_level": "info",
+  "go2rtc": "/usr/local/bin/go2rtc",
+  "ffmpeg": "/usr/bin/ffmpeg",
+  "photos": true,
+
+  "uplink": "fixed",
+  "max_sessions": 2,
+  "start_timeout": "20s",
+  "stall_after": "30s",
+  "probe_every": "5m",
+
+  "cameras": [
+    { "id": "cam_caisse", "name": "Caisse", "source": "rtsp://safehome:CHANGE-ME@192.168.1.20:554/stream2" }
+  ]
+}

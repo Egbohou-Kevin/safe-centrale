@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alarm-disarmed.json",
+  "title": "alarm.disarmed",
+  "type": "object",
+  "properties": {
+    "origin": {
+      "type": "string",
+      "enum": [
+        "keypad",
+        "app",
+        "schedule"
+      ]
+    },
+    "user": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "origin"
+  ]
+}

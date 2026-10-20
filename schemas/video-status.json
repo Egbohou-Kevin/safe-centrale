@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/video-status.json",
+  "title": "video.status",
+  "description": "État du service vidéo du site, retenu (topic video/status).",
+  "type": "object",
+  "properties": {
+    "cameras": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "reachable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "reachable"
+        ]
+      }
+    },
+    "active": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Sessions en cours"
+    },
+    "uplink": {
+      "type": "string",
+      "enum": [
+        "fixed",
+        "mobile"
+      ],
+      "description": "Liaison fixe (box) : sans plafond ni durée limite ; données mobiles : réglés par le client"
+    },
+    "used_mb_month": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Données envoyées ce mois-ci"
+    },
+    "quota_mb": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Plafond mensuel choisi par le client, 0 sans plafond (toujours 0 en liaison fixe)"
+    },
+    "max_s": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Durée maximale d'une session choisie par le client, 0 sans limite (toujours 0 en liaison fixe)"
+    }
+  },
+  "required": [
+    "cameras",
+    "active",
+    "uplink",
+    "used_mb_month",
+    "quota_mb",
+    "max_s"
+  ]
+}

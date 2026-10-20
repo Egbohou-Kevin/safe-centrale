@@ -1,0 +1,17 @@
+{
+  "site": "tg-lom-0001",
+  "broker_url": "mqtt://127.0.0.1:1883",
+  "client_id": "safehome-zigbee-tg-lom-0001",
+  "state_dir": "/var/lib/safehome",
+  "log_level": "info",
+
+  "base_topic": "zigbee2mqtt",
+  "profiles_dir": "profiles",
+
+  "confirm_wait": "3s",
+  "attempts": 3,
+  "offline_after": "4h",
+  "pair_max": "10m",
+  "step": 5,
+  "status_every": "1m"
+}

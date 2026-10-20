@@ -1,0 +1,13 @@
+{
+  "name": "heiman.siren.hs2wd",
+  "models": ["HS2WD-E"],
+  "note": "Heiman siren. It reports no state when it sounds, so a command is done once sent. To check on the real device.",
+  "capabilities": {
+    "link": { "from": "linkquality", "max": 255, "step": 20 }
+  },
+  "commands": {
+    "siren.on":  { "payload": { "warning": { "mode": "burglar", "level": "very_high", "strobe": true, "duration": "{duration_s}" } } },
+    "siren.off": { "payload": { "warning": { "mode": "stop" } } }
+  },
+  "offline_after": "2h"
+}

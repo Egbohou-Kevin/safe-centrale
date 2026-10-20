@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/agent-replay.json",
+  "title": "agent.replay",
+  "description": "Demande du cloud à l'agent de liaison (topic agent/cmd) : renvoyer les messages numérotés de from à to, bornes comprises, 1000 au plus.",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "to": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "from",
+    "to"
+  ]
+}

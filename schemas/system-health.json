@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/system-health.json",
+  "title": "system.health",
+  "description": "Publié en retenu sur system/health, à chaque changement.",
+  "type": "object",
+  "properties": {
+    "mains": {
+      "type": "string",
+      "enum": [
+        "present",
+        "lost"
+      ]
+    },
+    "hub_battery": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "links": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "gsm": {
+      "type": "object",
+      "properties": {
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "operator": {
+                "type": "string"
+              },
+              "responding": {
+                "type": "boolean",
+                "description": "Le modem répond"
+              },
+              "registered": {
+                "type": "boolean"
+              },
+              "signal": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "credit": {
+                "type": "string"
+              },
+              "last_test": {
+                "type": "string",
+                "format": "date-time",
+                "description": "UTC, à la milliseconde"
+              },
+              "last_test_ok": {
+                "type": "boolean"
+              },
+              "restarts": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Redémarrages du modem depuis le lancement de la passerelle"
+              }
+            },
+            "required": [
+              "id",
+              "responding",
+              "registered",
+              "signal"
+            ]
+          }
+        }
+      },
+      "required": [
+        "lines"
+      ]
+    }
+  },
+  "required": [
+    "links"
+  ]
+}

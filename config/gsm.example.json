@@ -1,0 +1,26 @@
+{
+  "site": "tg-lom-0001",
+  "broker_url": "mqtt://127.0.0.1:1883",
+  "client_id": "safehome-gsm-tg-lom-0001",
+  "state_dir": "/var/lib/safehome",
+  "log_level": "info",
+  "country": "228",
+
+  "lines": [
+    { "id": "line1", "port": "/dev/ttyUSB2", "baud": 115200, "operator": "togocom", "configure_port": true }
+  ],
+
+  "contacts": {
+    "u_owner":  "+228 90 00 00 01",
+    "u_deputy": "+228 90 00 00 02",
+    "u_guard":  "+228 70 00 00 03",
+    "u_mgr":    "+228 90 00 00 04"
+  },
+
+  "test_number": "+228 90 00 00 99",
+  "ring_for": "20s",
+  "check_every": "30s",
+  "test_every": "168h",
+  "status_every": "1m",
+  "max_age": { "life_safety": "10m", "intrusion": "10m", "other": "1h" }
+}

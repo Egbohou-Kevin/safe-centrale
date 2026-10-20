@@ -1,0 +1,10 @@
+{
+  "name": "aqara.contact.mccgq11lm",
+  "models": ["MCCGQ11LM"],
+  "note": "Aqara door and window sensor. Field names from the Zigbee2MQTT documentation: to check on the real device.",
+  "capabilities": {
+    "contact": { "from": "contact", "map": { "true": "closed", "false": "open" } },
+    "battery": { "from": "battery" },
+    "link":    { "from": "linkquality", "max": 255, "step": 20 }
+  }
+}

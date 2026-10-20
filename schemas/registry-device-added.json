@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/registry-device-added.json",
+  "title": "registry.device_added",
+  "description": "Appareil accepté à l'appairage.",
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "id de l'ordre d'appairage"
+    },
+    "device_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "device_id",
+    "model",
+    "capabilities"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alarm-armed.json",
+  "title": "alarm.armed",
+  "type": "object",
+  "properties": {
+    "origin": {
+      "type": "string",
+      "enum": [
+        "keypad",
+        "app",
+        "schedule"
+      ]
+    },
+    "user": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string",
+      "description": "Absent en v1"
+    }
+  },
+  "required": [
+    "origin"
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/device-command.json",
+  "title": "command",
+  "description": "Commande vers un appareil (topic device/{id}/cmd). Seul le moteur en envoie.",
+  "type": "object",
+  "properties": {
+    "device_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "command": {
+      "type": "string",
+      "enum": [
+        "siren.on",
+        "siren.off",
+        "device.identify"
+      ]
+    },
+    "args": {
+      "type": "object",
+      "properties": {
+        "duration_s": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "exp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, à la milliseconde"
+    }
+  },
+  "required": [
+    "device_id",
+    "command",
+    "args"
+  ],
+  "if": {
+    "properties": {
+      "command": {
+        "const": "siren.on"
+      }
+    },
+    "required": [
+      "command"
+    ]
+  },
+  "then": {
+    "properties": {
+      "args": {
+        "required": [
+          "duration_s"
+        ]
+      }
+    }
+  }
+}

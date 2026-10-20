@@ -1,0 +1,78 @@
+{{define "home.html"}}{{template "head" .}}
+{{with .Outcome}}{{template "outcome" .}}{{end}}
+{{with .Overview}}
+{{if .Hotspot}}<section class="err">Le réseau Wi-Fi de la console n'a pas démarré : {{.Hotspot}}</section>{{end}}
+{{if .SiteErr}}<section class="err">La configuration des zones est illisible : {{.SiteErr}}</section>{{end}}
+
+<section>
+  <h2>Zigbee</h2>
+  {{with .Status}}<p>Pont {{if eq .Bridge "online"}}en ligne{{else}}<span class="problem">{{.Bridge}}</span>{{end}}, {{.Devices}} appareil(s){{if .Offline}}, <span class="warn">muets : {{join .Offline}}</span>{{end}}.</p>
+  {{else}}<p class="warn">L'adaptateur Zigbee ne donne pas de nouvelles.</p>{{end}}
+  {{with .Pairing}}
+    {{if .Active}}<p><strong>Appairage ouvert jusqu'à {{clock .Until}}.</strong> Mettez chaque appareil en mode appairage (voir sa notice).</p>
+    {{else if .Err}}<p class="problem">L'appairage s'est arrêté : {{.Err}}</p>
+    {{else}}<p class="muted">Appairage fermé.</p>{{end}}
+    {{if .Added}}<p>Ajoutés :</p><ul>{{range .Added}}<li><span class="id">{{.DeviceID}}</span> {{.Model}} ({{join .Capabilities}})</li>{{end}}</ul>{{end}}
+    {{if .Rejected}}<p class="warn">Refusés :</p><ul>{{range .Rejected}}<li>{{if .Model}}{{.Model}}{{else}}appareil{{end}} : {{template "reject" .Reason}}</li>{{end}}</ul>{{end}}
+  {{end}}
+  {{if not .Busy}}<form method="post" action="/pair"><button>Appairer de nouveaux appareils (2 min)</button></form>{{end}}
+</section>
+
+{{if .Findings}}<section>
+  <h2>À vérifier</h2>
+  <ul>{{range .Findings}}<li class="{{if eq .Level "problem"}}problem{{else}}warn{{end}}">{{if .DeviceID}}<span class="id">{{.DeviceID}}</span> : {{end}}{{.Text}}</li>{{end}}</ul>
+</section>{{else if .Known}}<section class="ok">Tout est en ordre : chaque appareil a un usage, au moins une sirène.</section>{{end}}
+
+<section>
+  <h2>Appareils</h2>
+  {{if not .Known}}<p class="warn">La liste des appareils n'est pas encore arrivée.</p>{{end}}
+  {{range .Devices}}<div class="device">
+    <div><span class="id">{{.ID}}</span> {{if .Model}}<span class="muted">{{.Model}}</span>{{end}}
+      {{if not .Paired}}<span class="problem">— pas appairé</span>{{end}}{{if .Offline}}<span class="warn">— muet</span>{{end}}</div>
+    {{if .Capabilities}}<div class="muted">{{join .Capabilities}}</div>{{end}}
+    <div>
+      {{with .Zone}}Zone « {{.Name}} » — {{template "kind" .Kind}}{{end}}
+      {{if .Siren}}Sirène{{end}}
+      {{if .Keypad}}Clavier{{end}}
+      {{if and (not .Zone) (not .Siren) (not .Keypad)}}<span class="warn">Sans usage</span>{{end}}
+    </div>
+    {{if and .Paired .Kinds}}<form method="post" action="/zone">
+      <input type="hidden" name="id" value="{{.ID}}">
+      <input type="text" name="name" maxlength="32" placeholder="Nom de la zone (ex. Porte d'entrée)" value="{{with .Zone}}{{.Name}}{{end}}">
+      <select name="kind">{{$zone := .Zone}}{{range $k := .Kinds}}<option value="{{$k}}"{{with $zone}}{{if eq .Kind $k}} selected{{end}}{{end}}>{{template "kind" $k}}</option>{{end}}</select>
+      <button>{{if .Zone}}Changer la zone{{else}}Donner une zone{{end}}</button>
+    </form>{{end}}
+    <div class="row">
+      {{if .Zone}}<form method="post" action="/unzone"><input type="hidden" name="id" value="{{.ID}}"><button class="light">Retirer la zone</button></form>{{end}}
+      {{if .Siren}}<form method="post" action="/siren"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="on" value="0"><button class="light">Ne plus servir de sirène</button></form>
+      {{else if .CanSound}}<form method="post" action="/siren"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="on" value="1"><button class="light">Servir de sirène</button></form>{{end}}
+      {{if .Paired}}<form method="post" action="/remove"><input type="hidden" name="id" value="{{.ID}}"><button class="danger">Retirer du réseau</button></form>{{end}}
+    </div>
+  </div>{{else}}<p class="muted">Aucun appareil.</p>{{end}}
+</section>
+
+<section>
+  <h2>Codes d'accès</h2>
+  <p class="muted">Chaque personne tape elle-même son code, deux fois, sur ce téléphone. Personne d'autre ne doit le voir ; il n'est écrit nulle part.</p>
+  {{if .CodesErr}}<p class="problem">Les codes sont illisibles : {{.CodesErr}}</p>{{end}}
+  {{range .People}}<div class="device">
+    <div><strong>{{.Name}}</strong> <span class="muted">{{template "role" .Role}}</span>
+      {{if .HasCode}}— a un code{{else}}<span class="warn">— pas de code</span>{{end}}</div>
+    <form method="post" action="/code" autocomplete="off">
+      <input type="hidden" name="id" value="{{.ID}}">
+      <input type="password" name="code" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="8" autocomplete="off" placeholder="Code (4 à 8 chiffres)" required>
+      <input type="password" name="again" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="8" autocomplete="off" placeholder="Le même code, encore" required>
+      <button>{{if .HasCode}}Changer le code{{else}}Donner un code{{end}}</button>
+    </form>
+  </div>{{else}}{{if not .CodesErr}}<p class="warn">Aucun contact dans la configuration de la centrale.</p>{{end}}{{end}}
+</section>
+
+<section>
+  <h2>Terminer</h2>
+  <p class="muted">Testez chaque appareil (page Tests) avant de terminer. La centrale ferme alors le mode installation et redémarre pour prendre les nouvelles zones.</p>
+  <form method="post" action="/finish"><button>Terminer l'installation</button></form>
+</section>
+{{end}}
+</body>
+</html>
+{{end}}

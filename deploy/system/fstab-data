@@ -1,0 +1,6 @@
+# Lines to add to /etc/fstab: the third partition of the SD card holds everything that
+# must be written while the system itself stays read-only (docs/systeme.md).
+LABEL=safehome-data  /data                 ext4  defaults,noatime,commit=5  0  2
+/data/safehome       /var/lib/safehome     none  bind                       0  0
+/data/mosquitto      /var/lib/mosquitto    none  bind                       0  0
+/data/zigbee2mqtt    /var/lib/zigbee2mqtt  none  bind                       0  0

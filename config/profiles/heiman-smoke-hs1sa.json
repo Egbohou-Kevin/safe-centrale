@@ -1,0 +1,11 @@
+{
+  "name": "heiman.smoke.hs1sa",
+  "models": ["HS1SA"],
+  "note": "Heiman smoke detector. Its own siren sounds locally whatever we do. To check on the real device.",
+  "capabilities": {
+    "smoke":   { "from": "smoke", "map": { "true": "alarm", "false": "clear" } },
+    "tamper":  { "from": "tamper", "map": { "true": "triggered", "false": "clear" } },
+    "battery": { "from": "battery" },
+    "link":    { "from": "linkquality", "max": 255, "step": 20 }
+  }
+}

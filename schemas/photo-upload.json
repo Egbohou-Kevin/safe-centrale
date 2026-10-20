@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/photo-upload.json",
+  "title": "photo.upload",
+  "description": "Où envoyer une photo, du cloud vers l'agent de liaison (topic photo/cmd). L'agent envoie le fichier par HTTPS (PUT, image/jpeg) avec le jeton en Authorization: Bearer. Le jeton n'apparaît jamais dans les journaux.",
+  "type": "object",
+  "properties": {
+    "photo": {
+      "type": "string",
+      "minLength": 1
+    },
+    "url": {
+      "type": "string",
+      "pattern": "^https://[^?#@]+$",
+      "description": "Adresse HTTPS, sans identifiants ni requête"
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Jeton valable pour cette photo seulement"
+    },
+    "exp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "L'adresse ne vaut plus après exp"
+    }
+  },
+  "required": [
+    "photo",
+    "url",
+    "token",
+    "exp"
+  ]
+}

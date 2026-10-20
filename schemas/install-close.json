@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/install-close.json",
+  "title": "install.close",
+  "description": "Fin du mode installation, de la console locale vers la centrale (topic install/cmd). Jamais du cloud.",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}

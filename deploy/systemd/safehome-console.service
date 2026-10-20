@@ -1,0 +1,38 @@
+[Unit]
+Description=safeHome local console (own Wi-Fi and web page, during the installation mode only)
+After=network-online.target mosquitto.service NetworkManager.service
+Wants=network-online.target mosquitto.service
+# Restart forever: an alarm that gives up after a few failures is worse than one that keeps trying.
+StartLimitIntervalSec=0
+
+[Service]
+# The program says when it is ready, then that it still works: a program stuck for
+# 30 s is killed with SIGABRT (its goroutines go to the journal) and started again.
+Type=notify
+NotifyAccess=main
+WatchdogSec=30s
+User=safehome
+Group=safehome
+ExecStart=/usr/local/bin/safehome-console run -config /etc/safehome/console.json
+Restart=always
+RestartSec=2
+# A clean stop turns the network off (nmcli) before the program exits.
+TimeoutStopSec=40
+# The page listens on port 80 of the hub's own network, as an ordinary user: this
+# capability and nothing else. NetworkManager makes the network, allowed by the
+# polkit rule in deploy/system/polkit-safehome-console.rules.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+# Hardening: the program writes only the state directory (the zones and sirens it
+# sets for the hub are kept there).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/safehome
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target
