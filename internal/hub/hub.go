@@ -15,7 +15,6 @@ package hub
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -34,128 +33,6 @@ import (
 	"safehome/internal/outbox"
 )
 
-// Config holds everything the hub needs to know about its site.
-type Config struct {
-	Site        string // for example "tg-lom-0001"
-	HubDeviceID string // the hub's battery module: its mains and battery readings are the hub's
-	SirenIDs    []string
-
-	Engine engine.Config
-	Health health.Config // HubDeviceID is taken from the field above
-	Access access.Config
-	// Escalation holds the contacts and the plans: who is told, and how.
-	Escalation escalation.Config
-
-	HeartbeatEvery time.Duration // sign of life, one minute by default
-	BootWindow     time.Duration // how long to listen for retained device states at start
-	// LinkWait is how long the boot waits for LinkUp before listening anyway: the
-	// window only makes sense once the subscriptions are active. Zero does not wait.
-	LinkWait        time.Duration
-	SirenCommandTTL time.Duration // a siren command not carried out within this is void
-
-	DedupeSize int           // message ids remembered
-	OutboxSize int           // messages kept while the broker is away
-	RetryMin   time.Duration // first wait before sending again
-	RetryMax   time.Duration // longest wait
-	AuthQueue  int           // code checks that may wait
-
-	Versions map[string]string // component -> version, for the heartbeat
-}
-
-// DefaultConfig returns the defaults decided in the design documents.
-func DefaultConfig(site, hubDeviceID string, sirenIDs ...string) Config {
-	return Config{
-		Site: site, HubDeviceID: hubDeviceID, SirenIDs: sirenIDs,
-		Engine: engine.DefaultConfig(), Health: health.DefaultConfig(), Access: access.DefaultConfig(),
-		Escalation:     escalation.DefaultConfig(site, nil),
-		HeartbeatEvery: time.Minute, BootWindow: 2 * time.Second, LinkWait: 30 * time.Second, SirenCommandTTL: 30 * time.Second,
-		DedupeSize: 2048, OutboxSize: 2000, RetryMin: 200 * time.Millisecond, RetryMax: 5 * time.Second,
-		AuthQueue: 16,
-	}
-}
-
-// Validate checks the whole configuration, domains included, without building
-// anything.
-func (c Config) Validate() error {
-	if err := c.validate(); err != nil {
-		return err
-	}
-	if err := c.Engine.Validate(); err != nil {
-		return err
-	}
-	hc := c.Health
-	hc.HubDeviceID = c.HubDeviceID
-	if err := hc.Validate(); err != nil {
-		return err
-	}
-	return c.Access.Validate()
-}
-
-func (c Config) validate() error {
-	switch {
-	case !contract.ValidSite(c.Site):
-		return fmt.Errorf("hub: invalid site %q", c.Site)
-	case c.HubDeviceID == "":
-		return errors.New("hub: HubDeviceID is required")
-	case len(c.SirenIDs) == 0:
-		return errors.New("hub: at least one siren is required: an alarm that cannot sound is a misconfiguration")
-	case c.HeartbeatEvery <= 0 || c.SirenCommandTTL <= 0 || c.RetryMin <= 0 || c.RetryMax < c.RetryMin:
-		return errors.New("hub: durations must be positive")
-	case c.BootWindow < 0:
-		return errors.New("hub: BootWindow must not be negative")
-	case c.Escalation.Validate() != nil:
-		return fmt.Errorf("hub: %w", c.Escalation.Validate())
-	case c.LinkWait < 0:
-		return errors.New("hub: LinkWait must not be negative")
-	case c.DedupeSize < 1 || c.OutboxSize < 1 || c.AuthQueue < 1:
-		return errors.New("hub: DedupeSize, OutboxSize and AuthQueue must be at least 1")
-	}
-	for _, id := range c.SirenIDs {
-		if id == "" {
-			return errors.New("hub: empty siren id")
-		}
-	}
-	return nil
-}
-
-// Publisher is the port the hub needs from the MQTT adapter (see package outbox).
-type Publisher = outbox.Publisher
-
-// ErrUnavailable is what a Publisher returns when the broker cannot be reached right
-// now: the message is kept and sent again.
-var ErrUnavailable = outbox.ErrUnavailable
-
-// Deps are the ports the hub needs.
-type Deps struct {
-	Clock     driver.Clock
-	Store     driver.Store
-	Publisher Publisher
-	NewID     func() string // message and incident identifiers (ULIDs)
-	Logger    *slog.Logger
-	// ClockSynced says whether the system clock is synchronised, for the heartbeat;
-	// known is false when it cannot tell. Nil leaves clock_ok out.
-	ClockSynced func() (synced, known bool)
-	// DevicesChanged says whether the installer's tools changed the zones or the
-	// sirens since the hub loaded them; RestartWhenQuiet has the hub restart to load
-	// them, at a quiet moment. Asked when the installation mode closes; both or
-	// neither.
-	DevicesChanged   func() bool
-	RestartWhenQuiet func()
-}
-
-// Message is a message received from the broker.
-type Message struct {
-	Topic   string
-	Payload []byte
-	Retain  bool
-}
-
-// Subscription is a topic filter the hub wants to listen to.
-type Subscription struct {
-	Filter string
-	QoS    byte
-}
-
 // Store keys.
 const (
 	keyEngine     = "engine"
@@ -165,13 +42,8 @@ const (
 	keySeq        = "seq"
 )
 
-// Sources written in the envelope.
-const (
-	srcEngine = "engine"
-	srcHealth = "health"
-)
-
-const maxPayload = 64 * 1024
+// deliveriesKept is how many alert requests the hub remembers, to match their results.
+const deliveriesKept = 2048
 
 // Hub is the application of the hub.
 type Hub struct {
@@ -200,8 +72,7 @@ type Hub struct {
 	mode    atomic.Value // the alarm state, for the heartbeat
 	mains   atomic.Bool  // a mains reading has been seen
 
-	gsmMu sync.Mutex
-	gsm   *contract.GSMHealth // the GSM gateway's lines, once it spoke
+	gsm atomic.Pointer[contract.GSMHealth] // the GSM gateway's lines, once it spoke
 
 	// uplink is the last internet state given to the escalation; owned by the
 	// monitor's loop.
@@ -219,7 +90,9 @@ type Hub struct {
 
 	auth chan authJob
 
-	life context.Context // cancelled when Run ends: queued work is given up
+	// life ends with Run: the loops run on it, and work handed to them after it ended
+	// is given up quietly.
+	life context.Context
 	stop context.CancelFunc
 	ran  atomic.Bool
 }
@@ -231,61 +104,67 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
-	if deps.Clock == nil || deps.Store == nil || deps.Publisher == nil || deps.NewID == nil {
-		return nil, errors.New("hub: Clock, Store, Publisher and NewID are required")
-	}
-	if (deps.DevicesChanged == nil) != (deps.RestartWhenQuiet == nil) {
-		return nil, errors.New("hub: DevicesChanged and RestartWhenQuiet go together")
+	if err := deps.validate(); err != nil {
+		return nil, err
 	}
 	log := deps.Logger
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
+	now := deps.Clock.Now()
 	h := &Hub{
 		cfg: cfg, deps: deps, log: log,
 		seen:       outbox.NewRecentIDs(cfg.DedupeSize),
+		deliveries: newDeliveryIndex(deliveriesKept),
+		bootID:     deps.NewID(),
+		started:    now,
 		booting:    true,
 		linkUp:     make(chan struct{}),
 		bootStates: map[string]contract.DeviceEventData{},
 		auth:       make(chan authJob, cfg.AuthQueue),
-		deliveries: newDeliveryIndex(2048),
 	}
 	h.life, h.stop = context.WithCancel(context.Background())
-	h.bootID = deps.NewID()
-	now := deps.Clock.Now()
-	h.started = now
 	h.mode.Store(string(engine.ModeDisarmed))
 
-	codes, err := h.openCodes()
+	if err := h.openSaved(); err != nil {
+		return nil, err
+	}
+	if err := h.buildEngine(now); err != nil {
+		return nil, err
+	}
+	if err := h.buildMonitor(now); err != nil {
+		return nil, err
+	}
+	if err := h.buildEscalation(); err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
+// openSaved opens what the hub keeps apart from the domains' states: the access
+// codes and the message counter.
+func (h *Hub) openSaved() (err error) {
+	if h.codes, err = OpenCodes(h.cfg.Access, h.deps.Store); err != nil {
+		return err
+	}
+	if h.installer, err = OpenInstallerCode(h.cfg.Access, h.deps.Store); err != nil {
+		return err
+	}
+	seq, err := outbox.NewSequencer(h.deps.Store, keySeq, h.log)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	h.codes = codes
-	if h.installer, err = OpenInstallerCode(cfg.Access, deps.Store); err != nil {
-		return nil, err
-	}
+	h.out = outbox.New(h.deps.Publisher, seq, h.cfg.Site, h.cfg.OutboxSize, h.cfg.RetryMin, h.cfg.RetryMax, h.log)
+	return nil
+}
 
-	seq, err := outbox.NewSequencer(deps.Store, keySeq, log)
-	if err != nil {
-		return nil, err
+// buildEngine builds the alarm engine and its loop, which puts its saved state back.
+func (h *Hub) buildEngine(now time.Time) (err error) {
+	if h.eng, err = engine.New(h.cfg.Engine, h.deps.NewID, now); err != nil {
+		return err
 	}
-	h.out = outbox.New(deps.Publisher, seq, cfg.Site, cfg.OutboxSize, cfg.RetryMin, cfg.RetryMax, log)
-
-	if h.eng, err = engine.New(cfg.Engine, deps.NewID, now); err != nil {
-		return nil, err
-	}
-	hc := cfg.Health
-	hc.HubDeviceID = cfg.HubDeviceID
-	if h.mon, err = health.New(hc, deps.NewID, now); err != nil {
-		return nil, err
-	}
-
-	if h.esc, err = escalation.New(cfg.Escalation); err != nil {
-		return nil, err
-	}
-
 	h.engLoop, err = driver.New(driver.Options[engine.Input, engine.Action, engine.Snapshot]{
-		Name: keyEngine, Clock: deps.Clock, Store: deps.Store, Logger: log,
+		Name: keyEngine, Clock: h.deps.Clock, Store: h.deps.Store, Logger: h.log,
 		Core: driver.Core[engine.Input, engine.Action, engine.Snapshot]{
 			Handle: h.eng.Handle, NextWake: h.eng.NextWake, Snapshot: h.eng.Snapshot, Restore: h.eng.Restore,
 			Tick: func(t time.Time) engine.Input { return engine.Tick{Now: t} },
@@ -296,11 +175,17 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 			h.installFollowsAlarm(t)
 		},
 	})
-	if err != nil {
-		return nil, err
+	return err
+}
+
+// buildMonitor builds the health monitor and its loop, which puts its saved state
+// back.
+func (h *Hub) buildMonitor(now time.Time) (err error) {
+	if h.mon, err = health.New(h.cfg.healthConfig(), h.deps.NewID, now); err != nil {
+		return err
 	}
 	h.monLoop, err = driver.New(driver.Options[health.Input, health.Action, health.Snapshot]{
-		Name: keyHealth, Clock: deps.Clock, Store: deps.Store, Logger: log,
+		Name: keyHealth, Clock: h.deps.Clock, Store: h.deps.Store, Logger: h.log,
 		Core: driver.Core[health.Input, health.Action, health.Snapshot]{
 			Handle: h.mon.Handle, NextWake: h.mon.NextWake, Snapshot: h.mon.Snapshot, Restore: h.mon.Restore,
 			Tick: func(t time.Time) health.Input { return health.Tick{Now: t} },
@@ -309,26 +194,29 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 		OnChange: func(_ context.Context, t time.Time) { h.publishHealth(t) },
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 	st := h.mon.Status() // restored by the loop; nothing runs yet
 	h.faults.Store(&st)
+	return nil
+}
+
+// buildEscalation builds the escalation and its loop, which puts its saved state
+// back.
+func (h *Hub) buildEscalation() (err error) {
+	if h.esc, err = escalation.New(h.cfg.Escalation); err != nil {
+		return err
+	}
 	h.escLoop, err = driver.New(driver.Options[escalation.Input, escalation.Action, escalation.Snapshot]{
-		Name: keyEscalation, Clock: deps.Clock, Store: deps.Store, Logger: log,
+		Name: keyEscalation, Clock: h.deps.Clock, Store: h.deps.Store, Logger: h.log,
 		Core: driver.Core[escalation.Input, escalation.Action, escalation.Snapshot]{
 			Handle: h.esc.Handle, NextWake: h.esc.NextWake, Snapshot: h.esc.Snapshot, Restore: h.esc.Restore,
 			Tick: func(t time.Time) escalation.Input { return escalation.Tick{Now: t} },
 		},
 		Dispatch: h.dispatchEscalation,
 	})
-	if err != nil {
-		return nil, err
-	}
-	return h, nil
+	return err
 }
-
-// Codes returns the access code registry, for the installer's tools.
-func (h *Hub) Codes() *access.Registry { return h.codes }
 
 // LinkUp tells the hub that the subscriptions are active: the boot window, in which
 // the retained device states arrive, starts now. Calling it again does nothing.
@@ -351,28 +239,19 @@ func (h *Hub) Alive(ctx context.Context) error {
 
 // Subscriptions lists what the hub must listen to on the broker.
 func (h *Hub) Subscriptions() []Subscription {
+	site := h.cfg.Site
 	return []Subscription{
-		{Filter: contract.Topic(h.cfg.Site, "device", "+", "event"), QoS: 1},
-		{Filter: contract.Topic(h.cfg.Site, "device", "+", "state", "+"), QoS: 1},
-		{Filter: contract.AlarmCmdTopic(h.cfg.Site), QoS: 1},
-		{Filter: contract.AlertResultTopic(h.cfg.Site), QoS: 1},
-		{Filter: contract.AlertAckTopic(h.cfg.Site), QoS: 1},
-		{Filter: contract.GSMStatusTopic(h.cfg.Site), QoS: 1},
-		{Filter: contract.ZigbeeStatusTopic(h.cfg.Site), QoS: 1},
-		{Filter: contract.AgentStatusTopic(h.cfg.Site), QoS: 1},
-		{Filter: contract.InstallCmdTopic(h.cfg.Site), QoS: 1},
+		{Filter: contract.Topic(site, "device", "+", "event"), QoS: 1},
+		{Filter: contract.Topic(site, "device", "+", "state", "+"), QoS: 1},
+		{Filter: contract.AlarmCmdTopic(site), QoS: 1},
+		{Filter: contract.AlertResultTopic(site), QoS: 1},
+		{Filter: contract.AlertAckTopic(site), QoS: 1},
+		{Filter: contract.GSMStatusTopic(site), QoS: 1},
+		{Filter: contract.ZigbeeStatusTopic(site), QoS: 1},
+		{Filter: contract.AgentStatusTopic(site), QoS: 1},
+		{Filter: contract.InstallCmdTopic(site), QoS: 1},
 	}
 }
-
-// The link names and states the hub understands.
-const (
-	linkInternet = "internet"
-	linkGSM      = "gsm"
-	linkZigbee   = "zigbee"
-	linkOK       = "ok"
-	linkDown     = "down"
-	linkSilent   = "silent" // the component stopped giving news (it is dead or stuck)
-)
 
 // Run serves the hub until ctx is cancelled. It must be called once. Messages may
 // be given to HandleMessage as soon as Run has started.
@@ -380,26 +259,27 @@ func (h *Hub) Run(ctx context.Context) error {
 	if !h.ran.CompareAndSwap(false, true) {
 		return errors.New("hub: Run called twice")
 	}
+	// Everything runs on h.life, which ends with ctx: a loop only stops once h.life
+	// is over, so a message handed to it meanwhile is known to be given up.
 	defer h.stop()
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	defer context.AfterFunc(ctx, h.stop)()
 
 	var wg sync.WaitGroup
-	start := func(f func(context.Context)) {
-		wg.Add(1)
-		go func() { defer wg.Done(); f(runCtx) }()
+	for _, run := range []func(context.Context){
+		func(c context.Context) { h.engLoop.Run(c) },
+		func(c context.Context) { h.monLoop.Run(c) },
+		func(c context.Context) { h.escLoop.Run(c) },
+		h.out.Run,
+		h.authWorker,
+		h.heartbeats,
+	} {
+		wg.Go(func() { run(h.life) })
 	}
-	start(func(c context.Context) { h.engLoop.Run(c) })
-	start(func(c context.Context) { h.monLoop.Run(c) })
-	start(func(c context.Context) { h.escLoop.Run(c) })
-	start(h.out.Run)
-	start(h.authWorker)
-	start(h.heartbeats)
 
-	if err := h.boot(runCtx); err == nil {
-		<-runCtx.Done()
+	if err := h.boot(h.life); err == nil {
+		<-h.life.Done()
 	}
-	cancel()
+	h.stop()
 	wg.Wait()
 	h.out.Flush(3 * time.Second)
 	return nil
@@ -408,32 +288,10 @@ func (h *Hub) Run(ctx context.Context) error {
 // boot lets the retained device states arrive, then tells the engine what the
 // devices look like, so a door left open is known before the first event.
 func (h *Hub) boot(ctx context.Context) error {
-	if h.cfg.BootWindow > 0 {
-		if h.cfg.LinkWait > 0 {
-			select {
-			case <-h.linkUp:
-			case <-time.After(h.cfg.LinkWait):
-				h.log.Warn("the broker link did not come up in time, listening for device states anyway")
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-		if !outbox.Sleep(ctx, h.cfg.BootWindow) {
-			return ctx.Err()
-		}
+	if err := h.bootWindow(ctx); err != nil {
+		return err
 	}
-	h.bootMu.Lock()
-	h.booting = false
-	states := h.bootStates
-	h.bootStates = nil
-	h.bootMu.Unlock()
-
-	var signals []engine.Signal
-	for _, key := range slices.Sorted(maps.Keys(states)) {
-		if sig, ok := signalOf(states[key]); ok {
-			signals = append(signals, sig)
-		}
-	}
+	signals := h.endBootWindow()
 	err := h.engLoop.Do(ctx, func(now time.Time) []engine.Action {
 		actions := h.eng.Boot(now, signals)
 		h.publishState(now) // the first retained state, even if nothing changed since the last run
@@ -451,111 +309,41 @@ func (h *Hub) boot(ctx context.Context) error {
 	})
 }
 
-// --- access codes -----------------------------------------------------------
-
-func (h *Hub) openCodes() (*access.Registry, error) { return OpenCodes(h.cfg.Access, h.deps.Store) }
-
-// OpenCodes opens the access codes saved in store. The hub uses it at start, and so
-// does the installer's command-line tool, which sets codes without running a hub.
-// Every change is saved before it takes effect.
-func OpenCodes(cfg access.Config, store driver.Store) (*access.Registry, error) {
-	return openRegistry(cfg, store, keyAccess)
-}
-
-func openRegistry(cfg access.Config, store driver.Store, key string) (*access.Registry, error) {
-	records, err := loadCodes(store, key)
-	if err != nil {
-		return nil, err
+// bootWindow waits for the link to come up (LinkWait at most), then for the retained
+// device states to arrive (BootWindow).
+func (h *Hub) bootWindow(ctx context.Context) error {
+	if h.cfg.BootWindow == 0 {
+		return nil
 	}
-	persist := func(rs []access.Record) error {
-		b, err := json.Marshal(rs)
-		if err != nil {
-			return err
+	if h.cfg.LinkWait > 0 {
+		select {
+		case <-h.linkUp:
+		case <-time.After(h.cfg.LinkWait):
+			h.log.Warn("the broker link did not come up in time, listening for device states anyway")
+		case <-ctx.Done():
+			return ctx.Err()
 		}
-		return store.Save(key, b)
 	}
-	return access.New(cfg, records, persist)
-}
-
-func loadCodes(store driver.Store, key string) ([]access.Record, error) {
-	data, found, err := store.Load(key)
-	if err != nil {
-		return nil, fmt.Errorf("hub: loading the access codes: %w", err)
+	if !outbox.Sleep(ctx, h.cfg.BootWindow) {
+		return ctx.Err()
 	}
-	if !found {
-		return nil, nil
-	}
-	var records []access.Record
-	if err := json.Unmarshal(data, &records); err != nil {
-		return nil, fmt.Errorf("hub: reading the access codes: %w", err)
-	}
-	return records, nil
-}
-
-// ReloadCodes reads the saved codes again. The installer's tool writes them from
-// another process, and the composition root calls this when told to (SIGHUP). A
-// damaged file leaves the codes in use untouched and is reported.
-func (h *Hub) ReloadCodes() error {
-	records, err := loadCodes(h.deps.Store, keyAccess)
-	if err != nil {
-		return err
-	}
-	installer, err := loadCodes(h.deps.Store, keyInstaller)
-	if err != nil {
-		return err
-	}
-	if err := h.codes.Reload(records); err != nil {
-		return err
-	}
-	if err := h.installer.Reload(installer); err != nil {
-		return err
-	}
-	h.log.Info("access codes reloaded", "users", len(records), "installer", len(installer) > 0)
 	return nil
 }
 
-// --- heartbeat ----------------------------------------------------------------
+// endBootWindow stops collecting retained states and returns what they say to the
+// engine, in a stable order.
+func (h *Hub) endBootWindow() []engine.Signal {
+	h.bootMu.Lock()
+	h.booting = false
+	states := h.bootStates
+	h.bootStates = nil
+	h.bootMu.Unlock()
 
-func (h *Hub) heartbeats(ctx context.Context) {
-	for {
-		fired, stop := h.deps.Clock.Timer(h.cfg.HeartbeatEvery)
-		select {
-		case <-ctx.Done():
-			stop()
-			return
-		case <-fired:
-			h.publishHeartbeat()
+	var signals []engine.Signal
+	for _, key := range slices.Sorted(maps.Keys(states)) {
+		if sig, ok := signalOf(states[key]); ok {
+			signals = append(signals, sig)
 		}
 	}
-}
-
-func (h *Hub) publishHeartbeat() {
-	now := h.deps.Clock.Now()
-	mode, _ := h.mode.Load().(string)
-	data := contract.HeartbeatData{
-		BootID:     h.bootID,
-		UptimeS:    max(int64(now.Sub(h.started)/time.Second), 0),
-		Engine:     mode,
-		QueueDepth: h.out.Depth(),
-		FW:         h.cfg.Versions,
-	}
-	if h.deps.ClockSynced != nil {
-		if synced, known := h.deps.ClockSynced(); known {
-			data.ClockOK = &synced
-		}
-	}
-	h.enqueue(srcEngine, contract.HeartbeatTopic(h.cfg.Site), contract.TypeHeartbeat, data, 1, false, now)
-}
-
-// enqueue puts a message in the outbox.
-// It returns the identifier of the message, empty if it could not be built.
-func (h *Hub) enqueue(src, topic, typ string, data any, qos byte, retain bool, ts time.Time) string {
-	raw, err := json.Marshal(data)
-	if err != nil {
-		h.log.Error("encoding a message failed", "type", typ, "err", err)
-		return ""
-	}
-	id := h.deps.NewID()
-	h.out.Put(&outbox.Item{Topic: topic, Src: src, Type: typ, Data: raw, QoS: qos, Retain: retain, ID: id, TS: ts})
-	return id
+	return signals
 }

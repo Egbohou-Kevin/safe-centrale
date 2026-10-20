@@ -238,21 +238,20 @@ func (a *App) RestartWhenQuiet() {
 // disarmed or armed: never in the middle of a delay or of an alarm.
 func (a *App) restartIfQuiet() {
 	a.mu.Lock()
+	pending := (a.saved != 0 || a.devices) && !a.restarted
 	quiet := a.state == contract.StateDisarmed || a.state == contract.StateArmed
-	restart := (a.saved != 0 || a.devices) && quiet && !a.restarted
-	if restart {
+	if pending && quiet {
 		a.restarted = true
 	}
-	version, devices, state, done := a.saved, a.devices, a.state, a.restarted
+	version, devices, state := a.saved, a.devices, a.state
 	a.mu.Unlock()
-	if !restart {
-		if (version != 0 || devices) && !done {
-			a.log.Info("waiting for a quiet moment to restart", "version", version, "devices", devices, "alarm", state)
-		}
-		return
+	switch {
+	case pending && quiet:
+		a.log.Info("restarting to apply the new configuration", "version", version, "devices", devices)
+		a.deps.Restart()
+	case pending:
+		a.log.Info("waiting for a quiet moment to restart", "version", version, "devices", devices, "alarm", state)
 	}
-	a.log.Info("restarting to apply the new configuration", "version", version, "devices", devices)
-	a.deps.Restart()
 }
 
 // answer publishes config.applied: applied when why is empty, rejected otherwise.

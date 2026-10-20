@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"slices"
 	"time"
 
@@ -23,16 +24,15 @@ const InstallerUser = "installer"
 // installLength is how long the mode lasts.
 const installLength = contract.InstallLength * time.Second
 
-const (
-	keyInstaller = "installer"
-	srcInstall   = "install"
-)
+const keyInstaller = "installer"
 
 // installMode is the state of the mode. Only the engine's loop touches it.
 type installMode struct {
 	open    bool
 	until   time.Time
 	session int // counts the openings: the timer of an older one does nothing
+	// endTimer lets the timer of the open mode go once the mode closes earlier.
+	endTimer context.CancelFunc
 }
 
 // OpenInstallerCode opens the installer code saved in store, as OpenCodes does the
@@ -62,25 +62,42 @@ func (h *Hub) openInstall(ref string, cmd contract.AlarmCommandData) {
 			h.log.Warn("installer code refused: the alarm is not disarmed, or the keypad is locked", "alarm", st.Mode)
 			return h.eng.Handle(engwire.Command(cmd, ref, now, engine.Auth{Checked: true}))
 		}
-		h.inst.session++
-		h.inst.open, h.inst.until = true, now.Add(installLength)
+		h.startInstall(now)
 		h.log.Warn("installation mode opened at the keypad", "until", h.inst.until.Format(time.RFC3339))
 		h.enqueue(srcEngine, contract.AlarmAckTopic(h.cfg.Site), contract.TypeAlarmAck, contract.AlarmAckData{
 			Ref: ref, Status: contract.AckDone, Detail: map[string]any{"install": contract.InstallOpen},
-		}, 1, false, now)
+		}, false, now)
 		h.publishInstall(now, "")
-		go h.installTimer(h.inst.session)
 		return nil
 	})
 	h.submitFailed(err)
 }
 
-// installTimer closes the mode when its time is up.
-func (h *Hub) installTimer(session int) {
+// startInstall opens the mode (again: a new opening starts a new half hour) and
+// starts its timer. The timer is started here, on the engine's loop, so that it ends
+// exactly at until. It runs on the engine's loop.
+func (h *Hub) startInstall(now time.Time) {
+	h.stopInstallTimer()
+	h.inst.session++
+	h.inst.open, h.inst.until = true, now.Add(installLength)
 	fired, stop := h.deps.Clock.Timer(installLength)
+	ctx, cancel := context.WithCancel(h.life)
+	h.inst.endTimer = cancel
+	go h.installTimer(ctx, h.inst.session, fired, stop)
+}
+
+func (h *Hub) stopInstallTimer() {
+	if h.inst.endTimer != nil {
+		h.inst.endTimer()
+		h.inst.endTimer = nil
+	}
+}
+
+// installTimer closes the mode when its time is up, unless ctx ends first.
+func (h *Hub) installTimer(ctx context.Context, session int, fired <-chan time.Time, stop func()) {
 	defer stop()
 	select {
-	case <-h.life.Done():
+	case <-ctx.Done():
 	case <-fired:
 		err := h.engLoop.Post(h.life, func(now time.Time) []engine.Action {
 			if h.inst.session == session {
@@ -107,6 +124,7 @@ func (h *Hub) closeInstall(now time.Time, reason string) {
 		return
 	}
 	h.inst.open = false
+	h.stopInstallTimer()
 	h.log.Info("installation mode closed", "reason", reason)
 	h.publishInstall(now, reason)
 	if h.deps.DevicesChanged != nil && h.deps.DevicesChanged() {
@@ -145,7 +163,7 @@ func (h *Hub) publishInstall(now time.Time, reason string) {
 	if reason == "" {
 		d = contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(h.inst.until)}
 	}
-	h.enqueue(srcInstall, contract.InstallModeTopic(h.cfg.Site), contract.TypeInstallMode, d, 1, true, now)
+	h.enqueue(srcInstall, contract.InstallModeTopic(h.cfg.Site), contract.TypeInstallMode, d, true, now)
 }
 
 // installMessage takes an order of the local console: install.close.

@@ -232,18 +232,7 @@ func (l *Loop[In, Act, Snap]) Submit(ctx context.Context, build func(now time.Ti
 // core from another goroutine (the core belongs to the loop). When Do returns,
 // everything queued before it has been processed too.
 func (l *Loop[In, Act, Snap]) Do(ctx context.Context, fn func(now time.Time) []Act) error {
-	done := make(chan struct{})
-	if err := l.enqueue(ctx, task[Act]{run: fn, done: done}); err != nil {
-		return err
-	}
-	select {
-	case <-done:
-		return nil
-	case <-l.stopped:
-		return ErrStopped
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return l.runAndWait(ctx, fn)
 }
 
 // Alive returns once the loop has taken everything queued before it: the loop's
@@ -251,8 +240,13 @@ func (l *Loop[In, Act, Snap]) Do(ctx context.Context, fn func(now time.Time) []A
 // touch the core. It is what a program checks before telling systemd that it still
 // works (the watchdog).
 func (l *Loop[In, Act, Snap]) Alive(ctx context.Context) error {
+	return l.runAndWait(ctx, nil)
+}
+
+// runAndWait queues fn (nil: nothing to run) and waits until the loop is done with it.
+func (l *Loop[In, Act, Snap]) runAndWait(ctx context.Context, fn func(now time.Time) []Act) error {
 	done := make(chan struct{})
-	if err := l.enqueue(ctx, task[Act]{done: done}); err != nil {
+	if err := l.enqueue(ctx, task[Act]{run: fn, done: done}); err != nil {
 		return err
 	}
 	select {

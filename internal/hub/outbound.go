@@ -2,8 +2,8 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
-	"slices"
 	"time"
 
 	"safehome/internal/contract"
@@ -11,7 +11,47 @@ import (
 	engwire "safehome/internal/engine/wire"
 	"safehome/internal/escalation"
 	"safehome/internal/health"
+	"safehome/internal/outbox"
 )
+
+// Sources written in the envelope.
+const (
+	srcEngine     = "engine"
+	srcHealth     = "health"
+	srcEscalation = "escalation"
+	srcInstall    = "install"
+)
+
+// The link names and states of system.health.
+const (
+	linkInternet = "internet"
+	linkGSM      = "gsm"
+	linkZigbee   = "zigbee"
+	linkOK       = "ok"
+	linkDown     = "down"
+	linkSilent   = "silent" // the component stopped giving news (it is dead or stuck)
+)
+
+// enqueue puts a message in the outbox, at QoS 1 like every message of the hub. It
+// returns the identifier of the message, empty if it could not be built.
+func (h *Hub) enqueue(src, topic, typ string, data any, retain bool, ts time.Time) string {
+	id := h.deps.NewID()
+	if !h.enqueueAs(id, src, topic, typ, data, retain, ts) {
+		return ""
+	}
+	return id
+}
+
+// enqueueAs is enqueue with an identifier chosen by the caller.
+func (h *Hub) enqueueAs(id, src, topic, typ string, data any, retain bool, ts time.Time) bool {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		h.log.Error("encoding a message failed", "type", typ, "err", err)
+		return false
+	}
+	h.out.Put(&outbox.Item{Topic: topic, Src: src, Type: typ, Data: raw, QoS: 1, Retain: retain, ID: id, TS: ts})
+	return true
+}
 
 // dispatchEngine turns what the engine decided into messages. It runs on the
 // engine loop's goroutine and only queues: the sending is done elsewhere.
@@ -27,7 +67,7 @@ func (h *Hub) dispatchEngine(_ context.Context, now time.Time, actions []engine.
 	for _, s := range out.Siren {
 		for _, id := range h.cfg.SirenIDs {
 			h.enqueue(srcEngine, contract.DeviceCmdTopic(site, id), contract.TypeCommand,
-				s.Data(id, now.Add(h.cfg.SirenCommandTTL)), 1, false, now)
+				s.Data(id, now.Add(h.cfg.SirenCommandTTL)), false, now)
 		}
 	}
 	// The engine's alerts do not leave as they are: the escalation turns each into one
@@ -35,10 +75,10 @@ func (h *Hub) dispatchEngine(_ context.Context, now time.Time, actions []engine.
 	h.escalateEngine(now, actions)
 	h.warnOfFaults(&out)
 	for _, ev := range out.Events {
-		h.enqueue(srcEngine, contract.AlarmEventTopic(site), ev.Type, ev.Data, 1, false, now)
+		h.enqueue(srcEngine, contract.AlarmEventTopic(site), ev.Type, ev.Data, false, now)
 	}
 	for _, ack := range out.Acks {
-		h.enqueue(srcEngine, contract.AlarmAckTopic(site), contract.TypeAlarmAck, ack, 1, false, now)
+		h.enqueue(srcEngine, contract.AlarmAckTopic(site), contract.TypeAlarmAck, ack, false, now)
 	}
 	return nil
 }
@@ -90,7 +130,7 @@ func (h *Hub) publishState(now time.Time) {
 		h.log.Error("building the alarm state failed", "err", err)
 		return
 	}
-	h.enqueue(srcEngine, contract.AlarmStateTopic(h.cfg.Site), contract.TypeAlarmState, data, 1, true, now)
+	h.enqueue(srcEngine, contract.AlarmStateTopic(h.cfg.Site), contract.TypeAlarmState, data, true, now)
 }
 
 // dispatchHealth turns the monitor's alerts into alert requests.
@@ -99,22 +139,17 @@ func (h *Hub) dispatchHealth(_ context.Context, now time.Time, actions []health.
 	return nil
 }
 
-// publishHealth publishes the retained system.health.
+// publishHealth publishes the retained system.health. It runs on the monitor's loop.
 func (h *Hub) publishHealth(now time.Time) {
 	st := h.mon.Status()
 	h.faults.Store(&st)
 	h.followUplink(now, st.Internet)
-	data := contract.HealthData{Links: map[string]string{}}
+	data := contract.HealthData{Links: map[string]string{}, GSM: h.gsm.Load()}
 	for name, s := range map[string]health.LinkState{linkGSM: st.GSM, linkZigbee: st.Zigbee, linkInternet: st.Internet} {
 		if link := linkOf(s); link != "" {
 			data.Links[name] = link
 		}
 	}
-	h.gsmMu.Lock()
-	if h.gsm != nil {
-		data.GSM = &contract.GSMHealth{Lines: slices.Clone(h.gsm.Lines)}
-	}
-	h.gsmMu.Unlock()
 	if h.mains.Load() {
 		data.Mains = contract.ValPresent
 		if st.MainsLost {
@@ -125,11 +160,11 @@ func (h *Hub) publishHealth(now time.Time) {
 		b := st.HubBattery
 		data.HubBattery = &b
 	}
-	h.enqueue(srcHealth, contract.HealthTopic(h.cfg.Site), contract.TypeHealth, data, 1, true, now)
+	h.enqueue(srcHealth, contract.HealthTopic(h.cfg.Site), contract.TypeHealth, data, true, now)
 }
 
 // linkOf is a link of system.health for a component the monitor watches (the GSM
-// gateway, the Zigbee adapter): empty while it never spoke.
+// gateway, the Zigbee adapter, the link agent): empty while it never spoke.
 func linkOf(s health.LinkState) string {
 	switch s {
 	case health.LinkOK:
@@ -154,4 +189,36 @@ func (h *Hub) followUplink(now time.Time, s health.LinkState) {
 		return // the agent never spoke: nothing to say yet
 	}
 	h.escalate(escalation.Uplink{Now: now, Up: s == health.LinkOK})
+}
+
+// heartbeats publishes a sign of life every HeartbeatEvery.
+func (h *Hub) heartbeats(ctx context.Context) {
+	for {
+		fired, stop := h.deps.Clock.Timer(h.cfg.HeartbeatEvery)
+		select {
+		case <-ctx.Done():
+			stop()
+			return
+		case <-fired:
+			h.publishHeartbeat()
+		}
+	}
+}
+
+func (h *Hub) publishHeartbeat() {
+	now := h.deps.Clock.Now()
+	mode, _ := h.mode.Load().(string)
+	data := contract.HeartbeatData{
+		BootID:     h.bootID,
+		UptimeS:    max(int64(now.Sub(h.started)/time.Second), 0),
+		Engine:     mode,
+		QueueDepth: h.out.Depth(),
+		FW:         h.cfg.Versions,
+	}
+	if h.deps.ClockSynced != nil {
+		if synced, known := h.deps.ClockSynced(); known {
+			data.ClockOK = &synced
+		}
+	}
+	h.enqueue(srcEngine, contract.HeartbeatTopic(h.cfg.Site), contract.TypeHeartbeat, data, false, now)
 }

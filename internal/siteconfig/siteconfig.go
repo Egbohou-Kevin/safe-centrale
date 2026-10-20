@@ -56,15 +56,14 @@ func Write(dir string, d contract.ConfigSetData) error {
 		return fmt.Errorf("siteconfig: %w", err)
 	}
 	defer os.Remove(tmp.Name()) // gone once renamed
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("siteconfig: %w", err)
+	_, err = tmp.Write(data)
+	if err == nil {
+		err = tmp.Sync()
 	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("siteconfig: %w", err)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
 	}
-	if err := tmp.Close(); err != nil {
+	if err != nil {
 		return fmt.Errorf("siteconfig: %w", err)
 	}
 	if err := os.Rename(tmp.Name(), filepath.Join(dir, FileName)); err != nil {

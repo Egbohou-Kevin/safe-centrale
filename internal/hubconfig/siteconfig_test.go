@@ -112,3 +112,22 @@ func TestACloudConfigurationThatDoesNotFitNeverStopsTheHub(t *testing.T) {
 		t.Fatal("a missing file")
 	}
 }
+
+// The check of a configuration from the cloud sees the devices as the hub loads them:
+// a devices file the hub leaves aside must not make every configuration refused.
+func TestTheCloudCheckLaysTheDevicesAsTheHubDoes(t *testing.T) {
+	path, state := exampleWithState(t)
+	if err := os.WriteFile(filepath.Join(state, DevicesFile), []byte(`{"zones": {}, "siren_ids": []}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := Load(path); err != nil || r.DevicesErr == nil {
+		t.Fatalf("the devices file must be left aside: %v %v", err, r.DevicesErr)
+	}
+	r, err := WithSiteConfig(path, cloudConfig())
+	if err != nil {
+		t.Fatalf("refused because of devices the hub does not run with: %v", err)
+	}
+	if len(r.Hub.SirenIDs) != 1 || len(r.Hub.Engine.Zones) != 7 {
+		t.Fatalf("sirens %v, %d zones: want the file's own", r.Hub.SirenIDs, len(r.Hub.Engine.Zones))
+	}
+}

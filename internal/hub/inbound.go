@@ -11,6 +11,8 @@ import (
 	healthwire "safehome/internal/health/wire"
 )
 
+const maxPayload = 64 * 1024
+
 // HandleMessage takes a message from the broker. It is meant to be called from the
 // MQTT client's own goroutine and returns quickly: it decodes, checks, and hands
 // the work to the domain loops. A message that is not ours, or is damaged, is
@@ -29,19 +31,28 @@ func (h *Hub) HandleMessage(m Message) {
 		h.deviceMessage(parts[1], "", m)
 	case len(parts) == 4 && parts[0] == "device" && parts[2] == "state":
 		h.deviceMessage(parts[1], parts[3], m)
-	case len(parts) == 2 && parts[0] == "alarm" && parts[1] == "cmd":
+	case len(parts) == 2:
+		h.serviceMessage(parts[0]+"/"+parts[1], m)
+	}
+}
+
+// serviceMessage routes a message on a topic of the site's services, named by the
+// last two parts of its topic.
+func (h *Hub) serviceMessage(topic string, m Message) {
+	switch topic {
+	case "alarm/cmd":
 		h.alarmMessage(m)
-	case len(parts) == 2 && parts[0] == "alert" && parts[1] == "result":
+	case "alert/result":
 		h.alertResultMessage(m)
-	case len(parts) == 2 && parts[0] == "alert" && parts[1] == "ack":
+	case "alert/ack":
 		h.alertAckMessage(m)
-	case len(parts) == 2 && parts[0] == "gsm" && parts[1] == "status":
+	case "gsm/status":
 		h.gsmStatusMessage(m)
-	case len(parts) == 2 && parts[0] == "zigbee" && parts[1] == "status":
+	case "zigbee/status":
 		h.zigbeeStatusMessage(m)
-	case len(parts) == 2 && parts[0] == "agent" && parts[1] == "status":
+	case "agent/status":
 		h.agentStatusMessage(m)
-	case len(parts) == 2 && parts[0] == "install" && parts[1] == "cmd":
+	case "install/cmd":
 		h.installMessage(m)
 	}
 }
@@ -68,25 +79,44 @@ func (h *Hub) envelope(m Message, wantType string) (contract.Envelope, bool) {
 	return env, true
 }
 
+// decode reads a message of type typ: its envelope, then its data. A message whose
+// data does not decode is dropped with a log line that calls it what.
+func decode[T any](h *Hub, m Message, typ, what string) (contract.Envelope, T, bool) {
+	var d T
+	env, ok := h.envelope(m, typ)
+	if !ok {
+		return env, d, false
+	}
+	d, err := contract.DecodeData[T](env)
+	if err != nil {
+		h.log.Warn("ignoring an invalid "+what, "err", err)
+		return env, d, false
+	}
+	return env, d, true
+}
+
+// submitFailed logs an input a loop did not take, unless the hub is stopping.
+func (h *Hub) submitFailed(err error) {
+	if err != nil && h.life.Err() == nil {
+		h.log.Error("handing an input to a domain failed", "err", err)
+	}
+}
+
 // --- devices ----------------------------------------------------------------------
 
 // deviceMessage handles an event, or the retained state of a capability when
 // capability is set (the last part of its topic).
 func (h *Hub) deviceMessage(deviceID, capability string, m Message) {
 	isState := capability != ""
-	want := contract.TypeDeviceEvent
+	typ := contract.TypeDeviceEvent
 	if isState {
-		want = contract.TypeDeviceState
+		typ = contract.TypeDeviceState
 	}
-	env, ok := h.envelope(m, want)
+	env, d, ok := decode[contract.DeviceEventData](h, m, typ, "device message")
 	if !ok {
 		return
 	}
-	d, err := contract.DecodeData[contract.DeviceEventData](env)
-	if err == nil {
-		err = d.Validate()
-	}
-	if err != nil {
+	if err := d.Validate(); err != nil {
 		h.log.Warn("ignoring an invalid device message", "device", deviceID, "err", err)
 		return
 	}
@@ -108,12 +138,14 @@ func (h *Hub) deviceState(d contract.DeviceEventData) {
 		return
 	}
 	h.bootMu.Lock()
-	defer h.bootMu.Unlock()
-	if !h.booting {
-		return
+	booting := h.booting
+	if booting {
+		h.bootStates[d.DeviceID+"/"+d.Capability] = d
 	}
-	h.bootStates[d.DeviceID+"/"+d.Capability] = d
-	h.feedHealth(d)
+	h.bootMu.Unlock()
+	if booting {
+		h.feedHealth(d)
+	}
 }
 
 func (h *Hub) deviceEvent(ref string, d contract.DeviceEventData) {
@@ -134,6 +166,8 @@ func (h *Hub) deviceEvent(ref string, d contract.DeviceEventData) {
 	h.feedHealth(d)
 }
 
+// signalOf tells whether a device message means something to the engine; the time
+// is set when the signal is handed over.
 func signalOf(d contract.DeviceEventData) (engine.Signal, bool) {
 	return engwire.Signal(d, time.Time{})
 }
@@ -147,12 +181,6 @@ func (h *Hub) feedHealth(d contract.DeviceEventData) {
 		return in
 	})
 	h.submitFailed(err)
-}
-
-func (h *Hub) submitFailed(err error) {
-	if err != nil && h.life.Err() == nil {
-		h.log.Error("handing an input to a domain failed", "err", err)
-	}
 }
 
 // --- orders ------------------------------------------------------------------------
@@ -178,15 +206,11 @@ func (h *Hub) keypad(ref string, d contract.DeviceEventData) {
 }
 
 func (h *Hub) alarmMessage(m Message) {
-	env, ok := h.envelope(m, contract.TypeAlarmCommand)
+	env, d, ok := decode[contract.AlarmCommandData](h, m, contract.TypeAlarmCommand, "order")
 	if !ok {
 		return
 	}
-	d, err := contract.DecodeData[contract.AlarmCommandData](env)
-	if err == nil {
-		err = d.Validate()
-	}
-	if err != nil {
+	if err := d.Validate(); err != nil {
 		h.log.Warn("ignoring an invalid order", "err", err)
 		return
 	}
@@ -247,72 +271,50 @@ func (h *Hub) submitCommand(ref string, d contract.AlarmCommandData, auth engine
 	h.submitFailed(err)
 }
 
+// --- the site's services -------------------------------------------------------------
+
 // gsmStatusMessage takes the GSM gateway's lines: they go into system.health, and the
 // monitor learns whether the SMS backup still works. The gateway repeats its status:
 // the monitor notices when it stops (see health.GSM), and the gsm link follows the
 // monitor.
 func (h *Hub) gsmStatusMessage(m Message) {
-	env, ok := h.envelope(m, contract.TypeGSMStatus)
+	env, d, ok := decode[contract.GSMStatusData](h, m, contract.TypeGSMStatus, "GSM status")
 	if !ok {
 		return
 	}
-	d, err := contract.DecodeData[contract.GSMStatusData](env)
-	if err != nil {
-		h.log.Warn("ignoring an invalid GSM status", "err", err)
-		return
-	}
+	h.gsm.Store(&contract.GSMHealth{Lines: d.Lines})
 	in := healthwire.GSM(d, env.TS.Time)
-	h.gsmMu.Lock()
-	h.gsm = &contract.GSMHealth{Lines: d.Lines}
-	h.gsmMu.Unlock()
-	err = h.monLoop.Post(h.life, func(now time.Time) []health.Action {
-		in.Now = now
-		actions := h.mon.Handle(in)
-		h.publishHealth(now)
-		return actions
-	})
-	h.submitFailed(err)
+	h.statusToMonitor(func(now time.Time) health.Input { in.Now = now; return in })
 }
 
 // zigbeeStatusMessage takes the Zigbee adapter's status: the monitor learns whether
 // the sensors can be heard, and notices when the adapter stops repeating it.
 func (h *Hub) zigbeeStatusMessage(m Message) {
-	env, ok := h.envelope(m, contract.TypeZigbeeStatus)
+	env, d, ok := decode[contract.ZigbeeStatusData](h, m, contract.TypeZigbeeStatus, "Zigbee status")
 	if !ok {
 		return
 	}
-	d, err := contract.DecodeData[contract.ZigbeeStatusData](env)
-	if err != nil {
-		h.log.Warn("ignoring an invalid Zigbee status", "err", err)
-		return
-	}
 	in := healthwire.Zigbee(d, env.TS.Time)
-	err = h.monLoop.Post(h.life, func(now time.Time) []health.Action {
-		in.Now = now
-		actions := h.mon.Handle(in)
-		h.publishHealth(now)
-		return actions
-	})
-	h.submitFailed(err)
+	h.statusToMonitor(func(now time.Time) health.Input { in.Now = now; return in })
 }
 
 // agentStatusMessage takes the link agent's status: the monitor learns whether the
 // cloud can be reached, and notices when the agent stops repeating it. The internet
 // link of system.health follows, and so does the escalation (see publishHealth).
 func (h *Hub) agentStatusMessage(m Message) {
-	env, ok := h.envelope(m, contract.TypeAgentStatus)
+	env, d, ok := decode[contract.AgentStatusData](h, m, contract.TypeAgentStatus, "agent status")
 	if !ok {
 		return
 	}
-	d, err := contract.DecodeData[contract.AgentStatusData](env)
-	if err != nil {
-		h.log.Warn("ignoring an invalid agent status", "err", err)
-		return
-	}
 	in := healthwire.Internet(d, env.TS.Time)
-	err = h.monLoop.Post(h.life, func(now time.Time) []health.Action {
-		in.Now = now
-		actions := h.mon.Handle(in)
+	h.statusToMonitor(func(now time.Time) health.Input { in.Now = now; return in })
+}
+
+// statusToMonitor hands the monitor a service's status, then publishes system.health
+// even if the monitor's state did not move: the GSM lines may have changed.
+func (h *Hub) statusToMonitor(build func(now time.Time) health.Input) {
+	err := h.monLoop.Post(h.life, func(now time.Time) []health.Action {
+		actions := h.mon.Handle(build(now))
 		h.publishHealth(now)
 		return actions
 	})

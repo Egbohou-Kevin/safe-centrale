@@ -17,8 +17,6 @@ import (
 // escalation's messages are what leave as alert requests, one per contact and per
 // channel. The domains know nothing of each other.
 
-const srcEscalation = "escalation"
-
 var engineKinds = map[engine.AlertKind]escalation.AlertKind{
 	engine.AlertIntrusion:      escalation.KindIntrusion,
 	engine.AlertFire:           escalation.KindFire,
@@ -54,7 +52,7 @@ func (h *Hub) escalate(in escalation.Input) {
 	h.submitFailed(err)
 }
 
-// raiseEngineAlerts feeds the engine's alerts to the escalation, and ends the
+// escalateEngine feeds the engine's alerts to the escalation, and ends the
 // escalation of an incident that a person ended (the alarm was disarmed).
 func (h *Hub) escalateEngine(now time.Time, actions []engine.Action) {
 	for _, a := range actions {
@@ -109,10 +107,10 @@ func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []esc
 				h.log.Error("building an alert request failed", "err", err)
 				continue
 			}
-			id := h.enqueue(srcEscalation, contract.AlertRequestTopic(h.cfg.Site), contract.TypeAlertRequest, data, 1, false, now)
-			if id != "" {
-				h.deliveries.put(id, v.Key)
-			}
+			// Remembered before it is queued: a quick result must find it.
+			id := h.deps.NewID()
+			h.deliveries.put(id, v.Key)
+			h.enqueueAs(id, srcEscalation, contract.AlertRequestTopic(h.cfg.Site), contract.TypeAlertRequest, data, false, now)
 		case escalation.Throttled:
 			h.log.Warn("a message was held back: the contact already got the hourly maximum",
 				"incident", v.Incident, "contact", v.Contact, "channel", v.Channel)
@@ -125,13 +123,8 @@ func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []esc
 
 // alertResultMessage handles a channel's report about a message.
 func (h *Hub) alertResultMessage(m Message) {
-	env, ok := h.envelope(m, contract.TypeAlertResult)
+	_, d, ok := decode[contract.AlertResultData](h, m, contract.TypeAlertResult, "alert result")
 	if !ok {
-		return
-	}
-	d, err := contract.DecodeData[contract.AlertResultData](env)
-	if err != nil {
-		h.log.Warn("ignoring an invalid alert result", "err", err)
 		return
 	}
 	key, known := h.deliveries.lookup(d.Ref)
@@ -139,7 +132,7 @@ func (h *Hub) alertResultMessage(m Message) {
 		h.log.Debug("ignoring a result for a request this hub does not know", "ref", d.Ref)
 		return
 	}
-	err = h.escLoop.Submit(h.life, func(now time.Time) escalation.Input {
+	err := h.escLoop.Submit(h.life, func(now time.Time) escalation.Input {
 		r, ok := escwire.Result(d, key, now)
 		if !ok {
 			return escalation.Tick{Now: now} // an unknown status says nothing: just let time pass
@@ -151,16 +144,11 @@ func (h *Hub) alertResultMessage(m Message) {
 
 // alertAckMessage handles a contact's acknowledgement.
 func (h *Hub) alertAckMessage(m Message) {
-	env, ok := h.envelope(m, contract.TypeAlertAck)
+	_, d, ok := decode[contract.AlertAckData](h, m, contract.TypeAlertAck, "alert acknowledgement")
 	if !ok {
 		return
 	}
-	d, err := contract.DecodeData[contract.AlertAckData](env)
-	if err != nil {
-		h.log.Warn("ignoring an invalid alert acknowledgement", "err", err)
-		return
-	}
-	err = h.escLoop.Submit(h.life, func(now time.Time) escalation.Input { return escwire.Ack(d, now) })
+	err := h.escLoop.Submit(h.life, func(now time.Time) escalation.Input { return escwire.Ack(d, now) })
 	h.submitFailed(err)
 }
 

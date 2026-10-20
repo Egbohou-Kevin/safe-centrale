@@ -219,3 +219,23 @@ func TestTamperAlertsAgainOnceTheModeIsClosed(t *testing.T) {
 	r.device("dev_box", contract.CapTamper, contract.ValTriggered)
 	r.waitFor("the tamper alert", func() bool { return len(eventsOf(r, contract.TypeAlertRequest)) > 0 })
 }
+
+// The timer of a mode that closed early goes with it, and the timer of a new mode
+// starts with it: the mode lasts exactly its half hour.
+func TestTheInstallTimerFollowsTheMode(t *testing.T) {
+	r := newRig(t, nil)
+	r.withInstaller(false)
+	r.start()
+	r.openInstall()
+	end := t0.Add(installLength)
+	if !r.clock.pending(end) {
+		t.Fatal("the mode is open without its timer")
+	}
+	r.send(contract.InstallCmdTopic(site), contract.TypeInstallClose, contract.InstallCloseData{})
+	r.waitFor("the mode closed", func() bool { return r.lastInstall().Reason == contract.InstallStopped })
+	r.waitFor("the timer to go", func() bool { return !r.clock.pending(end) })
+
+	r.openInstall()
+	r.clock.Advance(installLength) // at once: the timer must already run
+	r.waitFor("the end of the mode", func() bool { return r.lastInstall().Reason == contract.InstallTimeout })
+}

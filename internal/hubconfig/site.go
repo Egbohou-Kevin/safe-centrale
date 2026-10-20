@@ -98,14 +98,11 @@ func sum(data []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
+// readFile reads the file at path, which must name its state folder.
 func readFile(path string) (file, error) {
-	data, err := os.ReadFile(path)
+	f, err := readConfig(path)
 	if err != nil {
-		return file{}, fmt.Errorf("hubconfig: %w", err)
-	}
-	f, err := decode(data)
-	if err != nil {
-		return file{}, fmt.Errorf("hubconfig: %s: %w", path, err)
+		return file{}, err
 	}
 	if f.StateDir == "" {
 		return file{}, fmt.Errorf("hubconfig: %s: state_dir is required", path)
@@ -174,19 +171,7 @@ func writeDevices(dir string, data []byte) error {
 		return err
 	}
 	defer os.Remove(tmp.Name()) // nothing left behind on failure; a no-op after the rename
-	if err := ownedLike(tmp, info); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
+	if err := fillPrivate(tmp, info, data); err != nil {
 		tmp.Close()
 		return err
 	}
@@ -201,6 +186,21 @@ func writeDevices(dir string, data []byte) error {
 		d.Close()
 	}
 	return nil
+}
+
+// fillPrivate writes data to f, which only the owner of the folder dir may read, and
+// waits until it is on the disk.
+func fillPrivate(f *os.File, dir os.FileInfo, data []byte) error {
+	if err := ownedLike(f, dir); err != nil {
+		return err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		return err
+	}
+	return f.Sync()
 }
 
 // ownedLike gives the new file the owner and group of the folder. Only root can give
