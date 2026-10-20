@@ -14,6 +14,28 @@ type Contact struct {
 	Channels []Channel // the channels this person accepts
 }
 
+func (ct Contact) validate() error {
+	switch {
+	case ct.ID == "":
+		return fmt.Errorf("escalation: a contact has no ID")
+	case !ct.Role.valid():
+		return fmt.Errorf("escalation: contact %q has an unknown role %q", ct.ID, ct.Role)
+	case len(ct.Channels) == 0:
+		return fmt.Errorf("escalation: contact %q accepts no channel", ct.ID)
+	}
+	chs := map[Channel]bool{}
+	for _, ch := range ct.Channels {
+		if !ch.valid() {
+			return fmt.Errorf("escalation: contact %q has an unknown channel %q", ct.ID, ch)
+		}
+		if chs[ch] {
+			return fmt.Errorf("escalation: contact %q lists channel %q twice", ct.ID, ch)
+		}
+		chs[ch] = true
+	}
+	return nil
+}
+
 // Audience selects the contacts a step tells.
 type Audience string
 
@@ -145,28 +167,14 @@ func (c Config) Validate() error {
 	seen := map[string]bool{}
 	owner := false
 	for _, ct := range c.Contacts {
-		switch {
-		case ct.ID == "":
-			return fmt.Errorf("escalation: a contact has no ID")
-		case seen[ct.ID]:
+		if seen[ct.ID] {
 			return fmt.Errorf("escalation: contact %q appears twice", ct.ID)
-		case !ct.Role.valid():
-			return fmt.Errorf("escalation: contact %q has an unknown role %q", ct.ID, ct.Role)
-		case len(ct.Channels) == 0:
-			return fmt.Errorf("escalation: contact %q accepts no channel", ct.ID)
+		}
+		if err := ct.validate(); err != nil {
+			return err
 		}
 		seen[ct.ID] = true
 		owner = owner || ct.Role == RoleOwner
-		chs := map[Channel]bool{}
-		for _, ch := range ct.Channels {
-			if !ch.valid() {
-				return fmt.Errorf("escalation: contact %q has an unknown channel %q", ct.ID, ch)
-			}
-			if chs[ch] {
-				return fmt.Errorf("escalation: contact %q lists channel %q twice", ct.ID, ch)
-			}
-			chs[ch] = true
-		}
 	}
 	if len(c.Contacts) > 0 && !owner {
 		return fmt.Errorf("escalation: a site needs an owner among its contacts")
@@ -186,6 +194,26 @@ func (c Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+// totalSteps is the number of steps of a plan: its waves, then its reminders.
+func (p Plan) totalSteps() int { return len(p.Waves) + p.Repeat.Times }
+
+// stepAt is when step i is due, counted from the moment of the alert.
+func (p Plan) stepAt(i int) time.Duration {
+	if i < len(p.Waves) {
+		return p.Waves[i].After
+	}
+	return p.Waves[len(p.Waves)-1].After + time.Duration(i-len(p.Waves)+1)*p.Repeat.Every
+}
+
+// step describes what step i does. A reminder is a wave to everyone, by internet
+// and SMS.
+func (p Plan) step(i int) Wave {
+	if i < len(p.Waves) {
+		return p.Waves[i]
+	}
+	return Wave{To: []Audience{AudienceEveryone}, SMSNow: true}
 }
 
 // Validate checks a plan on its own.
@@ -215,14 +243,6 @@ func (p Plan) Validate() error {
 		return fmt.Errorf("GSMAfter only applies to an internet-only plan and must not be negative")
 	}
 	return nil
-}
-
-// plan returns the plan for a kind, falling back to the default.
-func (c Config) plan(kind AlertKind) Plan {
-	if p, ok := c.Plans[kind]; ok {
-		return p
-	}
-	return DefaultPlans()[kind]
 }
 
 func (c Config) contact(id string) (Contact, bool) {

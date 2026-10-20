@@ -1,0 +1,94 @@
+package engine
+
+import (
+	"maps"
+	"time"
+)
+
+// Cause is what set off an alarm.
+type Cause struct {
+	DeviceID string     `json:"device_id"`
+	Sensor   SensorKind `json:"sensor"`
+	Zone     string     `json:"zone"`
+}
+
+// Incident is an alarm in progress, from the first siren to its end.
+type Incident struct {
+	ID        string    `json:"id"`
+	Kind      AlertKind `json:"kind"`
+	Cause     Cause     `json:"cause"`
+	StartedAt time.Time `json:"started_at"`
+	Cycle     int       `json:"cycle"`     // current siren cycle, starting at 1
+	SirenOn   bool      `json:"siren_on"`  // false during the pause between two cycles
+	ReturnTo  Mode      `json:"return_to"` // mode to go back to when the incident ends
+}
+
+// Schedule is the automatic arming planned for the next closing time. It exists
+// only while the system is disarmed, and during the exit delay that it started (so
+// that this delay can still be postponed).
+type Schedule struct {
+	At        time.Time `json:"at"`        // when the system arms by itself
+	Limit     time.Time `json:"limit"`     // latest time At can be pushed back to
+	Postponed int       `json:"postponed"` // postponements used for this closing
+	Announced bool      `json:"announced"` // the advance notice has been sent
+}
+
+// Snapshot is the full state of the engine. The driver writes it to disk after
+// every transition and hands it back to the engine on restart (Restore).
+type Snapshot struct {
+	Mode     Mode      `json:"mode"`
+	Since    time.Time `json:"since"`
+	Deadline time.Time `json:"deadline"` // next deadline, zero if none
+
+	ArmOrigin Origin `json:"arm_origin,omitempty"`
+	ArmUser   string `json:"arm_user,omitempty"`
+
+	Bypassed   map[string]bool `json:"bypassed"`    // devices bypassed until disarming
+	Open       map[string]bool `json:"open"`        // contacts that are currently open
+	EntryCause *Cause          `json:"entry_cause"` // what started the entry delay
+	Incident   *Incident       `json:"incident"`
+
+	// Memory of the last alarm, kept after the system goes back to armed.
+	LastTrigger   *Cause    `json:"last_trigger,omitempty"`
+	LastTriggerAt time.Time `json:"last_trigger_at,omitzero"`
+
+	Schedule *Schedule `json:"schedule,omitempty"`
+
+	Failed      int       `json:"failed"`       // consecutive wrong codes
+	LockedUntil time.Time `json:"locked_until"` // disarming is refused until this time
+}
+
+func (s Snapshot) clone() Snapshot {
+	s.Bypassed = maps.Clone(s.Bypassed)
+	s.Open = maps.Clone(s.Open)
+	s.EntryCause = clonePtr(s.EntryCause)
+	s.Incident = clonePtr(s.Incident)
+	s.LastTrigger = clonePtr(s.LastTrigger)
+	s.Schedule = clonePtr(s.Schedule)
+	return s
+}
+
+// clonePtr copies the value behind p, so the copy shares nothing with the original.
+func clonePtr[T any](p *T) *T {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+func newSnapshot(now time.Time) Snapshot {
+	return Snapshot{Mode: ModeDisarmed, Since: now, Bypassed: map[string]bool{}, Open: map[string]bool{}}
+}
+
+// State is the public summary of the engine, meant to be published.
+type State struct {
+	Mode        Mode
+	Since       time.Time
+	EndsAt      time.Time // end of the exit or entry delay, zero otherwise
+	Cycle       int       // current siren cycle while triggered
+	Of          int       // number of siren cycles
+	LockedUntil time.Time // zero unless disarming is locked
+
+	NextScheduled time.Time // next automatic arming while disarmed, zero if none
+}

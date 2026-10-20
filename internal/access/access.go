@@ -115,20 +115,29 @@ func New(cfg Config, records []Record, persist func([]Record) error) (*Registry,
 	if cfg.Rand == nil {
 		cfg.Rand = rand.Reader
 	}
-	if len(records) > cfg.MaxUsers {
-		return nil, fmt.Errorf("access: %d saved codes, the maximum is %d", len(records), cfg.MaxUsers)
+	if err := checkRecords(records, cfg.MaxUsers); err != nil {
+		return nil, err
+	}
+	return &Registry{cfg: cfg, persist: persist, records: cloneRecords(records)}, nil
+}
+
+// checkRecords checks saved records: well formed, one per user, within the
+// maximum.
+func checkRecords(records []Record, maxUsers int) error {
+	if len(records) > maxUsers {
+		return fmt.Errorf("access: %d saved codes, the maximum is %d", len(records), maxUsers)
 	}
 	seen := map[string]bool{}
 	for _, rec := range records {
 		if err := rec.validate(); err != nil {
-			return nil, err
+			return err
 		}
 		if seen[rec.User] {
-			return nil, fmt.Errorf("access: user %q appears twice in the saved codes", rec.User)
+			return fmt.Errorf("access: user %q appears twice in the saved codes", rec.User)
 		}
 		seen[rec.User] = true
 	}
-	return &Registry{cfg: cfg, persist: persist, records: cloneRecords(records)}, nil
+	return nil
 }
 
 func (r Record) validate() error {
@@ -225,18 +234,8 @@ func (r *Registry) Set(user, code string) error {
 // the command-line tool. The records are checked like those given to New, and
 // nothing is saved (they are already on disk).
 func (r *Registry) Reload(records []Record) error {
-	if len(records) > r.cfg.MaxUsers {
-		return fmt.Errorf("access: %d saved codes, the maximum is %d", len(records), r.cfg.MaxUsers)
-	}
-	seen := map[string]bool{}
-	for _, rec := range records {
-		if err := rec.validate(); err != nil {
-			return err
-		}
-		if seen[rec.User] {
-			return fmt.Errorf("access: user %q appears twice in the saved codes", rec.User)
-		}
-		seen[rec.User] = true
+	if err := checkRecords(records, r.cfg.MaxUsers); err != nil {
+		return err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -263,13 +262,18 @@ func (r *Registry) Remove(user string) error {
 // Verify tells whose code this is. It checks every stored code, with no early exit,
 // so the time taken does not reveal which person matched. It does not count wrong
 // attempts: the alarm engine does.
+//
+// The slow hashes run outside the lock, so a check does not hold up the others
+// (Users, Records, Reload) for a second on the hub. That is safe because the list
+// is never changed in place: every change installs a new one.
 func (r *Registry) Verify(code string) (user string, ok bool) {
 	if !r.wellFormed(code) {
 		return "", false
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, rec := range r.records {
+	records := r.records
+	r.mu.Unlock()
+	for _, rec := range records {
 		if matches(rec, code) && !ok {
 			user, ok = rec.User, true
 		}

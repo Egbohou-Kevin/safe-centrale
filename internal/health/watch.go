@@ -33,10 +33,15 @@ type watchRule struct {
 }
 
 // report records a state. A state from the future (a clock set back) counts as
-// written now.
+// written now. A state older than the last one (a retained copy delivered late)
+// is ignored, unless the last one is itself in the future: the clock was set back
+// since, and refusing every new state would make the component look silent.
 func (w *Watch) report(now, seen time.Time, usable bool) {
 	if seen.IsZero() || seen.After(now) {
 		seen = now
+	}
+	if seen.Before(w.Seen) && !w.Seen.After(now) {
+		return
 	}
 	w.Seen, w.Usable = seen, usable
 }
@@ -68,18 +73,24 @@ func (w *Watch) check(now time.Time, r watchRule) bool {
 	return true
 }
 
-// nextWake is when the component needs a look: when its silence becomes too long,
-// or when its alert is due; zero if never.
+// nextWake is when the component needs a look: when its silence becomes too long
+// (a component that said it is down turns silent too, and the published state must
+// say so), or when its alert is due; zero if never.
 func (w *Watch) nextWake(r watchRule) time.Time {
-	switch {
-	case w.Seen.IsZero():
+	if w.Seen.IsZero() {
 		return time.Time{}
-	case w.Usable && !w.Silent:
-		return w.Seen.Add(r.silentAfter)
-	case !w.Alerted && r.kind != "":
-		return w.DownSince.Add(r.alertAfter)
 	}
-	return time.Time{}
+	var wake time.Time
+	if !w.Silent {
+		wake = w.Seen.Add(r.silentAfter)
+	}
+	down := !w.Usable || w.Silent
+	if down && !w.Alerted && r.kind != "" {
+		if due := w.DownSince.Add(r.alertAfter); wake.IsZero() || due.Before(wake) {
+			wake = due
+		}
+	}
+	return wake
 }
 
 func (w *Watch) state() LinkState {
