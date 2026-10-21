@@ -189,7 +189,8 @@ change pas. Une liste envoyée (contacts, horaires) remplace celle du fichier.
 Un `site-config.json` abîmé ou qui ne convient plus (fichier de la centrale modifié
 depuis) **n'empêche jamais un programme de démarrer** : il est laissé de côté, le
 programme tourne sur son propre fichier et le dit dans son journal. La centrale
-répond alors `rejected` avec la raison. `check` affiche la version en service, ou
+répond alors `rejected` avec la raison si le fichier se lit mais ne convient plus ; un
+fichier illisible est seulement journalisé. `check` affiche la version en service, ou
 pourquoi elle est laissée de côté :
 
 ```text
@@ -281,18 +282,7 @@ Zigbee2MQTT doit dater chaque message (`last_seen: ISO_8601` sous `advanced:`, d
 dans `deploy/zigbee2mqtt/configuration.yaml`). Sans cela, une touche du clavier gardée
 par le broker pendant une coupure de l'adaptateur est datée de son arrivée, et peut
 encore désarmer (`adapter-zigbee.md`, « QoS »). `deploy/install.sh` ne pose ce fichier
-que la première fois. Sur un site installé avant cet ajout, l'ajouter à la main dans
-`/var/lib/zigbee2mqtt/configuration.yaml` (avec `sudo`), puis relancer Zigbee2MQTT :
-
-```yaml
-advanced:
-  # ... les lignes déjà là
-  last_seen: ISO_8601
-```
-
-```bash
-sudo systemctl restart zigbee2mqtt
-```
+que la première fois.
 
 Appairer un appareil se fait localement, par un message `registry.pair` sur
 `safehome/{site}/registry/cmd` (le cloud ne peut pas y écrire) : c'est le rôle de
@@ -325,8 +315,9 @@ Configuration (`config/agent.example.json`), stricte :
   sont les autorités du système. La même vaut pour l'envoi des photos en HTTPS.
 - `uplink` : `fixed` (la box du commerce, par défaut) ou `mobile` (un routeur 4G dont
   le client paie les données). En `mobile`, le **mode économe** s'applique : le
-  heartbeat et `agent.status` ne partent au cloud que toutes les 5 minutes. Mettre la
-  même valeur que dans `video.json`.
+  heartbeat et `agent.status` ne partent au cloud que toutes les 5 minutes. Un
+  `agent.status` qui change (liaison, transport) part tout de suite. Mettre la même
+  valeur que dans `video.json`.
 - `status_every` (1 min) : répétition de `agent.status` ; `confirm_wait` (10 s) :
   attente de la prise en charge d'une alerte par le cloud avant `no_uplink`.
 - `queue` : bornes de la file pour le cloud, `max_items` (20 000), `max_bytes` (10 Mo),
@@ -334,8 +325,8 @@ Configuration (`config/agent.example.json`), stricte :
 - `down` : limite de ce qui descend du cloud, `burst` (20 d'un coup) et `per_minute`
   (60).
 
-Il garde son état dans le même dossier d'état (fichiers `agent.json`, `agent_seq.json`
-et leur copie `.prev`), sa file pour le cloud dans `agent_queue/` (un petit fichier par
+Il garde son état dans le même dossier d'état (fichiers `agent.json`, `agent_seq.json`,
+`agent_uplink.json` (le dernier numéro donné au cloud) et leur copie `.prev`), sa file pour le cloud dans `agent_queue/` (un petit fichier par
 message) et son propre fichier de pid (`agent.pid`). Il n'ouvre aucun port : la
 connexion au cloud est sortante. À l'arrêt, il dit au cloud que le site passe hors
 ligne ; s'il disparaît sans prévenir (courant, câble), le broker du cloud le dit à sa
@@ -343,7 +334,8 @@ place (Last Will).
 
 Dans les journaux : `connected to the cloud` (avec le transport, `mqtts` ou `wss`),
 `the cloud cannot be reached`, `refused a message from the cloud` (avec la raison),
-`messages for the cloud were dropped` (file pleine), `photo not sent` (avec la raison)
+`messages for the cloud were dropped` (file pleine, trop vieux, ou refusé pour de bon
+par le broker du cloud ; la raison est dans la ligne), `photo not sent` (avec la raison)
 et `a photo could not be sent, trying again later` méritent l'attention. Il envoie
 les photos que le service vidéo laisse dans `photos/` du dossier d'état, puis les
 efface.
@@ -500,7 +492,8 @@ Limites :
 ## La console locale (`safehome-console`)
 
 Le service qui sert la page de l'installateur pendant le mode installation (ouvert
-avec le code installateur au clavier, 30 minutes au plus). Il allume alors le réseau
+avec le code installateur au clavier, 30 minutes au plus ; refaire le code repart pour
+30 minutes). Il allume alors le réseau
 Wi-Fi de la centrale et y sert la page `http://10.42.0.1/`. Il éteint les deux à la fin
 du mode. Le reste du temps, il attend sans rien ouvrir. Fonctionnement et sécurité :
 `security-install.md`.

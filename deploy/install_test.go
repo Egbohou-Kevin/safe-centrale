@@ -30,8 +30,9 @@ var fakes = map[string]string{
 	"ssh-keygen": `while [ $# -gt 1 ]; do shift; done; echo key > "$1"; echo "ssh-ed25519 AAAA" > "$1.pub"`,
 }
 
-// fakeProgram stands for a safehome-* program: check fails on a file that says BAD.
-const fakeProgram = `if [ "$1" = check ]; then ! grep -q BAD "$3"; fi`
+// fakeProgram stands for a safehome-* program: check fails on a configuration or a
+// device profile that says BAD.
+const fakeProgram = `if [ "$1" = check ]; then ! grep -qrs BAD "$3" "$(dirname "$3")/profiles"; fi`
 
 type rig struct {
 	t      *testing.T
@@ -225,6 +226,39 @@ func TestABadConfigurationPutsThePreviousOneBack(t *testing.T) {
 	}
 }
 
+func TestABadProfileWithoutSiteFolderPutsThePreviousOnesBack(t *testing.T) {
+	r := newRig(t)
+	r.minimalSite()
+	r.mustRun()
+
+	// An update bundle made without -s: no site/ folder, but new profiles.
+	if err := os.RemoveAll(filepath.Join(r.bundle, "site")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(r.bundle, "config", "profiles", "new-device.json"), `{"model": "BAD"}`)
+	out, cmds, err := r.run()
+	if err == nil {
+		t.Fatalf("install.sh accepted a bad profile:\n%s", out)
+	}
+	if !strings.Contains(out, "The previous files are back") {
+		t.Errorf("output does not say the previous files are back:\n%s", out)
+	}
+	if r.exists("etc/safehome/profiles/new-device.json") {
+		t.Error("the bad profile was left in place")
+	}
+	if !r.exists("etc/safehome/profiles/aqara-contact-mccgq11lm.json") || !r.exists("etc/safehome/hub.json") {
+		t.Error("the previous configuration is not back")
+	}
+	if r.exists("etc/safehome.prev") {
+		t.Error("the backup of the configuration is left behind (it holds secrets)")
+	}
+	for _, c := range cmds {
+		if strings.HasPrefix(c, "systemctl") {
+			t.Errorf("ran %q after a bad profile", c)
+		}
+	}
+}
+
 func TestInstallRefusesWhatWouldBreakTheSite(t *testing.T) {
 	cases := []struct {
 		name string
@@ -308,20 +342,27 @@ func TestZigbee2MQTTStartsOnlyOnceItsStickIsSet(t *testing.T) {
 	r := newRig(t)
 	r.minimalSite()
 	mkdir(t, r.path("opt/zigbee2mqtt"))
-	cmds := r.mustRun()
-	if !slices.Contains(cmds, "systemctl enable zigbee2mqtt") {
-		t.Error("zigbee2mqtt not enabled")
+	out, cmds, err := r.run()
+	if err != nil {
+		t.Fatalf("install.sh: %v\n%s", err, out)
 	}
-	if slices.Contains(cmds, "systemctl restart zigbee2mqtt") {
-		t.Error("zigbee2mqtt started with CHANGE-ME as its stick: it would fail every 5 s")
+	for _, c := range []string{"systemctl enable zigbee2mqtt", "systemctl restart zigbee2mqtt"} {
+		if slices.Contains(cmds, c) {
+			t.Errorf("ran %q with CHANGE-ME as its stick: it would fail every 5 s, after each reboot too", c)
+		}
+	}
+	if !strings.Contains(out, "first, Zigbee2MQTT: ") || !strings.Contains(out, "sudo systemctl enable --now zigbee2mqtt") {
+		t.Errorf("the final message does not say how to start Zigbee2MQTT once set:\n%s", out)
 	}
 
 	// Set by the installer; from then on the file holds the network key.
 	conf := r.path("var/lib/zigbee2mqtt/configuration.yaml")
 	writeFile(t, conf, "serial:\n  port: /dev/serial/by-id/usb-ITead\nnetwork_key: [1, 2, 3]\n")
 	cmds = r.mustRun()
-	if !slices.Contains(cmds, "systemctl restart zigbee2mqtt") {
-		t.Error("zigbee2mqtt not started once set")
+	for _, c := range []string{"systemctl enable zigbee2mqtt", "systemctl restart zigbee2mqtt"} {
+		if !slices.Contains(cmds, c) {
+			t.Errorf("did not run %q once set", c)
+		}
 	}
 	if b, _ := os.ReadFile(conf); !strings.Contains(string(b), "network_key: [1, 2, 3]") {
 		t.Errorf("configuration.yaml replaced: the Zigbee network would be lost\n%s", b)

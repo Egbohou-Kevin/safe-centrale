@@ -14,7 +14,8 @@ Le moteur :
 - tient l'état de l'alarme et ses transitions,
 - applique les règles de zones et les délais,
 - commande la sirène,
-- demande l'envoi des alertes (`alert.request`) et suit leur résultat,
+- lève des alertes ; l'escalade de la centrale en fait les `alert.request` et suit
+  leur résultat,
 - publie l'état et les événements d'alarme.
 
 Il ne fait pas : le pilotage radio (adaptateur), l'envoi de SMS (passerelle GSM),
@@ -26,15 +27,13 @@ la prise de photos (service caméras), la liaison cloud (agent).
 |---|---|
 | `device.event` et `device.state` | adaptateur |
 | Ordres d'armement et de désarmement | clavier, application, planning |
-| `alert.result` | passerelle GSM et autres canaux |
-| `system.health` | surveillance de la centrale |
 | Tic d'horloge | interne |
 
 | Sorties | Destination |
 |---|---|
 | `alarm.*` et `alarm/state` | broker, agent de liaison |
 | `command` (par exemple `siren.on`) | adaptateur |
-| `alert.request` | passerelle GSM et autres canaux |
+| Alertes | escalade de la centrale, qui en fait les `alert.request` |
 
 ## Principe de conception
 
@@ -76,13 +75,14 @@ disarmed ──arm──► arming ──délai de sortie écoulé──► arme
                           ▼                           ▼
                        triggered ◄────────────────────┘
                           │
-                          └─ cycles de sirène épuisés ──► armed
+                          └─ cycles de sirène épuisés ──► état d'avant l'alarme
 
-disarm : depuis arming, entry_delay ou triggered, retour à disarmed.
+disarm : depuis arming, armed, entry_delay ou triggered, retour à disarmed.
 ```
 
-Après les cycles de sirène (voir « Reprise de la sirène »), le système repasse en
-`armed` avec la mémoire de ce qui s'est déclenché. Il ne reste pas bloqué en
+Après les cycles de sirène (voir « Reprise de la sirène »), le système repasse dans
+son état d'avant l'alarme (`armed`, ou `disarmed` pour un feu déclenché désarmé),
+avec la mémoire de ce qui s'est déclenché. Il ne reste pas bloqué en
 `triggered`.
 
 ## Zones
@@ -116,16 +116,18 @@ zone qu'il ne peut pas déclencher.
 | `arming` | délai de sortie écoulé | `armed` | publie `alarm.armed` |
 | `arming` | ordre de désarmement | `disarmed` | publie `alarm.disarmed` |
 | `armed` | zone `entry` ouverte | `entry_delay` | publie `alarm.entry_delay`, démarre le délai d'entrée |
-| `armed` | zone `instant` ou `interior` | `triggered` | `siren.on`, `alert.request`, publie `alarm.triggered` |
+| `armed` | zone `instant` ou `interior` | `triggered` | `siren.on`, alerte, publie `alarm.triggered` |
 | `entry_delay` | ordre de désarmement valide | `disarmed` | arrête les délais, publie `alarm.disarmed` |
 | `entry_delay` | délai d'entrée écoulé | `triggered` | idem déclenchement |
 | `entry_delay` | zone `instant` | `triggered` | idem déclenchement |
+| `armed` | ordre de désarmement | `disarmed` | publie `alarm.disarmed` |
 | `triggered` | ordre de désarmement | `disarmed` | `siren.off`, publie `alarm.cleared` et `alarm.disarmed` |
+| `triggered` | `alarm.silence`, code valide | état d'avant l'alarme | `siren.off`, `alarm.cleared` |
 | `arming` | ordre `arm_now` | `armed` | termine le délai de sortie, publie `alarm.armed` |
 | `triggered` | cycle de sirène écoulé, rien acquitté, cycles restants | `triggered` | `siren.off`, pause, puis `siren.on` au cycle suivant |
-| `triggered` | cycles de sirène épuisés | `armed` | `siren.off`, publie `alarm.cleared` |
+| `triggered` | cycles de sirène épuisés | état d'avant l'alarme (`armed`, ou `disarmed` pour un feu déclenché désarmé) | `siren.off`, publie `alarm.cleared` |
 | tout état | fumée | `triggered` (cause fumée) | sirène et alerte |
-| tout état | panique | inchangé | `alert.request` urgente, sans sirène par défaut (réglable par site) |
+| tout état | panique | inchangé | alerte urgente, sans sirène par défaut (réglable par site) |
 
 ## Délais et durées (valeurs par défaut)
 
@@ -168,7 +170,8 @@ dirait plus rien ensuite.
 Quand l'alarme se déclenche, la sirène sonne 5 minutes. Si personne n'a rien fait
 (ni désarmement ni coupure de la sirène par un code valide), elle s'arrête deux
 minutes, puis reprend pour un nouveau cycle, jusqu'à 3 cycles. À la fin des
-cycles, le système repasse en `armed` avec la mémoire de ce qui s'est déclenché.
+cycles, le système repasse dans son état d'avant l'alarme (`armed`, ou `disarmed`
+pour un feu déclenché désarmé), avec la mémoire de ce qui s'est déclenché.
 Les alertes continuent de suivre leur escalade pendant ce temps.
 
 Un désarmement ou une coupure de sirène avec un code valide arrête tout
@@ -192,8 +195,9 @@ Le désarmement à distance est autorisé, mais il exige **le code du site**, en
 de la connexion à l'application. Un téléphone volé ne suffit donc pas : le voleur
 doit aussi connaître le code.
 
-- Le code est **vérifié sur le site**, par le moteur. Il est stocké haché sur la
-  centrale. Le cloud le transmet sans le garder ni l'écrire dans ses journaux.
+- Le code est **vérifié sur le site**, par la centrale (`internal/access`) ; le
+  moteur reçoit le résultat et applique le verrouillage. Le code est stocké haché sur
+  la centrale. Le cloud le transmet sans le garder ni l'écrire dans ses journaux.
 - Après 3 codes faux de suite, le moteur refuse tout désarmement pendant 10
   minutes et publie un événement `alarm.auth_failed` avec une alerte aux contacts.
 - Le même contrôle s'applique au clavier : même verrouillage après plusieurs
@@ -290,7 +294,7 @@ redémarrage :
 4. si une zone est encore en alarme, il se déclenche. Un sabotage déjà vu avant
    l'arrêt et toujours actif n'est pas signalé de nouveau ; un sabotage apparu pendant
    l'arrêt l'est ;
-5. il publie un événement de redémarrage (`boot_id` change dans le heartbeat).
+5. il publie son état retenu ; le redémarrage se voit au `boot_id` du heartbeat.
 
 Après une restauration, le moteur ne rejoue aucune échéance avant `Boot` : ni tic, ni
 rattrapage au passage d'un ordre ou d'un signal reçu pendant la fenêtre de démarrage.
@@ -349,8 +353,8 @@ Décidé :
   maximum.
 - Pas d'armement ni de désarmement par SMS dans la v1.
 
-Le moteur est entièrement spécifié pour la v1. Il reste les ajouts à reporter
-dans `contract.md` (voir plus haut) et l'écriture des JSON Schema.
+Le moteur est entièrement spécifié pour la v1. Les ajouts sont reportés dans
+`contract.md` et les JSON Schema sont écrits.
 
 ## Avancement
 

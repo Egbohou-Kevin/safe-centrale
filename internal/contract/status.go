@@ -22,7 +22,7 @@ type GSMLine struct {
 	Credit     string     `json:"credit,omitempty"` // CreditOK, CreditEmpty, or absent when unknown
 	LastTest   *Timestamp `json:"last_test,omitempty"`
 	LastTestOK *bool      `json:"last_test_ok,omitempty"`
-	Restarts   int        `json:"restarts,omitempty"` // modem restarts since the gateway started
+	Restarts   int        `json:"restarts,omitempty"` // modem restarts, counted across the gateway's restarts
 }
 
 // The credit of a GSM line.
@@ -47,7 +47,7 @@ type AgentStatusData struct {
 	Transport string `json:"transport,omitempty"` // the URL scheme in use: "mqtts", "wss"...
 	Queued    int    `json:"queued"`              // messages waiting for the cloud
 	OldestS   int    `json:"oldest_s"`            // age of the oldest one, in seconds
-	Dropped   int    `json:"dropped"`             // messages dropped since the start: the queue was full
+	Dropped   int    `json:"dropped"`             // messages dropped (queue full, too old, refused), counted across restarts
 	// Economy: on mobile data paid by the client, the heartbeat and this status reach
 	// the cloud only every 5 minutes (a change of the link goes at once).
 	Economy bool `json:"economy,omitempty"`

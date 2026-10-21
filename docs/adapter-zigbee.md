@@ -117,8 +117,7 @@ journaux et les échanges.
 Le **nom** (« Porte d'entrée ») et la **zone** (`entree`, `instant`…) ne sont pas
 dans le registre de l'adaptateur : ils appartiennent à la configuration du site, que
 lit le moteur. Le registre dit ce qu'est l'appareil, la configuration dit à quoi il
-sert. (L'exemple du registre dans `contract.md` mélangeait les deux : il sera
-corrigé.)
+sert.
 
 Le registre est publié en retenu sur `registry/devices`, pour que le moteur et
 l'outil d'installation le lisent au démarrage.
@@ -144,8 +143,8 @@ Le **retrait** d'un appareil (`registry.remove`) l'enlève de Zigbee2MQTT et du
 registre. Son `device_id` est retiré définitivement.
 
 L'appairage ne peut être lancé que **localement**, jamais depuis le cloud (le cloud
-ne peut publier que sur `alarm/cmd`, voir `contract.md`) : on ne doit pas pouvoir
-ajouter un appareil à un site à distance. Comment l'installateur envoie cet ordre est
+ne peut publier ni sur `registry/cmd` ni sur `device/{id}/cmd`, voir `contract.md`) :
+on ne doit pas pouvoir ajouter un appareil à un site à distance. Comment l'installateur envoie cet ordre est
 décrit dans le document sur l'installation d'un site.
 
 Pour la phase fermée, Zigbee permet de n'accepter que des appareils dont on connaît
@@ -160,9 +159,11 @@ est enregistré chez nous » (voir `architecture.md`).
   `panic` produisent toujours un événement.
 - **Événement et état.** Chaque changement produit un `device.event` et met à jour le
   `device.state` retenu.
-- **Valeurs conservées par Zigbee2MQTT au démarrage.** Elles servent à reconstituer
-  l'état, mais ne produisent **jamais** d'événement : un vieux « porte ouverte »
-  rejoué au redémarrage ne doit pas déclencher l'alarme.
+- **État au démarrage.** Zigbee2MQTT tourne sans messages retenus (`retain: false`) :
+  l'état vient de la copie que l'adaptateur garde lui-même dans son dossier d'état.
+  Un message retenu qui arriverait quand même met à jour l'état mais ne produit
+  **jamais** d'événement : un vieux « porte ouverte » rejoué au redémarrage ne doit
+  pas déclencher l'alarme.
 - **`battery` et `link`** : publiés seulement quand la valeur change de façon utile
   (voir `contract.md`).
 - **Présence.** L'adaptateur note l'heure du dernier message de chaque appareil. Sans
@@ -177,7 +178,8 @@ Le moteur publie `device/{id}/cmd`. L'adaptateur :
 1. répond `accepted` quand la commande est valide et publiée vers Zigbee2MQTT ;
 2. attend la confirmation prévue par le profil (changement d'état de la sirène) ;
 3. répond `done` si elle arrive ;
-4. sinon réessaie jusqu'à 3 fois avec un court délai, puis répond `failed`.
+4. sinon renvoie la commande : 3 envois en tout, à 3 s d'intervalle, puis répond
+   `failed`.
 
 Zigbee est une radio : un message peut se perdre. La sirène est le cas critique, donc
 la confirmation et les nouvelles tentatives comptent. Un détecteur de fumée avec sa
@@ -214,9 +216,10 @@ retenu par capacité.
 
 ## Tests
 
-- **Faux Zigbee2MQTT** : un programme qui rejoue des messages enregistrés sur du
-  vrai matériel (fichiers de référence, un par modèle). Tout le comportement de
-  l'adaptateur se teste sans radio.
+- **Faux Zigbee2MQTT** : les tests donnent à l'adaptateur des messages de
+  Zigbee2MQTT écrits à la main. Tout le comportement de l'adaptateur se teste sans
+  radio. Les fichiers de référence enregistrés sur du vrai matériel (un par modèle)
+  n'existent pas encore.
 - Scénarios : changement d'état, message répété sans changement, état conservé au
   démarrage (aucun événement), appareil muet puis de retour, commande de sirène
   confirmée, non confirmée avec nouvelles tentatives, appairage réussi, appairage
@@ -277,7 +280,9 @@ Choix faits au codage :
   l'état de la porte.
 - **Santé** : l'adaptateur publie `zigbee.status` (retenu, répété chaque minute). La
   centrale passe le lien `zigbee` à `down` quand le pont est arrêté, à `silent` quand
-  l'adaptateur se tait, et prévient le propriétaire après 3 minutes (`zigbee_down`).
+  l'adaptateur se tait depuis 3 minutes, et prévient le propriétaire (`zigbee_down`)
+  3 minutes après le début de la panne : 3 minutes pour un pont arrêté, 6 pour un
+  adaptateur muet.
 
 À vérifier sur le matériel :
 

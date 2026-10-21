@@ -48,12 +48,12 @@ SIM.
 - Si une ligne échoue, la passerelle essaie l'autre. La ligne qui a réussi en
   dernier est essayée en premier.
 
-Chaque ligne est décrite en configuration : chemin du port du modem, opérateur,
-activée ou non.
+Chaque ligne est décrite en configuration : `id`, `port`, `baud` (115200),
+opérateur, `configure_port` (oui par défaut). Il faut au moins une ligne.
 
 ## Envoi d'un SMS
 
-- Le moteur écrit des messages courts, sans accents spéciaux, pour tenir dans un
+- L'escalade écrit des messages courts, sans accents spéciaux, pour tenir dans un
   seul SMS de 160 caractères (voir `escalation.md`).
 - La passerelle demande un **accusé de livraison** à l'opérateur. Elle publie
   `sent` quand le modem a accepté le message, puis `delivered` quand l'accusé
@@ -69,7 +69,8 @@ défaut), puis raccroche. Le contact voit un appel manqué avec le numéro de la
 centrale. Il n'y a pas de message parlé (voir `escalation.md`).
 
 - Statut `sent` : l'appel a sonné jusqu'au bout ou le contact a décroché.
-- Statut `failed` avec raison `busy`, `unreachable` ou `no_network`.
+- Statut `failed` avec raison `busy`, `unreachable`, `no_network`, `timeout` ou
+  `modem_error`.
 
 À vérifier avec l'opérateur : si un appel qui n'est pas décroché est facturé au
 client.
@@ -104,9 +105,8 @@ Toutes les 30 secondes, la passerelle vérifie :
 
 Elle vérifie aussi :
 
-- **Crédit ou forfait** : la lecture passe par un code propre à chaque opérateur,
-  donc configurable et facultative. Quand elle n'est pas disponible, les erreurs
-  d'envoi (`no_credit`) servent de signal.
+- **Crédit** : pas encore lu ; une erreur `no_credit` passe la ligne à
+  `credit: "empty"`.
 - **SMS de test** : un SMS envoyé chaque semaine pour détecter une SIM suspendue
   avant qu'une alerte en dépende.
 
@@ -115,13 +115,14 @@ L'état de chaque ligne va dans `system.health` :
 ```json
 "gsm": {
   "lines": [
-    { "id": "line1", "operator": "togocom", "registered": true, "signal": 71,
+    { "id": "line1", "operator": "togocom", "registered": true, "signal": 70,
       "credit": "ok", "last_test": "2026-10-17T08:00:00Z", "last_test_ok": true }
   ]
 }
 ```
 
-Quand le GSM reste inutilisable (ou la passerelle muette) 10 minutes, la supervision
+Quand le GSM reste inutilisable 10 minutes (une passerelle muette compte comme
+inutilisable après 3 minutes), la supervision
 envoie au propriétaire une alerte « protection dégradée » par internet, avec ce qu'il faut faire (recharger, vérifier
 la SIM).
 
@@ -148,7 +149,7 @@ file. Un modem qui se bloque souvent est signalé dans `system.health`.
 
 | Paramètre | Défaut |
 |---|---|
-| Lignes (port, opérateur, activée) | 1 ligne |
+| Lignes (`id`, `port`, `baud`, opérateur, `configure_port`) | au moins 1 ligne |
 | Durée de sonnerie d'un appel | 20 s |
 | Intervalle de vérification | 30 s |
 | Fréquence du SMS de test | 1 par semaine |
@@ -192,7 +193,10 @@ Là où le document laissait un doute :
   attendre), puis continue d'essayer avec un délai qui double (5 s, 10 s, … 2 min au
   plus) jusqu'à l'âge maximum. Un envoi réussi plus tard publie `sent`.
 - **Âge maximum** : 10 minutes pour fire, panic et intrusion, une heure pour le reste
-  (réglable). Une demande abandonnée publie `failed` avec la raison `timeout`.
+  (réglable). Une demande abandonnée publie `failed` avec la raison `timeout`, sauf
+  si un `failed` est déjà parti pour elle : jamais deux. Sans aucune ligne utilisable
+  (pas de réseau, modem muet), une demande reste dans la file sans être essayée, puis
+  part en échec `timeout` à son âge maximum.
   L'âge d'une demande compte depuis son `ts` (l'heure où l'escalade l'a écrite), pas
   depuis sa réception : une demande gardée par le broker pendant que la passerelle
   était arrêtée part en échec `timeout` dès son arrivée si elle est trop vieille, sans

@@ -51,8 +51,8 @@ Tous les messages ont la même enveloppe.
 | `v` | Version du contrat. Un changement incompatible incrémente `v`. |
 | `id` | ULID : unique et triable. Sert à dédupliquer. |
 | `site` | Identifiant du site, présent dès le début même avec un seul client. |
-| `src` | Composant émetteur (`adapter.zigbee`, `engine`, `gsm`, `video`, `agent.link`). |
-| `seq` | Sur le site, compteur croissant de chaque programme, conservé sur disque par blocs de 1000 (pour ménager la carte SD) : il peut sauter après un redémarrage, jamais reculer. Vers le cloud, l'agent renumérote : continu par site, dans l'ordre d'envoi, pour repérer les trous (rejeu : `agent.replay`, voir `agent.md`). 0 : non numéroté (dernier message). |
+| `src` | Composant émetteur (`adapter.zigbee`, `engine`, `health`, `escalation`, `install`, `config`, `gsm`, `video`, `maint`, `console`, `agent.link`, `tool.install`). |
+| `seq` | Sur le site, compteur croissant de chaque programme, conservé sur disque par blocs de 1000 (pour ménager la carte SD) : il peut sauter après un redémarrage, jamais reculer. La console et l'outil d'installation numérotent leurs ordres avec l'heure, en millisecondes. Vers le cloud, l'agent renumérote : continu par site, dans l'ordre d'envoi, pour repérer les trous (rejeu : `agent.replay`, voir `agent.md`). 0 : non numéroté (dernier message). |
 | `ts` | Heure UTC de la centrale, à la milliseconde. Peut être fausse si l'horloge a dérivé : le cloud ajoute sa propre heure de réception. |
 | `type` | Type de message (voir plus bas). |
 | `data` | Contenu propre au type. |
@@ -70,9 +70,9 @@ Tous les topics commencent par `safehome/{site}/`.
 | `.../device/{device_id}/ack` | Réponse à une commande | non |
 | `.../alarm/event` | Événements du cycle d'alarme (armée, déclenchée…) | non |
 | `.../alarm/state` | État courant du moteur | oui |
-| `.../alarm/cmd` | Ordre au moteur (armer, désarmer…), depuis le clavier, l'application ou le planning | non |
+| `.../alarm/cmd` | Ordre au moteur (armer, désarmer…), depuis l'application (seul le cloud y publie) | non |
 | `.../alarm/ack` | Réponse du moteur à un ordre | non |
-| `.../alert/request` | Demande d'envoi d'alerte (SMS, appel) du moteur vers les canaux | non |
+| `.../alert/request` | Demande d'envoi d'alerte (SMS, appel) de l'escalade vers les canaux | non |
 | `.../alert/result` | Résultat d'un envoi (envoyé, échoué, acquitté) | non |
 | `.../alert/ack` | Acquittement d'un contact (SMS ou application) | non |
 | `.../registry/cmd` | Appairage et retrait d'appareils, **local seulement** | non |
@@ -199,24 +199,26 @@ appareil est retiré, l'adaptateur efface ses états retenus (message vide).
   "type": "command.ack",
   "data": {
     "ref": "01JB8ZK3M2Q7T4X9H6N5R0WYCE",
-    "status": "done",
-    "reason": null
+    "status": "done"
   }
 }
 ```
 
 - `ref` est l'`id` de la commande.
 - `status` : `accepted`, `done`, `failed`, `expired`.
+- `reason` est absent quand il est vide, jamais `null`.
 - Une commande périmée (`exp` dépassée) n'est pas exécutée.
 - Les commandes sont idempotentes : recevoir deux fois `siren.on` ne change rien.
 
-Commandes de la v1 : `siren.on`, `siren.off`, `device.identify` (faire clignoter
-ou biper un appareil pour le repérer).
+Commandes de la v1 : `siren.on`, `siren.off`. `device.identify` (faire clignoter
+ou biper un appareil pour le repérer) est réservée : rien ne l'envoie, aucun profil ne
+la prend en charge.
 
 ### Ordres au moteur (`alarm.command` et `alarm.ack`)
 
-Les ordres arrivent sur `alarm/cmd`. Ils viennent du clavier (via l'adaptateur),
-de l'application (via le cloud) ou du planning (interne).
+Les ordres arrivent sur `alarm/cmd`, publiés seulement par le cloud (l'application).
+Une touche du clavier devient un ordre dans la centrale, sans passer par ce topic ;
+le planning arme dans le moteur.
 
 ```json
 {
@@ -272,6 +274,9 @@ de l'application (via le cloud) ou du planning (interne).
 - Un armement accepté alors que des appareils sont muets ou ont une pile faible répond
   `done` avec `detail.offline` et `detail.low_battery` (listes d'appareils) : le clavier
   peut avertir. Ces défauts ne bloquent jamais l'armement.
+- Le code installateur suivi de « désarmer » au clavier répond `done` avec
+  `detail.install` à `open` quand il ouvre le mode installation (voir
+  `security-install.md`).
 
 ### Événements d'alarme (`alarm.*`)
 
@@ -393,7 +398,8 @@ Le détail et les raisons des choix sont dans `video.md`.
 - En liaison fixe (`uplink` = `fixed`), ni plafond ni durée limite : `max_s` est absent.
   En données mobiles, le client règle `quota_mb` et `max_s`, que le cloud reprend dans
   chaque demande.
-- Une demande vue après `exp` répond `failed` avec la raison `expired`.
+- Une demande déjà périmée à son arrivée est refusée par l'agent, sans réponse ; si
+  elle expire avant d'atteindre le service vidéo, il répond `failed`/`expired`.
 - Raisons de fin ou d'échec : `stopped`, `timeout`, `quota`, `busy`, `unknown_camera`,
   `camera_unreachable`, `relay_unreachable`, `expired`.
 
@@ -412,8 +418,9 @@ jamais par MQTT.
   fichier en `PUT` (`Content-Type: image/jpeg`) avec `Authorization: Bearer <token>`.
   Le jeton ne vaut que pour cette photo et n'apparaît jamais dans un journal.
 - `photo.upload` est pour l'agent seul : il n'est jamais republié sur la centrale.
-- `url_expired` : l'adresse est arrivée trop tard, a expiré pendant une coupure, ou a
-  été refusée (401, 403, 404, 410). Le cloud peut envoyer un nouveau `photo.upload`.
+- `url_expired` : l'adresse a expiré avant l'envoi ou a été refusée (401, 403, 404,
+  410). Un `photo.upload` déjà périmé à son arrivée est refusé par l'agent, sans
+  réponse. Le cloud peut envoyer un nouveau `photo.upload`.
 - Une photo attend 24 h au plus sur le site (`too_old` ensuite). `missing` : le
   fichier a disparu (dossier plein, les plus anciennes partent d'abord).
 - `refused` : le fichier lui-même est refusé (400, 413, 415, 422). Toute autre erreur
@@ -540,7 +547,7 @@ pas) :
     "gsm": {
       "lines": [
         { "id": "line1", "operator": "togocom", "responding": true, "registered": true,
-          "signal": 71, "credit": "ok", "last_test": "2026-10-17T08:00:00Z",
+          "signal": 70, "credit": "ok", "last_test": "2026-10-17T08:00:00Z",
           "last_test_ok": true }
       ]
     }
@@ -607,17 +614,21 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 - `responding` : le modem répond ; `registered` : il est sur le réseau ; `signal` : 0 à
   100, arrondi à la dizaine ; `credit` : `ok`, `empty` (un envoi a été refusé faute de
-  crédit) ou absent si inconnu ; `restarts` : redémarrages du modem.
+  crédit) ou absent si inconnu ; `restarts` : redémarrages du modem ; `last_test` et
+  `last_test_ok` : heure et résultat du dernier SMS de test, absents avant le premier.
 - `queued` : SMS et appels en attente.
 
 ## Fiabilité
 
 - **Dédoublonnage** : tout récepteur garde les `id` récents et ignore les
   doublons.
-- **Ordre et trous** : `seq` croît de façon continue par site. Si le cloud voit un
-  trou après une reconnexion, il sait qu'il manque des messages et les redemande.
+- **Ordre et trous** : vers le cloud, `seq` croît de façon continue par site (l'agent
+  renumérote). Si le cloud voit un trou après une reconnexion, il sait qu'il manque des
+  messages et les redemande.
 - **File d'attente** : l'agent de liaison conserve les messages sur disque quand
-  internet est coupé et les renvoie dans l'ordre à la reconnexion.
+  internet est coupé et les renvoie à la reconnexion : alertes et alarmes d'abord, les
+  états en dernier (seul le plus récent de chaque état est gardé). À priorité égale,
+  l'ordre d'arrivée.
 - **Les alertes locales passent d'abord** : le moteur, la sirène et la passerelle
   GSM ne dépendent jamais du cloud. Ce qui part vers le cloud est de la
   supervision.
@@ -642,7 +653,7 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 L'agent de liaison transmet seulement :
 
-- les événements `alarm.*` et `alert.*`,
+- les événements `alarm.*` et `alert.*`, et les réponses aux ordres (`alarm.ack`),
 - `alarm.state` et `system.health`,
 - le `system.heartbeat`,
 - les `device.event` de type `smoke`, `panic`, `tamper`, `mains` et les
@@ -668,9 +679,9 @@ Dans l'autre sens, le cloud peut publier seulement :
   bornée à une heure, ordre périmé refusé) ;
 - sur `photo/cmd`, l'adresse d'envoi d'une photo que l'agent a annoncée (gardée par
   l'agent, jamais publiée sur la centrale) ;
-- sur `config/set`, la configuration du site. L'agent la vérifie avant de la
-  transmettre (version, limites, numéros) : une configuration invalide n'atteint pas
-  la centrale.
+- sur `config/set`, la configuration du site. L'agent n'en vérifie que la forme
+  (version, limites, numéros) avant de la transmettre ; la centrale refuse une version
+  plus ancienne, une liste sans propriétaire et des heures de fermeture fausses.
 
 L'agent refuse tout le reste. Les commandes d'appareils (`siren.on`…) ne sont pas
 accessibles au cloud : seul le moteur les envoie.

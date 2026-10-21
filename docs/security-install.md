@@ -1,6 +1,6 @@
 # Sécurité et installation d'un site
 
-Statut : brouillon v1, à valider avant le premier code.
+Statut : v1, codée ; pas encore essayée sur le kit.
 
 Ce document décrit comment une centrale reçoit son identité, comment elle est
 installée chez un client, comment le code d'accès arrive sur le site, et ce qui se
@@ -14,7 +14,7 @@ passe si une centrale est volée, détruite ou remplacée.
 | Quelqu'un coupe le courant ou internet | La centrale continue sur batterie et par GSM (voir `escalation.md`). |
 | Un voleur a le téléphone du propriétaire | Le désarmement exige le code du site, et l'accès se verrouille après 3 codes faux (voir `engine.md`). |
 | Un appareil pirate est ajouté au site | L'appairage se fait seulement en local, et seuls les modèles connus sont acceptés (voir `adapter-zigbee.md`). |
-| Le cloud est compromis | Le cloud ne peut envoyer que des ordres d'alarme et de configuration. Il ne peut pas commander la sirène ni ajouter d'appareil. |
+| Le cloud est compromis | Le cloud ne peut envoyer que des ordres d'alarme, de vidéo, de maintenance et de configuration, et les résultats des alertes. Il ne commande ni la sirène ni les appareils. |
 | Faux SMS d'acquittement | Il ne peut qu'arrêter l'escalade, et l'incident reste visible (voir `gsm-gateway.md`). |
 | Brouillage radio du Zigbee | Limite connue en v1. Une disparition simultanée de tous les capteurs est un signal à surveiller plus tard. |
 
@@ -156,8 +156,9 @@ pendant le **mode installation** seulement.
 
 1. L'alarme est désarmée.
 2. L'installateur tape le **code installateur** au clavier, puis « désarmer ».
-3. La centrale ouvre le mode pour **30 minutes** et le dit (`install.mode`, retenu). Le
-   clavier reçoit une réponse « fait ».
+3. La centrale ouvre le mode pour **30 minutes** et le dit (`install.mode`, retenu).
+   Le clavier ne reçoit rien ; seul un `alarm.ack` `done` avec `detail.install` à
+   `open` part sur `alarm/ack`.
 
 Le code installateur :
 
@@ -295,8 +296,9 @@ Si une centrale est détruite ou volée :
 Reporté dans `contract.md` :
 
 - Topics `safehome/{site}/config/set` (cloud vers site) et `config/applied` (retenu).
-- Le cloud peut publier sur `alarm/cmd`, `video/cmd`, `alert/result`, `alert/ack` et
-  `config/set`, rien d'autre.
+- Le cloud peut publier sur `alarm/cmd`, `video/cmd`, `alert/result`, `alert/ack`,
+  `config/set` et `maint/cmd`, et pour l'agent lui-même sur `photo/cmd` et `agent/cmd`.
+  Rien d'autre.
 - Configuration numérotée par version, confirmée par le site (`config.applied`).
 
 Reste à ajouter : les événements de journal `audit.config_applied`,

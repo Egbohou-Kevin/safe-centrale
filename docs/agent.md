@@ -76,7 +76,8 @@ Quand internet est coupé :
   confirmé repart (le cloud ignore les doublons grâce à `id`).
 - **Seul le dernier heartbeat est gardé** : un signe de vie vieux de deux heures n'a
   aucun intérêt. De même, pour un message retenu (`alarm.state`, `system.health`,
-  `agent.status`, `video.status`), seul le dernier compte.
+  `agent.status`, `video.status`, `config.applied`, `install.mode`), seul le dernier
+  compte.
 - À la reconnexion, la file part par priorité : d'abord l'alarme et les alertes,
   puis les événements, puis les états, et dans l'ordre d'arrivée à priorité égale.
 - La file est bornée : 20 000 messages, 10 Mo ou 7 jours par défaut. Si elle est
@@ -142,8 +143,9 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
   `config/set` (vérifiée : version, limites, numéros), un ordre de maintenance sur
   `maint/cmd` (une heure au plus, voir `maintenance.md`), et sur `alert/result` et
   `alert/ack` les réponses à une alerte que l'agent a transmise (un `alert.ack` doit
-  venir de l'app et porter sur un incident que l'agent a vu passer). Le reste est
-  refusé et enregistré dans le journal.
+  venir de l'app et porter sur un incident que l'agent a vu passer) ; et pour l'agent
+  lui-même `photo.upload` sur `photo/cmd` et `agent.replay` sur `agent/cmd`, jamais
+  republiés sur la centrale. Le reste est refusé et enregistré dans le journal.
 - L'enveloppe doit être valide, avec le bon `site`.
 - Un message déjà vu (même `id`) est ignoré. Un message périmé (`exp` dépassée) est
   refusé.

@@ -404,17 +404,20 @@ Ensuite, dans l'ordre :
 1. Il installe Mosquitto, et ffmpeg s'il y a des caméras.
 2. Il crée l'utilisateur `safehome` et règle les droits de `/var/lib`.
 3. Il pose la configuration du site dans `/etc/safehome`, avec les profils des
-   appareils. Il crée `maint.key` s'il n'existe pas encore.
+   appareils. Il crée `maint.key` s'il n'existe pas encore et que la maintenance est
+   configurée.
 4. Il vérifie chaque configuration avec les **nouveaux** programmes (`check`). Si l'une
-   est mauvaise, il remet les fichiers d'avant et s'arrête. Aucun programme n'a alors
-   été remplacé, aucun service redémarré.
+   est mauvaise, il remet les fichiers d'avant et s'arrête. Aucun de nos programmes
+   n'a été remplacé ; seul go2rtc a pu l'être, la vérification de la vidéo en a
+   besoin. Aucun service n'a redémarré.
 5. Il pose les programmes, les services, les journaux, le chien de garde et Mosquitto.
 6. Il active et redémarre les services : toujours la centrale, la passerelle GSM,
    l'adaptateur Zigbee et l'agent ; la vidéo, la maintenance et la console seulement
    si leur configuration est là.
 7. Il affiche la clé publique du tunnel, à poser sur le bastion, et la phrase de passe
    du Wi-Fi de la console, pour l'étiquette. Il la tire au sort la première fois
-   (`console.secret`, 12 caractères sans ceux qui se confondent).
+   (`console.secret`, 12 caractères sans ceux qui se confondent). Chacune n'existe
+   que si la maintenance, ou la console, est configurée.
 
 Ce que le script ne touche pas à la relance :
 
@@ -423,8 +426,9 @@ Ce que le script ne touche pas à la relance :
 - le fichier de Zigbee2MQTT n'est posé que la première fois. Ensuite il contient la
   clé du réseau Zigbee.
 
-Zigbee2MQTT ne démarre que lorsque le port de la clé est réglé (plus de `CHANGE-ME`
-dans son fichier). Sinon il redémarrerait toutes les 5 s.
+Zigbee2MQTT n'est activé et démarré que lorsque le port de la clé est réglé (plus de
+`CHANGE-ME` dans son fichier). Sinon il redémarrerait toutes les 5 s. Le script dit
+alors quoi faire : régler le fichier, puis `sudo systemctl enable --now zigbee2mqtt`.
 
 Restent à la main : le reste de l'étape 3 (mise à jour du système, `fake-hwclock`,
 SSH, Bluetooth), les codes d'accès, les appareils (étape 10) et le passage en lecture
@@ -462,7 +466,7 @@ se changent à tout moment.
 | `sudo kill -9` du processus `safehome-hub` | redémarré en 2 s, même état (armé reste armé) |
 | `sudo systemctl stop mosquitto` 1 min, puis `start` | les programmes attendent puis reprennent seuls |
 | Débrancher la clé Zigbee | alerte `zigbee_down` après 3 min |
-| Débrancher le modem | lien GSM `silent` dans `system.health` après 3 min |
+| Débrancher le modem | lien GSM `down` dans `system.health` en une minute environ ; alerte `gsm_degraded` après 10 min |
 | Débrancher la box 5 min, déclencher une alarme d'essai, rebrancher | lien `internet` à `down` en moins d'une minute, alertes par GSM sans attendre le cloud ; l'alarme arrive au cloud au retour |
 | Bloquer le port 8883 sur la box | l'agent passe en WebSocket sur le port 443 (`transport` à `wss` dans `agent.status`) |
 | `sudo systemctl stop safehome-agent` | le cloud voit le site hors ligne tout de suite ; lien `internet` à `silent` après 3 min |

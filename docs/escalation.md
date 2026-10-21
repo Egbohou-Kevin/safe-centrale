@@ -9,9 +9,10 @@ injoignable.
 
 ## Qui fait quoi
 
-- **Le moteur d'alarme** (sur le site) décide : il garde le plan d'escalade de
-  chaque incident, mesure les délais et choisit la vague suivante. Il publie des
-  `alert.request` (voir `contract.md`).
+- **L'escalade** (`internal/escalation`, dans la centrale) décide : elle garde le
+  plan d'escalade de chaque incident, mesure les délais et choisit la vague suivante.
+  Elle publie des `alert.request` (voir `contract.md`). Le moteur d'alarme et la
+  supervision lui donnent leurs alertes.
 - **Les canaux** exécutent : la passerelle GSM envoie les SMS et lance les appels,
   l'agent de liaison envoie vers les canaux du cloud (WhatsApp, notification
   push). Chacun répond par un `alert.result`.
@@ -26,7 +27,8 @@ responsable (délégué du propriétaire, facultatif) et autres. Chaque contact 
 - un nom et un rôle,
 - un numéro de téléphone,
 - les canaux qu'il accepte (SMS, appel, WhatsApp, application),
-- un rôle (`proprietaire`, `responsable`, `gardien`, `gerant`, `autre`).
+- un rôle (`owner` propriétaire, `deputy` responsable, `guard` gardien, `manager`
+  gérant, `other` autre).
 
 La liste est modifiée depuis le cloud, puis **copiée et conservée sur la
 centrale**. Une panne d'internet ne retire donc aucun contact.
@@ -55,7 +57,7 @@ internet. Ce n'est pas prévu en v1.
 
 ## Ordre des canaux pour chaque contact prévenu
 
-1. **Internet d'abord.** Le moteur demande une notification application ou
+1. **Internet d'abord.** L'escalade demande une notification application ou
    WhatsApp.
 2. **GSM tout de suite** si internet est inutilisable : la centrale n'a plus de
    liaison avec le cloud, ou le cloud n'a pas confirmé l'envoi dans les 10
@@ -99,14 +101,14 @@ moyen utilisé.
 | `battery_low_hub` | batterie de la centrale à 40 % (urgence `high`), puis à 10 % (`critical`), seulement pendant une coupure | Premier contact (responsable ou propriétaire), une alerte à chaque seuil (ne part pas encore : voir « Coupures de courant ») |
 | `mains_restored` | retour du courant, seulement si une alerte de batterie est partie (champ `percent` : niveau actuel) | Internet de préférence, urgence basse (ne part pas encore) |
 | `device_offline`, `battery_low` | appareil muet, pile faible | Résumé quotidien au propriétaire, tous les jours tant que le défaut dure (liste dans `devices`) |
-| `gsm_degraded` | secours SMS inutilisable ou passerelle GSM muette depuis 10 minutes | Propriétaire, par internet seulement |
-| `zigbee_down` | capteurs injoignables (Zigbee2MQTT, sa clé ou l'adaptateur arrêtés) depuis 3 minutes : l'alarme est aveugle | Premier contact (responsable ou propriétaire) tout de suite, doublé par SMS ; « 1 » pour acquitter |
+| `gsm_degraded` | secours SMS inutilisable depuis 10 minutes ; une passerelle GSM muette compte comme en panne après 3 minutes, l'alerte part donc 13 minutes après son dernier message | Propriétaire, par internet seulement |
+| `zigbee_down` | capteurs injoignables depuis 3 minutes (Zigbee2MQTT ou sa clé arrêtés) ; un adaptateur muet compte comme en panne après 3 minutes, l'alerte part donc après 6 minutes : l'alarme est aveugle | Premier contact (responsable ou propriétaire) tout de suite, doublé par SMS et appel ; « 1 » pour acquitter |
 
 ### Intrusion : vagues
 
-Chaque contact a un rôle : `responsable` (délégué du propriétaire, facultatif),
-`gardien` (facultatif), `proprietaire`, `gerant` ou `autre`. Les rôles absents sont
-sautés.
+Chaque contact a un rôle : `deputy` (responsable, délégué du propriétaire,
+facultatif), `guard` (gardien, facultatif), `owner` (propriétaire), `manager` (gérant)
+ou `other` (autre). Les rôles absents sont sautés.
 
 | Moment | Qui | Comment |
 |---|---|---|
@@ -115,10 +117,10 @@ sautés.
 | +5 min sans acquittement | Le gérant et tous les autres contacts | Internet, GSM 1 min après |
 | Ensuite, toutes les 10 min | Tous les contacts qui n'ont pas acquitté | Internet et SMS, jusqu'à 3 relances |
 
-Quand une vague est vide (par exemple pas de responsable, donc le propriétaire est
-déjà prévenu à 0), on passe directement à la suivante sans attendre son délai.
+Sans responsable, la vague de +2 min relance quand même le propriétaire (prévenu à 0)
+et le gardien. Une vague sans personne à prévenir est sautée sans attendre son délai.
 
-Au bout des relances, le moteur arrête l'escalade et note l'incident comme « sans
+Au bout des relances, l'escalade arrête l'escalade et note l'incident comme « sans
 réponse ». La sirène suit son propre calendrier (voir `engine.md`).
 
 Tous les délais sont réglables par site.
@@ -175,21 +177,21 @@ Un SMS est court et lisible seul, sans accents spéciaux pour tenir en un seul
 message de 160 caractères :
 
 ```
-ALARME Boutique Lome: porte entree ouverte a 21:04. Sirene en cours.
-Repondre 1 si vous gerez.
+ALARME Boutique Lome: intrusion (Entree) a 21:04. Repondre 1 si vous gerez.
 ```
 
-Il contient : le nom du site, ce qui s'est passé, l'heure, l'état, et comment
-acquitter. Les messages WhatsApp et de l'application peuvent ajouter les photos et
+Il contient : le site, ce qui s'est passé et où (zone), l'heure, comment acquitter. Les messages WhatsApp et de l'application peuvent ajouter les photos et
 les détails.
 
 ## Échecs et repli
 
-- **Internet inutilisable** : le moteur envoie directement par GSM, sans attendre
+- **Internet inutilisable** : l'escalade envoie directement par GSM, sans attendre
   le délai de 60 secondes.
-- **SMS non envoyé** (pas de réseau, SIM sans crédit) : la passerelle publie un
-  `alert.result` en échec et le moteur passe à la vague suivante sans attendre le
-  délai. Avec deux lignes (plus tard), elle essaierait d'abord l'autre ligne.
+- **SMS non envoyé** (pas de réseau, SIM sans crédit) : la passerelle essaie ses
+  autres lignes, puis publie un échec. Si tous les messages de la vague échouent pour
+  tous ses contacts, l'escalade passe à la vague suivante sans attendre. Sans aucune
+  ligne utilisable, la demande attend dans la file de la passerelle, puis échoue à son
+  âge maximum (10 minutes pour une intrusion).
 - **Aucun canal ne marche** : la sirène continue et l'incident reste en attente.
   Dès que la liaison revient, les alertes en attente partent.
 - **SIM et crédit** : les SIM de la centrale (SMS, appels, et données pour un
@@ -237,8 +239,8 @@ Ajouts à reporter dans `contract.md` :
 - `alert.ack` : `incident`, `contact`, `via` (`sms`, `app`).
 - Configuration des contacts : par `config.set` (voir `contract.md`). La liste du
   cloud remplace celle du fichier de la centrale ; un propriétaire au moins. Les
-  numéros vont à la passerelle GSM seulement, jamais dans le fichier de la centrale
-  ni dans un journal.
+  numéros ne vont jamais dans `hub.json` ni dans un journal ; la centrale les garde
+  dans `site-config.json` (dossier d'état, 0600), où la passerelle les lit.
 
 ## Décidé
 
@@ -287,9 +289,9 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
   suivante sans attendre son délai.
 - **Acquittement.** Un acquittement d'un contact connu arrête l'escalade de l'incident
   entier (toutes ses alertes). Un acquittement d'un inconnu est ignoré.
-- **Fin de l'incident.** Un désarmement par une personne arrête l'escalade (`Close`) : il
-  serait absurde de relancer les contacts après coup. L'arrêt de la sirène par
-  expiration ne l'arrête pas.
+- **Fin de l'incident.** Un désarmement par une personne, ou l'arrêt de la sirène avec
+  un code, arrête l'escalade (`Close`) : il serait absurde de relancer les contacts
+  après coup. L'arrêt de la sirène par expiration ne l'arrête pas.
 - **Regroupement.** Un même incident et un même type d'alerte levés plusieurs fois se
   fusionnent : les appareils s'ajoutent, aucun message de plus ne part. Le moteur ne
   lève jamais deux fois la même intrusion (il se tait une fois déclenché) : c'est une
@@ -308,7 +310,7 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
 La passerelle GSM (`safehome-gsm`) exécute les demandes `sms` et `call`, connaît les
 numéros des contacts et publie `alert.ack` pour une réponse « 1 ». Pas encore fait : les
 canaux application et WhatsApp (agent de liaison et cloud), et le changement des
-contacts et des plans depuis le cloud.
+plans depuis le cloud (les contacts, eux, arrivent par `config.set`).
 
 ## Questions ouvertes
 

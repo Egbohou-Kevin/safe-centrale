@@ -134,7 +134,8 @@ dans `contract.md`. Il ne peut toujours pas commander les appareils ni l'appaira
   site y ajoute le jeton en `?token=` au moment d'envoyer. Ni l'adresse complète ni le
   jeton n'apparaissent dans les journaux, même quand go2rtc les écrit dans les siens.
 - **Adresses des caméras** (avec leur mot de passe) seulement dans
-  `/etc/safehome/video.json`, lisible par le service seul, et dans le dossier privé
+  `/etc/safehome/video.json`, lisible seulement par le compte `safehome` (celui de
+  tous nos programmes), et dans le dossier privé
   de chaque go2rtc pendant une session.
 - **Demande périmée refusée** (`exp`) : un ordre rejoué plus tard ne rallume pas une
   caméra.

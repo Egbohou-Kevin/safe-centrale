@@ -145,7 +145,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 - **La console locale** : sa couche application (`internal/consoleapp`) suit le mode
   installation et déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`). `Sites` est
   `install.Sites` ; `Codes` a `People` (les contacts, et à part les codes d'anciens
-  contacts) et `Remove`. Sa page
+  contacts), `Set` et `Remove`. Sa page
   (`internal/consoleapp/web`) ne connaît qu'elle. Le Wi-Fi est l'adaptateur
   `internal/adapter/hotspot` (`nmcli`).
 - **La maintenance à distance** a la forme de la vidéo : son domaine (`internal/maint`,
@@ -171,8 +171,8 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 - **`internal/service`** est la part de la racine de composition commune à tous les
   programmes : ligne de commande, verrou du dossier d'état, clients MQTT, dialogue
   avec systemd, arrêt propre. `service.Reload` envoie SIGHUP au programme d'un fichier
-  de pid : la centrale relit alors ses codes. Il ne connaît que quelques adaptateurs et la file
-  d'envoi, rien des domaines ni des couches application, et seul `cmd/` l'importe.
+  de pid : la centrale relit alors ses codes. Il ne connaît que quelques adaptateurs, la porte
+  d'entrée et la file d'envoi, rien des domaines ni des couches application, et seul `cmd/` l'importe.
 - **Les racines de composition** (`cmd/safehome-hub`, `cmd/safehome-gsm`,
   `cmd/safehome-zigbee`, `cmd/safehome-agent`, `cmd/safehome-video`, `cmd/safehome-maint`,
   `cmd/safehome-console`, `cmd/safehome-install`) sont les seuls endroits autorisés à
@@ -202,7 +202,8 @@ Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent 
   si `internal/configfile` importe un paquet du module, lit l'horloge, ou est importé
   hors des paquets `*config` ;
 - si un adaptateur est importé ailleurs que dans `cmd/` et `internal/service` ; si
-  `internal/service` connaît autre chose que ses adaptateurs et la file d'envoi, ou est
+  `internal/service` connaît autre chose que ses adaptateurs, la porte d'entrée et la
+  file d'envoi, ou est
   importé hors de `cmd/` ;
 - si un domaine, le contrat ou le pilote importe la couche application de la centrale ;
 - si une bibliothèque externe est importée hors de son adaptateur, ou si du code livré

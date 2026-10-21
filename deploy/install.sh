@@ -101,12 +101,10 @@ fi
 # --- Configuration, checked with the new programs -------------------------------
 
 mkdir -p "$ETC"
-backup=""
-if [ -d "$SITE" ]; then
-	backup="$ETC.prev"
-	rm -rf "$backup"
-	cp -a "$ETC" "$backup"
-fi
+# Always: the profiles below are replaced even without a site/ folder.
+backup="$ETC.prev"
+rm -rf "$backup"
+cp -a "$ETC" "$backup"
 # The device profiles come with the programs; a site may add its own.
 rm -rf "$ETC/profiles"
 cp -R "$BUNDLE/config/profiles" "$ETC/profiles"
@@ -132,14 +130,11 @@ for p in $enabled; do
 	"$BUNDLE/bin/safehome-$p" check -config "$ETC/$p.json" || failed="$failed $p.json"
 done
 if [ -n "$failed" ]; then
-	if [ -n "$backup" ]; then
-		rm -rf "$ETC"
-		mv "$backup" "$ETC"
-		fail "bad configuration:$failed. The previous files are back; nothing was restarted"
-	fi
-	fail "bad configuration:$failed. Nothing was restarted"
+	rm -rf "$ETC"
+	mv "$backup" "$ETC"
+	fail "bad configuration:$failed. The previous files are back; nothing was restarted"
 fi
-[ -z "$backup" ] || rm -rf "$backup"
+rm -rf "$backup"
 
 # --- System settings, broker, programs ------------------------------------------
 
@@ -167,6 +162,7 @@ systemctl restart mosquitto
 # --- Zigbee2MQTT ----------------------------------------------------------------
 
 Z2M="$ROOT/var/lib/zigbee2mqtt/configuration.yaml"
+z2m_todo=""
 if [ ! -d "$ROOT/opt/zigbee2mqtt" ]; then
 	say "Zigbee2MQTT is not installed: do step 8 of docs/systeme.md, then run again"
 else
@@ -175,10 +171,12 @@ else
 		install -m 600 "$BUNDLE/deploy/zigbee2mqtt/configuration.yaml" "$Z2M"
 		chown safehome:safehome "$Z2M"
 	fi
-	systemctl enable zigbee2mqtt
 	if grep -q CHANGE-ME "$Z2M"; then
-		say "set the stick's port and adapter in /var/lib/zigbee2mqtt/configuration.yaml, then: sudo systemctl start zigbee2mqtt"
+		# Not even enabled: with CHANGE-ME as its stick it would fail every 5 s.
+		z2m_todo="set the stick's port and adapter in /var/lib/zigbee2mqtt/configuration.yaml, then: sudo systemctl enable --now zigbee2mqtt"
+		say "Zigbee2MQTT not started: $z2m_todo"
 	else
+		systemctl enable zigbee2mqtt
 		systemctl restart zigbee2mqtt
 	fi
 fi
@@ -198,4 +196,5 @@ if has console; then
 	say "the console's Wi-Fi passphrase, for the hub's label with the network's name (docs/security-install.md):"
 	cat "$ETC/console.secret"
 fi
+[ -z "$z2m_todo" ] || say "first, Zigbee2MQTT: $z2m_todo"
 say "done. Then: systemctl --failed (must be empty), access codes and devices (steps 9 and 10), read-only system last (step 12)"

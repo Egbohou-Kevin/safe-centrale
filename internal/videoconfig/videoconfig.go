@@ -1,7 +1,8 @@
 // Package videoconfig reads the video service's configuration file (JSON), strictly:
 // a misspelt key is an error. The cameras' addresses, passwords included, are in it:
-// the file is readable by the service only (see docs/systeme.md), and nothing here
-// prints them. See config/video.example.json.
+// the file is readable only by the safehome account, which runs every safeHome
+// program (see docs/systeme.md), and nothing here prints them. See
+// config/video.example.json.
 package videoconfig
 
 import (
