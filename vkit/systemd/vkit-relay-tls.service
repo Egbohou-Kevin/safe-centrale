@@ -1,0 +1,11 @@
+# Virtual kit: rtmps in front of the video relay, with the cloud's certificate.
+[Unit]
+Description=safeHome virtual kit: video relay TLS
+
+[Service]
+ExecStart=/usr/bin/socat OPENSSL-LISTEN:1936,bind=127.0.0.1,reuseaddr,fork,cert=/etc/vkit/cloud.pem,key=/etc/vkit/cloud.key,verify=0 TCP:127.0.0.1:1935
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

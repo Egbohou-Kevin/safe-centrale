@@ -33,12 +33,16 @@ id() {
 now() { date -u +%Y-%m-%dT%H:%M:%S.%3NZ; }
 later() { date -u -d "+$1" +%Y-%m-%dT%H:%M:%S.%3NZ; }
 
+# cloud_send TOPIC TYPE DATA_JSON: the cloud publishes a message for the site.
+cloud_send() {
+	mosquitto_pub "${CLOUD_TLS[@]}" -q 1 -t "safehome/$SITE/$1" -m \
+		"{\"v\":1,\"id\":\"$(id)\",\"site\":\"$SITE\",\"src\":\"cloud\",\"ts\":\"$(now)\",\"type\":\"$2\",\"data\":$3}"
+}
+
 # app_order COMMAND [ARGS_JSON]: the app sends an order through the cloud.
 app_order() {
-	local data
-	data="{\"command\":\"$1\",\"args\":${2:-{\}},\"origin\":\"app\",\"user\":\"u_owner\",\"exp\":\"$(later '1 minute')\"}"
-	mosquitto_pub "${CLOUD_TLS[@]}" -q 1 -t "safehome/$SITE/alarm/cmd" -m \
-		"{\"v\":1,\"id\":\"$(id)\",\"site\":\"$SITE\",\"src\":\"cloud\",\"ts\":\"$(now)\",\"type\":\"alarm.command\",\"data\":$data}"
+	cloud_send alarm/cmd alarm.command \
+		"{\"command\":\"$1\",\"args\":${2:-{\}},\"origin\":\"app\",\"user\":\"u_owner\",\"exp\":\"$(later '1 minute')\"}"
 }
 
 zigbee() { echo "$*" >/run/vkit/zigbee; }

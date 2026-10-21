@@ -1,0 +1,13 @@
+# Virtual kit: the cloud's video relay, for the session "v1" of the scenario. TLS is
+# terminated by vkit-relay-tls (rtmps on 127.0.0.1:1936); ffmpeg takes one stream,
+# prints what it received and starts again (docs/kit-virtuel.md).
+[Unit]
+Description=safeHome virtual kit: video relay
+
+[Service]
+ExecStart=/usr/bin/ffmpeg -nostdin -hide_banner -listen 1 -i rtmp://127.0.0.1:1935/live/v1 -c copy -f null -
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

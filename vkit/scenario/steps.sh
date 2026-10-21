@@ -222,6 +222,68 @@ step_console() {
 	expect bus '"type":"install.mode".*"status":"closed"' 15 "the mode closes"
 }
 
+step_maint() {
+	say "remote maintenance: a tunnel to the bastion, on the cloud's request"
+	mark
+	cloud_send maint/cmd maint.open \
+		"{\"session\":\"m1\",\"user\":\"kevin\",\"reason\":\"vkit\",\"duration_s\":120,\"exp\":\"$(later '1 minute')\"}"
+	expect bus '"type":"maint.session".*"status":"open"' 30 "the tunnel opens"
+	expect cloud '"type":"maint.session".*"status":"open"' 15 "the owner can see it"
+	if ssh-keyscan -T 5 -p 22001 localhost 2>/dev/null | grep -q "$(cut -d' ' -f2 /etc/ssh/ssh_host_ed25519_key.pub)"; then
+		check_passed "the bastion's port 22001 leads to the hub's ssh"
+	else
+		check_failed "the bastion's port 22001 leads to the hub's ssh"
+	fi
+	# docs/maintenance.md: a stolen hub gives neither a shell on the bastion nor
+	# another site's port.
+	# As the service's user: the key is root:safehome 0640, fine for it, too open for root.
+	local key=(-F /dev/null -i /etc/safehome/maint.key -o BatchMode=yes -o UserKnownHostsFile=/etc/safehome/maint_known_hosts)
+	local said rc=0
+	said="$(timeout 10 sudo -u safehome ssh "${key[@]}" tunnel@127.0.0.1 id 2>&1)" || rc=$?
+	if [ "$rc" != 0 ] && echo "$said" | grep -q "not available"; then
+		check_passed "the hub's key opens no shell on the bastion"
+	else
+		check_failed "the hub's key opens no shell on the bastion (exit $rc: $said)"
+	fi
+	# Refused, ssh stops at once (255); allowed, it would stay up until the timeout.
+	rc=0
+	said="$(timeout 10 sudo -u safehome ssh "${key[@]}" -o ExitOnForwardFailure=yes -N -R localhost:22002:localhost:22 tunnel@127.0.0.1 2>&1)" || rc=$?
+	if [ "$rc" = 255 ] && echo "$said" | grep -qi "forwarding failed"; then
+		check_passed "the hub's key cannot listen on another site's port"
+	else
+		check_failed "the hub's key cannot listen on another site's port (exit $rc: $said)"
+	fi
+	mark
+	cloud_send maint/cmd maint.close '{"session":"m1"}'
+	expect bus '"type":"maint.session".*"status":"closed"' 15 "the tunnel closes"
+	sleep 1
+	if ss -ltn | grep -q ':22001 '; then
+		check_failed "nothing listens on the bastion once closed"
+	else
+		check_passed "nothing listens on the bastion once closed"
+	fi
+}
+
+step_video() {
+	say "live video: the owner watches the camera from the app"
+	mark
+	expect bus '"type":"video.status".*"reachable":true' 330 "the camera is reachable"
+	mark
+	cloud_send video/cmd video.request \
+		"{\"session\":\"v1\",\"camera\":\"cam_caisse\",\"reason\":\"demand\",\"user\":\"u_owner\",\"max_s\":60,\"push_url\":\"rtmps://127.0.0.1:1936/live/v1\",\"token\":\"vkit-video-token\",\"exp\":\"$(later '1 minute')\"}"
+	expect bus '"type":"video.session".*"status":"live"' 30 "the stream is live"
+	expect vkit-relay "Input #0, flv" 30 "the relay receives it"
+	expect vkit-relay "Video: h264" 10 "in H.264, untouched"
+	mark
+	cloud_send video/cmd video.stop '{"session":"v1"}'
+	expect bus '"type":"video.session".*"status":"ended"' 20 "the stream ends"
+	if journalctl -u 'safehome-*' --since "-5min" --no-pager -o cat | grep -q vkit-video-token; then
+		check_failed "the stream's token is in no log"
+	else
+		check_passed "the stream's token is in no log"
+	fi
+}
+
 # The installer's phone: the second radio, in a network namespace of its own so
 # that its traffic really goes over the simulated air to the hub (in one namespace
 # the kernel would shortcut it). A new network takes a few seconds to show up.

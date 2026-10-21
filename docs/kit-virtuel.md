@@ -18,6 +18,9 @@ d'intégration entre programmes et de comportement face aux pannes.
 | Modem GSM USB | `vkit-fakemodem` : le simulateur AT des tests derrière un pseudo-terminal `/dev/ttyVMODEM` (groupe `dialout`, comme un vrai modem) |
 | Clé Zigbee et Zigbee2MQTT | `vkit-fakez2m` : parle sur le broker comme Zigbee2MQTT |
 | Cloud | Un second Mosquitto en TLS sur `127.0.0.1:8883`, avec sa propre autorité |
+| Caméra du commerce | `vkit-camera` : un go2rtc qui diffuse une mire de test en RTSP (H.264) sur `127.0.0.1:8554` |
+| Relais vidéo du cloud | `vkit-relay` (ffmpeg qui reçoit le flux RTMP) derrière `vkit-relay-tls` (rtmps sur `127.0.0.1:1936`, certificat du faux cloud, reconnu par le système comme le serait le vrai) |
+| Bastion de maintenance | Le serveur SSH de la VM : un compte `tunnel` sans shell, la clé de la centrale limitée à son port (`permitlisten`), comme dans `maintenance.md` |
 | Wi-Fi de la console, téléphone de l'installateur | Deux radios simulées par le noyau (`mac80211_hwsim`) : `wlan0` pour la centrale, `wlan1` pour le téléphone |
 
 Nos programmes tournent **sans aucune modification** : seule la configuration du site
@@ -34,7 +37,9 @@ du faux modem.
 
 ## S'en servir
 
-Sur un Mac Apple silicon, avec Lima (`brew install lima`) :
+Sur un Mac Apple silicon, avec Lima (`brew install lima`). `deploy.sh` télécharge
+une fois go2rtc pour la centrale (version et empreinte épinglées, gardé dans
+`~/.cache/safehome-vkit`) :
 
 ```bash
 vkit/up.sh       # crée et prépare la VM (une fois, quelques minutes)
@@ -75,6 +80,12 @@ Les ordres reconnus sont décrits en tête de `vkit/fakemodem/control.go` et
    systemd la redémarre).
 9. **Mode installation** au clavier, réseau Wi-Fi de la console, un « téléphone » s'y
    connecte et ouvre la page.
+10. **Maintenance à distance** demandée par le cloud : le tunnel s'ouvre, le port du
+    bastion mène au SSH de la centrale ; la clé de la centrale n'ouvre ni shell sur
+    le bastion ni le port d'un autre site ; le tunnel se referme.
+11. **Vidéo en direct** demandée depuis l'application : la caméra est joignable, le
+    flux arrive au relais en H.264 sans réencodage, s'arrête sur demande, et son jeton
+    n'apparaît dans aucun journal.
 
 ## Ce qu'il a déjà trouvé
 
@@ -93,3 +104,6 @@ Trois défauts que les tests unitaires ne voyaient pas, corrigés avec un test c
   rouvert à la demande suivante.
 
 Et un détail : `pair` proposait `zone` comme étape suivante pour une sirène.
+
+Il a aussi conduit à l'alerte `siren_failed` : une sirène qui refuse de sonner
+pendant une alarme n'était qu'une ligne de journal.

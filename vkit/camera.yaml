@@ -1,0 +1,12 @@
+# Virtual kit: the shop's camera, a test pattern served in RTSP on 127.0.0.1:8554/cam
+# (H.264, as the cameras of the catalogue). Nothing else listens.
+api:
+  listen: ""
+webrtc:
+  listen: ""
+rtmp:
+  listen: ""
+rtsp:
+  listen: "127.0.0.1:8554"
+streams:
+  cam: exec:ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc=size=640x360:rate=15 -c:v libx264 -preset ultrafast -tune zerolatency -g 30 -pix_fmt yuv420p -f rtsp {output}
