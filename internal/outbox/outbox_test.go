@@ -9,35 +9,8 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 )
-
-type memStore struct {
-	mu    sync.Mutex
-	docs  map[string][]byte
-	fail  bool
-	saves int
-}
-
-func (s *memStore) Save(name string, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.fail {
-		return errors.New("disk full")
-	}
-	if s.docs == nil {
-		s.docs = map[string][]byte{}
-	}
-	s.docs[name] = append([]byte(nil), data...)
-	s.saves++
-	return nil
-}
-
-func (s *memStore) Load(name string) ([]byte, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	d, ok := s.docs[name]
-	return d, ok, nil
-}
 
 type sent struct {
 	topic  string
@@ -93,9 +66,9 @@ func item(topic string, retain bool) *Item {
 	}
 }
 
-func newBox(t *testing.T, b *broker, max int) (*Outbox, *memStore) {
+func newBox(t *testing.T, b *broker, max int) (*Outbox, *drivertest.MemStore) {
 	t.Helper()
-	store := &memStore{}
+	store := drivertest.NewMemStore()
 	seq, err := NewSequencer(store, "seq", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -111,17 +84,6 @@ func run(t *testing.T, o *Outbox) func() {
 	return func() { cancel(); <-done }
 }
 
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(time.Millisecond)
-	}
-}
-
 func TestMessagesLeaveInOrderWithIncreasingNumbers(t *testing.T) {
 	b := &broker{}
 	o, store := newBox(t, b, 10)
@@ -130,14 +92,14 @@ func TestMessagesLeaveInOrderWithIncreasingNumbers(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		o.Put(item("a", false))
 	}
-	waitFor(t, "five messages", func() bool { return len(b.got()) == 5 })
+	drivertest.WaitFor(t, "five messages", func() bool { return len(b.got()) == 5 })
 	for i, m := range b.got() {
 		if m.env.Seq != uint64(i+1) || m.env.Site != "tg-lom-0001" || m.env.Src != "test" {
 			t.Fatalf("%d: %+v", i, m.env)
 		}
 	}
-	if string(store.docs["seq"]) != `{"seq":1000}` { // the reserved block
-		t.Fatalf("the counter must be saved: %s", store.docs["seq"])
+	if saved, _, _ := store.Load("seq"); string(saved) != `{"seq":1000}` { // the reserved block
+		t.Fatalf("the counter must be saved: %s", saved)
 	}
 	if o.Depth() != 0 {
 		t.Fatal("the queue must be empty")
@@ -153,7 +115,7 @@ func TestARawMessageLeavesAsItIsWithoutTakingANumber(t *testing.T) {
 	o.Put(&Item{Topic: "zigbee2mqtt/0x01/set", Data: []byte(`{"state":"ON"}`), QoS: 1, Raw: true})
 	o.Put(&Item{Topic: "safehome/x/device/d/state", QoS: 1, Retain: true, Raw: true}) // clears a retained state
 	o.Put(item("a", false))
-	waitFor(t, "four messages", func() bool { return len(b.got()) == 4 })
+	drivertest.WaitFor(t, "four messages", func() bool { return len(b.got()) == 4 })
 	got := b.got()
 	if string(got[1].raw) != `{"state":"ON"}` || got[1].topic != "zigbee2mqtt/0x01/set" {
 		t.Fatalf("%+v", got[1])
@@ -173,7 +135,7 @@ func TestAnUnavailableBrokerIsRetriedWithoutLosingTheOrder(t *testing.T) {
 	o.Put(item("b", false))
 	stop := run(t, o)
 	defer stop()
-	waitFor(t, "both messages", func() bool { return len(b.got()) == 2 })
+	drivertest.WaitFor(t, "both messages", func() bool { return len(b.got()) == 2 })
 	if g := b.got(); g[0].topic != "a" || g[1].topic != "b" || g[0].env.Seq != 1 {
 		t.Fatalf("%+v", g)
 	}
@@ -187,7 +149,7 @@ func TestAMessageTheBrokerKeepsRefusingIsDropped(t *testing.T) {
 	o.Put(item("good", false))
 	stop := run(t, o)
 	defer stop()
-	waitFor(t, "the next message", func() bool { return len(b.got()) == 1 })
+	drivertest.WaitFor(t, "the next message", func() bool { return len(b.got()) == 1 })
 	if b.got()[0].topic != "good" {
 		t.Fatalf("%+v", b.got())
 	}
@@ -205,7 +167,7 @@ func TestOnlyTheLastRetainedStateWaits(t *testing.T) {
 	}
 	stop := run(t, o)
 	defer stop()
-	waitFor(t, "two messages", func() bool { return len(b.got()) == 2 })
+	drivertest.WaitFor(t, "two messages", func() bool { return len(b.got()) == 2 })
 	if g := b.got(); g[0].topic != "event" || g[1].env.ID != last.ID {
 		t.Fatalf("%+v", g)
 	}
@@ -219,7 +181,7 @@ func TestAFullQueueDropsTheOldest(t *testing.T) {
 	o.Put(item("3", false))
 	stop := run(t, o)
 	defer stop()
-	waitFor(t, "two messages", func() bool { return len(b.got()) == 2 })
+	drivertest.WaitFor(t, "two messages", func() bool { return len(b.got()) == 2 })
 	if g := b.got(); g[0].topic != "2" || g[1].topic != "3" {
 		t.Fatalf("%+v", g)
 	}
@@ -252,11 +214,11 @@ func TestABadMessageIsDroppedNotRetried(t *testing.T) {
 	o.Put(item("good", false))
 	stop := run(t, o)
 	defer stop()
-	waitFor(t, "the good message", func() bool { return len(b.got()) == 1 })
+	drivertest.WaitFor(t, "the good message", func() bool { return len(b.got()) == 1 })
 }
 
 func TestTheCounterSurvivesARestartAndADiskError(t *testing.T) {
-	store := &memStore{}
+	store := drivertest.NewMemStore()
 	s, _ := NewSequencer(store, "seq", nil)
 	if s.Next() != 1 || s.Next() != 2 {
 		t.Fatal("the first numbers")
@@ -268,31 +230,30 @@ func TestTheCounterSurvivesARestartAndADiskError(t *testing.T) {
 	}
 	for again.Next() < 2*seqBlock {
 	}
-	store.fail = true
+	store.FailSaves(1)
 	if again.Next() != 2*seqBlock+1 {
 		t.Fatal("a number is still handed out when the disk refuses")
 	}
-	store.fail = false
 	if again.Next() != 2*seqBlock+2 {
 		t.Fatal("the next number")
 	}
 	if n, _ := NewSequencer(store, "seq", nil); n.Next() != 3*seqBlock+2 {
 		t.Fatal("the save was not tried again after the disk came back")
 	}
-	store.docs["seq"] = []byte("{")
+	store.Save("seq", []byte("{"))
 	if _, err := NewSequencer(store, "seq", nil); err == nil {
 		t.Fatal("a damaged counter is an error")
 	}
 }
 
 func TestTheCounterWritesOncePerBlock(t *testing.T) {
-	store := &memStore{}
+	store := drivertest.NewMemStore()
 	s, _ := NewSequencer(store, "seq", nil)
 	for range 2500 {
 		s.Next()
 	}
-	if store.saves != 3 {
-		t.Fatalf("%d writes for 2500 numbers, want 3", store.saves)
+	if n := store.Saves("seq"); n != 3 {
+		t.Fatalf("%d writes for 2500 numbers, want 3", n)
 	}
 }
 
@@ -323,7 +284,8 @@ func TestSettingsValidation(t *testing.T) {
 }
 
 func TestOpenNumbersWithTheCounterSavedUnderItsKey(t *testing.T) {
-	store := &memStore{docs: map[string][]byte{"app_seq": []byte(`{"seq":41}`)}}
+	store := drivertest.NewMemStore()
+	store.Save("app_seq", []byte(`{"seq":41}`))
 	b := &broker{}
 	o, err := Open(store, b, "app_seq", "tg-lom-0001", DefaultSettings(10), nil)
 	if err != nil {
@@ -332,7 +294,7 @@ func TestOpenNumbersWithTheCounterSavedUnderItsKey(t *testing.T) {
 	stop := run(t, o)
 	defer stop()
 	o.Put(item("a", false))
-	waitFor(t, "the message", func() bool { return len(b.got()) == 1 })
+	drivertest.WaitFor(t, "the message", func() bool { return len(b.got()) == 1 })
 	if seq := b.got()[0].env.Seq; seq != 42 {
 		t.Fatalf("seq %d, want 42", seq)
 	}

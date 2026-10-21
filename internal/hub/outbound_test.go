@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 	"safehome/internal/health"
 )
@@ -53,13 +54,7 @@ func TestTheAlarmDoesNotWaitForTheBroker(t *testing.T) {
 	r.keypad(contract.ValArmNow, "")
 	r.device(devBack, contract.CapContact, "open")
 	// The engine moves on regardless.
-	deadline := time.Now().Add(3 * time.Second)
-	for r.mode() != engine.ModeTriggered {
-		if time.Now().After(deadline) {
-			t.Fatal("the engine is stuck behind the broker")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	drivertest.WaitFor(t, "the engine, not stuck behind the broker", func() bool { return r.mode() == engine.ModeTriggered })
 	if r.hub.out.Depth() == 0 {
 		t.Fatal("the messages must be waiting in the outbox")
 	}
@@ -125,11 +120,11 @@ func TestHeartbeatEveryMinute(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	r.clock.Advance(time.Minute)
-	r.waitFor("the first heartbeat", func() bool { return len(eventsOf(r, contract.TypeHeartbeat)) == 1 })
+	drivertest.WaitFor(t, "the first heartbeat", func() bool { return len(eventsOf(r, contract.TypeHeartbeat)) == 1 })
 	r.keypad(contract.ValArm, "")
 	r.settle()
 	r.clock.Advance(time.Minute)
-	r.waitFor("the second heartbeat", func() bool { return len(eventsOf(r, contract.TypeHeartbeat)) == 2 })
+	drivertest.WaitFor(t, "the second heartbeat", func() bool { return len(eventsOf(r, contract.TypeHeartbeat)) == 2 })
 	hbs := eventsOf(r, contract.TypeHeartbeat)
 	a, b := dataOf[contract.HeartbeatData](t, hbs[0]), dataOf[contract.HeartbeatData](t, hbs[1])
 	if a.BootID == "" || a.BootID != b.BootID || a.UptimeS != 60 || b.UptimeS != 120 || a.Engine != "disarmed" || b.Engine != "arming" ||
@@ -158,7 +153,7 @@ func TestTheHeartbeatSaysWhetherTheClockIsRight(t *testing.T) {
 			r.hub.deps.ClockSynced = func() (bool, bool) { return c.synced, c.known }
 			r.start()
 			r.clock.Advance(time.Minute)
-			r.waitFor("heartbeat", func() bool { return len(eventsOf(r, contract.TypeHeartbeat)) == 1 })
+			drivertest.WaitFor(r.t, "heartbeat", func() bool { return len(eventsOf(r, contract.TypeHeartbeat)) == 1 })
 			data := string(eventsOf(r, contract.TypeHeartbeat)[0].Env.Data)
 			if c.want == "" && strings.Contains(data, "clock_ok") || c.want != "" && !strings.Contains(data, c.want) {
 				t.Fatalf("want %q in %s", c.want, data)
@@ -173,13 +168,13 @@ func TestANewBootGetsANewBootID(t *testing.T) {
 	first := newRig(t, nil)
 	first.start()
 	first.clock.Advance(time.Minute)
-	first.waitFor("heartbeat", func() bool { return len(eventsOf(first, contract.TypeHeartbeat)) == 1 })
+	drivertest.WaitFor(t, "heartbeat", func() bool { return len(eventsOf(first, contract.TypeHeartbeat)) == 1 })
 	first.stop()
 	second := newRig(t, first.store)
 	second.clock.Advance(time.Hour)
 	second.start()
 	second.clock.Advance(time.Minute)
-	second.waitFor("heartbeat", func() bool { return len(eventsOf(second, contract.TypeHeartbeat)) == 1 })
+	drivertest.WaitFor(t, "heartbeat", func() bool { return len(eventsOf(second, contract.TypeHeartbeat)) == 1 })
 	if dataOf[contract.HeartbeatData](t, eventsOf(first, contract.TypeHeartbeat)[0]).BootID ==
 		dataOf[contract.HeartbeatData](t, eventsOf(second, contract.TypeHeartbeat)[0]).BootID {
 		t.Fatal("a restart is a new boot: the cloud tells restarts apart from silence by it")

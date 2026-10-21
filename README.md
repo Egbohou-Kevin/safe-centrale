@@ -71,7 +71,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `cmd/safehome-hub` | Le programme de la centrale : sa racine de composition, qui branche le vrai client MQTT, le vrai disque et la vraie horloge sur la centrale et sur `configapp` |
 | `internal/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre, demande de relecture à un programme qui tourne (`Reload`). Seuls les programmes de `cmd/` s'en servent |
 | `internal/configfile` | Ce que les lectures de configuration ont en commun : l'en-tête des fichiers (`ProgramFile`, qui donne un `Program`), JSON strict, niveau de journal, durées, secrets, écriture atomique d'un fichier |
-| `internal/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine. `Every` répète un travail sur l'horloge |
+| `internal/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine. `Every` répète un travail sur l'horloge. `drivertest` donne aux tests une fausse horloge, un faux disque et de quoi attendre |
 | `internal/archtest` | Les tests d'architecture : ils échouent si les règles de dépendance sont cassées |
 | `internal/schematest` | Validation des messages contre les schémas JSON (tests seulement) |
 | `schemas/` | Les schémas JSON du contrat, pour le cloud et le firmware |

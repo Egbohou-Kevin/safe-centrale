@@ -1,7 +1,6 @@
 package sshtunnel
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -10,10 +9,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	"safehome/internal/driver/drivertest"
 )
 
 const fakeEnv = "SAFEHOME_FAKE_SSH"
@@ -44,19 +44,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
-
-func options(host string, logs *syncBuffer) Options {
+func options(host string, logs *drivertest.SyncBuffer) Options {
 	return Options{Binary: os.Args[0], Host: host, Port: 22, User: "tunnel", KeyFile: "/etc/safehome/maint.key",
 		KnownHosts: "/etc/safehome/maint_known_hosts", RemotePort: 22001, LocalPort: 22, Logger: slog.New(slog.NewTextHandler(logs, nil))}
 }
@@ -72,7 +60,7 @@ func wait(t *testing.T, c <-chan struct{}, what string) {
 
 func TestATunnelOpensAndCloses(t *testing.T) {
 	t.Setenv(fakeEnv, "1")
-	logs := &syncBuffer{}
+	logs := &drivertest.SyncBuffer{}
 	r, err := New(options("bastion.example", logs))
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +96,7 @@ func TestABastionThatRefusesOrDrops(t *testing.T) {
 	// ssh's last line before it exits is the cause: it is logged by the time Done
 	// is closed, every time.
 	for range 10 {
-		logs := &syncBuffer{}
+		logs := &drivertest.SyncBuffer{}
 		r, _ := New(options("deadhost", logs))
 		tun, err := r.Open(context.Background())
 		if err != nil {
@@ -124,7 +112,7 @@ func TestABastionThatRefusesOrDrops(t *testing.T) {
 			t.Fatalf("the cause is logged:\n%s", logs.String())
 		}
 	}
-	logs := &syncBuffer{}
+	logs := &drivertest.SyncBuffer{}
 	r2, _ := New(options("flaky.example", logs))
 	tun, _ := r2.Open(context.Background())
 	wait(t, tun.Up(), "up")
@@ -139,7 +127,7 @@ func TestABastionThatRefusesOrDrops(t *testing.T) {
 }
 
 func TestOptionsAreChecked(t *testing.T) {
-	good := options("bastion.example", &syncBuffer{})
+	good := options("bastion.example", &drivertest.SyncBuffer{})
 	for name, change := range map[string]func(*Options){
 		"no key":        func(o *Options) { o.KeyFile = "" },
 		"host option":   func(o *Options) { o.Host = "-oProxyCommand=x" },
@@ -169,7 +157,7 @@ func TestTheRealSSHAcceptsTheOptions(t *testing.T) {
 	if err != nil {
 		t.Skip("no ssh client")
 	}
-	o := options("bastion.example", &syncBuffer{})
+	o := options("bastion.example", &drivertest.SyncBuffer{})
 	o.Binary = bin
 	r, _ := New(o)
 	out, err := exec.Command(bin, append([]string{"-G"}, r.Args()...)...).CombinedOutput()

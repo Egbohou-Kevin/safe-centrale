@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 )
 
@@ -16,95 +17,42 @@ var t0 = time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC) // Saturday 21:00 UTC
 
 // --- test doubles ----------------------------------------------------------------
 
-type fakeClock struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers map[*fakeTimer]bool
+func newFakeClock() *drivertest.FakeClock { return drivertest.NewFakeClock(t0) }
+
+// journaled notes each save in the rig's journal, to check the order of effects.
+type journaled struct {
+	*drivertest.MemStore
+	r *rig
 }
 
-type fakeTimer struct {
-	when time.Time
-	c    chan time.Time
-}
-
-func newFakeClock() *fakeClock { return &fakeClock{now: t0, timers: map[*fakeTimer]bool{}} }
-
-func (c *fakeClock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.now
-}
-
-func (c *fakeClock) Timer(d time.Duration) (<-chan time.Time, func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	t := &fakeTimer{when: c.now.Add(d), c: make(chan time.Time, 1)}
-	if d <= 0 {
-		t.c <- c.now
-		return t.c, func() {}
+func (s journaled) Save(name string, data []byte) error {
+	err := s.MemStore.Save(name, data)
+	if err == nil {
+		s.r.mu.Lock()
+		s.r.journal = append(s.r.journal, "save")
+		s.r.mu.Unlock()
 	}
-	c.timers[t] = true
-	return t.c, func() { c.mu.Lock(); delete(c.timers, t); c.mu.Unlock() }
+	return err
 }
 
-// Advance moves time forward and fires the timers that are due.
-func (c *fakeClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = c.now.Add(d)
-	for t := range c.timers {
-		if !t.when.After(c.now) {
-			t.c <- c.now
-			delete(c.timers, t)
-		}
+// load reads the engine's saved state.
+func load(t *testing.T, store *drivertest.MemStore) engine.Snapshot {
+	t.Helper()
+	var snap engine.Snapshot
+	data, _, err := store.Load("engine")
+	if err == nil {
+		err = json.Unmarshal(data, &snap)
 	}
-}
-
-// Set moves the clock to any time, including backwards.
-func (c *fakeClock) Set(t time.Time) { c.mu.Lock(); c.now = t; c.mu.Unlock() }
-
-type memStore struct {
-	mu      sync.Mutex
-	docs    map[string][]byte
-	saves   int
-	failing int // the next n saves fail
-	loadErr error
-	log     *[]string // shared journal, to check the order of effects
-}
-
-func newMemStore() *memStore { return &memStore{docs: map[string][]byte{}} }
-
-func (s *memStore) Save(name string, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.failing > 0 {
-		s.failing--
-		return errors.New("disk full")
+	if err != nil {
+		t.Fatal(err)
 	}
-	s.docs[name] = append([]byte(nil), data...)
-	s.saves++
-	if s.log != nil {
-		*s.log = append(*s.log, "save")
-	}
-	return nil
+	return snap
 }
-
-func (s *memStore) Load(name string) ([]byte, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.loadErr != nil {
-		return nil, false, s.loadErr
-	}
-	d, ok := s.docs[name]
-	return d, ok, nil
-}
-
-func (s *memStore) count() int { s.mu.Lock(); defer s.mu.Unlock(); return s.saves }
 
 type rig struct {
 	t      *testing.T
-	clock  *fakeClock
-	store  *memStore
+	clock  *drivertest.FakeClock
+	store  *drivertest.MemStore
 	eng    *engine.Engine
 	loop   *Loop[engine.Input, engine.Action, engine.Snapshot]
 	cancel context.CancelFunc
@@ -145,13 +93,12 @@ func testEngineConfig() engine.Config {
 	return c
 }
 
-func newRig(t *testing.T, store *memStore, mutate ...func(*engine.Config)) *rig {
+func newRig(t *testing.T, store *drivertest.MemStore, mutate ...func(*engine.Config)) *rig {
 	t.Helper()
 	r := &rig{t: t, clock: newFakeClock(), store: store}
 	if store == nil {
-		r.store = newMemStore()
+		r.store = drivertest.NewMemStore()
 	}
-	r.store.log = &r.journal
 	cfg := testEngineConfig()
 	for _, m := range mutate {
 		m(&cfg)
@@ -163,7 +110,7 @@ func newRig(t *testing.T, store *memStore, mutate ...func(*engine.Config)) *rig 
 	}
 	r.eng = e
 	loop, err := New(Options[engine.Input, engine.Action, engine.Snapshot]{
-		Name: "engine", Core: engineCore(e), Clock: r.clock, Store: r.store,
+		Name: "engine", Core: engineCore(e), Clock: r.clock, Store: journaled{r.store, r},
 		Dispatch: func(_ context.Context, now time.Time, as []engine.Action) error {
 			r.mu.Lock()
 			defer r.mu.Unlock()
@@ -216,17 +163,6 @@ func (r *rig) settle() {
 	r.t.Helper()
 	if err := r.loop.Do(r.ctx, func(time.Time) []engine.Action { return nil }); err != nil {
 		r.t.Fatal(err)
-	}
-}
-
-func (r *rig) eventually(what string, cond func() bool) {
-	r.t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			r.t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -325,7 +261,7 @@ func TestADeadlineBecomesATickAtTheRightTime(t *testing.T) {
 	}
 
 	r.clock.Advance(time.Second) // the exit delay ends
-	r.eventually("the armed event", func() bool { return countEvents[engine.Armed](r.dispatched()) == 1 })
+	drivertest.WaitFor(t, "the armed event", func() bool { return countEvents[engine.Armed](r.dispatched()) == 1 })
 	if m := r.mode(); m != engine.ModeArmed {
 		t.Fatalf("mode %s", m)
 	}
@@ -339,11 +275,11 @@ func TestTheSchedulePlaysOutOnItsOwn(t *testing.T) {
 	r.settle()
 
 	r.clock.Advance(50 * time.Minute) // 21:50: notice
-	r.eventually("the notice", func() bool { return countEvents[engine.ArmingScheduled](r.dispatched()) == 1 })
+	drivertest.WaitFor(t, "the notice", func() bool { return countEvents[engine.ArmingScheduled](r.dispatched()) == 1 })
 	r.clock.Advance(10 * time.Minute) // 22:00: arming
-	r.eventually("the arming", func() bool { return countEvents[engine.ArmingStarted](r.dispatched()) == 1 })
+	drivertest.WaitFor(t, "the arming", func() bool { return countEvents[engine.ArmingStarted](r.dispatched()) == 1 })
 	r.clock.Advance(2 * time.Minute) // 22:02: armed
-	r.eventually("armed", func() bool { return countEvents[engine.Armed](r.dispatched()) == 1 })
+	drivertest.WaitFor(t, "armed", func() bool { return countEvents[engine.Armed](r.dispatched()) == 1 })
 }
 
 func TestStateIsSavedAfterAChange(t *testing.T) {
@@ -352,11 +288,7 @@ func TestStateIsSavedAfterAChange(t *testing.T) {
 	r.arm()
 	r.settle()
 
-	var snap engine.Snapshot
-	if err := json.Unmarshal(r.store.docs["engine"], &snap); err != nil {
-		t.Fatal(err)
-	}
-	if snap.Mode != engine.ModeArming {
+	if snap := load(t, r.store); snap.Mode != engine.ModeArming {
 		t.Fatalf("saved mode %s", snap.Mode)
 	}
 }
@@ -366,7 +298,7 @@ func TestAnUnchangedStateIsNotWrittenAgain(t *testing.T) {
 	r.start()
 	r.arm()
 	r.settle()
-	saves := r.store.count()
+	saves := r.store.Saves("engine")
 	if saves == 0 {
 		t.Fatal("the change must have been saved")
 	}
@@ -378,8 +310,8 @@ func TestAnUnchangedStateIsNotWrittenAgain(t *testing.T) {
 		})
 	}
 	r.settle()
-	if r.store.count() != saves {
-		t.Fatalf("%d writes, want %d: the SD card must not be worn for nothing", r.store.count(), saves)
+	if r.store.Saves("engine") != saves {
+		t.Fatalf("%d writes, want %d: the SD card must not be worn for nothing", r.store.Saves("engine"), saves)
 	}
 }
 
@@ -402,35 +334,27 @@ func TestADispatchErrorDoesNotStopTheLoop(t *testing.T) {
 	r.arm()
 	r.settle()
 	r.clock.Advance(2 * time.Minute)
-	r.eventually("the engine to carry on", func() bool { return r.mode() == engine.ModeArmed })
+	drivertest.WaitFor(t, "the engine to carry on", func() bool { return r.mode() == engine.ModeArmed })
 }
 
 func TestAFailedSaveIsRetriedByTheNextTask(t *testing.T) {
-	store := newMemStore()
-	store.failing = 1
+	store := drivertest.NewMemStore()
+	store.FailSaves(1)
 	r := newRig(t, store)
 	r.start()
 	r.arm() // this save fails: the disk is full, say
 	r.settle()
 	// The settle task itself changes nothing, but the last written copy is stale,
 	// so it writes the state again.
-	if store.count() != 1 {
-		t.Fatalf("%d writes, want 1", store.count())
+	if store.Saves("engine") != 1 {
+		t.Fatalf("%d writes, want 1", store.Saves("engine"))
 	}
-	var snap engine.Snapshot
-	json.Unmarshal(store.docs["engine"], &snap)
-	if snap.Mode != engine.ModeArming {
+	if snap := load(t, store); snap.Mode != engine.ModeArming {
 		t.Fatalf("saved mode %s", snap.Mode)
 	}
 
 	r.clock.Advance(2 * time.Minute)
-	r.eventually("the new state to be saved", func() bool {
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		var s engine.Snapshot
-		json.Unmarshal(store.docs["engine"], &s)
-		return s.Mode == engine.ModeArmed
-	})
+	drivertest.WaitFor(t, "the new state to be saved", func() bool { return load(t, store).Mode == engine.ModeArmed })
 }
 
 func TestRestartRestoresTheStateAndTheScheduleKeepsRunning(t *testing.T) {
@@ -453,7 +377,7 @@ func TestRestartRestoresTheStateAndTheScheduleKeepsRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	second.clock.Advance(30 * time.Second) // the rest of the exit delay
-	second.eventually("armed after the restart", func() bool { return second.mode() == engine.ModeArmed })
+	drivertest.WaitFor(t, "armed after the restart", func() bool { return second.mode() == engine.ModeArmed })
 }
 
 // A restart in the middle of an alarm: the hub's loop runs for a while (its boot
@@ -466,14 +390,14 @@ func TestARestartDuringAnAlarmResumesTheSirenOnceThroughBoot(t *testing.T) {
 	first.arm()
 	first.settle()
 	first.clock.Advance(2 * time.Minute)
-	first.eventually("armed", func() bool { return first.mode() == engine.ModeArmed })
+	drivertest.WaitFor(t, "armed", func() bool { return first.mode() == engine.ModeArmed })
 	err := first.loop.Submit(first.ctx, func(now time.Time) engine.Input {
 		return engine.Signal{Now: now, DeviceID: "dev_back", Sensor: engine.SensorContact, Active: true}
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	first.eventually("the alarm", func() bool { return first.mode() == engine.ModeTriggered })
+	drivertest.WaitFor(t, "the alarm", func() bool { return first.mode() == engine.ModeTriggered })
 	alarmAt := t0.Add(2 * time.Minute)
 	first.stop()
 
@@ -482,8 +406,12 @@ func TestARestartDuringAnAlarmResumesTheSirenOnceThroughBoot(t *testing.T) {
 	second := newRig(t, first.store)
 	second.clock.Set(alarmAt.Add(8 * time.Minute))
 	second.start()
-	time.Sleep(20 * time.Millisecond) // the boot window: an overdue timer would fire now
-	second.settle()
+	// The boot window: the loop sets a timer only for the core's next wake, so none
+	// may be asked for before Boot, or an overdue tick would fire now.
+	var wake time.Time
+	if err := second.loop.Do(second.ctx, func(time.Time) []engine.Action { wake = second.eng.NextWake(); return nil }); err != nil || !wake.IsZero() {
+		t.Fatalf("a wake at %v before Boot (%v)", wake, err)
+	}
 	if err := second.loop.Do(second.ctx, func(now time.Time) []engine.Action { return second.eng.Boot(now, nil) }); err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +425,7 @@ func TestARestartDuringAnAlarmResumesTheSirenOnceThroughBoot(t *testing.T) {
 		t.Fatalf("want one siren order for the 4 minutes left of cycle 2, got %v", second.dispatched())
 	}
 	second.clock.Advance(4 * time.Minute)
-	second.eventually("the end of cycle 2", func() bool {
+	drivertest.WaitFor(t, "the end of cycle 2", func() bool {
 		as := second.dispatched()
 		_, off := as[len(as)-1].(engine.SirenOff)
 		return off
@@ -505,8 +433,8 @@ func TestARestartDuringAnAlarmResumesTheSirenOnceThroughBoot(t *testing.T) {
 }
 
 func TestADamagedSavedStateStopsTheStart(t *testing.T) {
-	store := newMemStore()
-	store.loadErr = errors.New("filestore: document is corrupt")
+	store := drivertest.NewMemStore()
+	store.FailLoads(errors.New("filestore: document is corrupt"))
 	e, _ := engine.New(testEngineConfig(), func() string { return "x" }, t0)
 	_, err := New(Options[engine.Input, engine.Action, engine.Snapshot]{
 		Name: "engine", Core: engineCore(e), Clock: newFakeClock(), Store: store,
@@ -516,8 +444,8 @@ func TestADamagedSavedStateStopsTheStart(t *testing.T) {
 		t.Fatal("the application must be told, not silently start empty")
 	}
 
-	store.loadErr = nil
-	store.docs["engine"] = []byte(`{"mode": 12}`) // valid JSON, wrong shape
+	store.FailLoads(nil)
+	store.Save("engine", []byte(`{"mode": 12}`)) // valid JSON, wrong shape
 	if _, err := New(Options[engine.Input, engine.Action, engine.Snapshot]{
 		Name: "engine", Core: engineCore(e), Clock: newFakeClock(), Store: store,
 		Dispatch: func(context.Context, time.Time, []engine.Action) error { return nil },
@@ -592,7 +520,7 @@ func TestACancelledCallerDoesNotBlockForever(t *testing.T) {
 func TestOptionsAreChecked(t *testing.T) {
 	e, _ := engine.New(testEngineConfig(), func() string { return "x" }, t0)
 	good := Options[engine.Input, engine.Action, engine.Snapshot]{
-		Name: "engine", Core: engineCore(e), Clock: newFakeClock(), Store: newMemStore(),
+		Name: "engine", Core: engineCore(e), Clock: newFakeClock(), Store: drivertest.NewMemStore(),
 		Dispatch: func(context.Context, time.Time, []engine.Action) error { return nil },
 	}
 	if _, err := New(good); err != nil {
@@ -657,12 +585,12 @@ func TestOnChangeRunsWhenTheStateMovesAndOnlyThen(t *testing.T) {
 		t.Fatalf("OnChange ran %d times for an unchanged state", count())
 	}
 	r.clock.Advance(2 * time.Minute) // armed
-	r.eventually("the second change", func() bool { return count() == 2 })
+	drivertest.WaitFor(t, "the second change", func() bool { return count() == 2 })
 }
 
 func TestOnChangeIsNotRepeatedWhileASaveKeepsFailing(t *testing.T) {
-	store := newMemStore()
-	store.failing = 3
+	store := drivertest.NewMemStore()
+	store.FailSaves(3)
 	r := newRig(t, store)
 	var mu sync.Mutex
 	changes := 0
@@ -721,13 +649,13 @@ func TestAliveSaysWhetherTheLoopStillAnswers(t *testing.T) {
 	}
 	r.start()
 	r.settle()
-	saves := r.store.count()
+	saves := r.store.Saves("engine")
 	for range 5 {
 		if err := r.loop.Alive(r.ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if r.store.count() != saves {
+	if r.store.Saves("engine") != saves {
 		t.Fatal("Alive must not touch the core nor the disk")
 	}
 	// Stuck in the core: Alive waits, then gives up.
@@ -758,8 +686,7 @@ func TestEveryRepeatsUntilItsContextEnds(t *testing.T) {
 		close(done)
 	}()
 	for i := 1; i <= 2; i++ {
-		waitForTimer(t, clock)
-		clock.Advance(time.Minute)
+		clock.PassTimer(t, time.Minute)
 		if at := <-runs; !at.Equal(t0.Add(time.Duration(i) * time.Minute)) {
 			t.Fatalf("run %d at %v", i, at)
 		}
@@ -768,23 +695,5 @@ func TestEveryRepeatsUntilItsContextEnds(t *testing.T) {
 	<-done
 	if len(runs) != 0 {
 		t.Fatal("no run after the end")
-	}
-}
-
-// waitForTimer waits until a timer is set on the clock.
-func waitForTimer(t *testing.T, c *fakeClock) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		c.mu.Lock()
-		n := len(c.timers)
-		c.mu.Unlock()
-		if n > 0 {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("no timer set")
-		}
-		time.Sleep(time.Millisecond)
 	}
 }

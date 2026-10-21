@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"safehome/internal/adapter/atmodem/attest"
+	"safehome/internal/driver/drivertest"
 )
 
 type events struct {
@@ -53,17 +54,6 @@ func openSim(t *testing.T, s *attest.Sim) (*Modem, *events) {
 	}
 	t.Cleanup(func() { m.Close() })
 	return m, ev
-}
-
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(time.Millisecond)
-	}
 }
 
 func TestOpenSetsTheModemUp(t *testing.T) {
@@ -207,18 +197,18 @@ func TestIncomingSMSAreReadThenDeleted(t *testing.T) {
 	s.Inbox[3] = [2]string{"+22890123456", "1"}
 	s.Mu.Unlock()
 	s.Push(`+CMTI: "SM",3`)
-	waitFor(t, "the SMS", func() bool { n, _ := ev.counts(); return n == 1 })
+	drivertest.WaitFor(t, "the SMS", func() bool { n, _ := ev.counts(); return n == 1 })
 	ev.mu.Lock()
 	got := ev.sms[0]
 	ev.mu.Unlock()
 	if got != [2]string{"+22890123456", "1"} {
 		t.Fatalf("%q", got)
 	}
-	waitFor(t, "the deletion", func() bool { return slices.Contains(s.Commands(), "AT+CMGD=3") })
+	drivertest.WaitFor(t, "the deletion", func() bool { return slices.Contains(s.Commands(), "AT+CMGD=3") })
 	// An SMS delivered directly, without being stored.
 	s.Push(`+CMT: "+22870000001",,"26/10/17,21:06:00+00"`)
 	s.Push("STOP")
-	waitFor(t, "the direct SMS", func() bool { n, _ := ev.counts(); return n == 2 })
+	drivertest.WaitFor(t, "the direct SMS", func() bool { n, _ := ev.counts(); return n == 2 })
 }
 
 func TestDeliveryReports(t *testing.T) {
@@ -228,7 +218,7 @@ func TestDeliveryReports(t *testing.T) {
 	s.Push(`+CDS: 6,8,"+22890123456",145,"26/10/17,21:05:00+00","26/10/17,21:05:03+00",48`) // still trying
 	s.Push(`+CDS: 6,9,"+22890123456",145,"26/10/17,21:05:00+00","26/10/17,21:05:03+00",70`)
 	s.Push(`+CDS: 6`) // damaged
-	waitFor(t, "two reports", func() bool { _, n := ev.counts(); return n == 2 })
+	drivertest.WaitFor(t, "two reports", func() bool { _, n := ev.counts(); return n == 2 })
 	ev.mu.Lock()
 	got := slices.Clone(ev.reports)
 	ev.mu.Unlock()
@@ -296,7 +286,7 @@ func TestAModemThatRefusesItsSetupIsClosedAgain(t *testing.T) {
 	if !errors.Is(err, ErrTimeout) {
 		t.Fatalf("%v", err)
 	}
-	waitFor(t, "the port to be closed", func() bool { s.Mu.Lock(); defer s.Mu.Unlock(); return s.Hangups == 1 })
+	drivertest.WaitFor(t, "the port to be closed", func() bool { s.Mu.Lock(); defer s.Mu.Unlock(); return s.Hangups == 1 })
 }
 
 func TestARestartAfterCloseDoesNotReopenThePort(t *testing.T) {
@@ -306,7 +296,7 @@ func TestARestartAfterCloseDoesNotReopenThePort(t *testing.T) {
 	if err := m.Restart(context.Background()); !errors.Is(err, ErrClosed) {
 		t.Fatalf("%v", err)
 	}
-	waitFor(t, "every port closed", func() bool { s.Mu.Lock(); defer s.Mu.Unlock(); return s.Hangups == s.Opens })
+	drivertest.WaitFor(t, "every port closed", func() bool { s.Mu.Lock(); defer s.Mu.Unlock(); return s.Hangups == s.Opens })
 }
 
 func TestALateOKBeforeThePromptIsNotTakenForTheSMS(t *testing.T) {
@@ -329,7 +319,7 @@ func TestAnOverlongLineIsDropped(t *testing.T) {
 	_, ev := openSim(t, s)
 	s.Push(`+CDS: 6,7,"+22890123456",145,"26/10/17,21:05:00+00","26/10/17,21:05:03+00",0` + strings.Repeat(" ", maxLine))
 	s.Push(`+CDS: 6,8,"+22890123456",145,"26/10/17,21:05:00+00","26/10/17,21:05:03+00",0`)
-	waitFor(t, "the next report", func() bool { ev.mu.Lock(); defer ev.mu.Unlock(); return slices.Contains(ev.reports, "8:ok") })
+	drivertest.WaitFor(t, "the next report", func() bool { ev.mu.Lock(); defer ev.mu.Unlock(); return slices.Contains(ev.reports, "8:ok") })
 	time.Sleep(20 * time.Millisecond) // a report wrongly taken would be in by now
 	ev.mu.Lock()
 	defer ev.mu.Unlock()

@@ -19,6 +19,7 @@ import (
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/gateway"
 	"safehome/internal/gsmconfig"
 	"safehome/internal/schematest"
@@ -73,18 +74,6 @@ func TestTheConfigExampleChecks(t *testing.T) {
 	}
 }
 
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
-
 // collector is the test's own MQTT client: it plays the escalation.
 type collector struct {
 	mu     sync.Mutex
@@ -102,17 +91,6 @@ func (c *collector) of(typ string) []contract.Envelope {
 		}
 	}
 	return out
-}
-
-func waitFor(t *testing.T, logs *syncBuffer, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s\nlogs:\n%s", what, logs.String())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
 }
 
 func TestTheGatewayEndToEndWithASimulatedModem(t *testing.T) {
@@ -139,10 +117,10 @@ func TestTheGatewayEndToEndWithASimulatedModem(t *testing.T) {
 	}
 	defer client.Close(context.Background())
 
-	logs := &syncBuffer{}
+	logs := drivertest.Logs(t)
 	runCtx, stop := context.WithCancel(context.Background())
 	done := make(chan int, 1)
-	go func() { done <- run(runCtx, []string{"run", "-config", cfg}, &syncBuffer{}, logs) }()
+	go func() { done <- run(runCtx, []string{"run", "-config", cfg}, &drivertest.SyncBuffer{}, logs) }()
 	defer func() {
 		stop()
 		select {
@@ -152,7 +130,7 @@ func TestTheGatewayEndToEndWithASimulatedModem(t *testing.T) {
 	}()
 
 	// The line is checked: the status says it works.
-	waitFor(t, logs, "the line status", func() bool {
+	drivertest.WaitFor(t, "the line status", func() bool {
 		st := col.of(contract.TypeGSMStatus)
 		if len(st) == 0 {
 			return false
@@ -181,7 +159,7 @@ func TestTheGatewayEndToEndWithASimulatedModem(t *testing.T) {
 		}
 		return out
 	}
-	waitFor(t, logs, "the SMS to be sent", func() bool { return len(results()) == 2 })
+	drivertest.WaitFor(t, "the SMS to be sent", func() bool { return len(results()) == 2 })
 	modem.Mu.Lock()
 	sent := modem.Sent[0]
 	modem.Mu.Unlock()
@@ -191,12 +169,12 @@ func TestTheGatewayEndToEndWithASimulatedModem(t *testing.T) {
 
 	// The operator confirms; the owner answers "1".
 	modem.Push(`+CDS: 6,1,"+22890123456",145,"26/10/17,21:05:00+00","26/10/17,21:05:03+00",0`)
-	waitFor(t, logs, "the delivery", func() bool { r := results(); return len(r) == 3 && r[2] == contract.ResultDelivered })
+	drivertest.WaitFor(t, "the delivery", func() bool { r := results(); return len(r) == 3 && r[2] == contract.ResultDelivered })
 	modem.Mu.Lock()
 	modem.Inbox[1] = [2]string{"+22890123456", "1"}
 	modem.Mu.Unlock()
 	modem.Push(`+CMTI: "SM",1`)
-	waitFor(t, logs, "the acknowledgement", func() bool { return len(col.of(contract.TypeAlertAck)) == 1 })
+	drivertest.WaitFor(t, "the acknowledgement", func() bool { return len(col.of(contract.TypeAlertAck)) == 1 })
 	ack, _ := contract.DecodeData[contract.AlertAckData](col.of(contract.TypeAlertAck)[0])
 	if ack.Incident != "inc1" || ack.Contact != "u_owner" || ack.Via != "sms" {
 		t.Fatalf("%+v", ack)
@@ -241,11 +219,11 @@ func TestAMissingModemDoesNotStopTheGateway(t *testing.T) {
 	cfg := writeConfig(t, broker.URL(), state)
 	replacePort(t, func(gsmconfig.Port) (io.ReadWriteCloser, error) { return nil, fmt.Errorf("no such device") })
 
-	logs := &syncBuffer{}
+	logs := drivertest.Logs(t)
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan int, 1)
-	go func() { done <- run(ctx, []string{"run", "-config", cfg}, &syncBuffer{}, logs) }()
-	waitFor(t, logs, "a failed check to be logged", func() bool { return strings.Contains(logs.String(), "a line check failed") })
+	go func() { done <- run(ctx, []string{"run", "-config", cfg}, &drivertest.SyncBuffer{}, logs) }()
+	drivertest.WaitFor(t, "a failed check to be logged", func() bool { return strings.Contains(logs.String(), "a line check failed") })
 	select {
 	case code := <-done:
 		t.Fatalf("the gateway gave up (exit %d): a modem may come back", code)
@@ -352,17 +330,17 @@ func TestTheGatewayRestartsForANewConfigurationFromTheCloud(t *testing.T) {
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state)
 	replacePort(t, func(gsmconfig.Port) (io.ReadWriteCloser, error) { return nil, fmt.Errorf("no such device") })
-	start := func(logs *syncBuffer) (context.CancelFunc, chan int) {
+	start := func(logs *drivertest.SyncBuffer) (context.CancelFunc, chan int) {
 		ctx, stop := context.WithCancel(context.Background())
 		done := make(chan int, 1)
-		go func() { done <- run(ctx, []string{"run", "-config", cfg}, &syncBuffer{}, logs) }()
-		waitFor(t, logs, "the gateway to start", func() bool { return strings.Contains(logs.String(), "msg=starting") })
+		go func() { done <- run(ctx, []string{"run", "-config", cfg}, &drivertest.SyncBuffer{}, logs) }()
+		drivertest.WaitFor(t, "the gateway to start", func() bool { return strings.Contains(logs.String(), "msg=starting") })
 		return stop, done
 	}
 
 	// The hub says it runs with version 1, but no file holds it here: nothing to load.
 	publishApplied(t, broker.URL(), 1)
-	logs := &syncBuffer{}
+	logs := drivertest.Logs(t)
 	stop, done := start(logs)
 	time.Sleep(300 * time.Millisecond)
 
@@ -385,7 +363,7 @@ func TestTheGatewayRestartsForANewConfigurationFromTheCloud(t *testing.T) {
 	}
 
 	// Started again, it runs with version 2, and the retained message no longer moves it.
-	logs = &syncBuffer{}
+	logs = drivertest.Logs(t)
 	stop, done = start(logs)
 	if !strings.Contains(logs.String(), "site_config=2") {
 		t.Fatalf("logs:\n%s", logs.String())

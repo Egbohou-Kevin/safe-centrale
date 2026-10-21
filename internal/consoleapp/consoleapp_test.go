@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/install"
 )
 
@@ -27,7 +28,7 @@ func TestTheConsoleLivesOnlyWhileTheInstallationModeLasts(t *testing.T) {
 		t.Fatal("the network is not up")
 	}
 	r.mode(contract.InstallModeData{Status: contract.InstallClosed, Reason: contract.InstallStopped})
-	r.waitFor("the end", func() bool { _, down := r.hotspot.counts(); return down == 1 })
+	drivertest.WaitFor(t, "the end", func() bool { _, down := r.hotspot.counts(); return down == 1 })
 	if r.isServing() || r.app.Overview().Open {
 		t.Fatal("the page outlives the mode")
 	}
@@ -40,7 +41,7 @@ func TestTheConsoleStopsOnItsOwnWhenTheTimeIsUp(t *testing.T) {
 	r := newRig(t)
 	r.open()
 	r.clock.Advance(30 * time.Minute)
-	r.waitFor("the end", func() bool { _, down := r.hotspot.counts(); return down == 1 })
+	drivertest.WaitFor(t, "the end", func() bool { _, down := r.hotspot.counts(); return down == 1 })
 	if r.isServing() {
 		t.Fatal("the page outlives the mode, though the hub said nothing")
 	}
@@ -58,12 +59,12 @@ func TestANetworkThatDoesNotStartIsSaid(t *testing.T) {
 	r := newRig(t)
 	r.hotspot.fail = errors.New("no Wi-Fi device")
 	r.mode(contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(t0.Add(30 * time.Minute))})
-	r.waitFor("the failure", func() bool { return r.app.Overview().Hotspot != "" })
+	drivertest.WaitFor(t, "the failure", func() bool { return r.app.Overview().Hotspot != "" })
 	if r.isServing() {
 		t.Fatal("a page without network")
 	}
 	r.mode(contract.InstallModeData{Status: contract.InstallClosed, Reason: contract.InstallTimeout})
-	r.waitFor("the end", func() bool { return !r.app.Overview().Open })
+	drivertest.WaitFor(t, "the end", func() bool { return !r.app.Overview().Open })
 	if _, down := r.hotspot.counts(); down != 0 {
 		t.Fatal("stopped a network that never started")
 	}
@@ -78,11 +79,11 @@ func TestPairingShowsTheDevicesAsTheyJoin(t *testing.T) {
 	if err := r.app.Pair(); err != nil {
 		t.Fatal(err)
 	}
-	r.waitFor("the new device", func() bool {
+	drivertest.WaitFor(t, "the new device", func() bool {
 		p := r.app.Overview().Pairing
 		return p != nil && len(p.Added) == 1 && p.Added[0].DeviceID == "dev_k7p2"
 	})
-	r.waitFor("the end of the window", func() bool { p := r.app.Overview().Pairing; return !p.Active && !r.app.Overview().Busy })
+	drivertest.WaitFor(t, "the end of the window", func() bool { p := r.app.Overview().Pairing; return !p.Active && !r.app.Overview().Busy })
 	o := r.app.Overview()
 	if i := slices.IndexFunc(o.Devices, func(d Device) bool { return d.ID == "dev_k7p2" }); i < 0 || o.Devices[i].Zone != nil {
 		t.Fatalf("devices %+v", o.Devices)
@@ -150,7 +151,7 @@ func TestRemovingADevice(t *testing.T) {
 	if _, ok := site.Zones["dev_door"]; ok {
 		t.Fatal("the removed device keeps its zone")
 	}
-	r.waitFor("the registry without it", func() bool {
+	drivertest.WaitFor(t, "the registry without it", func() bool {
 		return !slices.ContainsFunc(r.app.Overview().Devices, func(d Device) bool { return d.ID == "dev_door" && d.Paired })
 	})
 }
@@ -165,7 +166,7 @@ func TestTheTestsPageShowsEventsWithZonesAndNoCode(t *testing.T) {
 		contract.DeviceEventData{DeviceID: "dev_door", Capability: "contact", Value: json.RawMessage(`"closed"`)}, false)
 	r.deliver(contract.DeviceEventTopic(site, "dev_keypad"), contract.TypeDeviceEvent,
 		contract.DeviceEventData{DeviceID: "dev_keypad", Capability: "keypad", Value: json.RawMessage(`"disarm"`), Code: "123456"}, false)
-	r.waitFor("the events", func() bool { return len(r.app.Overview().Events) == 2 })
+	drivertest.WaitFor(t, "the events", func() bool { return len(r.app.Overview().Events) == 2 })
 	ev := r.app.Overview().Events
 	if ev[1].DeviceID != "dev_door" || ev[1].Zone != "Entree" || ev[1].Value != "closed" || ev[0].DeviceID != "dev_keypad" {
 		t.Fatalf("events %+v: the latest first, only since the mode opened", ev)
@@ -188,7 +189,7 @@ func TestFinishAsksTheHubToClose(t *testing.T) {
 }
 
 func TestNewChecks(t *testing.T) {
-	good := Deps{Clock: newClock(), Publisher: &rig{}, NewID: contract.NewIDGenerator().New, Hotspot: &fakeHotspot{}, Sites: &fakeSites{},
+	good := Deps{Clock: drivertest.NewFakeClock(t0), Publisher: &rig{}, NewID: contract.NewIDGenerator().New, Hotspot: &fakeHotspot{}, Sites: &fakeSites{},
 		Codes: &fakeCodes{}, Serve: func(context.Context) error { return nil }}
 	if _, err := New(DefaultConfig(site), good); err != nil {
 		t.Fatal(err)
@@ -282,12 +283,12 @@ func TestARemovalEndingAfterTheModeStillLeavesTheSite(t *testing.T) {
 	go func() { result <- r.app.Remove(context.Background(), "dev_door") }()
 	<-sent
 	r.mode(contract.InstallModeData{Status: contract.InstallClosed, Reason: contract.InstallTimeout})
-	r.waitFor("the mode closed", func() bool { return !r.app.Overview().Open })
+	drivertest.WaitFor(t, "the mode closed", func() bool { return !r.app.Overview().Open })
 	close(release)
 	if err := <-result; !errors.Is(err, ErrClosed) {
 		t.Fatalf("the page is told the mode closed: %v", err)
 	}
-	r.waitFor("the site without the device", func() bool {
+	drivertest.WaitFor(t, "the site without the device", func() bool {
 		site, _ := r.sites.Read()
 		_, zoned := site.Zones["dev_door"]
 		return !zoned
@@ -304,14 +305,14 @@ func TestTheConsoleAnswersWhileTheNetworkStarts(t *testing.T) {
 	t.Cleanup(start) // before the rig's own cleanup, which waits for the network
 	r.hotspot.slow = slow
 	r.mode(contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(t0.Add(30 * time.Minute))})
-	r.waitFor("the mode", func() bool { return r.app.Overview().Open })
+	drivertest.WaitFor(t, "the mode", func() bool { return r.app.Overview().Open })
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := r.app.Alive(ctx); err != nil {
 		t.Fatalf("the loop does not answer while the network starts: %v", err)
 	}
 	start()
-	r.waitFor("the page", func() bool { return r.isServing() })
+	drivertest.WaitFor(t, "the page", func() bool { return r.isServing() })
 }
 
 // A pairing cut short by the end of its mode finishes after the next mode opened:
@@ -333,12 +334,12 @@ func TestAPairingOfAClosedModeStaysOutOfTheNextOne(t *testing.T) {
 	if err := r.app.Pair(); err != nil {
 		t.Fatal(err)
 	}
-	r.waitFor("the window", func() bool { p := r.app.Overview().Pairing; return p != nil && p.Active })
+	drivertest.WaitFor(t, "the window", func() bool { p := r.app.Overview().Pairing; return p != nil && p.Active })
 	r.mode(contract.InstallModeData{Status: contract.InstallClosed, Reason: contract.InstallStopped})
-	r.waitFor("the end", func() bool { _, down := r.hotspot.counts(); return down == 1 })
+	drivertest.WaitFor(t, "the end", func() bool { _, down := r.hotspot.counts(); return down == 1 })
 	r.open()
 	once.Do(func() { close(release) })
-	r.waitFor("the order's end", func() bool { return !r.app.Overview().Busy })
+	drivertest.WaitFor(t, "the order's end", func() bool { return !r.app.Overview().Busy })
 	if o := r.app.Overview(); !o.Open || o.Pairing != nil {
 		t.Fatalf("open %v, pairing %+v: the old window shows in the new mode", o.Open, o.Pairing)
 	}
@@ -351,7 +352,7 @@ func TestTheConsoleFollowsAModeOpenedAgain(t *testing.T) {
 	r.open()
 	r.clock.Advance(20 * time.Minute)
 	r.mode(contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(r.clock.Now().Add(30 * time.Minute))})
-	r.waitFor("the new end", func() bool { return r.app.Overview().Until.Equal(t0.Add(50 * time.Minute)) })
+	drivertest.WaitFor(t, "the new end", func() bool { return r.app.Overview().Until.Equal(t0.Add(50 * time.Minute)) })
 	r.clock.Advance(10 * time.Minute) // the first end
 	if err := r.app.Alive(context.Background()); err != nil {
 		t.Fatal(err)
@@ -360,7 +361,7 @@ func TestTheConsoleFollowsAModeOpenedAgain(t *testing.T) {
 		t.Fatal("the console stopped at the first end of a mode opened again")
 	}
 	r.clock.Advance(20 * time.Minute)
-	r.waitFor("the end", func() bool { _, down := r.hotspot.counts(); return down == 1 })
+	drivertest.WaitFor(t, "the end", func() bool { _, down := r.hotspot.counts(); return down == 1 })
 }
 
 // Two orders of the page at once (two taps, two phones) each change the site: none

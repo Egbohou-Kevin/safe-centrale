@@ -9,6 +9,7 @@ import (
 
 	"safehome/internal/agent"
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 )
 
 // queued reads the size of the core's queue, on its loop.
@@ -33,26 +34,24 @@ func TestDrainingTheQueueWritesItemsNotTheQueue(t *testing.T) {
 	for i := range seen {
 		seen[i] = ids.New()
 	}
-	d.store.docs[keyAgent], _ = json.Marshal(agent.Snapshot{Seen: seen})
+	snap, _ := json.Marshal(agent.Snapshot{Seen: seen})
+	d.store.Save(keyAgent, snap)
 	r := newRig(t, d)
 	for range n {
 		r.fromHub(topic("alarm", "event"), contract.TypeAlarmArmed, contract.ArmedData{})
 	}
-	eventually(t, "the queue to fill", func() bool { return r.queued() > n })
+	drivertest.WaitFor(t, "the queue to fill", func() bool { return r.queued() > n })
 	q, s := r.disk.queue, r.disk.store
 	q.mu.Lock()
-	s.mu.Lock()
-	puts, saves, counts, removed := len(q.written), len(s.written[keyAgent]), len(s.written[keyUplink]), q.removed
-	s.mu.Unlock()
+	puts, removed := len(q.written), q.removed
 	q.mu.Unlock()
+	saves, counts := s.Saves(keyAgent), s.Saves(keyUplink)
 
 	r.app.LinkChanged(true, "mqtts")
-	eventually(t, "the queue to drain", func() bool { return len(r.cloud.ofType(contract.TypeAlarmArmed)) == n && r.queued() == 0 })
+	drivertest.WaitFor(t, "the queue to drain", func() bool { return len(r.cloud.ofType(contract.TypeAlarmArmed)) == n && r.queued() == 0 })
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	itemWrites, snapWrites, countWrites := q.written[puts:], s.written[keyAgent][saves:], s.written[keyUplink][counts:]
+	itemWrites, snapWrites, countWrites := q.written[puts:], s.Sizes(keyAgent)[saves:], s.Sizes(keyUplink)[counts:]
 	t.Logf("draining %d items wrote %d bytes of items, %d bytes of snapshots (%d saves) and %d bytes of counter",
 		n, sum(itemWrites), sum(snapWrites), len(snapWrites), sum(countWrites))
 	// Each item is written once more, with its number, then removed; a few agent.status

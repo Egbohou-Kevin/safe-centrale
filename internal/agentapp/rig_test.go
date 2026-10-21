@@ -11,74 +11,14 @@ import (
 	"slices"
 	"sync"
 	"testing"
-	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/inbox"
 	"safehome/internal/outbox"
 )
 
 // --- fakes ---------------------------------------------------------------------
-
-type fakeClock struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers map[*fakeTimer]bool
-}
-
-type fakeTimer struct {
-	when time.Time
-	c    chan time.Time
-}
-
-func newClock() *fakeClock { return &fakeClock{now: t0, timers: map[*fakeTimer]bool{}} }
-
-func (c *fakeClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
-
-func (c *fakeClock) Timer(d time.Duration) (<-chan time.Time, func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	t := &fakeTimer{when: c.now.Add(d), c: make(chan time.Time, 1)}
-	if d <= 0 {
-		t.c <- c.now
-		return t.c, func() {}
-	}
-	c.timers[t] = true
-	return t.c, func() { c.mu.Lock(); delete(c.timers, t); c.mu.Unlock() }
-}
-
-func (c *fakeClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = c.now.Add(d)
-	for t := range c.timers {
-		if !t.when.After(c.now) {
-			t.c <- c.now
-			delete(c.timers, t)
-		}
-	}
-}
-
-type memStore struct {
-	mu      sync.Mutex
-	docs    map[string][]byte
-	written map[string][]int // the size of each save, by name
-}
-
-func (s *memStore) Save(name string, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.docs[name] = append([]byte(nil), data...)
-	s.written[name] = append(s.written[name], len(data))
-	return nil
-}
-
-func (s *memStore) Load(name string) ([]byte, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	d, ok := s.docs[name]
-	return d, ok, nil
-}
 
 // memQueue is the queue's store.
 type memQueue struct {
@@ -114,12 +54,12 @@ func (q *memQueue) Load() (map[string][]byte, error) {
 
 // disk is what the agent keeps between two runs.
 type disk struct {
-	store *memStore
+	store *drivertest.MemStore
 	queue *memQueue
 }
 
 func newDisk() *disk {
-	return &disk{store: &memStore{docs: map[string][]byte{}, written: map[string][]int{}}, queue: &memQueue{items: map[string][]byte{}}}
+	return &disk{store: drivertest.NewMemStore(), queue: &memQueue{items: map[string][]byte{}}}
 }
 
 type published struct {
@@ -168,17 +108,6 @@ func (b *fakeBroker) ofType(typ string) []published {
 		}
 	}
 	return out
-}
-
-func eventually(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
 }
 
 // --- rig -----------------------------------------------------------------------
@@ -235,7 +164,7 @@ func (u *fakeUploader) calls() []string { u.mu.Lock(); defer u.mu.Unlock(); retu
 
 type rig struct {
 	t      *testing.T
-	clock  *fakeClock
+	clock  *drivertest.FakeClock
 	disk   *disk
 	local  *fakeBroker
 	cloud  *fakeBroker
@@ -256,7 +185,7 @@ func newRigWith(t *testing.T, d *disk, cfg Config) *rig {
 	if d == nil {
 		d = newDisk()
 	}
-	r := &rig{t: t, clock: newClock(), disk: d, local: &fakeBroker{}, cloud: &fakeBroker{}, ids: contract.NewIDGenerator(),
+	r := &rig{t: t, clock: drivertest.NewFakeClock(t0), disk: d, local: &fakeBroker{}, cloud: &fakeBroker{}, ids: contract.NewIDGenerator(),
 		photos: &memPhotos{files: map[string][]byte{}}, upl: &fakeUploader{}}
 	app, err := New(cfg, Deps{Clock: r.clock, Store: d.store, Queue: d.queue, Local: r.local, Cloud: r.cloud,
 		Photos: r.photos, Uploader: r.upl, NewID: r.ids.New})
@@ -269,8 +198,30 @@ func newRigWith(t *testing.T, d *disk, cfg Config) *rig {
 	go func() { app.Run(ctx); close(done) }()
 	r.stop = func() { cancel(); <-done }
 	t.Cleanup(r.stop)
-	eventually(t, "the first status", func() bool { return len(r.local.ofType(contract.TypeAgentStatus)) > 0 })
+	drivertest.WaitFor(t, "the first status", func() bool { return len(r.local.ofType(contract.TypeAgentStatus)) > 0 })
 	return r
+}
+
+// settle waits until the loop has taken what was given to it, the sender has sent
+// all it could, and the outbox to the hub is empty. The sender is woken twice: it
+// takes the second wake-up only after a round that found nothing more to send.
+func (r *rig) settle() {
+	r.t.Helper()
+	r.app.Alive(context.Background())
+	for range 2 {
+		woken := false
+		drivertest.WaitFor(r.t, "the sender to take a wake-up", func() bool {
+			if !woken {
+				select {
+				case r.app.kick <- struct{}{}:
+					woken = true
+				default:
+				}
+			}
+			return woken && len(r.app.kick) == 0
+		})
+	}
+	drivertest.WaitFor(r.t, "the outbox to the hub to empty", func() bool { return r.app.out.Depth() == 0 })
 }
 
 // msg builds a message of the site.

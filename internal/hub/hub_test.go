@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 	"safehome/internal/inbox"
 )
@@ -45,11 +46,11 @@ func TestAnIntrusionFromStartToFinish(t *testing.T) {
 	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_owner")
 	r.mustBe(engine.ModeArming)
 	r.clock.Advance(2 * time.Minute)
-	r.waitFor("armed", func() bool { return len(eventsOf(r, contract.TypeAlarmArmed)) == 1 })
+	drivertest.WaitFor(t, "armed", func() bool { return len(eventsOf(r, contract.TypeAlarmArmed)) == 1 })
 	r.mustBe(engine.ModeArmed)
 
 	r.device(devBack, contract.CapContact, "open") // perimeter door forced
-	r.waitFor("the siren order", func() bool { return len(r.broker.on(contract.DeviceCmdTopic(site, devSiren))) == 1 })
+	drivertest.WaitFor(t, "the siren order", func() bool { return len(r.broker.on(contract.DeviceCmdTopic(site, devSiren))) == 1 })
 	r.settle()
 
 	siren := r.broker.on(contract.DeviceCmdTopic(site, devSiren))[0]
@@ -77,7 +78,7 @@ func TestAnIntrusionFromStartToFinish(t *testing.T) {
 
 	// The owner disarms from the app, code checked on the hub.
 	r.order(contract.CmdDisarm, contract.CommandArgs{Code: "482915"}, contract.OriginApp, "u_owner")
-	r.waitFor("disarmed", func() bool { return len(eventsOf(r, contract.TypeAlarmDisarmed)) == 1 })
+	drivertest.WaitFor(t, "disarmed", func() bool { return len(eventsOf(r, contract.TypeAlarmDisarmed)) == 1 })
 	r.mustBe(engine.ModeDisarmed)
 	off := r.broker.on(contract.DeviceCmdTopic(site, devSiren))
 	if len(off) != 2 || dataOf[contract.DeviceCommandData](t, off[1]).Command != contract.CmdSirenOff {
@@ -131,7 +132,7 @@ func TestKeypadDisarmWithTheRightCode(t *testing.T) {
 	r.device(devDoor, contract.CapContact, "open") // entry delay starts
 	r.mustBe(engine.ModeEntryDelay)
 	r.keypad(contract.ValDisarm, "730264")
-	r.waitFor("disarmed", func() bool { return len(eventsOf(r, contract.TypeAlarmDisarmed)) == 1 })
+	drivertest.WaitFor(t, "disarmed", func() bool { return len(eventsOf(r, contract.TypeAlarmDisarmed)) == 1 })
 	r.mustBe(engine.ModeDisarmed)
 	d := dataOf[contract.DisarmedData](t, eventsOf(r, contract.TypeAlarmDisarmed)[0])
 	if d.User != "u_owner" || d.Origin != contract.OriginKeypad {
@@ -153,13 +154,13 @@ func TestWrongCodesLockTheKeypadAndAlertAndNeverLeak(t *testing.T) {
 		r.keypad(contract.ValDisarm, bad)
 		r.settle()
 	}
-	r.waitFor("three failures", func() bool { return len(eventsOf(r, contract.TypeAlarmAuthFailed)) == 3 })
+	drivertest.WaitFor(t, "three failures", func() bool { return len(eventsOf(r, contract.TypeAlarmAuthFailed)) == 3 })
 	last := dataOf[contract.AuthFailedData](t, eventsOf(r, contract.TypeAlarmAuthFailed)[2])
 	if last.Attempts != 3 || last.LockedUntil == nil {
 		t.Fatalf("%+v", last)
 	}
 	// The escalation hears of the third failure after it is published: wait for it.
-	r.waitFor("the auth_failed alert", func() bool {
+	drivertest.WaitFor(t, "the auth_failed alert", func() bool {
 		var kinds []string
 		for _, a := range eventsOf(r, contract.TypeAlertRequest) {
 			kinds = append(kinds, dataOf[contract.AlertRequestData](t, a).Kind)
@@ -316,9 +317,9 @@ func TestEntryDelayThenSirenWhenNobodyDisarms(t *testing.T) {
 	r.keypad(contract.ValArmNow, "")
 	r.device(devDoor, contract.CapContact, "open")
 	r.mustBe(engine.ModeEntryDelay)
-	r.waitFor("entry delay event", func() bool { return len(eventsOf(r, contract.TypeAlarmEntryDelay)) == 1 })
+	drivertest.WaitFor(t, "entry delay event", func() bool { return len(eventsOf(r, contract.TypeAlarmEntryDelay)) == 1 })
 	r.clock.Advance(45 * time.Second)
-	r.waitFor("the siren", func() bool { return len(r.broker.on(contract.DeviceCmdTopic(site, devSiren))) == 1 })
+	drivertest.WaitFor(t, "the siren", func() bool { return len(r.broker.on(contract.DeviceCmdTopic(site, devSiren))) == 1 })
 	r.mustBe(engine.ModeTriggered)
 	r.settle()
 	r.validateAll()
@@ -330,11 +331,11 @@ func TestAutomaticArmingRunsFromTheClock(t *testing.T) {
 	})
 	r.start()
 	r.clock.Advance(50 * time.Minute) // 21:50
-	r.waitFor("the notice", func() bool { return len(eventsOf(r, contract.TypeAlarmArmingScheduled)) == 1 })
+	drivertest.WaitFor(t, "the notice", func() bool { return len(eventsOf(r, contract.TypeAlarmArmingScheduled)) == 1 })
 	r.order(contract.CmdPostpone, contract.CommandArgs{}, contract.OriginApp, "u_owner")
-	r.waitFor("the postponement", func() bool { return len(eventsOf(r, contract.TypeAlarmPostponed)) == 1 })
+	drivertest.WaitFor(t, "the postponement", func() bool { return len(eventsOf(r, contract.TypeAlarmPostponed)) == 1 })
 	r.clock.Advance(40 * time.Minute) // 22:30
-	r.waitFor("the arming", func() bool { return len(eventsOf(r, contract.TypeAlarmArming)) == 1 })
+	drivertest.WaitFor(t, "the arming", func() bool { return len(eventsOf(r, contract.TypeAlarmArming)) == 1 })
 	if d := dataOf[contract.ArmingData](t, eventsOf(r, contract.TypeAlarmArming)[0]); d.Origin != contract.OriginSchedule {
 		t.Fatalf("%+v", d)
 	}

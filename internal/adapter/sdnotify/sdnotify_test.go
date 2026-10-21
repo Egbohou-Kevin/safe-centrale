@@ -1,7 +1,6 @@
 package sdnotify
 
 import (
-	"bytes"
 	"context"
 	"log/slog"
 	"net"
@@ -13,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"safehome/internal/driver/drivertest"
 )
 
 // listen plays systemd: it collects what the program sends. The socket lives under
@@ -56,27 +57,6 @@ func count(msgs []string, want string) int {
 	}
 	return n
 }
-
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	for deadline := time.Now().Add(3 * time.Second); !cond(); time.Sleep(5 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-	}
-}
-
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
 
 func TestOutsideSystemdNothingHappens(t *testing.T) {
 	t.Setenv("NOTIFY_SOCKET", "")
@@ -128,7 +108,7 @@ func TestReadyAndStopping(t *testing.T) {
 	if err := n.Stopping(); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "two messages", func() bool { return len(got()) == 2 })
+	drivertest.WaitFor(t, "two messages", func() bool { return len(got()) == 2 })
 	if m := got(); m[0] != "READY=1" || m[1] != "STOPPING=1" {
 		t.Fatalf("%q", m)
 	}
@@ -152,12 +132,12 @@ func TestKeepaliveFollowsTheProgramsHealth(t *testing.T) {
 		}
 		return nil
 	}
-	logs := &syncBuffer{}
+	logs := &drivertest.SyncBuffer{}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { n.Keepalive(ctx, alive, slog.New(slog.NewTextHandler(logs, nil))); close(done) }()
 
-	waitFor(t, "pings", func() bool { return count(got(), "WATCHDOG=1") >= 3 })
+	drivertest.WaitFor(t, "pings", func() bool { return count(got(), "WATCHDOG=1") >= 3 })
 	stuck.Store(true)
 	time.Sleep(60 * time.Millisecond) // a check under way may still ping once
 	before := count(got(), "WATCHDOG=1")
@@ -169,8 +149,8 @@ func TestKeepaliveFollowsTheProgramsHealth(t *testing.T) {
 		t.Fatalf("said once:\n%s", logs.String())
 	}
 	stuck.Store(false)
-	waitFor(t, "pings again", func() bool { return count(got(), "WATCHDOG=1") > before })
-	waitFor(t, "the recovery said", func() bool { return strings.Contains(logs.String(), "answers again") })
+	drivertest.WaitFor(t, "pings again", func() bool { return count(got(), "WATCHDOG=1") > before })
+	drivertest.WaitFor(t, "the recovery said", func() bool { return strings.Contains(logs.String(), "answers again") })
 	cancel()
 	select {
 	case <-done:
@@ -179,7 +159,7 @@ func TestKeepaliveFollowsTheProgramsHealth(t *testing.T) {
 	}
 
 	// systemd gone: said, and the program goes on.
-	logs2 := &syncBuffer{}
+	logs2 := &drivertest.SyncBuffer{}
 	t.Setenv("NOTIFY_SOCKET", filepath.Join(t.TempDir(), "gone"))
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel2()

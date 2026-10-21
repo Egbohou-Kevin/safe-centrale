@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 )
 
@@ -54,7 +55,7 @@ func TestDailySummaryOfFaultsFromTheClock(t *testing.T) {
 	r.device(devMotion, contract.CapBattery, "9")
 	r.settle()
 	r.clock.Advance(13 * time.Hour) // next morning, 10:00 (the summary is at 09:00)
-	r.waitFor("the summary", func() bool { return len(eventsOf(r, contract.TypeAlertRequest)) == 2 })
+	drivertest.WaitFor(t, "the summary", func() bool { return len(eventsOf(r, contract.TypeAlertRequest)) == 2 })
 	kinds := map[string][]string{}
 	for _, al := range eventsOf(r, contract.TypeAlertRequest) {
 		d := dataOf[contract.AlertRequestData](t, al)
@@ -82,14 +83,14 @@ func TestTheAgentStatusGivesTheInternetLink(t *testing.T) {
 		t.Fatalf("internet %q before the agent spoke, want none", got)
 	}
 	agentStatus(r, contract.UplinkUp)
-	r.waitFor("internet ok", func() bool { r.settle(); return internet() == "ok" })
+	drivertest.WaitFor(t, "internet ok", func() bool { r.settle(); return internet() == "ok" })
 	agentStatus(r, contract.UplinkDown)
-	r.waitFor("internet down", func() bool { r.settle(); return internet() == "down" })
+	drivertest.WaitFor(t, "internet down", func() bool { r.settle(); return internet() == "down" })
 	agentStatus(r, contract.UplinkUp)
-	r.waitFor("internet ok again", func() bool { r.settle(); return internet() == "ok" })
+	drivertest.WaitFor(t, "internet ok again", func() bool { r.settle(); return internet() == "ok" })
 	// The agent stops: after three minutes of silence, the internet counts as down.
 	r.clock.Advance(3 * time.Minute)
-	r.waitFor("internet silent", func() bool { r.settle(); return internet() == "silent" })
+	drivertest.WaitFor(t, "internet silent", func() bool { r.settle(); return internet() == "silent" })
 	r.validateAll()
 }
 
@@ -151,7 +152,7 @@ func TestARemovedDeviceIsForgotten(t *testing.T) {
 	removed(devBack)
 	removed(devMotion)
 	removed("") // invalid: ignored
-	r.waitFor("the faults forgotten", func() bool { r.settle(); return len(r.hub.faults.Load().Offline) == 0 })
+	drivertest.WaitFor(t, "the faults forgotten", func() bool { r.settle(); return len(r.hub.faults.Load().Offline) == 0 })
 	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_owner")
 	r.mustBe(engine.ModeArming)
 	if strings.Contains(r.logs.String(), "wrong type") {

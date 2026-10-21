@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"safehome/internal/driver/drivertest"
 )
 
 // bigSnap looks like the link agent's state, the largest a core saves: the ids of
@@ -25,7 +27,7 @@ func BenchmarkInputThatChangesNothing(b *testing.B) {
 		snap.Incidents[fmt.Sprintf("inc%02d", i)] = t0
 	}
 	l, err := New(Options[int, int, bigSnap]{
-		Name: "big", Clock: newFakeClock(), Store: newMemStore(),
+		Name: "big", Clock: newFakeClock(), Store: drivertest.NewMemStore(),
 		Core: Core[int, int, bigSnap]{
 			Handle:   func(int) []int { return nil },
 			NextWake: func() time.Time { return time.Time{} },

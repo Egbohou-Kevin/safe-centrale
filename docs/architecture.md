@@ -206,7 +206,7 @@ Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent 
   importé hors de `cmd/` ;
 - si un domaine, le contrat ou le pilote importe la couche application de la centrale ;
 - si une bibliothèque externe est importée hors de son adaptateur, ou si du code livré
-  importe un outil de test (`schematest`, `mqtttest`, `attest`, `go2rtctest`).
+  importe un outil de test (`schematest`, `mqtttest`, `attest`, `go2rtctest`, `drivertest`).
 
 Le vocabulaire commun entre les documents (français) et le code (anglais) est dans
 `glossaire.md`. Convention : documents en français, code et commentaires en anglais.

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
 )
@@ -85,7 +86,7 @@ func TestAnIntrusionTellsEachContactByTheRightChannel(t *testing.T) {
 	}
 	// The cloud did not confirm: after 10 s the owner gets the SMS too.
 	r.clock.Advance(10 * time.Second)
-	r.waitFor("the SMS to the owner", func() bool { r.settle(); return len(requested(t, r)) == 4 })
+	drivertest.WaitFor(t, "the SMS to the owner", func() bool { r.settle(); return len(requested(t, r)) == 4 })
 	r.validateAll()
 }
 
@@ -103,7 +104,7 @@ func TestAnInternetConfirmationHoldsTheSMSBack(t *testing.T) {
 	}
 	// Nobody answered after a minute: the SMS doubles the notification.
 	r.clock.Advance(time.Minute)
-	r.waitFor("the doubling SMS", func() bool { r.settle(); return len(requested(t, r)) == 4 })
+	drivertest.WaitFor(t, "the doubling SMS", func() bool { r.settle(); return len(requested(t, r)) == 4 })
 }
 
 func TestAFailedSMSBringsTheNextWaveForward(t *testing.T) {
@@ -118,7 +119,7 @@ func TestAFailedSMSBringsTheNextWaveForward(t *testing.T) {
 	id := requestIDs(t, r)["u_owner/sms"]
 	r.send(contract.AlertResultTopic(site), contract.TypeAlertResult, contract.AlertResultData{Ref: id, Status: contract.ResultFailed, Reason: "no_credit"})
 	// The owner cannot be reached: the next wave starts without waiting its two minutes.
-	r.waitFor("the next wave", func() bool { r.settle(); return len(requested(t, r)) == 2 })
+	drivertest.WaitFor(t, "the next wave", func() bool { r.settle(); return len(requested(t, r)) == 2 })
 	if got := requested(t, r); got[1] != "u_owner/sms/2" {
 		t.Fatalf("%v", got)
 	}
@@ -174,7 +175,7 @@ func TestWithoutInternetTheGSMChannelsTakeOverAtOnce(t *testing.T) {
 	}
 	// The link returns: what the internet could not carry goes out.
 	agentStatus(r, contract.UplinkUp)
-	r.waitFor("the app message", func() bool { r.settle(); return contains(requested(t, r), "u_owner/app/1") })
+	drivertest.WaitFor(t, "the app message", func() bool { r.settle(); return contains(requested(t, r), "u_owner/app/1") })
 }
 
 func TestStrangeResultsAndAcknowledgementsAreIgnored(t *testing.T) {
@@ -213,7 +214,7 @@ func TestTheEscalationGoesOnAfterARestart(t *testing.T) {
 	second := newRig(t, first.store, withContacts)
 	second.clock.Advance(5 * time.Minute)
 	second.start()
-	second.waitFor("wave 2 after the restart", func() bool {
+	drivertest.WaitFor(t, "wave 2 after the restart", func() bool {
 		second.settle()
 		for _, m := range eventsOf(second, contract.TypeAlertRequest) {
 			if dataOf[contract.AlertRequestData](t, m).Wave == 2 {

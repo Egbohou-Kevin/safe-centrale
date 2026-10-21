@@ -8,6 +8,7 @@ import (
 
 	"safehome/internal/access"
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
 )
@@ -42,7 +43,7 @@ func TestReloadCodesPicksUpWhatAnotherProcessSaved(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.keypad(contract.ValDisarm, "846029")
-	r.waitFor("disarmed", func() bool { return len(eventsOf(r, contract.TypeAlarmDisarmed)) == 1 })
+	drivertest.WaitFor(t, "disarmed", func() bool { return len(eventsOf(r, contract.TypeAlarmDisarmed)) == 1 })
 	r.mustBe(engine.ModeDisarmed)
 
 	// A damaged file is reported and leaves the codes in use alone.
@@ -59,7 +60,7 @@ func TestReloadCodesPicksUpWhatAnotherProcessSaved(t *testing.T) {
 // disk until the installer removes it: the hub leaves it aside, at start and at each
 // reload, and says so without the code.
 func TestTheCodeOfSomeoneNoLongerAContactIsLeftAside(t *testing.T) {
-	store := newMemStore()
+	store := drivertest.NewMemStore()
 	tool, err := openCodes(testConfig().Access, store)
 	if err != nil {
 		t.Fatal(err)
@@ -101,14 +102,14 @@ func TestTheCodeOfSomeoneNoLongerAContactIsLeftAside(t *testing.T) {
 		t.Fatalf("the hub must leave the saved codes alone: %v", err)
 	}
 	r.keypad(contract.ValDisarm, "482915")
-	r.waitFor("disarmed", func() bool { return len(eventsOf(r, contract.TypeAlarmDisarmed)) == 1 })
+	drivertest.WaitFor(t, "disarmed", func() bool { return len(eventsOf(r, contract.TypeAlarmDisarmed)) == 1 })
 }
 
 // The contacts may change while the hub runs (a configuration from the cloud during
 // the installation mode, which does not restart it): a reload follows the contacts as
 // saved now, not those of the start.
 func TestReloadCodesFollowsTheContactsSavedNow(t *testing.T) {
-	store := newMemStore()
+	store := drivertest.NewMemStore()
 	tool, err := openCodes(testConfig().Access, store)
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +151,7 @@ func TestReloadCodesFollowsTheContactsSavedNow(t *testing.T) {
 // The installer's tools: a code for a contact or the installer only, one code opens
 // one thing, and the list says whose codes the hub leaves aside.
 func TestSiteCodes(t *testing.T) {
-	store := newMemStore()
+	store := drivertest.NewMemStore()
 	cfg := testConfig()
 	cfg.Escalation.Contacts = []escalation.Contact{{ID: "u_owner", Name: "Owner"}, {ID: "u_guard", Name: "Guard"}}
 	people, err := openCodes(cfg.Access, store)

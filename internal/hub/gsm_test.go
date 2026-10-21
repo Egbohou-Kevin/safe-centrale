@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 )
 
 func gsmStatus(lines ...contract.GSMLine) contract.GSMStatusData {
@@ -16,7 +17,7 @@ func TestTheGSMLinesGoIntoTheHealth(t *testing.T) {
 	r.start()
 	r.send(contract.GSMStatusTopic(site), contract.TypeGSMStatus,
 		gsmStatus(contract.GSMLine{ID: "line1", Operator: "TOGOCOM", Responding: true, Registered: true, Signal: 70, Credit: "ok"}))
-	r.waitFor("the health with the GSM", func() bool {
+	drivertest.WaitFor(t, "the health with the GSM", func() bool {
 		r.settle()
 		h := r.broker.on(contract.HealthTopic(site))
 		d := dataOf[contract.HealthData](t, h[len(h)-1])
@@ -30,7 +31,7 @@ func TestTheOwnerIsToldWhenTheSMSBackupIsLost(t *testing.T) {
 	r.start()
 	r.send(contract.GSMStatusTopic(site), contract.TypeGSMStatus,
 		gsmStatus(contract.GSMLine{ID: "line1", Responding: true, Registered: true, Signal: 40, Credit: "empty"}))
-	r.waitFor("the link down", func() bool {
+	drivertest.WaitFor(t, "the link down", func() bool {
 		r.settle()
 		h := r.broker.on(contract.HealthTopic(site))
 		return dataOf[contract.HealthData](t, h[len(h)-1]).Links["gsm"] == "down"
@@ -39,7 +40,7 @@ func TestTheOwnerIsToldWhenTheSMSBackupIsLost(t *testing.T) {
 		t.Fatal("not at once: a line may come back")
 	}
 	r.clock.Advance(10 * time.Minute)
-	r.waitFor("the alert", func() bool { r.settle(); return len(eventsOf(r, contract.TypeAlertRequest)) == 1 })
+	drivertest.WaitFor(t, "the alert", func() bool { r.settle(); return len(eventsOf(r, contract.TypeAlertRequest)) == 1 })
 	a := dataOf[contract.AlertRequestData](t, eventsOf(r, contract.TypeAlertRequest)[0])
 	// The SMS cannot carry it: the owner is told through the internet.
 	if a.Kind != contract.AlertGSMDegraded || a.Contact != "u_owner" || a.Channel != contract.ChannelApp {
@@ -69,7 +70,7 @@ func TestASilentGatewayIsSeenAndReported(t *testing.T) {
 		return dataOf[contract.HealthData](t, h[len(h)-1]).Links["gsm"]
 	}
 	r.send(contract.GSMStatusTopic(site), contract.TypeGSMStatus, gsmStatus(good))
-	r.waitFor("the link up", func() bool { r.settle(); return lastLink() == "ok" })
+	drivertest.WaitFor(t, "the link up", func() bool { r.settle(); return lastLink() == "ok" })
 	// The gateway repeats its status: it stays up.
 	for range 5 {
 		r.clock.Advance(time.Minute)
@@ -81,12 +82,12 @@ func TestASilentGatewayIsSeenAndReported(t *testing.T) {
 	}
 	// Then it stops.
 	r.clock.Advance(3 * time.Minute)
-	r.waitFor("the link silent", func() bool { r.settle(); return lastLink() == "silent" })
+	drivertest.WaitFor(t, "the link silent", func() bool { r.settle(); return lastLink() == "silent" })
 	if len(eventsOf(r, contract.TypeAlertRequest)) != 0 {
 		t.Fatal("not at once")
 	}
 	r.clock.Advance(10 * time.Minute)
-	r.waitFor("the alert", func() bool { r.settle(); return len(eventsOf(r, contract.TypeAlertRequest)) == 1 })
+	drivertest.WaitFor(t, "the alert", func() bool { r.settle(); return len(eventsOf(r, contract.TypeAlertRequest)) == 1 })
 	a := dataOf[contract.AlertRequestData](t, eventsOf(r, contract.TypeAlertRequest)[0])
 	if a.Kind != contract.AlertGSMDegraded || a.Channel != contract.ChannelApp {
 		t.Fatalf("%+v", a)
@@ -103,12 +104,12 @@ func TestTheZigbeeLinkFollowsTheAdapter(t *testing.T) {
 	}
 	r.send(contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus,
 		contract.ZigbeeStatusData{Bridge: contract.BridgeOnline, Devices: 4, Offline: []string{}})
-	r.waitFor("the link up", func() bool { r.settle(); return lastLink() == "ok" })
+	drivertest.WaitFor(t, "the link up", func() bool { r.settle(); return lastLink() == "ok" })
 	r.send(contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus,
 		contract.ZigbeeStatusData{Bridge: contract.BridgeOffline, Devices: 4, Offline: []string{}})
-	r.waitFor("the link down", func() bool { r.settle(); return lastLink() == "down" })
+	drivertest.WaitFor(t, "the link down", func() bool { r.settle(); return lastLink() == "down" })
 	r.clock.Advance(3 * time.Minute)
-	r.waitFor("the alert", func() bool { r.settle(); return len(eventsOf(r, contract.TypeAlertRequest)) > 0 })
+	drivertest.WaitFor(t, "the alert", func() bool { r.settle(); return len(eventsOf(r, contract.TypeAlertRequest)) > 0 })
 	a := dataOf[contract.AlertRequestData](t, eventsOf(r, contract.TypeAlertRequest)[0])
 	if a.Kind != contract.AlertZigbeeDown || a.Urgency != contract.UrgencyHigh || a.Contact != "u_owner" || a.Text == "" {
 		t.Fatalf("%+v", a)

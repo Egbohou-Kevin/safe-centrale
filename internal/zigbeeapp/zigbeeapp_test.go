@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/inbox"
 	"safehome/internal/zigbee"
 )
@@ -26,7 +27,7 @@ func TestTheStartPublishesTheRegistryAndTheStatus(t *testing.T) {
 		t.Fatalf("%+v", r.status())
 	}
 	r.z2m("bridge/state", `{"state":"online"}`, true)
-	r.waitFor("the bridge online", func() bool { return r.status().Bridge == contract.BridgeOnline })
+	drivertest.WaitFor(t, "the bridge online", func() bool { return r.status().Bridge == contract.BridgeOnline })
 	r.validateAll()
 }
 
@@ -56,14 +57,14 @@ func TestPairingADevice(t *testing.T) {
 	}
 	// An unknown model is refused and expelled.
 	r.z2m("bridge/event", `{"type":"device_interview","data":{"ieee_address":"0x09","status":"successful","supported":true,"definition":{"model":"WXKG01LM"}}}`, false)
-	r.waitFor("the refusal", func() bool { return len(r.broker.ofType(contract.TypeRegistryDeviceRejected)) == 1 })
+	drivertest.WaitFor(t, "the refusal", func() bool { return len(r.broker.ofType(contract.TypeRegistryDeviceRejected)) == 1 })
 	r.settle()
 	if rm := r.rawOn("bridge/request/device/remove"); len(rm) != 1 || rm[0]["id"] != "0x09" {
 		t.Fatalf("%+v", rm)
 	}
 	// The window closes after its time.
 	r.clock.Advance(2 * time.Minute)
-	r.waitFor("the window closed", func() bool { return !r.status().Pairing })
+	drivertest.WaitFor(t, "the window closed", func() bool { return !r.status().Pairing })
 	r.validateAll()
 }
 
@@ -80,7 +81,7 @@ func TestDeviceMessagesBecomeEventsAndStates(t *testing.T) {
 		t.Fatalf("%+v", contact)
 	}
 	r.z2m("dev_door", `{"contact":false,"battery":90,"linkquality":100}`, false)
-	r.waitFor("the door event", func() bool { return len(r.broker.on(contract.DeviceEventTopic(site, "dev_door"))) == 2 })
+	drivertest.WaitFor(t, "the door event", func() bool { return len(r.broker.on(contract.DeviceEventTopic(site, "dev_door"))) == 2 })
 	ev := r.broker.on(contract.DeviceEventTopic(site, "dev_door"))[1]
 	d, _ := contract.DecodeData[contract.DeviceEventData](ev.env)
 	if d.Capability != "contact" || d.StringValue() != "open" || ev.retain {
@@ -95,12 +96,12 @@ func TestASirenCommandIsConfirmed(t *testing.T) {
 	exp := r.clock.Now().Add(30 * time.Second)
 	ref := r.order(contract.DeviceCmdTopic(site, "dev_siren"), contract.TypeCommand,
 		contract.DeviceCommandData{DeviceID: "dev_siren", Command: contract.CmdSirenOn, Args: contract.DeviceCommandArgs{DurationS: 300}, Exp: contract.TSPtr(exp)})
-	r.waitFor("the request to the siren", func() bool { return len(r.rawOn("0x02/set")) == 1 })
+	drivertest.WaitFor(t, "the request to the siren", func() bool { return len(r.rawOn("0x02/set")) == 1 })
 	if w := r.rawOn("0x02/set")[0]["warning"].(map[string]any); w["duration"] != 300.0 || w["mode"] != "burglar" {
 		t.Fatalf("%+v", w)
 	}
 	r.z2m("dev_siren", `{"alarm":"ON"}`, false)
-	r.waitFor("done", func() bool { return len(r.broker.on(contract.DeviceAckTopic(site, "dev_siren"))) == 2 })
+	drivertest.WaitFor(t, "done", func() bool { return len(r.broker.on(contract.DeviceAckTopic(site, "dev_siren"))) == 2 })
 	var statuses []string
 	for _, m := range r.broker.on(contract.DeviceAckTopic(site, "dev_siren")) {
 		a, _ := contract.DecodeData[contract.CommandAckData](m.env)
@@ -114,15 +115,15 @@ func TestASirenCommandIsConfirmed(t *testing.T) {
 	}
 	// Not confirmed: sent again, then failed.
 	r.order(contract.DeviceCmdTopic(site, "dev_siren"), contract.TypeCommand, contract.DeviceCommandData{DeviceID: "dev_siren", Command: contract.CmdSirenOff})
-	r.waitFor("the request", func() bool { return len(r.rawOn("0x02/set")) == 2 })
+	drivertest.WaitFor(t, "the request", func() bool { return len(r.rawOn("0x02/set")) == 2 })
 	for i := range 3 {
-		r.waitFor("the wait", func() bool { return r.clock.hasTimerAt(r.clock.Now().Add(3 * time.Second)) })
+		r.clock.WaitTimer(r.t, r.clock.Now().Add(3*time.Second))
 		r.clock.Advance(3 * time.Second)
 		if i < 2 {
-			r.waitFor("sent again", func() bool { return len(r.rawOn("0x02/set")) == 3+i })
+			drivertest.WaitFor(r.t, "sent again", func() bool { return len(r.rawOn("0x02/set")) == 3+i })
 		}
 	}
-	r.waitFor("failed", func() bool { return len(r.broker.on(contract.DeviceAckTopic(site, "dev_siren"))) == 4 })
+	drivertest.WaitFor(t, "failed", func() bool { return len(r.broker.on(contract.DeviceAckTopic(site, "dev_siren"))) == 4 })
 	r.validateAll()
 }
 
@@ -132,7 +133,7 @@ func TestRemovingADeviceClearsItsStates(t *testing.T) {
 	r.z2m("dev_door", `{"contact":false,"battery":90}`, false)
 	r.settle()
 	ref := r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryRemove, contract.RegistryRemoveData{DeviceID: "dev_door"})
-	r.waitFor("removed", func() bool { return len(r.broker.ofType(contract.TypeRegistryDeviceRemoved)) == 1 })
+	drivertest.WaitFor(t, "removed", func() bool { return len(r.broker.ofType(contract.TypeRegistryDeviceRemoved)) == 1 })
 	r.settle()
 	d, _ := contract.DecodeData[contract.RegistryDeviceRemovedData](r.broker.ofType(contract.TypeRegistryDeviceRemoved)[0].env)
 	if d.Ref != ref || d.DeviceID != "dev_door" || len(r.registry().Devices) != 0 {
@@ -155,7 +156,7 @@ func TestAKeypadCodeIsPublishedButNeverLogged(t *testing.T) {
 	r := newRig(t, nil)
 	r.pair("dev_kp", "0x03", "KP-1")
 	r.z2m("dev_kp", `{"action":"disarm","action_code":"482915"}`, false)
-	r.waitFor("the keypad event", func() bool { return len(r.broker.on(contract.DeviceEventTopic(site, "dev_kp"))) == 1 })
+	drivertest.WaitFor(t, "the keypad event", func() bool { return len(r.broker.on(contract.DeviceEventTopic(site, "dev_kp"))) == 1 })
 	d, _ := contract.DecodeData[contract.DeviceEventData](r.broker.on(contract.DeviceEventTopic(site, "dev_kp"))[0].env)
 	if d.Code != "482915" || d.StringValue() != "disarm" {
 		t.Fatalf("%+v", d)
@@ -180,7 +181,7 @@ func TestAKeyPressedWhileTheAdapterWasDownKeepsItsTime(t *testing.T) {
 	r.pair("dev_kp", "0x03", "KP-1")
 	heard := r.clock.Now().Add(-2 * time.Hour)
 	r.z2m("dev_kp", `{"action":"disarm","action_code":"482915","last_seen":"`+heard.Format(time.RFC3339)+`"}`, false)
-	r.waitFor("the keypad event", func() bool { return len(r.broker.on(contract.DeviceEventTopic(site, "dev_kp"))) == 1 })
+	drivertest.WaitFor(t, "the keypad event", func() bool { return len(r.broker.on(contract.DeviceEventTopic(site, "dev_kp"))) == 1 })
 	if ts := r.broker.on(contract.DeviceEventTopic(site, "dev_kp"))[0].env.TS.Time; !ts.Equal(heard) {
 		t.Fatalf("event written at %v, the key was heard at %v", ts, heard)
 	}
@@ -226,14 +227,14 @@ func TestInvalidMessagesChangeNothing(t *testing.T) {
 
 func TestTheStatusIsRepeatedAndTheRegistrySurvivesARestart(t *testing.T) {
 	const every = 47 * time.Second
-	store := &memStore{docs: map[string][]byte{}}
+	store := drivertest.NewMemStore()
 	r := newRig(t, store, func(c *Config) { c.StatusEvery = every })
 	r.pair("dev_door", "0x01", "MCCGQ11LM")
 	r.settle()
 	before := len(r.broker.ofType(contract.TypeZigbeeStatus))
-	r.waitFor("the repeater", func() bool { return r.clock.hasTimerAt(t0.Add(every)) })
+	r.clock.WaitTimer(t, t0.Add(every))
 	r.clock.Advance(every)
-	r.waitFor("the repeated status", func() bool { return len(r.broker.ofType(contract.TypeZigbeeStatus)) == before+1 })
+	drivertest.WaitFor(t, "the repeated status", func() bool { return len(r.broker.ofType(contract.TypeZigbeeStatus)) == before+1 })
 	r.stop()
 
 	again := newRig(t, store)
@@ -250,7 +251,7 @@ func TestTheStatusIsRepeatedAndTheRegistrySurvivesARestart(t *testing.T) {
 
 func TestConfigurationAndDependenciesAreChecked(t *testing.T) {
 	good := DefaultConfig(site, zigbee.DefaultConfig(profiles()))
-	deps := Deps{Clock: &fakeClock{now: t0, timers: map[*fakeTimer]bool{}}, Store: &memStore{docs: map[string][]byte{}},
+	deps := Deps{Clock: drivertest.NewFakeClock(t0), Store: drivertest.NewMemStore(),
 		Publisher: &fakeBroker{}, NewID: contract.NewIDGenerator().New, NewDeviceID: func() string { return "dev_x" }}
 	if _, err := New(good, deps); err != nil {
 		t.Fatal(err)

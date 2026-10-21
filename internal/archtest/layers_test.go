@@ -32,9 +32,10 @@ func TestContractDependsOnNothing(t *testing.T) {
 // describes what it needs with functions. Adapters know the library or the disk they
 // wrap and nothing of the domains, the contract or the driver. In both, the
 // dependency arrows point one way only: toward the standard library (and, for an
-// adapter, its own library).
+// adapter, its own library). The driver's test fakes are held to the same rule, so
+// that the driver's own tests can use them.
 func TestDriverAndAdaptersKnowNoDomain(t *testing.T) {
-	dirs := []string{filepath.Join("internal", "driver")}
+	dirs := []string{filepath.Join("internal", "driver"), filepath.Join("internal", "driver", "drivertest")}
 	// Every adapter, including those added later.
 	entries, err := os.ReadDir(filepath.Join(root(t), "internal", "adapter"))
 	if err != nil {

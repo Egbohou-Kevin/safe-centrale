@@ -11,6 +11,7 @@ import (
 	"safehome/internal/adapter/filestore"
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/escalation"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
@@ -151,7 +152,7 @@ func TestCodesSetWhileTheHubRunsTakeEffectWithoutARestart(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "told to reload") {
 		t.Fatalf("%d %q %q", code, out, errb)
 	}
-	l.waitFor("the reload", func() bool { return strings.Contains(l.logs.String(), "access codes reloaded") })
+	drivertest.WaitFor(t, "the reload", func() bool { return strings.Contains(l.logs.String(), "access codes reloaded") })
 	l.event("dev_keypad", contract.CapKeypad, "disarm", "730264")
 	l.waitState("disarmed")
 	if d, _ := contract.DecodeData[contract.DisarmedData](l.seen(contract.TypeAlarmDisarmed)[0]); d.User != "u_owner" {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 )
 
@@ -50,7 +51,7 @@ func (r *rig) lastInstall() contract.InstallModeData {
 func (r *rig) openInstall() {
 	r.t.Helper()
 	r.keypad(contract.ValDisarm, installerCode)
-	r.waitFor("the installation mode", func() bool { return r.lastInstall().Status == contract.InstallOpen })
+	drivertest.WaitFor(r.t, "the installation mode", func() bool { return r.lastInstall().Status == contract.InstallOpen })
 }
 
 func TestTheInstallerCodeOpensTheInstallationModeForHalfAnHour(t *testing.T) {
@@ -81,7 +82,7 @@ func TestTheInstallerCodeOpensTheInstallationModeForHalfAnHour(t *testing.T) {
 		t.Fatal("closed before its time")
 	}
 	r.clock.Advance(time.Minute)
-	r.waitFor("the end of the mode", func() bool { return r.lastInstall().Reason == contract.InstallTimeout })
+	drivertest.WaitFor(t, "the end of the mode", func() bool { return r.lastInstall().Reason == contract.InstallTimeout })
 	r.validateAll()
 	if strings.Contains(r.logs.String(), installerCode) {
 		t.Fatal("the installer code shows in the logs")
@@ -94,7 +95,7 @@ func TestArmingClosesTheInstallationMode(t *testing.T) {
 	r.start()
 	r.openInstall()
 	r.keypad(contract.ValArm, "")
-	r.waitFor("the mode closed", func() bool { return r.lastInstall().Reason == contract.InstallArmed })
+	drivertest.WaitFor(t, "the mode closed", func() bool { return r.lastInstall().Reason == contract.InstallArmed })
 
 	// The arming's state leaves before the mode's end: the configuration's application,
 	// which follows both, must know the exit delay has begun when the mode ends.
@@ -125,7 +126,7 @@ func TestTheConsoleClosesTheMode(t *testing.T) {
 	r.start()
 	r.openInstall()
 	r.send(contract.InstallCmdTopic(site), contract.TypeInstallClose, contract.InstallCloseData{})
-	r.waitFor("the mode closed", func() bool { return r.lastInstall().Reason == contract.InstallStopped })
+	drivertest.WaitFor(t, "the mode closed", func() bool { return r.lastInstall().Reason == contract.InstallStopped })
 	// Closing what is closed says nothing more.
 	r.send(contract.InstallCmdTopic(site), contract.TypeInstallClose, contract.InstallCloseData{})
 	r.settle()
@@ -142,7 +143,7 @@ func TestTheInstallerCodeNeverDisarms(t *testing.T) {
 	r.keypad(contract.ValArmNow, "")
 	r.mustBe(engine.ModeArmed)
 	r.keypad(contract.ValDisarm, installerCode)
-	r.waitFor("the refusal", func() bool { return len(eventsOf(r, contract.TypeAlarmAuthFailed)) == 1 })
+	drivertest.WaitFor(t, "the refusal", func() bool { return len(eventsOf(r, contract.TypeAlarmAuthFailed)) == 1 })
 	r.mustBe(engine.ModeArmed)
 	if r.lastInstall().Status != contract.InstallClosed {
 		t.Fatal("the mode opened on an armed alarm")
@@ -197,8 +198,8 @@ func TestTamperIsQuietDuringTheInstallationModeButNotFire(t *testing.T) {
 		t.Error("the quiet tamper is not in the log")
 	}
 	r.device("dev_smoke", contract.CapSmoke, contract.ValAlarm)
-	r.waitFor("the fire alert", func() bool { return len(eventsOf(r, contract.TypeAlertRequest)) > 0 })
-	r.waitFor("the mode closed by the alarm", func() bool { return r.lastInstall().Reason == contract.InstallArmed })
+	drivertest.WaitFor(t, "the fire alert", func() bool { return len(eventsOf(r, contract.TypeAlertRequest)) > 0 })
+	drivertest.WaitFor(t, "the mode closed by the alarm", func() bool { return r.lastInstall().Reason == contract.InstallArmed })
 }
 
 func TestTamperAlertsAgainOnceTheModeIsClosed(t *testing.T) {
@@ -209,9 +210,9 @@ func TestTamperAlertsAgainOnceTheModeIsClosed(t *testing.T) {
 	r.start()
 	r.openInstall()
 	r.send(contract.InstallCmdTopic(site), contract.TypeInstallClose, contract.InstallCloseData{})
-	r.waitFor("the mode closed", func() bool { return r.lastInstall().Status == contract.InstallClosed && len(r.installModes()) == 3 })
+	drivertest.WaitFor(t, "the mode closed", func() bool { return r.lastInstall().Status == contract.InstallClosed && len(r.installModes()) == 3 })
 	r.device("dev_box", contract.CapTamper, contract.ValTriggered)
-	r.waitFor("the tamper alert", func() bool { return len(eventsOf(r, contract.TypeAlertRequest)) > 0 })
+	drivertest.WaitFor(t, "the tamper alert", func() bool { return len(eventsOf(r, contract.TypeAlertRequest)) > 0 })
 }
 
 // The timer of a mode that closed early goes with it, and the timer of a new mode
@@ -222,14 +223,14 @@ func TestTheInstallTimerFollowsTheMode(t *testing.T) {
 	r.start()
 	r.openInstall()
 	end := t0.Add(installLength)
-	if !r.clock.pending(end) {
+	if !r.clock.HasTimer(end) {
 		t.Fatal("the mode is open without its timer")
 	}
 	r.send(contract.InstallCmdTopic(site), contract.TypeInstallClose, contract.InstallCloseData{})
-	r.waitFor("the mode closed", func() bool { return r.lastInstall().Reason == contract.InstallStopped })
-	r.waitFor("the timer to go", func() bool { return !r.clock.pending(end) })
+	drivertest.WaitFor(t, "the mode closed", func() bool { return r.lastInstall().Reason == contract.InstallStopped })
+	drivertest.WaitFor(t, "the timer to go", func() bool { return !r.clock.HasTimer(end) })
 
 	r.openInstall()
 	r.clock.Advance(installLength) // at once: the timer must already run
-	r.waitFor("the end of the mode", func() bool { return r.lastInstall().Reason == contract.InstallTimeout })
+	drivertest.WaitFor(t, "the end of the mode", func() bool { return r.lastInstall().Reason == contract.InstallTimeout })
 }

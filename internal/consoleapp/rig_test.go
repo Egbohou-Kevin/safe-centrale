@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/inbox"
 	"safehome/internal/install"
 )
@@ -20,36 +21,6 @@ const site = "tg-lom-0001"
 var t0 = time.Date(2026, 10, 20, 14, 0, 0, 0, time.UTC)
 
 // The fakes of the console's ports, and the rig that runs a console on them.
-
-type fakeClock struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers map[chan time.Time]time.Time
-}
-
-func newClock() *fakeClock { return &fakeClock{now: t0, timers: map[chan time.Time]time.Time{}} }
-
-func (c *fakeClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
-
-func (c *fakeClock) Timer(d time.Duration) (<-chan time.Time, func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	ch := make(chan time.Time, 1)
-	c.timers[ch] = c.now.Add(d)
-	return ch, func() { c.mu.Lock(); delete(c.timers, ch); c.mu.Unlock() }
-}
-
-func (c *fakeClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = c.now.Add(d)
-	for ch, at := range c.timers {
-		if !at.After(c.now) {
-			ch <- c.now
-			delete(c.timers, ch)
-		}
-	}
-}
 
 type fakeHotspot struct {
 	mu       sync.Mutex
@@ -172,7 +143,7 @@ type rig struct {
 	t       *testing.T
 	codes   *fakeCodes
 	app     *App
-	clock   *fakeClock
+	clock   *drivertest.FakeClock
 	hotspot *fakeHotspot
 	sites   *fakeSites
 	ids     *contract.IDGenerator
@@ -267,7 +238,7 @@ func dev(id string, caps ...string) contract.RegistryDevice {
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
-	r := &rig{t: t, clock: newClock(), hotspot: &fakeHotspot{}, ids: contract.NewIDGenerator(), codes: &fakeCodes{codes: map[string]string{}},
+	r := &rig{t: t, clock: drivertest.NewFakeClock(t0), hotspot: &fakeHotspot{}, ids: contract.NewIDGenerator(), codes: &fakeCodes{codes: map[string]string{}},
 		sites:   &fakeSites{site: install.Site{Zones: map[string]install.Zone{"dev_door": {Name: "Entree", Kind: "entry"}}, SirenIDs: []string{"dev_siren"}}},
 		devices: []contract.RegistryDevice{dev("dev_door", "contact", "battery"), dev("dev_siren", "siren", "mains"), dev("dev_motion", "motion", "battery")},
 	}
@@ -298,17 +269,8 @@ func newRig(t *testing.T) *rig {
 	t.Cleanup(r.stop)
 	r.registry()
 	r.deliver(contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus, zigbee(false), true)
-	r.waitFor("the registry", func() bool { return r.app.Overview().Known })
+	drivertest.WaitFor(r.t, "the registry", func() bool { return r.app.Overview().Known })
 	return r
-}
-
-func (r *rig) waitFor(what string, cond func() bool) {
-	r.t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); !cond(); time.Sleep(2 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			r.t.Fatalf("timed out waiting for %s", what)
-		}
-	}
 }
 
 func (r *rig) mode(d contract.InstallModeData) {
@@ -318,7 +280,7 @@ func (r *rig) mode(d contract.InstallModeData) {
 func (r *rig) open() {
 	r.t.Helper()
 	r.mode(contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(r.clock.Now().Add(30 * time.Minute))})
-	r.waitFor("the page", func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.serving == 1 })
+	drivertest.WaitFor(r.t, "the page", func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.serving == 1 })
 }
 
 func (r *rig) isServing() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.serving > 0 }

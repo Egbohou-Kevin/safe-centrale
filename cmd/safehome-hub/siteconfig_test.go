@@ -7,6 +7,7 @@ import (
 
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/hubconfig"
 	"safehome/internal/install"
 	"safehome/internal/siteconfig"
@@ -92,7 +93,7 @@ func TestTheInstallationModeAppliesNewZonesByRestarting(t *testing.T) {
 	// The installer code at the keypad opens the mode; the console changes the zones,
 	// then closes the mode: the hub stops for systemd to start it again.
 	l.event("dev_keypad", contract.CapKeypad, "disarm", "259031")
-	l.waitFor("the installation mode", func() bool {
+	drivertest.WaitFor(t, "the installation mode", func() bool {
 		for _, env := range l.seen(contract.TypeInstallMode) {
 			if d, _ := contract.DecodeData[contract.InstallModeData](env); d.Status == contract.InstallOpen {
 				return true
@@ -114,12 +115,12 @@ func TestTheInstallationModeAppliesNewZonesByRestarting(t *testing.T) {
 		{ID: "u_owner", Name: "Ama", Role: "owner", Channels: []string{"app", "sms"}, Phone: "+22890000001"},
 		{ID: "u_night", Name: "Kofi", Role: "guard", Channels: []string{"sms"}, Phone: "+22870000002"},
 	}}, false)
-	l.waitFor("the configuration kept", func() bool { _, ok, _ := siteconfig.Read(state); return ok })
+	drivertest.WaitFor(t, "the configuration kept", func() bool { _, ok, _ := siteconfig.Read(state); return ok })
 	// The contact it adds gets a code on the console: the running hub takes it at once.
 	if code, _, errb := cli(t, "730264\n", "codes", "-config", cfg, "set", "u_night"); code != 0 {
 		t.Fatalf("%d %q", code, errb)
 	}
-	l.waitFor("the reload", func() bool { return strings.Count(l.logs.String(), "access codes reloaded") >= 2 })
+	drivertest.WaitFor(t, "the reload", func() bool { return strings.Count(l.logs.String(), "access codes reloaded") >= 2 })
 	l.event("dev_keypad", contract.CapKeypad, "disarm", "730264")
 	l.waitCount(contract.TypeAlarmAck, 2)
 	if n := len(l.seen(contract.TypeAlarmAuthFailed)); n != 0 {

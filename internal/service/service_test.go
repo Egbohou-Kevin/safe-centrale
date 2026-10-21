@@ -10,13 +10,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
 	"safehome/internal/adapter/mqtt"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/inbox"
 	"safehome/internal/outbox"
 )
@@ -138,24 +138,6 @@ func TestReloadSignalsTheProcessOfThePidFile(t *testing.T) {
 
 // --- life cycle -----------------------------------------------------------------
 
-// syncBuffer is a log the daemon writes while the test reads it.
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
-
 // untilDone is a loop that runs until ctx ends, and counts how many have stopped.
 func untilDone(stopped *atomic.Int32) func(context.Context) error {
 	return func(ctx context.Context) error {
@@ -167,7 +149,7 @@ func untilDone(stopped *atomic.Int32) func(context.Context) error {
 
 func alive(context.Context) error { return nil }
 
-func newDaemon(logs *syncBuffer, loops ...func(context.Context) error) Daemon {
+func newDaemon(logs *drivertest.SyncBuffer, loops ...func(context.Context) error) Daemon {
 	return Daemon{Name: "test service", Log: Logger(logs, 0), Loops: loops, Alive: alive}
 }
 
@@ -190,7 +172,7 @@ func exitCode(t *testing.T, done <-chan int) int {
 }
 
 func TestDaemonStopsTheLoopsBeforeItsLastWords(t *testing.T) {
-	var logs syncBuffer
+	var logs drivertest.SyncBuffer
 	var stopped atomic.Int32
 	d := newDaemon(&logs, untilDone(&stopped), untilDone(&stopped))
 	pub := &Publisher{}
@@ -200,13 +182,7 @@ func TestDaemonStopsTheLoopsBeforeItsLastWords(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := runAsync(ctx, d)
-	deadline := time.Now().Add(5 * time.Second)
-	for pub.client.Load() == nil && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if pub.client.Load() == nil {
-		t.Fatal("the publisher was never given its client")
-	}
+	drivertest.WaitFor(t, "the publisher to be given its client", func() bool { return pub.client.Load() != nil })
 	cancel()
 	if code := exitCode(t, done); code != 0 {
 		t.Fatalf("exit %d\n%s", code, logs.String())
@@ -220,7 +196,7 @@ func TestDaemonStopsTheLoopsBeforeItsLastWords(t *testing.T) {
 }
 
 func TestDaemonRestartIsACleanStop(t *testing.T) {
-	var logs syncBuffer
+	var logs drivertest.SyncBuffer
 	var stopped atomic.Int32
 	d := newDaemon(&logs, untilDone(&stopped))
 	d.Restart = NewRestart()
@@ -235,7 +211,7 @@ func TestDaemonRestartIsACleanStop(t *testing.T) {
 }
 
 func TestDaemonGivesUpWhenALoopStopsOnItsOwn(t *testing.T) {
-	var logs syncBuffer
+	var logs drivertest.SyncBuffer
 	var stopped atomic.Int32
 	broken := func(context.Context) error { return errors.New("the loop broke") }
 	d := newDaemon(&logs, untilDone(&stopped), broken)
@@ -253,7 +229,7 @@ func TestDaemonStopIsCleanWhenTheLoopsEndFirst(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	for range 200 {
-		var logs syncBuffer
+		var logs drivertest.SyncBuffer
 		quick := func(ctx context.Context) error { return ctx.Err() }
 		if code := newDaemon(&logs, quick).Run(ctx); code != 0 {
 			t.Fatalf("exit %d, want 0\n%s", code, logs.String())
@@ -262,7 +238,7 @@ func TestDaemonStopIsCleanWhenTheLoopsEndFirst(t *testing.T) {
 }
 
 func TestDaemonThatCannotDialStopsItsLoops(t *testing.T) {
-	var logs syncBuffer
+	var logs drivertest.SyncBuffer
 	var stopped atomic.Int32
 	d := newDaemon(&logs, untilDone(&stopped))
 	d.Brokers = []Broker{{Options: mqtt.Options{BrokerURL: "", ClientID: "t"}}}

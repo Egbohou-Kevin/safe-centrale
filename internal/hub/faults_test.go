@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 )
 
@@ -17,7 +18,7 @@ func TestArmingWarnsOfSilentDevicesAndWeakBatteries(t *testing.T) {
 
 	ref := r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_owner")
 	r.mustBe(engine.ModeArming) // never refused for a fault
-	r.waitFor("the reply", func() bool { return len(eventsOf(r, contract.TypeAlarmAck)) == 1 })
+	drivertest.WaitFor(t, "the reply", func() bool { return len(eventsOf(r, contract.TypeAlarmAck)) == 1 })
 	r.settle()
 
 	arming := dataOf[contract.ArmingData](t, eventsOf(r, contract.TypeAlarmArming)[0])
@@ -39,7 +40,7 @@ func TestArmingWithoutFaultsSaysNothingMore(t *testing.T) {
 	r.device(devBack, contract.CapAvailability, "online") // back
 	r.settle()
 	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_owner")
-	r.waitFor("the reply", func() bool { return len(eventsOf(r, contract.TypeAlarmAck)) == 1 })
+	drivertest.WaitFor(t, "the reply", func() bool { return len(eventsOf(r, contract.TypeAlarmAck)) == 1 })
 	r.settle()
 	arming := dataOf[contract.ArmingData](t, eventsOf(r, contract.TypeAlarmArming)[0])
 	ack := dataOf[contract.AlarmAckData](t, eventsOf(r, contract.TypeAlarmAck)[0])
@@ -55,7 +56,7 @@ func TestARefusedArmingCarriesOnlyItsReason(t *testing.T) {
 	r.device(devDoor, contract.CapContact, "open")
 	r.settle()
 	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_owner")
-	r.waitFor("the reply", func() bool { return len(eventsOf(r, contract.TypeAlarmAck)) == 1 })
+	drivertest.WaitFor(t, "the reply", func() bool { return len(eventsOf(r, contract.TypeAlarmAck)) == 1 })
 	ack := dataOf[contract.AlarmAckData](t, eventsOf(r, contract.TypeAlarmAck)[0])
 	if ack.Status != contract.AckRefused || ack.Detail["low_battery"] != nil {
 		t.Fatalf("%+v", ack)

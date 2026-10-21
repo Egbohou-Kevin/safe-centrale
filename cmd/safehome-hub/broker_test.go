@@ -12,6 +12,7 @@ import (
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/adapter/pidfile"
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 )
 
 func TestTheHubEndToEndOverARealBroker(t *testing.T) {
@@ -34,7 +35,7 @@ func TestTheHubEndToEndOverARealBroker(t *testing.T) {
 	l.waitState("armed")
 	l.event("dev_back", contract.CapContact, "open", "")
 	l.waitCount(contract.TypeAlarmTriggered, 1)
-	l.waitFor("the siren order", func() bool { return len(l.siren()) == 1 })
+	drivertest.WaitFor(t, "the siren order", func() bool { return len(l.siren()) == 1 })
 	l.waitCount(contract.TypeAlertRequest, 1)
 	alert, _ := contract.DecodeData[contract.AlertRequestData](l.seen(contract.TypeAlertRequest)[0])
 	if alert.Kind != contract.AlertIntrusion || alert.Contact != "u_owner" || alert.Channel != contract.ChannelApp {
@@ -51,7 +52,7 @@ func TestTheHubEndToEndOverARealBroker(t *testing.T) {
 	l.event("dev_keypad", contract.CapKeypad, "disarm", "482915")
 	l.waitCount(contract.TypeAlarmDisarmed, 1)
 	l.waitState("disarmed")
-	l.waitFor("the siren to be switched off", func() bool { return len(l.siren()) == 2 })
+	drivertest.WaitFor(t, "the siren to be switched off", func() bool { return len(l.siren()) == 2 })
 	if d, _ := contract.DecodeData[contract.DisarmedData](l.seen(contract.TypeAlarmDisarmed)[0]); d.User != "u_owner" || d.Origin != contract.OriginKeypad {
 		t.Fatalf("%+v", d)
 	}
@@ -59,7 +60,7 @@ func TestTheHubEndToEndOverARealBroker(t *testing.T) {
 	// A late subscriber still learns the state, from the retained message.
 	late := &live{t: t, got: make(chan struct{}, 16)}
 	dialTestClient(t, broker.URL(), late)
-	late.waitFor("the retained state", func() bool { return late.lastState() == "disarmed" })
+	drivertest.WaitFor(t, "the retained state", func() bool { return late.lastState() == "disarmed" })
 
 	l.validateEverything("482915", "111122")
 
@@ -88,10 +89,10 @@ func TestTheStateSurvivesARestart(t *testing.T) {
 
 	// The power cut and came back: a new process on the same disk.
 	l.startHub()
-	l.waitFor("the hub to come back", func() bool { return lastSeq(l) > seqBefore })
+	drivertest.WaitFor(t, "the hub to come back", func() bool { return lastSeq(l) > seqBefore })
 	l.event("dev_back", contract.CapContact, "open", "")
 	l.waitCount(contract.TypeAlarmTriggered, 1) // only an armed alarm reacts: it came back armed
-	l.waitFor("the siren", func() bool { return len(l.siren()) == 1 })
+	drivertest.WaitFor(t, "the siren", func() bool { return len(l.siren()) == 1 })
 
 	// The message counter went on where it stopped.
 	var prev uint64
@@ -111,7 +112,7 @@ func TestTheHubLearnsOpenDoorsFromRetainedStatesAtBoot(t *testing.T) {
 	cfg := writeConfig(t, broker.URL(), state, "")
 
 	// Before the hub starts, the broker already holds the back door's state: open.
-	l := &live{t: t, broker: broker, cfgPath: cfg, state: state, logs: &syncBuffer{}, ids: contract.NewIDGenerator(), got: make(chan struct{}, 1024)}
+	l := &live{t: t, broker: broker, cfgPath: cfg, state: state, logs: drivertest.Logs(t), ids: contract.NewIDGenerator(), got: make(chan struct{}, 1024)}
 	l.client = dialTestClient(t, broker.URL(), l)
 	l.publish(contract.DeviceStateTopic(site, "dev_back", contract.CapContact), contract.TypeDeviceState, device("dev_back", contract.CapContact, "open", ""), true)
 	l.startHub()
@@ -132,7 +133,7 @@ func TestTheHubWaitsForTheBrokerAndCatchesUp(t *testing.T) {
 	cfg := writeConfig(t, broker.URL(), state, "")
 	broker.Stop() // the broker is not up when the hub starts
 
-	l := &live{t: t, broker: broker, cfgPath: cfg, state: state, logs: &syncBuffer{}, ids: contract.NewIDGenerator(), got: make(chan struct{}, 1024)}
+	l := &live{t: t, broker: broker, cfgPath: cfg, state: state, logs: drivertest.Logs(t), ids: contract.NewIDGenerator(), got: make(chan struct{}, 1024)}
 	l.startHub()
 	t.Cleanup(func() { l.stopHub() })
 	time.Sleep(1500 * time.Millisecond)
@@ -153,7 +154,7 @@ func TestTheHubRefusesToStartOnADamagedState(t *testing.T) {
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state, "")
 	os.WriteFile(filepath.Join(state, "engine.json"), []byte(`{"mode": [`), 0o600)
-	var out, errb syncBuffer
+	var out, errb drivertest.SyncBuffer
 	code := run(context.Background(), []string{"run", "-config", cfg}, strings.NewReader(""), &out, &errb)
 	if code != 1 || !strings.Contains(errb.String(), "cannot start the hub") {
 		t.Fatalf("exit %d\n%s", code, errb.String())
@@ -168,7 +169,7 @@ func TestASecondHubOnTheSameStateIsRefused(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(state, pidName), pid, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	var out, errb syncBuffer
+	var out, errb drivertest.SyncBuffer
 	code := run(context.Background(), []string{"run", "-config", cfg}, strings.NewReader(""), &out, &errb)
 	if code != 1 || !strings.Contains(errb.String(), "already using") {
 		t.Fatalf("exit %d\n%s", code, errb.String())
@@ -206,6 +207,6 @@ func TestAnAcknowledgementOverTheBrokerEndsTheEscalation(t *testing.T) {
 	alert, _ := contract.DecodeData[contract.AlertRequestData](req)
 	l.publish(contract.AlertResultTopic(site), contract.TypeAlertResult, contract.AlertResultData{Ref: req.ID, Status: contract.ResultSent}, false)
 	l.publish(contract.AlertAckTopic(site), contract.TypeAlertAck, contract.AlertAckData{Incident: alert.Incident, Contact: "u_owner", Via: "app"}, false)
-	l.waitFor("the acknowledgement to be taken", func() bool { return strings.Contains(l.logs.String(), "outcome=acknowledged") })
+	drivertest.WaitFor(t, "the acknowledgement to be taken", func() bool { return strings.Contains(l.logs.String(), "outcome=acknowledged") })
 	l.validateEverything()
 }

@@ -14,22 +14,10 @@ import (
 	"time"
 
 	"safehome/internal/adapter/mqtt/mqtttest"
+	"safehome/internal/driver/drivertest"
 )
 
 const site = "tg-lom-0001"
-
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
 
 // writeConfig writes a configuration for a test hub and returns its path.
 func writeConfig(t *testing.T, brokerURL, stateDir string, extra string) string {
@@ -133,7 +121,7 @@ func TestTheHubTellsSystemdItIsReadyAndStillWorks(t *testing.T) {
 	l := startLive(t, broker, state, writeConfig(t, broker.URL(), state, ""))
 	l.waitState("disarmed")
 	pings := func() int { return strings.Count(strings.Join(said(), "\n"), "WATCHDOG=1") }
-	l.waitFor("ready, then pings", func() bool { return len(said()) > 0 && said()[0] == "READY=1" && pings() >= 3 })
+	drivertest.WaitFor(t, "ready, then pings", func() bool { return len(said()) > 0 && said()[0] == "READY=1" && pings() >= 3 })
 	if code := l.stopHub(); code != 0 {
 		t.Fatal(code)
 	}

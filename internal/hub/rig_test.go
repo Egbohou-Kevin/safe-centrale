@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
 	"safehome/internal/health"
@@ -35,78 +35,6 @@ const (
 var t0 = time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)
 
 // --- fakes ----------------------------------------------------------------------
-
-type fakeClock struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers map[*fakeTimer]bool
-}
-
-type fakeTimer struct {
-	when time.Time
-	c    chan time.Time
-}
-
-func newFakeClock() *fakeClock { return &fakeClock{now: t0, timers: map[*fakeTimer]bool{}} }
-
-func (c *fakeClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
-
-func (c *fakeClock) Timer(d time.Duration) (<-chan time.Time, func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	t := &fakeTimer{when: c.now.Add(d), c: make(chan time.Time, 1)}
-	if d <= 0 {
-		t.c <- c.now
-		return t.c, func() {}
-	}
-	c.timers[t] = true
-	return t.c, func() { c.mu.Lock(); delete(c.timers, t); c.mu.Unlock() }
-}
-
-// pending reports whether a timer waits to fire at when.
-func (c *fakeClock) pending(when time.Time) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for t := range c.timers {
-		if t.when.Equal(when) {
-			return true
-		}
-	}
-	return false
-}
-
-func (c *fakeClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = c.now.Add(d)
-	for t := range c.timers {
-		if !t.when.After(c.now) {
-			t.c <- c.now
-			delete(c.timers, t)
-		}
-	}
-}
-
-type memStore struct {
-	mu   sync.Mutex
-	docs map[string][]byte
-}
-
-func newMemStore() *memStore { return &memStore{docs: map[string][]byte{}} }
-
-func (s *memStore) Save(name string, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.docs[name] = append([]byte(nil), data...)
-	return nil
-}
-
-func (s *memStore) Load(name string) ([]byte, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	d, ok := s.docs[name]
-	return d, ok, nil
-}
 
 type published struct {
 	Topic   string
@@ -182,27 +110,15 @@ func (b *fakeBroker) ofType(typ string) []published {
 type rig struct {
 	t      *testing.T
 	hub    *Hub
-	clock  *fakeClock
-	store  *memStore
+	clock  *drivertest.FakeClock
+	store  *drivertest.MemStore
 	broker *fakeBroker
-	logs   *syncBuffer
+	logs   *drivertest.SyncBuffer
 	ids    *contract.IDGenerator
 	cancel context.CancelFunc
 	done   chan struct{}
 	seq    int
 }
-
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
 
 type entropy struct{ n byte }
 
@@ -235,11 +151,11 @@ func testConfig() Config {
 	return c
 }
 
-func newRig(t *testing.T, store *memStore, mutate ...func(*Config)) *rig {
+func newRig(t *testing.T, store *drivertest.MemStore, mutate ...func(*Config)) *rig {
 	t.Helper()
-	r := &rig{t: t, clock: newFakeClock(), store: store, broker: &fakeBroker{}, logs: &syncBuffer{}}
+	r := &rig{t: t, clock: drivertest.NewFakeClock(t0), store: store, broker: &fakeBroker{}, logs: drivertest.Logs(t)}
 	if store == nil {
-		r.store = newMemStore()
+		r.store = drivertest.NewMemStore()
 	}
 	cfg := testConfig()
 	for _, m := range mutate {
@@ -262,9 +178,9 @@ func newRig(t *testing.T, store *memStore, mutate ...func(*Config)) *rig {
 func (r *rig) start() {
 	r.startWithoutWaiting()
 	if w := r.hub.cfg.BootWindow; w > 0 {
-		r.passTimer(w)
+		r.clock.PassTimer(r.t, w)
 	}
-	r.waitFor("boot", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) >= 1 })
+	drivertest.WaitFor(r.t, "boot", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) >= 1 })
 }
 
 func (r *rig) startWithoutWaiting() {
@@ -283,26 +199,6 @@ func (r *rig) stop() {
 	}
 }
 
-func (r *rig) waitFor(what string, cond func() bool) {
-	r.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			r.t.Fatalf("timed out waiting for %s\nlogs:\n%s", what, r.logs.String())
-		}
-		time.Sleep(time.Millisecond)
-	}
-}
-
-// passTimer waits until a timer of d from now is set on the fake clock, then lets d
-// pass.
-func (r *rig) passTimer(d time.Duration) {
-	r.t.Helper()
-	when := r.clock.Now().Add(d)
-	r.waitFor(fmt.Sprintf("a timer of %v", d), func() bool { return r.clock.pending(when) })
-	r.clock.Advance(d)
-}
-
 // settle waits until the domains have processed what was queued and the outbox is empty.
 func (r *rig) settle() {
 	r.t.Helper()
@@ -317,7 +213,7 @@ func (r *rig) settle() {
 	if err := r.hub.escal.loop.Do(ctx, func(time.Time) []escalation.Action { return nil }); err != nil {
 		r.t.Fatal(err)
 	}
-	r.waitFor("the outbox to empty", func() bool { return r.hub.out.Depth() == 0 })
+	drivertest.WaitFor(r.t, "the outbox to empty", func() bool { return r.hub.out.Depth() == 0 })
 }
 
 // send gives the hub a message as the broker would.
@@ -402,13 +298,13 @@ func (r *rig) mode() (m engine.Mode) {
 // by goroutines of their own, so the mode may take a moment to settle.
 func (r *rig) mustBe(m engine.Mode) {
 	r.t.Helper()
-	r.waitFor("mode "+string(m), func() bool { r.settle(); return r.mode() == m })
+	drivertest.WaitFor(r.t, "mode "+string(m), func() bool { r.settle(); return r.mode() == m })
 }
 
 // waitAcks waits until n acknowledgements have been published.
 func (r *rig) waitAcks(n int) {
 	r.t.Helper()
-	r.waitFor(fmt.Sprintf("%d acks", n), func() bool { return len(r.broker.ofType(contract.TypeAlarmAck)) >= n })
+	drivertest.WaitFor(r.t, fmt.Sprintf("%d acks", n), func() bool { return len(r.broker.ofType(contract.TypeAlarmAck)) >= n })
 }
 
 // validateAll checks every published message against its JSON Schema.

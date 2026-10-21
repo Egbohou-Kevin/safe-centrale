@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/gsm"
 	"safehome/internal/inbox"
 	"safehome/internal/schematest"
@@ -22,62 +22,6 @@ const site = "tg-lom-0001"
 var t0 = time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)
 
 // --- fakes ---------------------------------------------------------------------------
-
-type fakeClock struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers map[*fakeTimer]bool
-}
-
-type fakeTimer struct {
-	when time.Time
-	c    chan time.Time
-}
-
-func (c *fakeClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
-
-func (c *fakeClock) Timer(d time.Duration) (<-chan time.Time, func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	t := &fakeTimer{when: c.now.Add(d), c: make(chan time.Time, 1)}
-	if d <= 0 {
-		t.c <- c.now
-		return t.c, func() {}
-	}
-	c.timers[t] = true
-	return t.c, func() { c.mu.Lock(); delete(c.timers, t); c.mu.Unlock() }
-}
-
-func (c *fakeClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = c.now.Add(d)
-	for t := range c.timers {
-		if !t.when.After(c.now) {
-			t.c <- c.now
-			delete(c.timers, t)
-		}
-	}
-}
-
-type memStore struct {
-	mu   sync.Mutex
-	docs map[string][]byte
-}
-
-func (s *memStore) Save(name string, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.docs[name] = append([]byte(nil), data...)
-	return nil
-}
-
-func (s *memStore) Load(name string) ([]byte, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	d, ok := s.docs[name]
-	return d, ok, nil
-}
 
 type published struct {
 	topic  string
@@ -167,41 +111,29 @@ func (m *fakeModem) count() (sent, calls, checks, restarts int) {
 	return len(m.sent), len(m.calls), m.checks, m.restarts
 }
 
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
-
 // --- rig -----------------------------------------------------------------------------
 
 type rig struct {
 	t      *testing.T
 	gw     *Gateway
-	clock  *fakeClock
-	store  *memStore
+	clock  *drivertest.FakeClock
+	store  *drivertest.MemStore
 	broker *fakeBroker
 	modem  *fakeModem
-	logs   *syncBuffer
+	logs   *drivertest.SyncBuffer
 	ids    *contract.IDGenerator
 	cancel context.CancelFunc
 	done   chan struct{}
 }
 
-func newRig(t *testing.T, store *memStore, mutate ...func(*Config)) *rig {
+func newRig(t *testing.T, store *drivertest.MemStore, mutate ...func(*Config)) *rig {
 	t.Helper()
 	if store == nil {
-		store = &memStore{docs: map[string][]byte{}}
+		store = drivertest.NewMemStore()
 	}
 	r := &rig{
-		t: t, clock: &fakeClock{now: t0, timers: map[*fakeTimer]bool{}}, store: store, broker: &fakeBroker{},
-		modem: &fakeModem{info: LineInfo{Registered: true, Signal: 71, Operator: "TOGOCOM"}}, logs: &syncBuffer{},
+		t: t, clock: drivertest.NewFakeClock(t0), store: store, broker: &fakeBroker{},
+		modem: &fakeModem{info: LineInfo{Registered: true, Signal: 71, Operator: "TOGOCOM"}}, logs: drivertest.Logs(t),
 		ids: contract.NewIDGenerator(),
 	}
 	cfg := DefaultConfig(site, gsm.DefaultConfig([]gsm.Line{{ID: "line1"}}, map[string]string{"u_owner": "90 12 34 56"}))
@@ -222,7 +154,7 @@ func newRig(t *testing.T, store *memStore, mutate ...func(*Config)) *rig {
 	r.cancel, r.done = cancel, make(chan struct{})
 	go func() { gw.Run(ctx); close(r.done) }()
 	t.Cleanup(r.stop)
-	r.waitFor("the line to be usable", func() bool {
+	drivertest.WaitFor(r.t, "the line to be usable", func() bool {
 		st := r.status()
 		return len(st.Lines) == 1 && st.Lines[0].Registered
 	})
@@ -239,15 +171,21 @@ func (r *rig) stop() {
 	<-r.done
 }
 
-func (r *rig) waitFor(what string, cond func() bool) {
+// settle waits until the loop has handled what was given to it, and the line has
+// done what the loop handed it: the line's worker takes its tasks in order.
+func (r *rig) settle() {
 	r.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			r.t.Fatalf("timed out waiting for %s\nlogs:\n%s", what, r.logs.String())
+	r.gw.loop.Do(context.Background(), func(time.Time) []gsm.Action { return nil })
+	done := make(chan struct{})
+	r.gw.toLine("line1", func(context.Context) { close(done) })
+	drivertest.WaitFor(r.t, "the line's work", func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
 		}
-		time.Sleep(time.Millisecond)
-	}
+	})
 }
 
 func (r *rig) status() contract.GSMStatusData {
@@ -320,19 +258,4 @@ func (r *rig) validateAll() {
 	if l := r.logs.String(); strings.Contains(l, "ALARME") || strings.Contains(l, "90123456") {
 		r.t.Errorf("the logs leak a text or a number:\n%s", l)
 	}
-}
-
-// waitTimer waits until something waits on the clock for the given time.
-func (r *rig) waitTimer(when time.Time) {
-	r.t.Helper()
-	r.waitFor("a timer at "+when.String(), func() bool {
-		r.clock.mu.Lock()
-		defer r.clock.mu.Unlock()
-		for t := range r.clock.timers {
-			if t.when.Equal(when) {
-				return true
-			}
-		}
-		return false
-	})
 }

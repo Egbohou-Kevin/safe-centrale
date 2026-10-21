@@ -1,7 +1,6 @@
 package maintapp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/inbox"
 	"safehome/internal/maint"
 	"safehome/internal/schematest"
@@ -22,62 +22,6 @@ const site = "tg-lom-0001"
 var t0 = time.Date(2026, 10, 20, 21, 0, 0, 0, time.UTC)
 
 // --- fakes ---------------------------------------------------------------------
-
-type fakeClock struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers map[*fakeTimer]bool
-}
-
-type fakeTimer struct {
-	when time.Time
-	c    chan time.Time
-}
-
-func (c *fakeClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
-
-func (c *fakeClock) Timer(d time.Duration) (<-chan time.Time, func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	t := &fakeTimer{when: c.now.Add(d), c: make(chan time.Time, 1)}
-	if d <= 0 {
-		t.c <- c.now
-		return t.c, func() {}
-	}
-	c.timers[t] = true
-	return t.c, func() { c.mu.Lock(); delete(c.timers, t); c.mu.Unlock() }
-}
-
-func (c *fakeClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = c.now.Add(d)
-	for t := range c.timers {
-		if !t.when.After(c.now) {
-			t.c <- c.now
-			delete(c.timers, t)
-		}
-	}
-}
-
-type memStore struct {
-	mu   sync.Mutex
-	docs map[string][]byte
-}
-
-func (s *memStore) Save(name string, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.docs[name] = append([]byte(nil), data...)
-	return nil
-}
-
-func (s *memStore) Load(name string) ([]byte, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	d, ok := s.docs[name]
-	return d, ok, nil
-}
 
 type broker struct {
 	mu   sync.Mutex
@@ -159,39 +103,27 @@ func (f *fakeTunneler) last() *fakeTunnel {
 	return f.tunnels[len(f.tunnels)-1]
 }
 
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
-
 // --- harness -------------------------------------------------------------------
 
 type rig struct {
 	t      *testing.T
 	app    *App
-	clock  *fakeClock
-	store  *memStore
+	clock  *drivertest.FakeClock
+	store  *drivertest.MemStore
 	broker *broker
 	tun    *fakeTunneler
-	logs   *syncBuffer
+	logs   *drivertest.SyncBuffer
 	ids    *contract.IDGenerator
 	stop   func()
 }
 
-func start(t *testing.T, store *memStore, clock *fakeClock, edit ...func(*maint.Config)) *rig {
+func start(t *testing.T, store *drivertest.MemStore, clock *drivertest.FakeClock, edit ...func(*maint.Config)) *rig {
 	t.Helper()
 	if store == nil {
-		store = &memStore{docs: map[string][]byte{}}
+		store = drivertest.NewMemStore()
 	}
 	if clock == nil {
-		clock = &fakeClock{now: t0, timers: map[*fakeTimer]bool{}}
+		clock = drivertest.NewFakeClock(t0)
 	}
 	m := maint.DefaultConfig()
 	for _, e := range edit {
@@ -199,7 +131,12 @@ func start(t *testing.T, store *memStore, clock *fakeClock, edit ...func(*maint.
 	}
 	cfg := DefaultConfig(site, m)
 	cfg.Outbox.RetryMin, cfg.Outbox.RetryMax = 5*time.Millisecond, 20*time.Millisecond
-	r := &rig{t: t, clock: clock, store: store, broker: &broker{}, tun: &fakeTunneler{}, logs: &syncBuffer{}, ids: contract.NewIDGenerator()}
+	r := &rig{t: t, clock: clock, store: store, broker: &broker{}, tun: &fakeTunneler{}, logs: drivertest.Logs(t), ids: contract.NewIDGenerator()}
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("steps published: %v", r.broker.steps())
+		}
+	})
 	app, err := New(cfg, Deps{Clock: clock, Store: store, Publisher: r.broker, Tunneler: r.tun, NewID: r.ids.New,
 		Logger: slog.New(slog.NewTextHandler(r.logs, nil))})
 	if err != nil {
@@ -231,35 +168,31 @@ func (r *rig) open(session string) {
 		Exp: contract.TS(r.clock.Now().Add(time.Minute))})
 }
 
-func (r *rig) waitFor(what string, cond func() bool) {
-	r.t.Helper()
-	for deadline := time.Now().Add(3 * time.Second); !cond(); time.Sleep(2 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			r.t.Fatalf("timed out waiting for %s\nsteps: %v\nlogs:\n%s", what, r.broker.steps(), r.logs.String())
-		}
-	}
-}
-
 func (r *rig) steps(want ...string) {
 	r.t.Helper()
-	r.waitFor(strings.Join(want, " "), func() bool { return strings.Join(r.broker.steps(), " ") == strings.Join(want, " ") })
+	drivertest.WaitFor(r.t, strings.Join(want, " "), func() bool { return strings.Join(r.broker.steps(), " ") == strings.Join(want, " ") })
 }
 
-// settle lets the loop take what was given to it.
-func (r *rig) settle() { r.app.Alive(context.Background()) }
+// settle lets the loop take what was given to it, and the outbox send what it
+// published.
+func (r *rig) settle() {
+	r.t.Helper()
+	r.app.Alive(context.Background())
+	drivertest.WaitFor(r.t, "the outbox to empty", func() bool { return r.app.out.Depth() == 0 })
+}
 
 // --- tests ---------------------------------------------------------------------
 
 func TestASessionFromOpenToClose(t *testing.T) {
 	r := start(t, nil, nil)
 	r.open("m1")
-	r.waitFor("the tunnel", func() bool { return r.tun.count() == 1 })
+	drivertest.WaitFor(t, "the tunnel", func() bool { return r.tun.count() == 1 })
 	r.steps("opening")
 	close(r.tun.last().up)
 	r.steps("opening", "open")
 	r.send(contract.TypeMaintClose, contract.MaintCloseData{Session: "m1"})
 	r.steps("opening", "open", "closed/stopped")
-	r.waitFor("the tunnel closed", r.tun.last().isStopped)
+	drivertest.WaitFor(t, "the tunnel closed", r.tun.last().isStopped)
 	if !strings.Contains(r.logs.String(), "user=kevin") || !strings.Contains(r.logs.String(), "reason=modem") {
 		t.Fatalf("who and why are logged:\n%s", r.logs.String())
 	}
@@ -271,25 +204,25 @@ func TestASessionFromOpenToClose(t *testing.T) {
 func TestTheSessionEndsWithItsTime(t *testing.T) {
 	r := start(t, nil, nil)
 	r.open("m1")
-	r.waitFor("the tunnel", func() bool { return r.tun.count() == 1 })
+	drivertest.WaitFor(t, "the tunnel", func() bool { return r.tun.count() == 1 })
 	close(r.tun.last().up)
 	r.steps("opening", "open")
 	r.clock.Advance(time.Hour)
 	r.steps("opening", "open", "closed/timeout")
-	r.waitFor("the tunnel closed", r.tun.last().isStopped)
+	drivertest.WaitFor(t, "the tunnel closed", r.tun.last().isStopped)
 }
 
 func TestATunnelThatBreaksIsOpenedAgain(t *testing.T) {
 	r := start(t, nil, nil)
 	r.open("m1")
-	r.waitFor("the tunnel", func() bool { return r.tun.count() == 1 })
+	drivertest.WaitFor(t, "the tunnel", func() bool { return r.tun.count() == 1 })
 	close(r.tun.last().up)
 	r.steps("opening", "open")
 	r.tun.last().breaks()
-	r.waitFor("the break said", func() bool { return strings.Contains(r.logs.String(), "tunnel stopped") })
+	drivertest.WaitFor(t, "the break said", func() bool { return strings.Contains(r.logs.String(), "tunnel stopped") })
 	r.settle()
 	r.clock.Advance(10 * time.Second)
-	r.waitFor("the second tunnel", func() bool { return r.tun.count() == 2 })
+	drivertest.WaitFor(t, "the second tunnel", func() bool { return r.tun.count() == 2 })
 	close(r.tun.last().up)
 	r.settle()
 	r.steps("opening", "open")
@@ -303,7 +236,7 @@ func TestATunnelUpThenDownAtOnceIsOpenedAgain(t *testing.T) {
 		r := start(t, nil, nil)
 		r.tun.flash = true
 		r.open("m1")
-		r.waitFor("the break said", func() bool { return strings.Contains(r.logs.String(), "tunnel stopped") })
+		drivertest.WaitFor(r.t, "the break said", func() bool { return strings.Contains(r.logs.String(), "tunnel stopped") })
 		r.settle()
 		r.steps("opening", "open")
 		r.stop()
@@ -319,7 +252,7 @@ func TestABastionThatRefuses(t *testing.T) {
 	r.tun.err = nil
 	r.tun.mu.Unlock()
 	r.open("m2")
-	r.waitFor("the tunnel", func() bool { return r.tun.count() == 1 })
+	drivertest.WaitFor(t, "the tunnel", func() bool { return r.tun.count() == 1 })
 	r.tun.last().breaks() // never up
 	r.steps("opening", "failed/unreachable", "opening", "failed/unreachable")
 }
@@ -333,7 +266,6 @@ func TestRefusedOrders(t *testing.T) {
 	r.app.HandleMessage(inbox.Message{Topic: contract.MaintCmdTopic(site), Payload: []byte("{")})
 	r.app.HandleMessage(inbox.Message{Topic: "elsewhere", Payload: []byte("{}")})
 	r.settle()
-	time.Sleep(20 * time.Millisecond)
 	if s := r.broker.steps(); len(s) != 1 {
 		t.Fatalf("%v", s)
 	}
@@ -346,11 +278,11 @@ func TestRefusedOrders(t *testing.T) {
 }
 
 func TestASessionGoesOnAfterARestart(t *testing.T) {
-	store := &memStore{docs: map[string][]byte{}}
-	clock := &fakeClock{now: t0, timers: map[*fakeTimer]bool{}}
+	store := drivertest.NewMemStore()
+	clock := drivertest.NewFakeClock(t0)
 	r := start(t, store, clock)
 	r.open("m1")
-	r.waitFor("the tunnel", func() bool { return r.tun.count() == 1 })
+	drivertest.WaitFor(t, "the tunnel", func() bool { return r.tun.count() == 1 })
 	close(r.tun.last().up)
 	r.steps("opening", "open")
 	r.stop()
@@ -358,7 +290,7 @@ func TestASessionGoesOnAfterARestart(t *testing.T) {
 		t.Fatal("the tunnel closes with the service")
 	}
 	r2 := start(t, store, clock)
-	r2.waitFor("the tunnel again", func() bool { return r2.tun.count() == 1 })
+	drivertest.WaitFor(t, "the tunnel again", func() bool { return r2.tun.count() == 1 })
 	clock.Advance(time.Hour)
 	r2.steps("closed/timeout")
 	if s := r2.broker.msgs[0]; s.DurationS != 3600 || s.User != "kevin" {

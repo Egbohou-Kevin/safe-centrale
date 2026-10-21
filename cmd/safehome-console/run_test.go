@@ -19,23 +19,12 @@ import (
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/hubconfig"
 	"safehome/internal/install"
 )
 
 const site = "tg-lom-0001"
-
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
 
 func freePort(t *testing.T) int {
 	t.Helper()
@@ -169,15 +158,6 @@ func (h *hubSide) closes() int {
 	return n
 }
 
-func waitFor(t *testing.T, logs *syncBuffer, what string, cond func() bool) {
-	t.Helper()
-	for deadline := time.Now().Add(15 * time.Second); !cond(); time.Sleep(20 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s\nlogs:\n%s", what, logs.String())
-		}
-	}
-}
-
 func TestTheConsoleEndToEnd(t *testing.T) {
 	broker := mqtttest.Start(t)
 	port := freePort(t)
@@ -194,7 +174,7 @@ func TestTheConsoleEndToEnd(t *testing.T) {
 	hub.publish(contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus,
 		contract.ZigbeeStatusData{Bridge: contract.BridgeOnline, Devices: 3, Offline: []string{}}, true)
 
-	logs := &syncBuffer{}
+	logs := drivertest.Logs(t)
 	runCtx, stop := context.WithCancel(context.Background())
 	done := make(chan int, 1)
 	go func() { done <- run(runCtx, []string{"run", "-config", consolePath}, io.Discard, logs) }()
@@ -224,7 +204,7 @@ func TestTheConsoleEndToEnd(t *testing.T) {
 	// The hub opens the mode: the network starts, then the page.
 	hub.publish(contract.InstallModeTopic(site), contract.TypeInstallMode,
 		contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(time.Now().Add(30 * time.Minute))}, true)
-	waitFor(t, logs, "the page", func() bool { code, body := page("/"); return code == 200 && strings.Contains(body, "dev_k7p2") })
+	drivertest.WaitFor(t, "the page", func() bool { code, body := page("/"); return code == 200 && strings.Contains(body, "dev_k7p2") })
 	if log, _ := os.ReadFile(nmcliLog); !strings.Contains(string(log), "connection up") {
 		t.Fatalf("nmcli calls: %s", log)
 	}
@@ -247,11 +227,11 @@ func TestTheConsoleEndToEnd(t *testing.T) {
 	if resp, err := http.PostForm(base+"/finish", nil); err == nil {
 		resp.Body.Close()
 	}
-	waitFor(t, logs, "install.close on the broker", func() bool { return hub.closes() == 1 })
+	drivertest.WaitFor(t, "install.close on the broker", func() bool { return hub.closes() == 1 })
 	hub.publish(contract.InstallModeTopic(site), contract.TypeInstallMode,
 		contract.InstallModeData{Status: contract.InstallClosed, Reason: contract.InstallStopped}, true)
-	waitFor(t, logs, "the page gone", func() bool { code, _ := page("/"); return code == 0 })
-	waitFor(t, logs, "the network gone", func() bool {
+	drivertest.WaitFor(t, "the page gone", func() bool { code, _ := page("/"); return code == 0 })
+	drivertest.WaitFor(t, "the network gone", func() bool {
 		log, _ := os.ReadFile(nmcliLog)
 		return strings.HasSuffix(strings.TrimSpace(string(log)), "connection delete")
 	})

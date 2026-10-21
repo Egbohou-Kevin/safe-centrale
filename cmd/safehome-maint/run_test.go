@@ -17,6 +17,7 @@ import (
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/schematest"
 )
 
@@ -36,18 +37,6 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(m.Run())
 }
-
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
 
 func writeConfig(t *testing.T, broker, state, extra string) string {
 	t.Helper()
@@ -71,15 +60,6 @@ func cli(args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
 	code := run(context.Background(), args, &out, &errb)
 	return code, out.String(), errb.String()
-}
-
-func waitFor(t *testing.T, logs *syncBuffer, what string, cond func() bool) {
-	t.Helper()
-	for deadline := time.Now().Add(15 * time.Second); !cond(); time.Sleep(10 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s\nlogs:\n%s", what, logs.String())
-		}
-	}
 }
 
 func TestUsageVersionAndCheck(t *testing.T) {
@@ -181,19 +161,19 @@ func TestATunnelEndToEnd(t *testing.T) {
 	}
 	c.client = client
 
-	logs := &syncBuffer{}
+	logs := drivertest.Logs(t)
 	runCtx, stop := context.WithCancel(context.Background())
 	done := make(chan int, 1)
-	go func() { done <- run(runCtx, []string{"run", "-config", cfg}, &syncBuffer{}, logs) }()
-	waitFor(t, logs, "the service", func() bool { return strings.Contains(logs.String(), "mqtt connected") })
+	go func() { done <- run(runCtx, []string{"run", "-config", cfg}, &drivertest.SyncBuffer{}, logs) }()
+	drivertest.WaitFor(t, "the service", func() bool { return strings.Contains(logs.String(), "mqtt connected") })
 	time.Sleep(300 * time.Millisecond) // its subscription
 
 	c.send(t, contract.TypeMaintOpen, contract.MaintOpenData{Session: "m1", User: "kevin", Reason: "modem silent", DurationS: 1800,
 		Exp: contract.TS(time.Now().Add(time.Minute))})
-	waitFor(t, logs, "open", func() bool { return c.statuses() == "opening open" })
+	drivertest.WaitFor(t, "open", func() bool { return c.statuses() == "opening open" })
 	c.send(t, contract.TypeMaintClose, contract.MaintCloseData{Session: "m1"})
-	waitFor(t, logs, "closed", func() bool { return c.statuses() == "opening open closed/stopped" })
-	waitFor(t, logs, "ssh stopped", func() bool { return strings.Contains(logs.String(), "ssh stopped") })
+	drivertest.WaitFor(t, "closed", func() bool { return c.statuses() == "opening open closed/stopped" })
+	drivertest.WaitFor(t, "ssh stopped", func() bool { return strings.Contains(logs.String(), "ssh stopped") })
 
 	stop()
 	if code := <-done; code != 0 {

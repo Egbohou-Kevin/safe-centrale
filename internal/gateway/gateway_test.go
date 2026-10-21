@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/gsm"
 	"safehome/internal/inbox"
 )
@@ -24,15 +25,13 @@ func TestTheStatusIsRepeatedEvenWhenNothingChanged(t *testing.T) {
 		all := r.broker.ofType(contract.TypeGSMStatus)
 		return all[len(all)-1].env.TS.Time
 	}
-	r.waitTimer(t0.Add(every))
-	r.clock.Advance(every)
-	r.waitFor("the repeated status", func() bool { return len(r.broker.ofType(contract.TypeGSMStatus)) == before+1 })
+	r.clock.PassTimer(t, every)
+	drivertest.WaitFor(t, "the repeated status", func() bool { return len(r.broker.ofType(contract.TypeGSMStatus)) == before+1 })
 	if !stamp().Equal(t0.Add(every)) {
 		t.Fatalf("stamped %v: the hub judges the gateway alive by this time", stamp())
 	}
-	r.waitTimer(t0.Add(2 * every))
-	r.clock.Advance(every)
-	r.waitFor("once more", func() bool { return len(r.broker.ofType(contract.TypeGSMStatus)) == before+2 })
+	r.clock.PassTimer(t, every)
+	drivertest.WaitFor(t, "once more", func() bool { return len(r.broker.ofType(contract.TypeGSMStatus)) == before+2 })
 }
 
 func TestTheLinesStatusIsPublishedRetainedAtStart(t *testing.T) {
@@ -51,7 +50,7 @@ func TestTheLinesStatusIsPublishedRetainedAtStart(t *testing.T) {
 func TestAnSMSRequestIsSentAndReported(t *testing.T) {
 	r := newRig(t, nil)
 	ref := r.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
-	r.waitFor("queued then sent", func() bool { return len(r.results(ref)) == 2 })
+	drivertest.WaitFor(t, "queued then sent", func() bool { return len(r.results(ref)) == 2 })
 	if got := r.results(ref); got[0] != "queued/" || got[1] != "sent/" {
 		t.Fatalf("%v", got)
 	}
@@ -63,7 +62,7 @@ func TestAnSMSRequestIsSentAndReported(t *testing.T) {
 	}
 	// The operator confirms the delivery.
 	r.gw.Delivered("line1", "1", true)
-	r.waitFor("delivered", func() bool { return len(r.results(ref)) == 3 })
+	drivertest.WaitFor(t, "delivered", func() bool { return len(r.results(ref)) == 3 })
 	if got := r.results(ref); got[2] != "delivered/" {
 		t.Fatalf("%v", got)
 	}
@@ -73,7 +72,7 @@ func TestAnSMSRequestIsSentAndReported(t *testing.T) {
 func TestACallRequestRingsTheContact(t *testing.T) {
 	r := newRig(t, nil)
 	ref := r.request(contract.ChannelCall, "u_owner", contract.AlertFire)
-	r.waitFor("sent", func() bool { return len(r.results(ref)) == 2 })
+	drivertest.WaitFor(t, "sent", func() bool { return len(r.results(ref)) == 2 })
 	if _, calls, _, _ := r.modem.count(); calls != 1 {
 		t.Fatalf("%d calls", calls)
 	}
@@ -83,7 +82,7 @@ func TestRequestsForOtherChannelsAndDuplicatesAreIgnored(t *testing.T) {
 	r := newRig(t, nil)
 	app := r.request(contract.ChannelApp, "u_owner", contract.AlertIntrusion)
 	ref := r.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
-	r.waitFor("sent", func() bool { return len(r.results(ref)) == 2 })
+	drivertest.WaitFor(t, "sent", func() bool { return len(r.results(ref)) == 2 })
 	// The same request delivered again by the broker.
 	env, _ := contract.NewEnvelope(site, "escalation", 1, ref, t0, contract.TypeAlertRequest, contract.AlertRequestData{
 		Incident: "inc1", Kind: contract.AlertIntrusion, Urgency: "high", Contact: "u_owner", Channel: contract.ChannelSMS,
@@ -97,8 +96,7 @@ func TestRequestsForOtherChannelsAndDuplicatesAreIgnored(t *testing.T) {
 	other, _ := contract.NewEnvelope("tg-lom-0002", "escalation", 1, r.ids.New(), t0, contract.TypeAlertRequest, contract.AlertRequestData{Contact: "u_owner", Channel: contract.ChannelSMS})
 	b, _ = json.Marshal(other)
 	r.gw.HandleMessage(inbox.Message{Topic: contract.AlertRequestTopic(site), Payload: b})
-	r.gw.loop.Do(context.Background(), func(time.Time) []gsm.Action { return nil })
-	time.Sleep(20 * time.Millisecond)
+	r.settle()
 	if sent, _, _, _ := r.modem.count(); sent != 1 {
 		t.Fatalf("%d SMS", sent)
 	}
@@ -113,11 +111,11 @@ func TestAModemFailureIsReportedWithItsReason(t *testing.T) {
 	r.modem.sendErr = fmt.Errorf("modem said +CMS ERROR: 21: %w", ErrNoCredit)
 	r.modem.mu.Unlock()
 	ref := r.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
-	r.waitFor("the failure", func() bool { return len(r.results(ref)) == 2 })
+	drivertest.WaitFor(t, "the failure", func() bool { return len(r.results(ref)) == 2 })
 	if got := r.results(ref); got[1] != "failed/no_credit" {
 		t.Fatalf("%v", got)
 	}
-	r.waitFor("the status to say so", func() bool { return r.status().Lines[0].Credit == "empty" && r.status().Queued == 1 })
+	drivertest.WaitFor(t, "the status to say so", func() bool { return r.status().Lines[0].Credit == "empty" && r.status().Queued == 1 })
 	r.validateAll()
 }
 
@@ -136,15 +134,15 @@ func TestReasons(t *testing.T) {
 func TestAnSMSAnswer1BecomesAnAcknowledgement(t *testing.T) {
 	r := newRig(t, nil)
 	ref := r.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
-	r.waitFor("sent", func() bool { return len(r.results(ref)) == 2 })
+	drivertest.WaitFor(t, "sent", func() bool { return len(r.results(ref)) == 2 })
 	r.gw.Incoming("line1", "+22890123456", "1")
 	r.gw.Incoming("line1", "+22899999999", "1") // a stranger
-	r.waitFor("the acknowledgement", func() bool { return len(r.broker.ofType(contract.TypeAlertAck)) == 1 })
+	drivertest.WaitFor(t, "the acknowledgement", func() bool { return len(r.broker.ofType(contract.TypeAlertAck)) == 1 })
 	d, _ := contract.DecodeData[contract.AlertAckData](r.broker.ofType(contract.TypeAlertAck)[0].env)
 	if d.Incident != "inc1" || d.Contact != "u_owner" || d.Via != "sms" {
 		t.Fatalf("%+v", d)
 	}
-	r.waitFor("the stranger to be logged", func() bool { return strings.Contains(r.logs.String(), "unknown number") })
+	drivertest.WaitFor(t, "the stranger to be logged", func() bool { return strings.Contains(r.logs.String(), "unknown number") })
 	r.validateAll()
 }
 
@@ -156,10 +154,10 @@ func TestASilentModemIsRestarted(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		_, _, before, _ := r.modem.count()
 		r.clock.Advance(30 * time.Second)
-		r.waitFor("a check", func() bool { _, _, n, _ := r.modem.count(); return n > before })
+		drivertest.WaitFor(r.t, "a check", func() bool { _, _, n, _ := r.modem.count(); return n > before })
 	}
-	r.waitFor("the restart", func() bool { _, _, _, n := r.modem.count(); return n == 1 })
-	r.waitFor("the line back", func() bool { st := r.status(); return st.Lines[0].Responding && st.Lines[0].Restarts == 1 })
+	drivertest.WaitFor(t, "the restart", func() bool { _, _, _, n := r.modem.count(); return n == 1 })
+	drivertest.WaitFor(t, "the line back", func() bool { st := r.status(); return st.Lines[0].Responding && st.Lines[0].Restarts == 1 })
 	if !strings.Contains(r.logs.String(), "restarting it") {
 		t.Fatal("the restart must be logged")
 	}
@@ -172,19 +170,19 @@ func TestTheQueueSurvivesARestartOfTheGateway(t *testing.T) {
 	first.modem.sendErr = ErrNoNetwork
 	first.modem.mu.Unlock()
 	ref := first.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
-	first.waitFor("the failure", func() bool { return len(first.results(ref)) == 2 })
+	drivertest.WaitFor(t, "the failure", func() bool { return len(first.results(ref)) == 2 })
 	first.gw.loop.Do(context.Background(), func(time.Time) []gsm.Action { return nil })
 	first.stop()
 
 	second := newRig(t, first.store)
 	second.clock.Advance(10 * time.Second) // past the wait before the next try
-	second.waitFor("the SMS after the restart", func() bool { sent, _, _, _ := second.modem.count(); return sent == 1 })
-	second.waitFor("sent", func() bool { return len(second.results(ref)) == 1 && second.results(ref)[0] == "sent/" })
+	drivertest.WaitFor(t, "the SMS after the restart", func() bool { sent, _, _, _ := second.modem.count(); return sent == 1 })
+	drivertest.WaitFor(t, "sent", func() bool { return len(second.results(ref)) == 1 && second.results(ref)[0] == "sent/" })
 }
 
 func TestConfigurationAndDependenciesAreChecked(t *testing.T) {
 	good := DefaultConfig(site, gsm.DefaultConfig([]gsm.Line{{ID: "line1"}}, nil))
-	deps := Deps{Clock: &fakeClock{now: t0, timers: map[*fakeTimer]bool{}}, Store: &memStore{docs: map[string][]byte{}}, Publisher: &fakeBroker{}, NewID: contract.NewIDGenerator().New,
+	deps := Deps{Clock: drivertest.NewFakeClock(t0), Store: drivertest.NewMemStore(), Publisher: &fakeBroker{}, NewID: contract.NewIDGenerator().New,
 		Lines: map[string]Modem{"line1": &fakeModem{}}}
 	if _, err := New(good, deps); err != nil {
 		t.Fatal(err)
@@ -234,7 +232,7 @@ func TestARequestHeldByTheBrokerTooLongIsGivenUp(t *testing.T) {
 	r := newRig(t, nil)
 	// Written eleven minutes ago, while the gateway was down.
 	ref := r.requestAt(t0.Add(-11*time.Minute), contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
-	r.waitFor("the failure", func() bool { return len(r.results(ref)) == 1 })
+	drivertest.WaitFor(t, "the failure", func() bool { return len(r.results(ref)) == 1 })
 	if got := r.results(ref); got[0] != "failed/timeout" {
 		t.Fatalf("%v", got)
 	}
@@ -250,7 +248,7 @@ func failingRequest(r *rig) {
 	r.modem.sendErr = ErrNoNetwork
 	r.modem.mu.Unlock()
 	ref := r.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
-	r.waitFor("the failure", func() bool { return len(r.results(ref)) == 2 })
+	drivertest.WaitFor(r.t, "the failure", func() bool { return len(r.results(ref)) == 2 })
 	r.modem.mu.Lock()
 	r.modem.sendErr = nil // the network is back
 	r.modem.mu.Unlock()
@@ -259,10 +257,11 @@ func failingRequest(r *rig) {
 // noSMSAfterRetry lets the retry time pass and checks that nothing left.
 func noSMSAfterRetry(r *rig) {
 	r.t.Helper()
-	r.waitFor("the queue to be empty", func() bool { return r.status().Queued == 0 })
+	drivertest.WaitFor(r.t, "the queue to be empty", func() bool { return r.status().Queued == 0 })
 	r.clock.Advance(time.Minute)
-	r.gw.loop.Do(context.Background(), func(time.Time) []gsm.Action { return nil })
-	time.Sleep(20 * time.Millisecond)
+	// A tick on the loop, whether its timer has fired yet or not: what is due goes now.
+	r.gw.loop.Do(context.Background(), func(now time.Time) []gsm.Action { return r.gw.core.Handle(gsm.Tick{Now: now}) })
+	r.settle()
 	if sent, _, _, _ := r.modem.count(); sent != 0 {
 		r.t.Fatal("an SMS went out after the incident ended")
 	}

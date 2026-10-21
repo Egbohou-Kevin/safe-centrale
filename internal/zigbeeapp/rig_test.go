@@ -1,7 +1,6 @@
 package zigbeeapp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/inbox"
 	"safehome/internal/schematest"
 	"safehome/internal/zigbee"
@@ -21,73 +21,6 @@ const site = "tg-lom-0001"
 var t0 = time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)
 
 // --- fakes ---------------------------------------------------------------------
-
-type fakeClock struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers map[*fakeTimer]bool
-}
-
-type fakeTimer struct {
-	when time.Time
-	c    chan time.Time
-}
-
-func (c *fakeClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
-
-func (c *fakeClock) Timer(d time.Duration) (<-chan time.Time, func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	t := &fakeTimer{when: c.now.Add(d), c: make(chan time.Time, 1)}
-	if d <= 0 {
-		t.c <- c.now
-		return t.c, func() {}
-	}
-	c.timers[t] = true
-	return t.c, func() { c.mu.Lock(); delete(c.timers, t); c.mu.Unlock() }
-}
-
-func (c *fakeClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = c.now.Add(d)
-	for t := range c.timers {
-		if !t.when.After(c.now) {
-			t.c <- c.now
-			delete(c.timers, t)
-		}
-	}
-}
-
-func (c *fakeClock) hasTimerAt(when time.Time) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for t := range c.timers {
-		if t.when.Equal(when) {
-			return true
-		}
-	}
-	return false
-}
-
-type memStore struct {
-	mu   sync.Mutex
-	docs map[string][]byte
-}
-
-func (s *memStore) Save(name string, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.docs[name] = append([]byte(nil), data...)
-	return nil
-}
-
-func (s *memStore) Load(name string) ([]byte, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	d, ok := s.docs[name]
-	return d, ok, nil
-}
 
 type published struct {
 	topic  string
@@ -139,18 +72,6 @@ func (b *fakeBroker) on(topic string) []published {
 	return out
 }
 
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
-
 // --- profiles ------------------------------------------------------------------
 
 func profiles() []zigbee.Profile {
@@ -184,24 +105,24 @@ func profiles() []zigbee.Profile {
 type rig struct {
 	t      *testing.T
 	app    *App
-	clock  *fakeClock
-	store  *memStore
+	clock  *drivertest.FakeClock
+	store  *drivertest.MemStore
 	broker *fakeBroker
-	logs   *syncBuffer
+	logs   *drivertest.SyncBuffer
 	ids    *contract.IDGenerator
 	devIDs chan string
 	cancel context.CancelFunc
 	done   chan struct{}
 }
 
-func newRig(t *testing.T, store *memStore, mutate ...func(*Config)) *rig {
+func newRig(t *testing.T, store *drivertest.MemStore, mutate ...func(*Config)) *rig {
 	t.Helper()
 	if store == nil {
-		store = &memStore{docs: map[string][]byte{}}
+		store = drivertest.NewMemStore()
 	}
 	r := &rig{
-		t: t, clock: &fakeClock{now: t0, timers: map[*fakeTimer]bool{}}, store: store, broker: &fakeBroker{},
-		logs: &syncBuffer{}, ids: contract.NewIDGenerator(), devIDs: make(chan string, 10),
+		t: t, clock: drivertest.NewFakeClock(t0), store: store, broker: &fakeBroker{},
+		logs: drivertest.Logs(t), ids: contract.NewIDGenerator(), devIDs: make(chan string, 10),
 	}
 	cfg := DefaultConfig(site, zigbee.DefaultConfig(profiles()))
 	cfg.Outbox.RetryMin, cfg.Outbox.RetryMax = time.Millisecond, 5*time.Millisecond
@@ -228,7 +149,7 @@ func newRig(t *testing.T, store *memStore, mutate ...func(*Config)) *rig {
 	r.cancel, r.done = cancel, make(chan struct{})
 	go func() { app.Run(ctx); close(r.done) }()
 	t.Cleanup(r.stop)
-	r.waitFor("the first status", func() bool { return len(r.broker.ofType(contract.TypeZigbeeStatus)) > 0 })
+	drivertest.WaitFor(r.t, "the first status", func() bool { return len(r.broker.ofType(contract.TypeZigbeeStatus)) > 0 })
 	return r
 }
 
@@ -242,22 +163,11 @@ func (r *rig) stop() {
 	<-r.done
 }
 
-func (r *rig) waitFor(what string, cond func() bool) {
-	r.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			r.t.Fatalf("timed out waiting for %s\nlogs:\n%s", what, r.logs.String())
-		}
-		time.Sleep(time.Millisecond)
-	}
-}
-
 // settle waits until the loop has handled everything handed to it so far.
 func (r *rig) settle() {
 	r.t.Helper()
 	r.app.loop.Do(context.Background(), func(time.Time) []zigbee.Action { return nil })
-	r.waitFor("the outbox to empty", func() bool { return r.app.out.Depth() == 0 })
+	drivertest.WaitFor(r.t, "the outbox to empty", func() bool { return r.app.out.Depth() == 0 })
 }
 
 // z2m delivers a Zigbee2MQTT message.
@@ -307,7 +217,7 @@ func (r *rig) pair(id, ieee, model string) {
 	r.devIDs <- id
 	r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 120})
 	r.z2m("bridge/event", `{"type":"device_interview","data":{"ieee_address":"`+ieee+`","status":"successful","supported":true,"definition":{"model":"`+model+`"}}}`, false)
-	r.waitFor(id+" added", func() bool {
+	drivertest.WaitFor(r.t, id+" added", func() bool {
 		return slices.ContainsFunc(r.registry().Devices, func(d contract.RegistryDevice) bool { return d.DeviceID == id })
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 )
 
@@ -29,7 +30,7 @@ func TestASirenOrderThatDidNotTakeIsSentAgainForWhatIsLeft(t *testing.T) {
 	// The adapter was down: it saw the order after its exp, 40 s into the cycle.
 	r.clock.Advance(40 * time.Second)
 	sirenAnswers(r, sirenOrders(r)[0], contract.CmdExpired, "")
-	r.waitFor("the order again", func() bool { r.settle(); return len(sirenOrders(r)) == 2 })
+	drivertest.WaitFor(t, "the order again", func() bool { r.settle(); return len(sirenOrders(r)) == 2 })
 	cmd := dataOf[contract.DeviceCommandData](t, sirenOrders(r)[1])
 	if cmd.Command != contract.CmdSirenOn || cmd.Args.DurationS != 260 || cmd.Exp == nil ||
 		!cmd.Exp.Equal(r.clock.Now().Add(30*time.Second)) {
@@ -98,8 +99,8 @@ func TestTheBootDoesNotRepeatASirenOrderOfTheBootWindow(t *testing.T) {
 	second.clock.Advance(10 * time.Minute) // in cycle 2, four minutes left
 	second.startWithoutWaiting()
 	second.device(devDoor, contract.CapContact, "closed")
-	second.passTimer(300 * time.Millisecond)
-	second.waitFor("the boot", func() bool { return len(second.broker.ofType(contract.TypeInstallMode)) > 0 })
+	second.clock.PassTimer(t, 300*time.Millisecond)
+	drivertest.WaitFor(t, "the boot", func() bool { return len(second.broker.ofType(contract.TypeInstallMode)) > 0 })
 	second.settle()
 	var on []contract.DeviceCommandData
 	for _, o := range sirenOrders(second) {

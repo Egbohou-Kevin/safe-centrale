@@ -1,10 +1,10 @@
 package configapp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -12,31 +12,14 @@ import (
 	"time"
 
 	"safehome/internal/contract"
-	"safehome/internal/driver"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/inbox"
 	"safehome/internal/schematest"
 )
 
 const site = "tg-lom-0001"
 
-type memStore struct {
-	mu   sync.Mutex
-	docs map[string][]byte
-}
-
-func (s *memStore) Save(name string, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.docs[name] = append([]byte(nil), data...)
-	return nil
-}
-
-func (s *memStore) Load(name string) ([]byte, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	d, ok := s.docs[name]
-	return d, ok, nil
-}
+var t0 = time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC)
 
 type broker struct {
 	mu      sync.Mutex
@@ -72,23 +55,12 @@ func (b *broker) last() (contract.ConfigAppliedData, int) {
 	return b.answers[len(b.answers)-1], len(b.answers)
 }
 
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
-
 type rig struct {
 	t        *testing.T
 	app      *App
 	broker   *broker
-	logs     *syncBuffer
+	logs     *drivertest.SyncBuffer
+	clock    *drivertest.FakeClock
 	ids      *contract.IDGenerator
 	mu       sync.Mutex
 	saved    []contract.ConfigSetData
@@ -100,10 +72,10 @@ type rig struct {
 
 func start(t *testing.T, cfg Config) *rig {
 	t.Helper()
-	r := &rig{t: t, broker: &broker{}, logs: &syncBuffer{}, ids: contract.NewIDGenerator()}
+	r := &rig{t: t, broker: &broker{}, logs: drivertest.Logs(t), clock: drivertest.NewFakeClock(t0), ids: contract.NewIDGenerator()}
 	cfg.Outbox.RetryMin, cfg.Outbox.RetryMax = 5*time.Millisecond, 20*time.Millisecond
 	app, err := New(cfg, Deps{
-		Clock: driver.SystemClock(), Store: &memStore{docs: map[string][]byte{}}, Publisher: r.broker, NewID: r.ids.New,
+		Clock: r.clock, Store: drivertest.NewMemStore(), Publisher: r.broker, NewID: r.ids.New,
 		Check: func(contract.ConfigSetData) error { r.mu.Lock(); defer r.mu.Unlock(); return r.checkErr },
 		Save: func(d contract.ConfigSetData) error {
 			r.mu.Lock()
@@ -131,7 +103,7 @@ func start(t *testing.T, cfg Config) *rig {
 
 func (r *rig) send(topic, typ string, data any) {
 	r.t.Helper()
-	env, err := contract.NewEnvelope(site, "cloud", 1, r.ids.New(), time.Now(), typ, data)
+	env, err := contract.NewEnvelope(site, "cloud", 1, r.ids.New(), r.clock.Now(), typ, data)
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -144,14 +116,14 @@ func (r *rig) config(d contract.ConfigSetData) {
 }
 
 func (r *rig) alarm(state string) {
-	r.send(contract.AlarmStateTopic(site), contract.TypeAlarmState, contract.AlarmStateData{State: state, Since: contract.TS(time.Now())})
+	r.send(contract.AlarmStateTopic(site), contract.TypeAlarmState, contract.AlarmStateData{State: state, Since: contract.TS(r.clock.Now())})
 }
 
 // install publishes the installation mode as the hub does: open when reason is empty.
 func (r *rig) install(reason string) {
 	d := contract.InstallModeData{Status: contract.InstallClosed, Reason: reason}
 	if reason == "" {
-		d = contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(time.Now().Add(30 * time.Minute))}
+		d = contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(r.clock.Now().Add(30 * time.Minute))}
 	}
 	r.send(contract.InstallModeTopic(site), contract.TypeInstallMode, d)
 }
@@ -162,14 +134,16 @@ func (r *rig) restarted() int { r.mu.Lock(); defer r.mu.Unlock(); return r.resta
 
 func (r *rig) waitAnswer(n int) contract.ConfigAppliedData {
 	r.t.Helper()
-	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(5 * time.Millisecond) {
-		if d, got := r.broker.last(); got >= n {
-			return d
-		}
-		if time.Now().After(deadline) {
-			r.t.Fatalf("no answer %d\nlogs:\n%s", n, r.logs.String())
-		}
-	}
+	drivertest.WaitFor(r.t, fmt.Sprintf("answer %d", n), func() bool { _, got := r.broker.last(); return got >= n })
+	d, _ := r.broker.last()
+	return d
+}
+
+// sent waits until every answer given so far has left: HandleMessage puts an answer
+// in the outbox before it returns.
+func (r *rig) sent() {
+	r.t.Helper()
+	drivertest.WaitFor(r.t, "the outbox to empty", func() bool { return r.app.out.Depth() == 0 })
 }
 
 func phoneConfig(version int) contract.ConfigSetData {
@@ -348,11 +322,11 @@ func TestRefusals(t *testing.T) {
 		t.Fatal("nothing refused is kept or applied")
 	}
 	// Ignored: another site, another type, a duplicate, garbage.
-	env, _ := contract.NewEnvelope("tg-lom-9999", "cloud", 1, r.ids.New(), time.Now(), contract.TypeConfigSet, phoneConfig(9))
+	env, _ := contract.NewEnvelope("tg-lom-9999", "cloud", 1, r.ids.New(), r.clock.Now(), contract.TypeConfigSet, phoneConfig(9))
 	b, _ := json.Marshal(env)
 	r.app.HandleMessage(inbox.Message{Topic: contract.ConfigSetTopic(site), Payload: b})
 	r.app.HandleMessage(inbox.Message{Topic: contract.ConfigSetTopic(site), Payload: []byte("{")})
-	time.Sleep(50 * time.Millisecond)
+	r.sent()
 	if _, n := r.broker.last(); n != 7 {
 		t.Fatalf("%d answers", n)
 	}
@@ -369,9 +343,15 @@ func TestAConfigurationThatCouldNotBeLoadedIsRefusedAtStart(t *testing.T) {
 
 func TestNothingToSayWithoutConfiguration(t *testing.T) {
 	r := start(t, DefaultConfig(site, 0))
-	time.Sleep(50 * time.Millisecond)
-	if _, n := r.broker.last(); n != 0 {
-		t.Fatal("no configuration from the cloud: no answer")
+	// An answer to a bad configuration: it leaves once Run is under way, after
+	// anything Run would have said at start.
+	bad := phoneConfig(1)
+	bad.EntryDelayS = 900
+	r.config(bad)
+	r.waitAnswer(1)
+	r.sent()
+	if d, n := r.broker.last(); n != 1 || d.Status != contract.ConfigRejected {
+		t.Fatalf("no configuration from the cloud: no answer at start, got %d, the last %+v", n, d)
 	}
 	if subs := r.app.Subscriptions(); len(subs) != 3 {
 		t.Fatalf("%+v", subs)

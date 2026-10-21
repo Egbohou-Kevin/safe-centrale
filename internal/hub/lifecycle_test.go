@@ -12,6 +12,7 @@ import (
 	"safehome/internal/access"
 	"safehome/internal/contract"
 	"safehome/internal/driver"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 	"safehome/internal/inbox"
 )
@@ -51,26 +52,26 @@ func TestBootLearnsTheDevicesFromRetainedStates(t *testing.T) {
 func TestBootWaitsForTheLinkBeforeItsWindowStarts(t *testing.T) {
 	r := newRig(t, nil, func(c *Config) { c.BootWindow = 20 * time.Millisecond; c.LinkWait = 10 * time.Second })
 	r.startWithoutWaiting()
-	r.waitFor("the wait for the link", func() bool { return r.clock.pending(t0.Add(10 * time.Second)) })
+	r.clock.WaitTimer(t, t0.Add(10*time.Second))
 	r.clock.Advance(time.Second) // far longer than the window
 	r.settle()
-	if len(r.broker.on(contract.AlarmStateTopic(site))) != 0 || r.clock.pending(t0.Add(time.Second+20*time.Millisecond)) {
+	if len(r.broker.on(contract.AlarmStateTopic(site))) != 0 || r.clock.HasTimer(t0.Add(time.Second+20*time.Millisecond)) {
 		t.Fatal("the hub booted before the link was up")
 	}
 	// The retained state arrives only now, after the window would have ended.
 	r.send(contract.DeviceStateTopic(site, devBack, contract.CapContact), contract.TypeDeviceState, event(devBack, contract.CapContact, "open"))
 	r.hub.LinkUp()
 	r.hub.LinkUp() // harmless twice
-	r.passTimer(20 * time.Millisecond)
-	r.waitFor("the first state", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) > 0 })
+	r.clock.PassTimer(t, 20*time.Millisecond)
+	drivertest.WaitFor(t, "the first state", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) > 0 })
 }
 
 func TestBootGivesUpWaitingForTheLink(t *testing.T) {
 	r := newRig(t, nil, func(c *Config) { c.BootWindow = 10 * time.Millisecond; c.LinkWait = 80 * time.Millisecond })
 	r.startWithoutWaiting()
-	r.passTimer(80 * time.Millisecond)
-	r.passTimer(10 * time.Millisecond)
-	r.waitFor("the boot without a link", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) > 0 })
+	r.clock.PassTimer(t, 80*time.Millisecond)
+	r.clock.PassTimer(t, 10*time.Millisecond)
+	drivertest.WaitFor(t, "the boot without a link", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) > 0 })
 	if !strings.Contains(r.logs.String(), "the broker link did not come up in time") {
 		t.Fatalf("the late link is said:\n%s", r.logs.String())
 	}
@@ -103,7 +104,7 @@ func TestARestartKeepsTheAlarmArmedAndTheCodes(t *testing.T) {
 	second.mustBe(engine.ModeArmed)
 	// The code survived: the owner can disarm.
 	second.keypad(contract.ValDisarm, "482915")
-	second.waitFor("disarmed", func() bool { return len(eventsOf(second, contract.TypeAlarmDisarmed)) == 1 })
+	drivertest.WaitFor(t, "disarmed", func() bool { return len(eventsOf(second, contract.TypeAlarmDisarmed)) == 1 })
 	second.mustBe(engine.ModeDisarmed)
 }
 
@@ -181,7 +182,7 @@ func TestConfigValidation(t *testing.T) {
 	for name, mutate := range bad {
 		c := testConfig()
 		mutate(&c)
-		if _, err := New(c, Deps{Clock: newFakeClock(), Store: newMemStore(), Publisher: &fakeBroker{}, NewID: func() string { return "x" }}); err == nil {
+		if _, err := New(c, Deps{Clock: drivertest.NewFakeClock(t0), Store: drivertest.NewMemStore(), Publisher: &fakeBroker{}, NewID: func() string { return "x" }}); err == nil {
 			t.Errorf("%s: want an error", name)
 		}
 	}
@@ -197,9 +198,9 @@ func TestConfigValidation(t *testing.T) {
 
 func TestNewRefusesADamagedSavedState(t *testing.T) {
 	for _, key := range []string{keyEngine, keyHealth, keyAccess, keySeq} {
-		store := newMemStore()
-		store.docs[key] = []byte(`{"broken": [`)
-		clock := newFakeClock()
+		store := drivertest.NewMemStore()
+		store.Save(key, []byte(`{"broken": [`))
+		clock := drivertest.NewFakeClock(t0)
 		_, err := New(testConfig(), Deps{Clock: clock, Store: store, Publisher: &fakeBroker{}, NewID: contract.NewIDGeneratorWith(clock.Now, &entropy{}).New})
 		if err == nil {
 			t.Errorf("a damaged %s must stop the start", key)
@@ -238,7 +239,7 @@ func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 	r.settle2()
 
 	r.cancel()
-	r.waitFor("the engine to stop", func() bool {
+	drivertest.WaitFor(t, "the engine to stop", func() bool {
 		return errors.Is(r.hub.alarm.loop.Alive(context.Background()), driver.ErrStopped)
 	})
 	r.keypad(contract.ValArmNow, "")
@@ -338,9 +339,9 @@ func TestEachCapabilityKeepsItsOwnRetainedState(t *testing.T) {
 	// A state on the topic of another capability is refused.
 	r.send(contract.DeviceStateTopic(site, devDoor, contract.CapBattery), contract.TypeDeviceState, event(devDoor, contract.CapContact, "open"))
 	r.start()
-	r.waitFor("the first state", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) > 0 })
+	drivertest.WaitFor(t, "the first state", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) > 0 })
 	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_owner")
-	r.waitFor("the reply", func() bool { return len(eventsOf(r, contract.TypeAlarmAck)) == 1 })
+	drivertest.WaitFor(t, "the reply", func() bool { return len(eventsOf(r, contract.TypeAlarmAck)) == 1 })
 	ack := dataOf[contract.AlarmAckData](t, eventsOf(r, contract.TypeAlarmAck)[0])
 	devs, _ := ack.Detail["devices"].([]any)
 	if ack.Status != contract.AckRefused || len(devs) != 1 || devs[0] != devBack {

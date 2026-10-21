@@ -15,6 +15,7 @@ import (
 
 	"safehome/internal/adapter/filestore"
 	"safehome/internal/consoleapp"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/escalation"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
@@ -26,7 +27,7 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	logs := &syncBuffer{}
+	logs := drivertest.Logs(t)
 	c := codes{hubConfig: hubPath, log: slog.New(slog.NewTextHandler(logs, nil))}
 
 	people, leftovers, err := c.People()

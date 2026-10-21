@@ -12,6 +12,7 @@ import (
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/schematest"
 )
 
@@ -21,7 +22,7 @@ type live struct {
 	broker  *mqtttest.Broker
 	cfgPath string
 	state   string
-	logs    *syncBuffer
+	logs    *drivertest.SyncBuffer
 	cancel  context.CancelFunc
 	done    chan int
 	client  *mqtt.Client
@@ -35,7 +36,7 @@ type live struct {
 
 func startLive(t *testing.T, broker *mqtttest.Broker, state, cfgPath string) *live {
 	t.Helper()
-	l := &live{t: t, broker: broker, cfgPath: cfgPath, state: state, logs: &syncBuffer{}, ids: contract.NewIDGenerator(), got: make(chan struct{}, 1024)}
+	l := &live{t: t, broker: broker, cfgPath: cfgPath, state: state, logs: drivertest.Logs(t), ids: contract.NewIDGenerator(), got: make(chan struct{}, 1024)}
 	l.client = dialTestClient(t, broker.URL(), l)
 	l.startHub()
 	t.Cleanup(func() { l.stopHub() })
@@ -72,7 +73,7 @@ func (l *live) startHub() {
 	l.cancel = cancel
 	l.done = make(chan int, 1)
 	go func() {
-		l.done <- run(ctx, []string{"run", "-config", l.cfgPath}, strings.NewReader(""), &syncBuffer{}, l.logs)
+		l.done <- run(ctx, []string{"run", "-config", l.cfgPath}, strings.NewReader(""), &drivertest.SyncBuffer{}, l.logs)
 	}()
 }
 
@@ -134,17 +135,6 @@ func (l *live) seen(typ string) []contract.Envelope {
 	return out
 }
 
-func (l *live) waitFor(what string, cond func() bool) {
-	l.t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			l.t.Fatalf("timed out waiting for %s\nhub logs:\n%s", what, l.logs.String())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
 func (l *live) lastState() string {
 	states := l.seen(contract.TypeAlarmState)
 	if len(states) == 0 {
@@ -156,12 +146,12 @@ func (l *live) lastState() string {
 
 func (l *live) waitState(want string) {
 	l.t.Helper()
-	l.waitFor("state "+want, func() bool { return l.lastState() == want })
+	drivertest.WaitFor(l.t, "state "+want, func() bool { return l.lastState() == want })
 }
 
 func (l *live) waitCount(typ string, n int) {
 	l.t.Helper()
-	l.waitFor(fmt.Sprintf("%d x %s", n, typ), func() bool { return len(l.seen(typ)) >= n })
+	drivertest.WaitFor(l.t, fmt.Sprintf("%d x %s", n, typ), func() bool { return len(l.seen(typ)) >= n })
 }
 
 func (l *live) siren() []contract.DeviceCommandData {
@@ -251,7 +241,7 @@ func (l *live) applied() []contract.ConfigAppliedData {
 
 func (l *live) waitApplied(n int) contract.ConfigAppliedData {
 	l.t.Helper()
-	l.waitFor(fmt.Sprintf("%d config.applied", n), func() bool { return len(l.applied()) >= n })
+	drivertest.WaitFor(l.t, fmt.Sprintf("%d config.applied", n), func() bool { return len(l.applied()) >= n })
 	return l.applied()[n-1]
 }
 

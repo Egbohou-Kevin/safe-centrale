@@ -1,7 +1,6 @@
 package go2rtc
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,11 +12,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"safehome/internal/adapter/go2rtc/go2rtctest"
+	"safehome/internal/driver/drivertest"
 )
 
 func TestMain(m *testing.M) {
@@ -25,27 +24,15 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
-
 const (
 	good   = "rtsp://admin:camPW%2199@192.168.1.10/stream2"
 	target = "rtmps://relay.safehome.example/live/s1?token=tok%2Bsecret"
 )
 
-func fake(t *testing.T, sources map[string]string) (*Runner, *syncBuffer) {
+func fake(t *testing.T, sources map[string]string) (*Runner, *drivertest.SyncBuffer) {
 	t.Helper()
 	go2rtctest.Enable(t)
-	logs := &syncBuffer{}
+	logs := &drivertest.SyncBuffer{}
 	r, err := New(Options{Binary: os.Args[0], Sources: sources, Logger: slog.New(slog.NewTextHandler(logs, nil))})
 	if err != nil {
 		t.Fatal(err)
@@ -262,16 +249,13 @@ func freePort(t *testing.T) int {
 func waitListening(t *testing.T, port int) {
 	t.Helper()
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	for deadline := time.Now().Add(10 * time.Second); ; {
-		if c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond); err == nil {
+	drivertest.WaitFor(t, "a listener on "+addr, func() bool {
+		c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err == nil {
 			c.Close()
-			return
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("nothing listens on %s", addr)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return err == nil
+	})
 }
 
 // background starts a helper process for the test and stops it at the end.
@@ -354,13 +338,13 @@ func TestARealH265CameraIsRefused(t *testing.T) {
 func TestARealStreamFromACameraToARelay(t *testing.T) {
 	bin := needVideoTools(t)
 	camPort, relayPort := camera(t, bin, "libx264"), freePort(t)
-	relayLog := &syncBuffer{}
+	relayLog := drivertest.Logs(t) // the relay's, shown if the test fails
 	relayDone := background(t, relayLog, "ffmpeg", "-nostdin", "-hide_banner", "-listen", "1",
 		"-i", fmt.Sprintf("rtmp://127.0.0.1:%d/live/s1", relayPort), "-c", "copy", "-f", "null", "-")
 	// Not the relay: ffmpeg takes the first connection for the stream. go2rtc tries
 	// again every 5 s if it is not listening yet.
 
-	logs := &syncBuffer{}
+	logs := &drivertest.SyncBuffer{}
 	r, err := New(Options{Binary: bin, Sources: map[string]string{"cam": fmt.Sprintf("rtsp://viewer:camPW@127.0.0.1:%d/cam", camPort)},
 		Logger: slog.New(slog.NewTextHandler(logs, nil))})
 	if err != nil {
@@ -383,11 +367,7 @@ func TestARealStreamFromACameraToARelay(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(relayLog.String(), "Video: h264"); time.Sleep(100 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("the relay did not get H.264:\n%s", relayLog.String())
-		}
-	}
+	drivertest.WaitFor(t, "H.264 at the relay", func() bool { return strings.Contains(relayLog.String(), "Video: h264") })
 	if n2, _ := s.Sent(ctx); n2 <= n {
 		t.Fatalf("the count stopped at %d", n)
 	}
@@ -415,7 +395,7 @@ func TestTheRealGo2rtcStartsAndAnswers(t *testing.T) {
 	closed, _ := net.Listen("tcp", "127.0.0.1:0")
 	addr := closed.Addr().String()
 	closed.Close()
-	logs := &syncBuffer{}
+	logs := &drivertest.SyncBuffer{}
 	r, err := New(Options{Binary: bin, Sources: map[string]string{"cam": "rtsp://u:pw@" + addr + "/x"}, Logger: slog.New(slog.NewTextHandler(logs, nil))})
 	if err != nil {
 		t.Fatal(err)
@@ -434,7 +414,7 @@ func TestRealPhotosFromACamera(t *testing.T) {
 	bin := needVideoTools(t)
 	privateTemp(t)
 	port := camera(t, bin, "libx264")
-	logs := &syncBuffer{}
+	logs := &drivertest.SyncBuffer{}
 	r, err := New(Options{Binary: bin, Logger: slog.New(slog.NewTextHandler(logs, nil)), Sources: map[string]string{
 		"cam_caisse": fmt.Sprintf("rtsp://viewer:camPW@127.0.0.1:%d/cam", port),
 		"cam_cour":   fmt.Sprintf("rtsp://viewer:camPW@127.0.0.1:%d/cam", freePort(t)),

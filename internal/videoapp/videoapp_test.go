@@ -1,7 +1,6 @@
 package videoapp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,7 +12,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
-	"safehome/internal/driver"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/inbox"
 	"safehome/internal/schematest"
 	"safehome/internal/video"
@@ -21,26 +20,9 @@ import (
 
 const site = "tg-lom-0001"
 
+var t0 = time.Date(2026, 10, 20, 21, 0, 0, 0, time.UTC)
+
 // --- fakes ---------------------------------------------------------------------------
-
-type memStore struct {
-	mu   sync.Mutex
-	docs map[string][]byte
-}
-
-func (s *memStore) Save(name string, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.docs[name] = append([]byte(nil), data...)
-	return nil
-}
-
-func (s *memStore) Load(name string) ([]byte, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	d, ok := s.docs[name]
-	return d, ok, nil
-}
 
 type fakeBroker struct {
 	mu   sync.Mutex
@@ -104,39 +86,6 @@ func (b *fakeBroker) has(session string, status string, reason string) bool {
 		}
 	}
 	return false
-}
-
-// fakeClock moves when told.
-type fakeClock struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers map[chan time.Time]time.Time
-}
-
-func (c *fakeClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
-
-func (c *fakeClock) Timer(d time.Duration) (<-chan time.Time, func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	fired := make(chan time.Time, 1)
-	if d <= 0 {
-		fired <- c.now
-		return fired, func() {}
-	}
-	c.timers[fired] = c.now.Add(d)
-	return fired, func() { c.mu.Lock(); delete(c.timers, fired); c.mu.Unlock() }
-}
-
-func (c *fakeClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = c.now.Add(d)
-	for fired, when := range c.timers {
-		if !when.After(c.now) {
-			fired <- c.now
-			delete(c.timers, fired)
-		}
-	}
 }
 
 type fakeStream struct {
@@ -254,18 +203,6 @@ func (m *memPhotos) size(id string) (int, bool) {
 	return n, ok
 }
 
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
-
 // --- harness -------------------------------------------------------------------------
 
 type harness struct {
@@ -275,18 +212,14 @@ type harness struct {
 	stream  *fakeStreamer
 	camera  *fakeCamera
 	photos  *memPhotos
-	logs    *syncBuffer
+	logs    *drivertest.SyncBuffer
+	clock   *drivertest.FakeClock
 	ids     *contract.IDGenerator
 	stopRun func()
 	done    chan struct{}
 }
 
 func start(t *testing.T, edit ...func(*Config)) *harness {
-	t.Helper()
-	return startOn(t, driver.SystemClock(), edit...)
-}
-
-func startOn(t *testing.T, clock driver.Clock, edit ...func(*Config)) *harness {
 	t.Helper()
 	v := video.DefaultConfig([]video.Camera{{ID: "cam_caisse", Name: "Caisse"}, {ID: "cam_cour", Name: "Cour"}})
 	v.StartTimeout, v.StallAfter = 2*time.Second, 2*time.Second
@@ -296,13 +229,13 @@ func startOn(t *testing.T, clock driver.Clock, edit ...func(*Config)) *harness {
 		e(&cfg)
 	}
 	h := &harness{
-		t: t, broker: &fakeBroker{ret: map[string]bool{}}, logs: &syncBuffer{}, ids: contract.NewIDGenerator(),
+		t: t, broker: &fakeBroker{ret: map[string]bool{}}, logs: drivertest.Logs(t), clock: drivertest.NewFakeClock(t0), ids: contract.NewIDGenerator(),
 		stream: &fakeStreamer{streams: map[string]*fakeStream{}, startErr: map[string]error{}, down: map[string]bool{}},
 		camera: &fakeCamera{frameErr: map[string]error{}}, photos: &memPhotos{saved: map[string]int{}},
 		done: make(chan struct{}),
 	}
 	app, err := New(cfg, Deps{
-		Clock: clock, Store: &memStore{docs: map[string][]byte{}}, Publisher: h.broker,
+		Clock: h.clock, Store: drivertest.NewMemStore(), Publisher: h.broker,
 		Streamer: h.stream, Camera: h.camera, Photos: h.photos, NewID: h.ids.New, Logger: slog.New(slog.NewTextHandler(h.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	})
 	if err != nil {
@@ -327,7 +260,7 @@ func (h *harness) stop() {
 
 func (h *harness) send(typ string, data any) {
 	h.t.Helper()
-	env, err := contract.NewEnvelope(site, "cloud", 1, h.ids.New(), time.Now(), typ, data)
+	env, err := contract.NewEnvelope(site, "cloud", 1, h.ids.New(), h.clock.Now(), typ, data)
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -339,46 +272,58 @@ func (h *harness) request(session, camera string) {
 	h.send(contract.TypeVideoRequest, contract.VideoRequestData{
 		Session: session, Camera: camera, Reason: contract.VideoOnDemand, User: "u_owner",
 		PushURL: "rtmps://relay.safehome.example/live/" + session, Token: "tok-" + session + "-secret",
-		Exp: contract.TS(time.Now().Add(30 * time.Second)),
+		Exp: contract.TS(h.clock.Now().Add(30 * time.Second)),
 	})
 }
 
-func (h *harness) waitFor(what string, cond func() bool) {
+// idle waits until the loop has taken what was given to it and the work away from
+// it (probes, photos) is over. Not while a stream runs: its work ends with it.
+func (h *harness) idle() {
 	h.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			h.t.Fatalf("timed out waiting for %s\nsessions: %+v\nlogs:\n%s", what, h.broker.sessions(), h.logs.String())
+	h.app.Alive(context.Background())
+	done := make(chan struct{})
+	go func() { h.app.work.Wait(); close(done) }()
+	drivertest.WaitFor(h.t, "the work away from the loop", func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
 		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	})
+	h.app.Alive(context.Background())
 }
+
+// progress lets a stream's bytes be read once more.
+func (h *harness) progress() { h.t.Helper(); h.clock.PassTimer(h.t, h.app.cfg.ProgressEvery) }
 
 // --- tests ---------------------------------------------------------------------------
 
 func TestASessionFromRequestToStop(t *testing.T) {
 	h := start(t)
 	h.request("s1", "cam_caisse")
-	h.waitFor("the stream", func() bool { return h.stream.stream("cam_caisse") != nil })
+	drivertest.WaitFor(t, "the stream", func() bool { return h.stream.stream("cam_caisse") != nil })
 	h.stream.mu.Lock()
 	target := h.stream.targets[0]
 	h.stream.mu.Unlock()
 	if target != "rtmps://relay.safehome.example/live/s1?token=tok-s1-secret" {
 		t.Fatalf("%q", target)
 	}
-	h.waitFor("starting", func() bool { return h.broker.has("s1", contract.VideoStarting, "") })
-	h.waitFor("one session in the status", func() bool { return h.broker.status().Active == 1 })
+	drivertest.WaitFor(t, "starting", func() bool { return h.broker.has("s1", contract.VideoStarting, "") })
+	drivertest.WaitFor(t, "one session in the status", func() bool { return h.broker.status().Active == 1 })
 
 	s := h.stream.stream("cam_caisse")
 	s.set(250_000, nil)
-	h.waitFor("live", func() bool { return h.broker.has("s1", contract.VideoLive, "") })
+	h.progress()
+	drivertest.WaitFor(t, "live", func() bool { return h.broker.has("s1", contract.VideoLive, "") })
 	s.set(3<<20, nil)
-	h.waitFor("the usage", func() bool { return h.broker.status().UsedMBMonth == 3 })
+	h.progress()
+	drivertest.WaitFor(t, "the usage", func() bool { return h.broker.status().UsedMBMonth == 3 })
 
 	h.send(contract.TypeVideoStop, contract.VideoStopData{Session: "s1"})
-	h.waitFor("ended", func() bool { return h.broker.has("s1", contract.VideoEnded, contract.VideoStopped) })
-	h.waitFor("the stream stopped", s.isStopped)
-	h.waitFor("no session in the status", func() bool { return h.broker.status().Active == 0 })
+	drivertest.WaitFor(t, "ended", func() bool { return h.broker.has("s1", contract.VideoEnded, contract.VideoStopped) })
+	drivertest.WaitFor(t, "the stream stopped", s.isStopped)
+	drivertest.WaitFor(t, "no session in the status", func() bool { return h.broker.status().Active == 0 })
 
 	for _, d := range h.broker.sessions() {
 		raw, _ := json.Marshal(d)
@@ -405,42 +350,45 @@ func TestTheCameraDoesNotAnswer(t *testing.T) {
 	h := start(t)
 	h.stream.startErr["cam_cour"] = fmt.Errorf("streams: dial tcp: refused: %w", ErrCameraUnreachable)
 	h.request("s1", "cam_cour")
-	h.waitFor("failed", func() bool { return h.broker.has("s1", contract.VideoFailed, contract.VideoCameraUnreachable) })
+	drivertest.WaitFor(t, "failed", func() bool { return h.broker.has("s1", contract.VideoFailed, contract.VideoCameraUnreachable) })
 }
 
 func TestAnyOtherStartErrorIsTheRelays(t *testing.T) {
 	h := start(t)
 	h.stream.startErr["cam_cour"] = errors.New("go2rtc did not start")
 	h.request("s1", "cam_cour")
-	h.waitFor("failed", func() bool { return h.broker.has("s1", contract.VideoFailed, contract.VideoRelayUnreachable) })
+	drivertest.WaitFor(t, "failed", func() bool { return h.broker.has("s1", contract.VideoFailed, contract.VideoRelayUnreachable) })
 }
 
 func TestAStreamThatBreaksEndsTheSession(t *testing.T) {
 	h := start(t)
 	h.request("s1", "cam_caisse")
-	h.waitFor("the stream", func() bool { return h.stream.stream("cam_caisse") != nil })
+	drivertest.WaitFor(t, "the stream", func() bool { return h.stream.stream("cam_caisse") != nil })
 	s := h.stream.stream("cam_caisse")
 	s.set(1000, nil)
-	h.waitFor("live", func() bool { return h.broker.has("s1", contract.VideoLive, "") })
+	h.progress()
+	drivertest.WaitFor(t, "live", func() bool { return h.broker.has("s1", contract.VideoLive, "") })
 	s.set(1000, errors.New("go2rtc exited"))
-	h.waitFor("ended", func() bool { return h.broker.has("s1", contract.VideoEnded, contract.VideoRelayUnreachable) })
-	h.waitFor("stopped", s.isStopped)
+	h.progress()
+	drivertest.WaitFor(t, "ended", func() bool { return h.broker.has("s1", contract.VideoEnded, contract.VideoRelayUnreachable) })
+	drivertest.WaitFor(t, "stopped", s.isStopped)
 }
 
 func TestNothingReachesTheRelay(t *testing.T) {
 	h := start(t)
 	h.request("s1", "cam_caisse")
-	h.waitFor("failed after the start timeout", func() bool {
+	h.clock.PassTimer(t, 2*time.Second) // the start timeout
+	drivertest.WaitFor(t, "failed after the start timeout", func() bool {
 		return h.broker.has("s1", contract.VideoFailed, contract.VideoRelayUnreachable)
 	})
-	h.waitFor("stopped", h.stream.stream("cam_caisse").isStopped)
+	drivertest.WaitFor(t, "stopped", h.stream.stream("cam_caisse").isStopped)
 }
 
 func TestStoppingTheServiceStopsEveryStream(t *testing.T) {
 	h := start(t)
 	h.request("s1", "cam_caisse")
 	h.request("s2", "cam_cour")
-	h.waitFor("two streams", func() bool { return h.stream.stream("cam_caisse") != nil && h.stream.stream("cam_cour") != nil })
+	drivertest.WaitFor(t, "two streams", func() bool { return h.stream.stream("cam_caisse") != nil && h.stream.stream("cam_cour") != nil })
 	h.stop()
 	if !h.stream.stream("cam_caisse").isStopped() || !h.stream.stream("cam_cour").isStopped() {
 		t.Fatal("a stream outlived the service")
@@ -452,7 +400,7 @@ func TestCamerasAreProbed(t *testing.T) {
 	h.stream.mu.Lock()
 	h.stream.down["cam_cour"] = true
 	h.stream.mu.Unlock()
-	h.waitFor("the probe", func() bool {
+	drivertest.WaitFor(t, "the probe", func() bool {
 		st := h.broker.status()
 		return len(st.Cameras) == 2 && st.Cameras[0].Reachable
 	})
@@ -464,27 +412,24 @@ func TestCamerasAreProbed(t *testing.T) {
 // video.status is retained and goes to the cloud, on mobile data maybe: sent again
 // unchanged every minute, it cost some 20 MB a month for nothing.
 func TestTheStatusGoesOutOnChangeOnly(t *testing.T) {
-	clock := &fakeClock{now: time.Date(2026, 10, 20, 21, 0, 0, 0, time.UTC), timers: map[chan time.Time]time.Time{}}
-	h := startOn(t, clock)
+	h := start(t)
 	reachable := func(want bool) func() bool {
 		return func() bool { st := h.broker.status(); return len(st.Cameras) == 2 && st.Cameras[1].Reachable == want }
 	}
-	h.waitFor("the first probe", reachable(true))
+	drivertest.WaitFor(t, "the first probe", reachable(true))
 	before := h.broker.count(contract.TypeVideoStatus)
 	for range 12 { // two probes, the same answers
-		clock.Advance(time.Minute)
-		h.app.Alive(context.Background())
+		h.clock.Advance(time.Minute)
+		h.idle() // the probes' answers too
 	}
-	time.Sleep(20 * time.Millisecond) // the probes' answers
-	h.app.Alive(context.Background())
 	if n := h.broker.count(contract.TypeVideoStatus); n != before {
 		t.Fatalf("%d statuses published without a change", n-before)
 	}
 	h.stream.mu.Lock()
 	h.stream.down["cam_cour"] = true
 	h.stream.mu.Unlock()
-	clock.Advance(5 * time.Minute)
-	h.waitFor("the camera unreachable", reachable(false))
+	h.clock.Advance(5 * time.Minute)
+	drivertest.WaitFor(t, "the camera unreachable", reachable(false))
 	if n := h.broker.count(contract.TypeVideoStatus); n != before+1 {
 		t.Fatalf("%d statuses for one change", n-before)
 	}
@@ -494,26 +439,28 @@ func TestBadOrdersAreIgnored(t *testing.T) {
 	h := start(t)
 	ok := func(session string) contract.VideoRequestData {
 		return contract.VideoRequestData{Session: session, Camera: "cam_caisse", Reason: contract.VideoOnDemand,
-			PushURL: "rtmps://relay.example/live/x", Token: "t", Exp: contract.TS(time.Now().Add(time.Minute))}
+			PushURL: "rtmps://relay.example/live/x", Token: "t", Exp: contract.TS(h.clock.Now().Add(time.Minute))}
 	}
 	bad := ok("s1")
 	bad.PushURL = "rtmp://relay.example/live/x" // not encrypted
 	h.send(contract.TypeVideoRequest, bad)
 	h.send(contract.TypeVideoStop, contract.VideoStopData{})
 	h.send(contract.TypeAlarmCommand, contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp})
-	env, _ := contract.NewEnvelope("tg-lom-9999", "cloud", 1, h.ids.New(), time.Now(), contract.TypeVideoRequest, ok("s2"))
+	env, _ := contract.NewEnvelope("tg-lom-9999", "cloud", 1, h.ids.New(), h.clock.Now(), contract.TypeVideoRequest, ok("s2"))
 	b, _ := json.Marshal(env)
 	h.app.HandleMessage(inbox.Message{Topic: contract.VideoCmdTopic(site), Payload: b})
 	h.app.HandleMessage(inbox.Message{Topic: contract.VideoCmdTopic(site), Payload: []byte("{")})
 	h.app.HandleMessage(inbox.Message{Topic: contract.AlarmCmdTopic(site), Payload: b})
 
 	// A duplicate is ignored too.
-	env, _ = contract.NewEnvelope(site, "cloud", 1, h.ids.New(), time.Now(), contract.TypeVideoRequest, ok("s3"))
+	env, _ = contract.NewEnvelope(site, "cloud", 1, h.ids.New(), h.clock.Now(), contract.TypeVideoRequest, ok("s3"))
 	b, _ = json.Marshal(env)
 	h.app.HandleMessage(inbox.Message{Topic: contract.VideoCmdTopic(site), Payload: b})
 	h.app.HandleMessage(inbox.Message{Topic: contract.VideoCmdTopic(site), Payload: b})
-	h.waitFor("s3 starting", func() bool { return h.broker.has("s3", contract.VideoStarting, "") })
-	time.Sleep(50 * time.Millisecond)
+	drivertest.WaitFor(t, "s3 starting", func() bool { return h.broker.has("s3", contract.VideoStarting, "") })
+	drivertest.WaitFor(t, "s3's stream", func() bool { return h.stream.stream("cam_caisse") != nil })
+	h.app.Alive(context.Background()) // every order taken
+	drivertest.WaitFor(t, "the outbox to empty", func() bool { return h.app.out.Depth() == 0 })
 	h.stream.mu.Lock()
 	n := len(h.stream.targets)
 	h.stream.mu.Unlock()
@@ -547,7 +494,7 @@ func TestConfigValidation(t *testing.T) {
 
 func (h *harness) alarm(incident string) {
 	h.t.Helper()
-	env, _ := contract.NewEnvelope(site, "engine", 1, h.ids.New(), time.Now(), contract.TypeAlarmTriggered,
+	env, _ := contract.NewEnvelope(site, "engine", 1, h.ids.New(), h.clock.Now(), contract.TypeAlarmTriggered,
 		contract.TriggeredData{Incident: incident, DeviceID: "dev_door", Capability: contract.CapContact, Zone: "entrance"})
 	b, _ := json.Marshal(env)
 	h.app.HandleMessage(inbox.Message{Topic: contract.AlarmEventTopic(site), Payload: b})
@@ -574,10 +521,14 @@ func quickPhotos(c *Config) {
 func TestAnAlarmIsPhotographedAndEachPhotoAnnounced(t *testing.T) {
 	h := start(t, quickPhotos)
 	h.alarm("inc1")
-	h.waitFor("four photos", func() bool { return len(h.broker.photos()) == 4 })
-	time.Sleep(600 * time.Millisecond)
+	h.clock.PassTimer(t, 500*time.Millisecond) // between the two rounds
+	h.idle()
+	if frames, opened, _ := h.camera.count(); frames != 4 || opened != 1 {
+		t.Fatalf("%d pictures, camera opened %d times: one set per alarm", frames, opened)
+	}
+	drivertest.WaitFor(t, "the outbox to empty", func() bool { return h.app.out.Depth() == 0 })
 	if n := len(h.broker.photos()); n != 4 {
-		t.Fatalf("%d photos: one set per alarm", n)
+		t.Fatalf("%d photos announced", n)
 	}
 	for _, p := range h.broker.photos() {
 		raw, _ := json.Marshal(p)
@@ -594,7 +545,7 @@ func TestAnAlarmIsPhotographedAndEachPhotoAnnounced(t *testing.T) {
 	if order != "cam_caisse@320 cam_cour@320 cam_caisse@320 cam_cour@320" {
 		t.Fatalf("%s", order)
 	}
-	h.waitFor("the camera freed", func() bool { _, o, c := h.camera.count(); return o == 1 && c == 1 })
+	drivertest.WaitFor(t, "the camera freed", func() bool { _, o, c := h.camera.count(); return o == 1 && c == 1 })
 	h.broker.mu.Lock()
 	retained := h.broker.ret[contract.PhotoTakenTopic(site)]
 	h.broker.mu.Unlock()
@@ -607,8 +558,9 @@ func TestACameraWithoutPictureIsLeftOut(t *testing.T) {
 	h := start(t, quickPhotos)
 	h.camera.frameErr["cam_cour"] = fmt.Errorf("%w: no picture", ErrCameraUnreachable)
 	h.alarm("inc1")
-	h.waitFor("two photos", func() bool { return len(h.broker.photos()) == 2 })
-	h.waitFor("the end", func() bool { return strings.Contains(h.logs.String(), "photos of the alarm taken") })
+	h.clock.PassTimer(t, 500*time.Millisecond) // between the two rounds
+	drivertest.WaitFor(t, "two photos", func() bool { return len(h.broker.photos()) == 2 })
+	drivertest.WaitFor(t, "the end", func() bool { return strings.Contains(h.logs.String(), "photos of the alarm taken") })
 	if f, _, _ := h.camera.count(); f != 2 || strings.Count(h.logs.String(), "a camera gave no photo") != 1 {
 		t.Fatalf("%d frames\n%s", f, h.logs.String())
 	}
@@ -618,7 +570,7 @@ func TestPhotosThatCannotBeTakenOrKept(t *testing.T) {
 	h := start(t, quickPhotos)
 	h.camera.openErr = errors.New("go2rtc: did not start")
 	h.alarm("inc1")
-	h.waitFor("the failure said", func() bool { return strings.Contains(h.logs.String(), "could not be taken") })
+	drivertest.WaitFor(t, "the failure said", func() bool { return strings.Contains(h.logs.String(), "could not be taken") })
 
 	h.camera.mu.Lock()
 	h.camera.openErr = nil
@@ -627,12 +579,13 @@ func TestPhotosThatCannotBeTakenOrKept(t *testing.T) {
 	h.photos.err = errors.New("disk full")
 	h.photos.mu.Unlock()
 	h.alarm("inc2")
-	h.waitFor("the failure said", func() bool { return strings.Count(h.logs.String(), "could not be kept") == 4 })
+	h.clock.PassTimer(t, 500*time.Millisecond) // between the two rounds
+	drivertest.WaitFor(t, "the failure said", func() bool { return strings.Count(h.logs.String(), "could not be kept") == 4 })
 	if len(h.broker.photos()) != 0 {
 		t.Fatal("a photo not kept is not announced")
 	}
 	// Other alarm events, and garbage, take no photo.
-	env, _ := contract.NewEnvelope(site, "engine", 1, h.ids.New(), time.Now(), contract.TypeAlarmArmed, contract.ArmedData{})
+	env, _ := contract.NewEnvelope(site, "engine", 1, h.ids.New(), h.clock.Now(), contract.TypeAlarmArmed, contract.ArmedData{})
 	b, _ := json.Marshal(env)
 	h.app.HandleMessage(inbox.Message{Topic: contract.AlarmEventTopic(site), Payload: b})
 	h.app.HandleMessage(inbox.Message{Topic: contract.AlarmEventTopic(site), Payload: []byte("{")})
@@ -645,5 +598,5 @@ func TestTooManyAlarmsAnHour(t *testing.T) {
 	h := start(t, func(c *Config) { quickPhotos(c); c.Video.Photos.PerHour, c.Video.Photos.Count = 1, 1 })
 	h.alarm("inc1")
 	h.alarm("inc2")
-	h.waitFor("the limit said", func() bool { return strings.Contains(h.logs.String(), "no photos for this alarm") })
+	drivertest.WaitFor(t, "the limit said", func() bool { return strings.Contains(h.logs.String(), "no photos for this alarm") })
 }

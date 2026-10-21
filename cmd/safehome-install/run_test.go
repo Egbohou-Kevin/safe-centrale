@@ -15,6 +15,7 @@ import (
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/hubconfig"
 	"safehome/internal/install"
 )
@@ -362,7 +363,7 @@ func TestWatchShowsEventsWithZoneNamesAndNoCode(t *testing.T) {
 	a := startAdapter(t, ctx, broker.URL(), exampleDevices())
 
 	watchCtx, stopWatch := context.WithCancel(ctx)
-	var out syncBuffer
+	var out drivertest.SyncBuffer
 	done := make(chan int)
 	go func() { done <- run(watchCtx, []string{"watch", "-config", path}, &out, &out) }()
 
@@ -384,24 +385,6 @@ func TestWatchShowsEventsWithZoneNamesAndNoCode(t *testing.T) {
 	if strings.Contains(out.String(), "482916") {
 		t.Fatal("a keypad code was shown")
 	}
-}
-
-// syncBuffer is a buffer the tool writes to while the test reads it.
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
 }
 
 func containsAll(s string, parts []string) bool {

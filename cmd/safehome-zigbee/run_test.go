@@ -15,6 +15,7 @@ import (
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/schematest"
 )
 
@@ -90,18 +91,6 @@ func TestASecondAdapterOnTheSameStateIsRefused(t *testing.T) {
 	}
 }
 
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
-
 // fake is the test's MQTT client: it plays Zigbee2MQTT, the engine and the
 // installer, and records everything.
 type fake struct {
@@ -154,17 +143,6 @@ func (f *fake) order(t *testing.T, topic, typ string, data any) string {
 	return id
 }
 
-func waitFor(t *testing.T, logs *syncBuffer, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s\nlogs:\n%s", what, logs.String())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
 func TestTheAdapterEndToEndWithASimulatedZigbee2MQTT(t *testing.T) {
 	broker := mqtttest.Start(t)
 	state := t.TempDir()
@@ -188,10 +166,10 @@ func TestTheAdapterEndToEndWithASimulatedZigbee2MQTT(t *testing.T) {
 	f.client = client
 	f.publish(t, "zigbee2mqtt/bridge/state", `{"state":"online"}`, true) // retained, as Zigbee2MQTT does
 
-	logs := &syncBuffer{}
+	logs := drivertest.Logs(t)
 	runCtx, stop := context.WithCancel(context.Background())
 	done := make(chan int, 1)
-	go func() { done <- run(runCtx, []string{"run", "-config", cfg}, &syncBuffer{}, logs) }()
+	go func() { done <- run(runCtx, []string{"run", "-config", cfg}, &drivertest.SyncBuffer{}, logs) }()
 	defer func() {
 		stop()
 		select {
@@ -208,16 +186,16 @@ func TestTheAdapterEndToEndWithASimulatedZigbee2MQTT(t *testing.T) {
 		d, _ := contract.DecodeData[contract.ZigbeeStatusData](st[len(st)-1])
 		return d
 	}
-	waitFor(t, logs, "the bridge online", func() bool { return status().Bridge == contract.BridgeOnline })
+	drivertest.WaitFor(t, "the bridge online", func() bool { return status().Bridge == contract.BridgeOnline })
 
 	// The installer pairs a door sensor and a siren.
 	pair := func(ieee, model string) string {
 		t.Helper()
 		before := len(f.of(contract.TypeRegistryDeviceAdded))
 		f.order(t, contract.RegistryCmdTopic(site), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 120})
-		waitFor(t, logs, "the network open", func() bool { return status().Pairing })
+		drivertest.WaitFor(t, "the network open", func() bool { return status().Pairing })
 		f.publish(t, "zigbee2mqtt/bridge/event", `{"type":"device_interview","data":{"ieee_address":"`+ieee+`","status":"successful","supported":true,"definition":{"model":"`+model+`"}}}`, false)
-		waitFor(t, logs, model+" added", func() bool { return len(f.of(contract.TypeRegistryDeviceAdded)) == before+1 })
+		drivertest.WaitFor(t, model+" added", func() bool { return len(f.of(contract.TypeRegistryDeviceAdded)) == before+1 })
 		d, _ := contract.DecodeData[contract.RegistryDeviceAddedData](f.of(contract.TypeRegistryDeviceAdded)[before])
 		return d.DeviceID
 	}
@@ -240,8 +218,8 @@ func TestTheAdapterEndToEndWithASimulatedZigbee2MQTT(t *testing.T) {
 		}
 		return false
 	}
-	waitFor(t, logs, "the door event", contactEvent)
-	waitFor(t, logs, "the door's state, retained on its own topic", func() bool {
+	drivertest.WaitFor(t, "the door event", contactEvent)
+	drivertest.WaitFor(t, "the door's state, retained on its own topic", func() bool {
 		return len(f.on(contract.DeviceStateTopic(site, door, contract.CapContact))) > 0
 	})
 
@@ -250,13 +228,13 @@ func TestTheAdapterEndToEndWithASimulatedZigbee2MQTT(t *testing.T) {
 		DeviceID: siren, Command: contract.CmdSirenOn, Args: contract.DeviceCommandArgs{DurationS: 300},
 		Exp: contract.TSPtr(time.Now().Add(30 * time.Second)),
 	})
-	waitFor(t, logs, "the siren request", func() bool { return len(f.on("zigbee2mqtt/0x00158d0001000002/set")) == 1 })
+	drivertest.WaitFor(t, "the siren request", func() bool { return len(f.on("zigbee2mqtt/0x00158d0001000002/set")) == 1 })
 	var body map[string]map[string]any
 	json.Unmarshal(f.on("zigbee2mqtt/0x00158d0001000002/set")[0].Payload, &body)
 	if body["warning"]["mode"] != "burglar" || body["warning"]["duration"] != 300.0 {
 		t.Fatalf("%v", body)
 	}
-	waitFor(t, logs, "the acknowledgements", func() bool { return len(f.on(contract.DeviceAckTopic(site, siren))) == 2 })
+	drivertest.WaitFor(t, "the acknowledgements", func() bool { return len(f.on(contract.DeviceAckTopic(site, siren))) == 2 })
 	for _, m := range f.on(contract.DeviceAckTopic(site, siren)) {
 		env, _ := contract.ParseEnvelope(m.Payload)
 		a, _ := contract.DecodeData[contract.CommandAckData](env)

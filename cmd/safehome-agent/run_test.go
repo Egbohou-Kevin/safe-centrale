@@ -20,6 +20,7 @@ import (
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/contract"
+	"safehome/internal/driver/drivertest"
 	"safehome/internal/schematest"
 )
 
@@ -92,18 +93,6 @@ func TestASecondAgentOnTheSameStateIsRefused(t *testing.T) {
 		t.Fatalf("%d %q", code, errb)
 	}
 }
-
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
 
 // side is a test client on one broker: it plays the hub's programs, or the cloud.
 type side struct {
@@ -183,17 +172,6 @@ func (s *side) has(typ, id string) bool {
 	return false
 }
 
-func waitFor(t *testing.T, logs *syncBuffer, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s\nlogs:\n%s", what, logs.String())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
 // internet stands between the agent and the cloud's broker: cut drops the
 // connections and refuses new ones, as a dead link would, while the broker and the
 // test's own cloud client go on.
@@ -269,10 +247,10 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	hub := newSide(t, ctx, hubBroker.URL(), "")
 	cloud := newSide(t, ctx, cloudBroker.TLSURL(), files.CA)
 
-	logs := &syncBuffer{}
+	logs := drivertest.Logs(t)
 	runCtx, stop := context.WithCancel(context.Background())
 	done := make(chan int, 1)
-	go func() { done <- run(runCtx, []string{"run", "-config", cfg}, &syncBuffer{}, logs) }()
+	go func() { done <- run(runCtx, []string{"run", "-config", cfg}, &drivertest.SyncBuffer{}, logs) }()
 	defer func() {
 		stop()
 		select {
@@ -282,7 +260,7 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	}()
 
 	// The agent tells the hub the internet is up, over TLS.
-	waitFor(t, logs, "the link up on the hub", func() bool {
+	drivertest.WaitFor(t, "the link up on the hub", func() bool {
 		st := hub.lastStatus()
 		return st.Uplink == contract.UplinkUp && st.Transport == "mqtts"
 	})
@@ -290,18 +268,18 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	// An alarm goes up to the cloud.
 	triggered := contract.TriggeredData{Incident: "inc1", DeviceID: "dev_door", Capability: contract.CapContact, Zone: "Entree"}
 	first := hub.publish(contract.AlarmEventTopic(site), "engine.alarm", contract.TypeAlarmTriggered, triggered)
-	waitFor(t, logs, "the alarm on the cloud", func() bool { return cloud.has(contract.TypeAlarmTriggered, first) })
+	drivertest.WaitFor(t, "the alarm on the cloud", func() bool { return cloud.has(contract.TypeAlarmTriggered, first) })
 
 	// The app arms the alarm from the cloud: the order reaches the hub, and so does a
 	// new configuration. A configuration without version does not, and the agent says
 	// so.
 	order := cloud.publish(contract.AlarmCmdTopic(site), "cloud", contract.TypeAlarmCommand,
 		contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp, User: "u_owner"})
-	waitFor(t, logs, "the order on the hub", func() bool { return hub.has(contract.TypeAlarmCommand, order) })
+	drivertest.WaitFor(t, "the order on the hub", func() bool { return hub.has(contract.TypeAlarmCommand, order) })
 	conf := cloud.publish(contract.ConfigSetTopic(site), "cloud", contract.TypeConfigSet, contract.ConfigSetData{Version: 2, EntryDelayS: 30})
-	waitFor(t, logs, "the configuration on the hub", func() bool { return hub.has(contract.TypeConfigSet, conf) })
+	drivertest.WaitFor(t, "the configuration on the hub", func() bool { return hub.has(contract.TypeConfigSet, conf) })
 	cloud.publish(contract.ConfigSetTopic(site), "cloud", contract.TypeConfigSet, contract.ConfigSetData{EntryDelayS: 30})
-	waitFor(t, logs, "the bad configuration refused", func() bool { return strings.Contains(logs.String(), "refused a message from the cloud") })
+	drivertest.WaitFor(t, "the bad configuration refused", func() bool { return strings.Contains(logs.String(), "refused a message from the cloud") })
 
 	// A photo of the alarm: announced to the cloud, which says where to send it; the
 	// agent sends the file over HTTPS, says so, and removes it.
@@ -312,12 +290,12 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	taken := hub.publish(contract.PhotoTakenTopic(site), "video", contract.TypePhotoTaken, contract.PhotoTakenData{
 		Photo: "01JB8ZQ7V2T4X9H6N5R0WYCE00", Incident: "inc1", Camera: "cam_caisse", Bytes: int64(len(jpeg)), Width: 640,
 	})
-	waitFor(t, logs, "photo.taken on the cloud", func() bool { return cloud.has(contract.TypePhotoTaken, taken) })
+	drivertest.WaitFor(t, "photo.taken on the cloud", func() bool { return cloud.has(contract.TypePhotoTaken, taken) })
 	cloud.publish(contract.PhotoCmdTopic(site), "cloud", contract.TypePhotoUpload, contract.PhotoUploadData{
 		Photo: "01JB8ZQ7V2T4X9H6N5R0WYCE00", URL: endpoint.url + "/v1/photos/01JB8ZQ7V2T4X9H6N5R0WYCE00",
 		Token: "tok-photo-secret", Exp: contract.TS(time.Now().Add(10 * time.Minute)),
 	})
-	waitFor(t, logs, "photo.sent on the cloud", func() bool { return len(cloud.of(contract.TypePhotoSent)) == 1 })
+	drivertest.WaitFor(t, "photo.sent on the cloud", func() bool { return len(cloud.of(contract.TypePhotoSent)) == 1 })
 	if got := endpoint.received(); !bytes.Equal(got, jpeg) {
 		t.Fatalf("the endpoint got %q", got)
 	}
@@ -331,16 +309,16 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	// The internet goes down: the hub hears it, and an alarm raised meanwhile waits on
 	// the disk until the cloud is back.
 	link.cut()
-	waitFor(t, logs, "the link down on the hub", func() bool { return hub.lastStatus().Uplink == contract.UplinkDown })
+	drivertest.WaitFor(t, "the link down on the hub", func() bool { return hub.lastStatus().Uplink == contract.UplinkDown })
 	second := hub.publish(contract.AlarmEventTopic(site), "engine.alarm", contract.TypeAlarmTriggered, triggered)
-	waitFor(t, logs, "the alarm queued", func() bool { return hub.lastStatus().Queued > 0 || strings.Contains(logs.String(), "queued=1") })
+	drivertest.WaitFor(t, "the alarm queued", func() bool { return hub.lastStatus().Queued > 0 || strings.Contains(logs.String(), "queued=1") })
 	waiting := filepath.Join(state, queueName, second+".json") // a file of its own, not the whole queue
-	waitFor(t, logs, "the alarm on the disk", func() bool { _, err := os.Stat(waiting); return err == nil })
+	drivertest.WaitFor(t, "the alarm on the disk", func() bool { _, err := os.Stat(waiting); return err == nil })
 	link.restore()
-	waitFor(t, logs, "the queued alarm on the cloud", func() bool { return cloud.has(contract.TypeAlarmTriggered, second) })
-	waitFor(t, logs, "the alarm off the disk", func() bool { _, err := os.Stat(waiting); return os.IsNotExist(err) })
-	waitFor(t, logs, "the link up again", func() bool { return hub.lastStatus().Uplink == contract.UplinkUp })
-	waitFor(t, logs, "the site online on the cloud", func() bool { return cloud.lastStatus().Uplink == contract.UplinkUp })
+	drivertest.WaitFor(t, "the queued alarm on the cloud", func() bool { return cloud.has(contract.TypeAlarmTriggered, second) })
+	drivertest.WaitFor(t, "the alarm off the disk", func() bool { _, err := os.Stat(waiting); return os.IsNotExist(err) })
+	drivertest.WaitFor(t, "the link up again", func() bool { return hub.lastStatus().Uplink == contract.UplinkUp })
+	drivertest.WaitFor(t, "the site online on the cloud", func() bool { return cloud.lastStatus().Uplink == contract.UplinkUp })
 
 	// The cloud numbers what it got without a hole, whatever stayed on the site, and
 	// gets a message again by asking for its number.
@@ -364,11 +342,11 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 		}
 	}
 	cloud.publish(contract.AgentCmdTopic(site), "cloud", contract.TypeAgentReplay, contract.ReplayData{From: firstSeq, To: firstSeq})
-	waitFor(t, logs, "agent.replayed on the cloud", func() bool { return len(cloud.of(contract.TypeAgentReplayed)) == 1 })
+	drivertest.WaitFor(t, "agent.replayed on the cloud", func() bool { return len(cloud.of(contract.TypeAgentReplayed)) == 1 })
 	if d, _ := contract.DecodeData[contract.ReplayedData](cloud.of(contract.TypeAgentReplayed)[0]); d.Resent != 1 || len(d.Missing) != 0 {
 		t.Fatalf("replayed %+v, want the first alarm resent", d)
 	}
-	waitFor(t, logs, "the first alarm again on the cloud", func() bool {
+	drivertest.WaitFor(t, "the first alarm again on the cloud", func() bool {
 		n := 0
 		for _, env := range cloud.of(contract.TypeAlarmTriggered) {
 			if env.ID == first && env.Seq == firstSeq {
@@ -388,7 +366,7 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the agent did not stop")
 	}
-	waitFor(t, logs, "offline on the cloud", func() bool { return cloud.lastStatus().Uplink == contract.UplinkDown })
+	drivertest.WaitFor(t, "offline on the cloud", func() bool { return cloud.lastStatus().Uplink == contract.UplinkDown })
 	if _, err := os.Stat(filepath.Join(state, pidName)); !os.IsNotExist(err) {
 		t.Fatal("the pid file must be removed")
 	}
