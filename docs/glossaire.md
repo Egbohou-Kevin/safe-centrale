@@ -58,10 +58,9 @@ relie les deux : c'est le langage commun du projet.
 | jeton (vidéo) | `token` | Autorisation valable pour une seule session, jamais journalisée |
 | plafond de données | `quota` | Données vidéo autorisées par mois pour un site |
 | horloge synchronisée | `clock_ok` | L'heure de la centrale a été vérifiée par internet (NTP) ; dit dans le heartbeat |
-| file d'envoi (partagée) | `outbox` | Messages MQTT gardés et renvoyés dans l'ordre |
-| application (couche) | `hub` | Relie MQTT, les domaines et leurs boucles |
-| racine de composition | `cmd/safehome-hub` | Assemble les vrais adaptateurs, seul endroit à les connaître |
-| file d'envoi | outbox | Messages gardés quand le broker est absent, renvoyés dans l'ordre |
+| file d'envoi (partagée) | `outbox` | Messages MQTT gardés quand le broker est absent, renvoyés dans l'ordre ; partagée par toutes les couches application |
+| application (couche) | `hub`, `gateway`, `zigbeeapp`, `agentapp`, `videoapp`, `maintapp`, `configapp`, `consoleapp`, `install` | Relie MQTT aux domaines et à leurs boucles, par des ports qu'elle déclare |
+| racine de composition | les programmes de `cmd/` (avec `internal/service`) | Assemblent les vrais adaptateurs, seuls endroits à les connaître |
 | fenêtre de démarrage | `BootWindow` | Écoute des états retenus au lancement, après la connexion au broker |
 | fichier de pid | `hub.pid` | Empêche deux centrales sur le même état, indique qui prévenir pour les codes |
 | signal | `Signal` | Un capteur devient actif ou inactif |
@@ -77,7 +76,7 @@ relie les deux : c'est le langage commun du projet.
 | traduction du contrat | `engine/wire` | Fait le lien entre le domaine et le contrat |
 | action | `engine.Action` | Ce que le moteur demande au monde extérieur |
 | instantané | `Snapshot` | L'état complet du moteur, écrit sur disque |
-| pilote | driver | Le programme qui relie le moteur à MQTT, au disque et à l'horloge |
+| pilote | driver | La boucle qui fait tourner un domaine en temps réel |
 | centrale | hub | Le boîtier installé chez le client |
 | agent de liaison | `agent`, `agentapp`, `Relay` | Le programme qui relie la centrale au cloud |
 | liaison montante | uplink | La connexion de l'agent au cloud (`up` ou `down`) |

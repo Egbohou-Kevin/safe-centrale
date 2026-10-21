@@ -31,6 +31,10 @@ const (
 	MaxContacts    = 5 // as the escalation (escalation.MaxContacts)
 )
 
+// MaxQuotaMB bounds the monthly video allowance far above any client's (8 TB), so
+// that it never overflows once in bytes. The video refuses more as well.
+const MaxQuotaMB = 1 << 23
+
 // ConfigContact is a person to alert. Phone, in international form (+22890000001),
 // is for the GSM channels; without it, the person gets only the app and WhatsApp.
 type ConfigContact struct {
@@ -126,8 +130,8 @@ func (d ConfigSetData) Validate() error {
 		seen[c.ID] = true
 	}
 	if v := d.Video; v != nil {
-		if (v.QuotaMB != nil && *v.QuotaMB < 0) || (v.MaxS != nil && (*v.MaxS < 0 || *v.MaxS > MaxVideoLength)) {
-			return fmt.Errorf("%w: video quota_mb must not be negative, max_s from 0 to %d", ErrInvalid, MaxVideoLength)
+		if (v.QuotaMB != nil && (*v.QuotaMB < 0 || *v.QuotaMB > MaxQuotaMB)) || (v.MaxS != nil && (*v.MaxS < 0 || *v.MaxS > MaxVideoLength)) {
+			return fmt.Errorf("%w: video quota_mb from 0 to %d, max_s from 0 to %d", ErrInvalid, MaxQuotaMB, MaxVideoLength)
 		}
 	}
 	return nil

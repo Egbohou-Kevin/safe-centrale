@@ -62,7 +62,7 @@
       "type": "object",
       "description": "Réglages du client en données mobiles, ignorés en liaison fixe",
       "properties": {
-        "quota_mb": { "type": "integer", "minimum": 0, "description": "Plafond du mois, 0 pour aucun" },
+        "quota_mb": { "type": "integer", "minimum": 0, "maximum": 8388608, "description": "Plafond du mois, 0 pour aucun" },
         "max_s": { "type": "integer", "minimum": 0, "maximum": 86400, "description": "Durée maximale d'une session, 0 pour aucune" }
       },
       "additionalProperties": false

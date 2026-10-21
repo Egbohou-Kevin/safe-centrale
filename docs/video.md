@@ -62,7 +62,8 @@ les ordres et les comptes rendus.
     atteint, le service refuse la session (`quota`).
 
   L'installateur indique le type de liaison à l'installation (`uplink` : `fixed` ou
-  `mobile`) ; le client peut le changer s'il change d'abonnement. Le service publie le
+  `mobile`). L'installateur le change dans `video.json` et `agent.json` si le client
+  change d'abonnement. Le service publie le
   type, les réglages et la consommation du mois dans `video.status`.
 - **Pas de flux sans spectateur.** Même sans durée limite, une session s'arrête quand
   plus personne ne regarde (application fermée, téléphone en veille) : le relais le
@@ -117,8 +118,8 @@ Raisons de fin ou d'échec : `stopped` (arrêt demandé), `timeout` (`max_s` att
 `quota`, `busy`, `unknown_camera`, `camera_unreachable`, `relay_unreachable`,
 `expired` (demande arrivée après `exp`).
 
-Le cloud peut désormais publier sur `video/cmd`, en plus de `alarm/cmd` et
-`config/set`. Il ne peut toujours pas commander les appareils ni l'appairage.
+Le cloud peut aussi publier sur `video/cmd`. Ce que le cloud peut publier est listé
+dans `contract.md`. Il ne peut toujours pas commander les appareils ni l'appairage.
 
 ## Sécurité et vie privée
 

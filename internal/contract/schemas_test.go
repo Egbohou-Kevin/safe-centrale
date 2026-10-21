@@ -342,6 +342,7 @@ func TestSchemasRejectInvalidMessages(t *testing.T) {
 		{"photo upload without token", "photo-upload.json", `{"photo":"p","url":"https://x.example/p","exp":"2026-10-17T21:00:00.000Z"}`},
 		{"photo sent with an unknown reason", "photo-sent.json", `{"photo":"p","status":"failed","reason":"lost"}`},
 		{"config with a long entry delay", "config-set.json", `{"version":2,"entry_delay_s":600}`},
+		{"config with a huge video quota", "config-set.json", `{"version":2,"video":{"quota_mb":8388609}}`},
 		{"config with a local phone", "config-set.json", `{"version":2,"contacts":[{"id":"u_a","name":"A","role":"owner","channels":["sms"],"phone":"90000001"}]}`},
 		{"config with an unknown role", "config-set.json", `{"version":2,"contacts":[{"id":"u_a","name":"A","role":"king","channels":["app"]}]}`},
 		{"config with a bad closing time", "config-set.json", `{"version":2,"closing":{"mon":"25:00"}}`},

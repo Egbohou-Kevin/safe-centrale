@@ -19,7 +19,7 @@ programmes et leurs configurations d'exemple : même broker, même dossier d'ét
   systemd, 30 s). Le **chien de garde matériel** du Pi redémarre la carte si le
   système entier se fige.
 - **Journaux en mémoire** : la carte SD n'est pas usée à chaque ligne.
-- **Pas de Docker** : huit services, autant de fichiers simples, moins de mémoire.
+- **Pas de Docker** : neuf services, autant de fichiers simples, moins de mémoire.
 - **Rien n'écoute sur le réseau du commerce**, sauf SSH par clé (pas de mot de passe).
   La console locale n'écoute que sur le réseau Wi-Fi propre à la centrale, et
   seulement pendant le mode installation.
@@ -67,9 +67,11 @@ savent pas qu'ils écrivent sur une autre partition.
 Compter une heure la première fois. Les commandes se tapent sur la centrale, en SSH,
 sauf mention contraire.
 
-Les étapes 1, 2, 4 et 8 se font à la main. Le script d'installation fait les étapes 3,
-5, 6, 7 et 9 (voir « Installer par le script » plus bas). Les étapes 10 à 12 restent à
-la main.
+Les étapes 1, 2, 4 et 8 se font à la main. Le script d'installation fait
+l'installation de Mosquitto (étape 3), les étapes 5, 6 et 7, et les services de
+l'étape 9 (voir « Installer par le script » plus bas). La mise à jour du système,
+`fake-hwclock`, SSH et le Bluetooth (étape 3), les codes (étape 9) et les étapes 10 à
+12 restent à la main.
 
 ### 1. Préparer la carte (sur l'ordinateur)
 
@@ -194,8 +196,9 @@ GOOS=linux GOARCH=arm64 go build -o safehome-zigbee ./cmd/safehome-zigbee
 GOOS=linux GOARCH=arm64 go build -o safehome-agent ./cmd/safehome-agent
 GOOS=linux GOARCH=arm64 go build -o safehome-video ./cmd/safehome-video
 GOOS=linux GOARCH=arm64 go build -o safehome-maint ./cmd/safehome-maint
+GOOS=linux GOARCH=arm64 go build -o safehome-console ./cmd/safehome-console
 GOOS=linux GOARCH=arm64 go build -o safehome-install ./cmd/safehome-install
-scp safehome-hub safehome-gsm safehome-zigbee safehome-agent safehome-video safehome-maint safehome-install admin@safehome-tg-lom-0001:
+scp safehome-hub safehome-gsm safehome-zigbee safehome-agent safehome-video safehome-maint safehome-console safehome-install admin@safehome-tg-lom-0001:
 ```
 
 go2rtc, pour la vidéo (seulement sur un site avec caméras) : le fichier
@@ -212,7 +215,7 @@ Sur la centrale :
 sudo useradd --system --home-dir /var/lib/safehome --shell /usr/sbin/nologin safehome
 sudo chown safehome:safehome /data/safehome /data/zigbee2mqtt
 sudo chmod 700 /data/safehome
-sudo install -m 755 safehome-hub safehome-gsm safehome-zigbee safehome-agent safehome-video safehome-maint safehome-install /usr/local/bin/
+sudo install -m 755 safehome-hub safehome-gsm safehome-zigbee safehome-agent safehome-video safehome-maint safehome-console safehome-install /usr/local/bin/
 sudo install -m 755 go2rtc_linux_arm64 /usr/local/bin/go2rtc
 sudo apt install --no-install-recommends ffmpeg     # site avec caméras : les photos à l'alarme
 
@@ -230,6 +233,7 @@ safehome-zigbee check -config /etc/safehome/zigbee.json
 safehome-agent check  -config /etc/safehome/agent.json
 safehome-video check  -config /etc/safehome/video.json
 safehome-maint check  -config /etc/safehome/maint.json
+safehome-console check -config /etc/safehome/console.json
 ```
 
 Les caméras : mot de passe d'usine changé, flux secondaire réglé en H.264, accès à
@@ -351,7 +355,9 @@ l'option `overlayroot=tmpfs` dans `/boot/firmware/cmdline.txt`.
 
 ## Installer par le script
 
-Le script fait les étapes 3, 5, 6, 7 et 9. Le paquet est préparé sur l'ordinateur,
+Le script fait l'installation de Mosquitto (étape 3), les étapes 5, 6 et 7, et les
+services de l'étape 9. La mise à jour du système, `fake-hwclock`, SSH, le Bluetooth et
+les codes restent à la main. Le paquet est préparé sur l'ordinateur,
 avec la configuration du site déjà écrite. Le script se relance tel quel à chaque mise
 à jour.
 
@@ -420,8 +426,9 @@ Ce que le script ne touche pas à la relance :
 Zigbee2MQTT ne démarre que lorsque le port de la clé est réglé (plus de `CHANGE-ME`
 dans son fichier). Sinon il redémarrerait toutes les 5 s.
 
-Restent à la main : les codes d'accès, les appareils (étape 10) et le passage en
-lecture seule (étape 12).
+Restent à la main : le reste de l'étape 3 (mise à jour du système, `fake-hwclock`,
+SSH, Bluetooth), les codes d'accès, les appareils (étape 10) et le passage en lecture
+seule (étape 12).
 
 `go test ./deploy` fait tourner le script sur un faux système : fichiers posés,
 relance, mauvaise configuration, refus, caméras, Zigbee2MQTT.

@@ -85,6 +85,8 @@ Tous les topics commencent par `safehome/{site}/`.
 | `.../gsm/status` | Lignes de la passerelle GSM (modem, réseau, crédit, test) | oui |
 | `.../zigbee/status` | État du réseau Zigbee (Zigbee2MQTT, appareils muets, appairage) | oui |
 | `.../agent/status` | Liaison avec le cloud, publiée par l'agent de liaison | oui |
+| `.../agent/cmd` | Ordre du cloud pour l'agent lui-même (`agent.replay`, rejeu de messages manqués) | non |
+| `.../agent/replayed` | Résultat d'un rejeu, par l'agent (`agent.replayed`) | non |
 | `.../video/cmd` | Ouvrir ou arrêter une session vidéo en direct (cloud vers site) | non |
 | `.../video/session` | Étapes d'une session vidéo | non |
 | `.../video/status` | Caméras, sessions en cours, données du mois | oui |
@@ -161,9 +163,9 @@ batterie), pour économiser les données.
 #### Le clavier est un appareil
 
 Les touches du clavier arrivent comme des `device.event` de capacité `keypad`, pas
-comme des `alarm.command` : la valeur est `arm`, `arm_now`, `disarm` ou `silence`, et
-le champ `code` accompagne `disarm` et `silence`. La centrale traduit en ordre au moteur
-(origine `keypad`). Le code n'est jamais recopié dans un message publié, ni dans les
+comme des `alarm.command` : la valeur est `arm`, `arm_now`, `disarm`, `silence` ou
+`postpone`, et le champ `code` accompagne `disarm` et `silence`. La centrale traduit en
+ordre au moteur (origine `keypad`). Le code n'est jamais recopié dans un message publié, ni dans les
 journaux : il est masqué à l'affichage et vérifié sur un fil à part. L'application et le
 cloud, eux, écrivent directement sur `alarm/cmd`.
 
@@ -267,7 +269,7 @@ de l'application (via le cloud) ou du planning (interne).
 
 | Type | Quand | Contenu |
 |---|---|---|
-| `alarm.arming` | Le délai de sortie démarre | `origin`, `ends_at`, `forced`, `bypassed` (appareils contournés) ; `offline`, `low_battery` si des appareils sont muets ou ont une pile faible (avertissement) |
+| `alarm.arming` | Le délai de sortie démarre | `origin`, `user`, `ends_at`, `forced`, `bypassed` (appareils contournés) ; `offline`, `low_battery` si des appareils sont muets ou ont une pile faible (avertissement) |
 | `alarm.armed` | Le délai est terminé, ou `arm_now` | `origin`, `user` ; `mode` optionnel, absent en v1 |
 | `alarm.disarmed` | Le système est désarmé | `origin`, `user` |
 | `alarm.entry_delay` | Un détecteur d'entrée s'est ouvert | `ends_at`, `device_id` |
@@ -348,7 +350,8 @@ vit) :
   `pairing` : le réseau est ouvert aux nouveaux appareils.
 - La centrale en déduit le lien `zigbee` de `system.health` : `ok`, `down`, ou
   `silent` si l'adaptateur ne donne plus de nouvelles. Après 3 minutes de panne, le
-  propriétaire reçoit l'alerte `zigbee_down` : l'alarme n'entend plus ses capteurs.
+  responsable (sinon le propriétaire) reçoit l'alerte `zigbee_down` : l'alarme
+  n'entend plus ses capteurs.
 
 ### Vidéo en direct (`video.*`)
 
@@ -469,7 +472,8 @@ et en données mobiles son forfait vidéo. Le cloud envoie le tout à chaque cha
 - Limites : délais de 10 à 300 s (sortie) et de 10 à 180 s (entrée), 5 contacts au
   plus, un propriétaire (`owner`) au moins. Rôles : `owner`, `deputy`, `guard`,
   `manager`, `other`. `sms` et `call` demandent un numéro au format international
-  (`+228...`). `max_s` ne dépasse pas la plus longue session vidéo.
+  (`+228...`). `quota_mb` de 0 à 8 388 608. `max_s` ne dépasse pas la plus longue
+  session vidéo.
 - `quota_mb` et `max_s` ne valent qu'en données mobiles ; en liaison fixe, le site les
   ignore.
 - La centrale vérifie la configuration avec ses fichiers, la garde, puis redémarre
@@ -629,7 +633,7 @@ L'agent de liaison transmet seulement :
 - le `system.heartbeat`,
 - les `device.event` de type `smoke`, `panic`, `tamper`, `mains` et les
   changements utiles de `battery`,
-- son propre `agent.status`,
+- son propre `agent.status`, et `agent.replayed` après un rejeu demandé par le cloud,
 - `video.session` et `video.status` (voir plus haut). Le flux vidéo lui-même ne passe
   jamais par MQTT : il va directement au relais du cloud ;
 - `config.applied`, la réponse à une configuration ;
@@ -642,6 +646,8 @@ Dans l'autre sens, le cloud peut publier seulement :
 
 - sur `alarm/cmd`, les ordres de l'application (`origin` à `app`) ;
 - sur `video/cmd`, les sessions vidéo ;
+- sur `agent/cmd`, les demandes de rejeu (`agent.replay`) pour l'agent lui-même,
+  jamais publiées sur la centrale ;
 - sur `alert/result` et `alert/ack`, les résultats et les acquittements des canaux du
   cloud (application, WhatsApp), pour une alerte que l'agent lui a transmise ;
 - sur `maint/cmd`, l'ouverture et la fermeture d'un tunnel de maintenance (durée

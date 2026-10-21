@@ -1,6 +1,6 @@
 # Architecture safeHome
 
-Statut : brouillon de travail, avant le premier code.
+Statut : en vigueur, vérifiée par `internal/archtest`.
 
 ## Objectif
 
@@ -74,13 +74,17 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 - **Les domaines** (`internal/engine` pour l'alarme, `internal/health` pour la
   supervision de la centrale et des appareils, `internal/access` pour les codes
   d'accès, `internal/escalation` pour l'escalade des alertes, `internal/gsm` pour la
-  passerelle GSM, `internal/zigbee` pour l'adaptateur Zigbee) sont purs : il dépend seulement de la bibliothèque
-  standard, n'a aucune entrée-sortie et ne lit jamais l'horloge. Il reçoit des entrées
-  qui portent leur heure et renvoie des actions et des événements du domaine.
+  passerelle GSM, `internal/zigbee` pour l'adaptateur Zigbee, `internal/video` pour la
+  vidéo en direct, `internal/maint` pour la maintenance à distance) sont purs : ils
+  dépendent seulement de la bibliothèque standard, n'ont aucune entrée-sortie et ne
+  lisent jamais l'horloge. Ils reçoivent des entrées qui portent leur heure et
+  renvoient des actions et des événements du domaine.
 - **Le contrat** (`internal/contract`) est le langage publié. Il ne dépend de rien.
-- **La traduction** (`internal/engine/wire`, `internal/health/wire`) est le seul endroit
-  qui connaît un domaine et le contrat. Si le contrat change de version, seules ces
-  parties changent. Les deux domaines ne se connaissent pas : le pilote les relie.
+- **La traduction** (un paquet `wire` par domaine : `engine`, `health`, `escalation`,
+  `gsm`, `zigbee`, `video`, `maint`) est le seul endroit qui traduit entre un domaine et
+  le contrat. Si le contrat change de version, seules ces parties changent. Les
+  domaines ne se connaissent pas : la couche application (`internal/hub`) les relie.
+  Le pilote ne connaît aucun domaine.
 - **Les adaptateurs et le pilote** viennent autour : MQTT, disque, horloge, vérification des
   codes. Leurs interfaces se déclarent côté consommateur et restent petites. Une
   bibliothèque externe n'est importée que par le paquet d'adaptateur qui l'enveloppe
@@ -104,8 +108,9 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   l'importe.
 - **La passerelle GSM** a la même forme : son domaine (`internal/gsm`), sa couche
   application (`internal/gateway`, qui déclare le port `Modem`), son adaptateur
-  (`internal/adapter/atmodem`). La file d'envoi MQTT (`internal/outbox`) sert aux deux
-  applications ; elle connaît le contrat et aucun domaine.
+  (`internal/adapter/atmodem`). La file d'envoi MQTT (`internal/outbox`) est partagée
+  par toutes les couches application des programmes de la centrale ; elle connaît le
+  contrat et le pilote, et aucun domaine.
 - **L'adaptateur Zigbee** aussi : son domaine (`internal/zigbee`), sa couche
   application (`internal/zigbeeapp`). Zigbee2MQTT parle déjà MQTT : il n'y a pas
   d'adaptateur technique de plus, mais un paquet de traduction (`internal/zigbee/z2m`),
@@ -115,8 +120,9 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   du DDD (il ne connaît que le contrat, puisque son métier est de le transporter), mais
   qui suit les mêmes règles : ni entrées-sorties ni horloge, tournant dans la boucle du
   pilote. Sa couche application (`internal/agentapp`) déclare deux ports de
-  publication, la centrale et le cloud ; la racine de composition y branche deux
-  clients MQTT.
+  publication, la centrale et le cloud, sur lesquels la racine de composition branche
+  deux clients MQTT. Elle déclare aussi le port `QueueStore` : la file pour le cloud,
+  un petit fichier par message (`internal/adapter/queuedir`).
 - **La vidéo** a la forme de la passerelle : son domaine (`internal/video`, sessions et
   plafond), sa traduction (`internal/video/wire`), sa couche application
   (`internal/videoapp`, qui déclare le port `Streamer`) et son adaptateur
@@ -127,24 +133,60 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   (`cmd/safehome-install`) et la console locale s'appuient dessus. Les zones et les
   sirènes sont gardées par `internal/hubconfig`, dans le dossier d'état.
 - **La console locale** : sa couche application (`internal/consoleapp`) suit le mode
-  installation et déclare ses ports (`Hotspot`, `Sites`, `Serve`). Sa page
+  installation et déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`). Sa page
   (`internal/consoleapp/web`) ne connaît qu'elle. Le Wi-Fi est l'adaptateur
   `internal/adapter/hotspot` (`nmcli`).
+- **La maintenance à distance** a la forme de la vidéo : son domaine (`internal/maint`,
+  une session à la fois, une heure au plus), sa traduction (`internal/maint/wire`), sa
+  couche application (`internal/maintapp`, qui déclare le port `Tunneler`, sans
+  horloge) et son adaptateur (`internal/adapter/sshtunnel`, le client OpenSSH vers le
+  bastion). Détail dans `maintenance.md`.
+- **La configuration réglée depuis le cloud** (`config.set`) : sa couche application
+  (`internal/configapp`) tourne dans le programme de la centrale. Elle ne connaît ni
+  fichier ni processus : vérifier, garder et redémarrer sont des ports (`Check`,
+  `Save`, `Restart`), et elle ne lit pas l'horloge. Le fichier qui garde cette
+  configuration dans le dossier d'état est `internal/siteconfig`, qui ne connaît que le
+  contrat ; la centrale, la passerelle GSM et la vidéo le lisent au démarrage.
+- **Les lectures de configuration** (`internal/hubconfig`, `internal/gsmconfig`, etc.)
+  partagent `internal/configfile` : JSON strict, niveau de journal, durées, secrets,
+  écriture atomique. Il ne connaît rien du module, et seuls les paquets `*config`
+  l'importent : aucun domaine ni aucune couche application ne lit de fichier.
+- **`internal/service`** est la part de la racine de composition commune à tous les
+  programmes : ligne de commande, verrou du dossier d'état, clients MQTT, dialogue
+  avec systemd, arrêt propre. Il ne connaît que quelques adaptateurs et la file
+  d'envoi, rien des domaines ni des couches application, et seul `cmd/` l'importe.
 - **Les racines de composition** (`cmd/safehome-hub`, `cmd/safehome-gsm`,
   `cmd/safehome-zigbee`, `cmd/safehome-agent`, `cmd/safehome-video`, `cmd/safehome-maint`,
   `cmd/safehome-console`, `cmd/safehome-install`) sont les seuls endroits autorisés à
-  importer les adaptateurs : elles construisent le vrai client MQTT, le vrai disque et
-  la vraie horloge et les passent à la couche application.
+  importer les adaptateurs, avec `internal/service` (l'assemblage commun que seul
+  `cmd/` importe) : elles construisent le vrai client MQTT, le vrai disque et la vraie
+  horloge et les passent à la couche application.
 - **DDD léger** : on le réserve aux contextes qui ont des règles (alarme, escalade). L'agent
   et la passerelle sont surtout de la plomberie et n'en ont pas besoin.
 
-Ces règles sont vérifiées par des tests (`internal/archtest`), qui échouent si le domaine
-importe le contrat, une bibliothèque tierce ou un paquet d'entrées-sorties, ou s'il lit
-l'horloge ; si le pilote ou un adaptateur importe un domaine, le contrat ou un autre
-paquet du module ; si le pilote lit l'horloge ailleurs que dans `SystemClock` ; si une
-bibliothèque externe est importée hors de son adaptateur ; si un adaptateur est importé
-ailleurs que dans la racine de composition ; ou si un domaine importe la couche
-application.
+Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent :
+
+- si un domaine importe un paquet du module (le contrat compris), une bibliothèque
+  tierce ou un paquet d'entrées-sorties, ou s'il lit l'horloge ;
+- si le contrat importe un paquet du module ;
+- si un paquet `wire` connaît autre chose que son domaine et le contrat, ou fait des
+  entrées-sorties ; si `internal/zigbee/z2m` connaît autre chose que le domaine Zigbee ;
+- si le pilote ou un adaptateur importe un paquet du module ; si le pilote lit
+  l'horloge ailleurs que dans `SystemClock` ;
+- si la file d'envoi connaît autre chose que le contrat et le pilote ;
+- si le cœur de l'agent connaît autre chose que le contrat ou lit l'horloge ; si
+  `agentapp`, `videoapp`, `maintapp`, `configapp`, `install` ou `consoleapp` (et sa
+  page) dépassent la liste de paquets qui leur est permise (aucun adaptateur), ou,
+  pour certains, lisent l'horloge ou font des entrées-sorties ;
+- si `internal/siteconfig` connaît autre chose que le contrat et `internal/configfile` ;
+  si `internal/configfile` importe un paquet du module, lit l'horloge, ou est importé
+  hors des paquets `*config` ;
+- si un adaptateur est importé ailleurs que dans `cmd/` et `internal/service` ; si
+  `internal/service` connaît autre chose que ses adaptateurs et la file d'envoi, ou est
+  importé hors de `cmd/` ;
+- si un domaine, le contrat ou le pilote importe la couche application de la centrale ;
+- si une bibliothèque externe est importée hors de son adaptateur, ou si du code livré
+  importe un outil de test (`schematest`, `mqtttest`, `attest`, `go2rtctest`).
 
 Le vocabulaire commun entre les documents (français) et le code (anglais) est dans
 `glossaire.md`. Convention : documents en français, code et commentaires en anglais.

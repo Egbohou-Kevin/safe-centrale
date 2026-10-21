@@ -142,8 +142,11 @@ func TestTheClientsVideoSettingsFromTheCloud(t *testing.T) {
 	if r, _ := Load(write(t, body("mobile"))); r.App.Video.Quota != video.MobileQuota || r.SiteVersion != 10 {
 		t.Fatalf("without video settings, the file's: %+v", r.App.Video)
 	}
-	huge := maxQuotaMB + 1
-	siteconfig.Write(state, contract.ConfigSetData{Version: 11, Video: &contract.ConfigVideo{QuotaMB: &huge}})
+	huge := contract.MaxQuotaMB + 1
+	if err := siteconfig.Write(state, contract.ConfigSetData{Version: 11, Video: &contract.ConfigVideo{QuotaMB: &huge}}); err == nil {
+		t.Fatal("the contract lets a huge allowance through")
+	}
+	os.WriteFile(filepath.Join(state, siteconfig.FileName), fmt.Appendf(nil, `{"version": 11, "video": {"quota_mb": %d}}`, huge), 0o600)
 	if r, err := Load(write(t, body("mobile"))); err != nil || r.SiteErr == nil || r.App.Video.Quota != video.MobileQuota {
 		t.Fatalf("a huge allowance from the cloud is refused, the file's kept: %v %v %d", err, r.SiteErr, r.App.Video.Quota)
 	}

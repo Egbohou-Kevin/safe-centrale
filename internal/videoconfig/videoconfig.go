@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"safehome/internal/configfile"
+	"safehome/internal/contract"
 	"safehome/internal/siteconfig"
 	"safehome/internal/video"
 	"safehome/internal/videoapp"
@@ -238,14 +239,11 @@ func uplink(f file, v *video.Config) error {
 	return nil
 }
 
-// maxQuotaMB bounds the allowance far above any client's (8 TB), so that it never
-// overflows once in bytes.
-const maxQuotaMB = 1 << 23
-
-// quota turns quota_mb into bytes.
+// quota turns quota_mb into bytes. The bound is the contract's (contract.MaxQuotaMB):
+// far above any client's, it never overflows once in bytes.
 func quota(mb int) (int64, error) {
-	if mb < 0 || mb > maxQuotaMB {
-		return 0, fmt.Errorf("quota_mb from 0 (no allowance) to %d", maxQuotaMB)
+	if mb < 0 || mb > contract.MaxQuotaMB {
+		return 0, fmt.Errorf("quota_mb from 0 (no allowance) to %d", contract.MaxQuotaMB)
 	}
 	return int64(mb) << 20, nil
 }

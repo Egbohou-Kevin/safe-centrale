@@ -227,10 +227,10 @@ Configuration (`config/gsm.example.json`), stricte comme celle de la centrale :
 - `status_every` (1 min) : la passerelle republie son état à ce rythme même sans
   changement. La centrale la croit morte après `health.gsm_silent_after` sans nouvelles.
 
-Elle garde sa file dans le même dossier d'état que la centrale (fichiers `gsm`,
-`gsm_seq`) et son propre fichier de pid (`gsm.pid`). Un modem absent au démarrage
-n'arrête pas la passerelle : elle réessaie à chaque vérification. Ses journaux ne
-contiennent ni les textes ni les numéros.
+Elle garde sa file dans le même dossier d'état que la centrale (fichiers `gsm.json`,
+`gsm_seq.json` et leur copie `.prev`) et son propre fichier de pid (`gsm.pid`). Un
+modem absent au démarrage n'arrête pas la passerelle : elle réessaie à chaque
+vérification. Ses journaux ne contiennent ni les textes ni les numéros.
 
 ## L'adaptateur Zigbee (`safehome-zigbee`)
 
@@ -257,10 +257,10 @@ Configuration (`config/zigbee.example.json`), stricte :
   profils qui ne disent rien ; `pair_max` (10 min) : durée maximale d'appairage ;
   `step` (5) : écart minimal pour annoncer une pile ou un lien ; `status_every` (1 min).
 
-Il garde son registre et ses états dans le même dossier d'état (fichiers `zigbee`,
-`zigbee_seq`) et son propre fichier de pid (`zigbee.pid`). L'adresse Zigbee des
-appareils ne sort jamais de l'adaptateur, et aucun code de clavier n'apparaît dans ses
-journaux.
+Il garde son registre et ses états dans le même dossier d'état (fichiers
+`zigbee.json`, `zigbee_seq.json` et leur copie `.prev`) et son propre fichier de pid
+(`zigbee.pid`). L'adresse Zigbee des appareils ne sort jamais de l'adaptateur, et
+aucun code de clavier n'apparaît dans ses journaux.
 
 Appairer un appareil se fait localement, par un message `registry.pair` sur
 `safehome/{site}/registry/cmd` (le cloud ne peut pas y écrire) : c'est le rôle de
@@ -302,10 +302,12 @@ Configuration (`config/agent.example.json`), stricte :
 - `down` : limite de ce qui descend du cloud, `burst` (20 d'un coup) et `per_minute`
   (60).
 
-Il garde sa file dans le même dossier d'état (fichiers `agent`, `agent_seq`) et son
-propre fichier de pid (`agent.pid`). Il n'ouvre aucun port : la connexion au cloud est
-sortante. À l'arrêt, il dit au cloud que le site passe hors ligne ; s'il disparaît sans
-prévenir (courant, câble), le broker du cloud le dit à sa place (Last Will).
+Il garde son état dans le même dossier d'état (fichiers `agent.json`, `agent_seq.json`
+et leur copie `.prev`), sa file pour le cloud dans `agent_queue/` (un petit fichier par
+message) et son propre fichier de pid (`agent.pid`). Il n'ouvre aucun port : la
+connexion au cloud est sortante. À l'arrêt, il dit au cloud que le site passe hors
+ligne ; s'il disparaît sans prévenir (courant, câble), le broker du cloud le dit à sa
+place (Last Will).
 
 Dans les journaux : `connected to the cloud` (avec le transport, `mqtts` ou `wss`),
 `the cloud cannot be reached`, `refused a message from the cloud` (avec la raison),
@@ -348,9 +350,10 @@ safehome-video run   -config /etc/safehome/video.json
   les premiers octets partent ; `stall_after` (30 s) : silence qui termine une session ;
   `probe_every` (5 min) : test des caméras.
 
-Il garde la consommation du mois dans le même dossier d'état (fichiers `video`,
-`video_seq`) et son propre fichier de pid (`video.pid`). Chaque go2rtc travaille dans
-un dossier privé de `/tmp`, effacé à la fin de la session.
+Il garde la consommation du mois dans le même dossier d'état (fichiers `video.json`,
+`video_seq.json` et leur copie `.prev`) et son propre fichier de pid (`video.pid`).
+Chaque go2rtc travaille dans un dossier privé de `/tmp`, effacé à la fin de la
+session.
 
 Les photos attendent l'agent dans `photos/` du dossier d'état (60 au plus, 8 Mo au
 plus, les plus anciennes partent d'abord).
@@ -374,10 +377,10 @@ safehome-maint check -config /etc/safehome/maint.json
 safehome-maint run   -config /etc/safehome/maint.json
 ```
 
-`check` vérifie aussi que `ssh`, la clé de la centrale et la clé d'hôte du bastion sont
-là. Il garde une session en cours dans le dossier d'état (fichiers `maint`,
-`maint_seq`, pid `maint.pid`) : elle reprend après un redémarrage, jusqu'à son heure
-de fin.
+`check` vérifie aussi que `ssh`, la clé de la centrale et la clé d'hôte du bastion
+sont là. Il garde une session en cours dans le dossier d'état (fichiers `maint.json`,
+`maint_seq.json` et leur copie `.prev`, pid `maint.pid`) : elle reprend après un
+redémarrage, jusqu'à son heure de fin.
 
 Dans les journaux : `remote maintenance asked` (qui, pourquoi, combien de temps),
 `remote maintenance` (chaque étape), `the bastion granted the tunnel`, `ssh` (les

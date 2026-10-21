@@ -25,7 +25,7 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 # Hardening: the program writes only the state directory (the zones and sirens it
-# sets for the hub are kept there).
+# sets for the hub, and the contacts' access codes, access.json, are kept there).
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

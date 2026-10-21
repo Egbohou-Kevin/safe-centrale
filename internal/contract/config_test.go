@@ -43,6 +43,7 @@ func TestConfigSetValidate(t *testing.T) {
 		"local phone":       func(d *ConfigSetData) { d.Contacts[0].Phone = "90000001" },
 		"sms without phone": func(d *ConfigSetData) { d.Contacts[1].Channels = []string{ChannelSMS} },
 		"negative quota":    func(d *ConfigSetData) { d.Video.QuotaMB = intPtrC(-1) },
+		"huge quota":        func(d *ConfigSetData) { d.Video.QuotaMB = intPtrC(MaxQuotaMB + 1) },
 		"session too long":  func(d *ConfigSetData) { d.Video.MaxS = intPtrC(MaxVideoLength + 1) },
 		"too many contacts": func(d *ConfigSetData) {
 			for i := range MaxContacts {

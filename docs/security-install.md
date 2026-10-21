@@ -105,8 +105,8 @@ Avec la console locale (voir plus bas), l'installateur :
 ### 5. Choix du code
 
 Le code est choisi sur place par le propriétaire. Il ne passe jamais par le cloud.
-Pour l'instant il se règle en SSH (`safehome-hub codes`). Le choisir sur la console
-locale reste à faire.
+Il le tape lui-même sur la console locale, pendant le mode installation (voir plus
+bas). Il se règle aussi en SSH (`safehome-hub codes`), seul moyen de retirer un code.
 
 ### 6. Contacts et configuration
 

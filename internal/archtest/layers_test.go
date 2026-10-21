@@ -58,9 +58,10 @@ func TestDriverAndAdaptersKnowNoDomain(t *testing.T) {
 	}
 }
 
-// The outbox serves every application of the site (hub, GSM gateway): it builds
-// envelopes, so it knows the contract, and saves its counter through the driver's
-// Store port. It knows no domain and no application.
+// The outbox serves every application layer of the site's programs (hub, gateway,
+// zigbeeapp, agentapp, videoapp, maintapp, configapp): it builds envelopes, so it
+// knows the contract, and saves its counter through the driver's Store port. It
+// knows no domain and no application.
 func TestOutboxKnowsOnlyTheContractAndTheStorePort(t *testing.T) {
 	layer{local: internal("contract", "driver")}.check(t, "outbox")
 }

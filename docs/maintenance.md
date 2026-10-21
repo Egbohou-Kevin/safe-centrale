@@ -87,7 +87,7 @@ entrer la centrale).
 - S'il tombe une fois ouvert (internet coupé) : il est rouvert 10 s plus tard, tant
   que la session dure, sans nouveau message.
 - Si le service redémarre pendant une session, elle reprend jusqu'à son heure de fin
-  (elle est gardée dans le dossier d'état, fichier `maint`).
+  (elle est gardée dans le dossier d'état, fichier `maint.json` et sa copie `.prev`).
 
 ## Installation
 

@@ -25,8 +25,9 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/gsm` | La passerelle GSM (cinquième domaine) : file à priorités, lignes, reprises, réponses « 1 », surveillance du modem |
 | `internal/gsm/wire` | La traduction entre la passerelle et le contrat |
 | `internal/gateway` | La couche application de la passerelle : un fil par modem, publication des résultats et de l'état des lignes |
-| `internal/outbox` | La file d'envoi MQTT partagée par la centrale et la passerelle : ordre, reprises, numéro de message qui survit aux redémarrages |
+| `internal/outbox` | La file d'envoi MQTT partagée par toutes les couches application des programmes de la centrale : ordre, reprises, numéro de message qui survit aux redémarrages |
 | `internal/adapter/atmodem` | L'adaptateur du modem : commandes AT sur le port série (bibliothèque standard seulement) ; `attest` est un faux modem pour les tests |
+| `internal/adapter/queuedir` | La file de l'agent pour le cloud sur disque : un petit fichier par message, écrit d'un coup, qui survit à une coupure de courant |
 | `internal/adapter/photodir` | Le dossier des photos prises à l'alarme : le service vidéo les y écrit, l'agent les lit et les efface ; borné en nombre et en taille |
 | `internal/adapter/upload` | L'envoi d'un fichier au cloud en HTTPS (PUT, jeton en `Authorization`), sans jamais écrire le jeton (bibliothèque standard seulement) |
 | `internal/adapter/sdnotify` | Le dialogue avec systemd : « démarré », puis « fonctionne encore » tant que les boucles répondent (chien de garde, bibliothèque standard seulement) |
@@ -63,10 +64,10 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/consoleconfig` | Lecture de la configuration de la console et de la phrase de passe de son Wi-Fi |
 | `cmd/safehome-console` | Le programme de la console locale |
 | `cmd/safehome-install` | L'outil de l'installateur, en ligne de commande sur la centrale |
-| `internal/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; chaque programme la pose sur son propre fichier au démarrage |
+| `internal/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
 | `internal/configapp` | La couche application qui reçoit `config.set` dans la centrale : vérification, garde, redémarrage à un moment calme, réponse `config.applied`. Elle ne connaît ni fichier ni processus (ports) |
 | `internal/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`) |
-| `cmd/safehome-hub` | Le programme de la centrale : seul endroit qui assemble le vrai client MQTT, le vrai disque et la vraie horloge |
+| `cmd/safehome-hub` | Le programme de la centrale : sa racine de composition, qui branche le vrai client MQTT, le vrai disque et la vraie horloge sur la centrale et sur `configapp` |
 | `internal/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre. Seuls les programmes de `cmd/` s'en servent |
 | `internal/configfile` | Ce que les lectures de configuration ont en commun : JSON strict, niveau de journal, durées, secrets, écriture atomique d'un fichier |
 | `internal/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine |
@@ -132,6 +133,7 @@ Pour la centrale elle-même (compilation pour le Raspberry Pi comprise) :
 | `docs/agent.md` | Agent de liaison avec le cloud |
 | `docs/adapter-zigbee.md` | Adaptateur Zigbee |
 | `docs/video.md` | Vidéo en direct vers l'application |
+| `docs/maintenance.md` | Maintenance à distance |
 | `docs/security-install.md` | Sécurité et installation d'un site |
 | `docs/systeme.md` | Système de la centrale : installation pas à pas, lecture seule, services, recette |
 | `docs/operations.md` | Exploitation de la centrale : configuration, commandes, démarrage, arrêt, codes |
