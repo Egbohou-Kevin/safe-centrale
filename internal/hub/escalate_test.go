@@ -196,7 +196,7 @@ func TestStrangeResultsAndAcknowledgementsAreIgnored(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 	r.mustBe(engine.ModeTriggered)
-	if r.hub.esc.Active() == 0 {
+	if len(r.hub.escal.esc.Snapshot().Incidents) == 0 {
 		t.Fatal("the escalation must go on")
 	}
 }

@@ -39,7 +39,7 @@ func (a *App) HandleMessage(m inbox.Message) {
 // moment.
 func (a *App) fromBridge(m inbox.Message) {
 	if req, reason, failed := z2m.ResponseError(a.cfg.Base, m.Topic, m.Payload); failed {
-		a.log.Error("Zigbee2MQTT refused a request", "request", req, "error", reason)
+		a.log.Error("Zigbee2MQTT refused a request", "request", req, "err", reason)
 		return
 	}
 	if _, ok, err := z2m.Parse(a.cfg.Base, m.Topic, m.Payload, m.Retain, time.Time{}); err != nil || !ok {

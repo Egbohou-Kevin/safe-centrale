@@ -152,3 +152,33 @@ func TestWriteAtomicFailsCleanly(t *testing.T) {
 		t.Errorf("a temporary file was left: %v", entries)
 	}
 }
+
+func TestProgramFileBuild(t *testing.T) {
+	var f struct {
+		ProgramFile
+		Other string `json:"other"`
+	}
+	if err := DecodeBytes([]byte(`{"site": "tg-lom-0001", "state_dir": "/s", "other": "x"}`), &f); err != nil {
+		t.Fatal(err)
+	}
+	p, err := f.Build("safehome-gsm-", "where the gateway keeps its queue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p != (Program{BrokerURL: "mqtt://127.0.0.1:1883", ClientID: "safehome-gsm-tg-lom-0001", StateDir: "/s", LogLevel: slog.LevelInfo}) {
+		t.Fatalf("%+v", p)
+	}
+	f.BrokerURL, f.ClientID, f.LogLevel = "mqtt://10.0.0.1:1883", "mine", "debug"
+	if p, err := f.Build("safehome-gsm-", "x"); err != nil || p.BrokerURL != f.BrokerURL || p.ClientID != "mine" || p.LogLevel != slog.LevelDebug {
+		t.Fatalf("%+v %v", p, err)
+	}
+	f.LogLevel = "loud"
+	if _, err := f.Build("safehome-gsm-", "x"); err == nil || !strings.Contains(err.Error(), "log_level") {
+		t.Fatalf("%v", err)
+	}
+	f.StateDir = ""
+	if _, err := f.Build("safehome-gsm-", "where the gateway keeps its queue"); err == nil ||
+		err.Error() != "state_dir is required (where the gateway keeps its queue)" {
+		t.Fatalf("%v", err)
+	}
+}

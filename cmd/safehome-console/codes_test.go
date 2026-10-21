@@ -15,6 +15,7 @@ import (
 
 	"safehome/internal/adapter/filestore"
 	"safehome/internal/consoleapp"
+	"safehome/internal/escalation"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
 )
@@ -37,11 +38,11 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	installer, err := hub.OpenInstallerCode(cfg.Hub.Access, store)
+	tool, err := hub.OpenSiteCodes(cfg.Hub, store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := installer.Set(hub.InstallerUser, "3691"); err != nil {
+	if err := tool.Set(hub.InstallerUser, "3691"); err != nil {
 		t.Fatal(err)
 	}
 	for code, want := range map[string]error{
@@ -60,7 +61,7 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { stand.Process.Kill() })
-	os.WriteFile(filepath.Join(cfg.StateDir, hubPidName), []byte(strconv.Itoa(stand.Process.Pid)+"\n"), 0o600)
+	os.WriteFile(filepath.Join(cfg.StateDir, hubconfig.PidFile), []byte(strconv.Itoa(stand.Process.Pid)+"\n"), 0o600)
 	if err := c.Set("u_owner", "2580"); err != nil {
 		t.Fatal(err)
 	}
@@ -82,8 +83,9 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	}
 
 	// A code left by someone no longer a contact is listed apart, and removed.
-	other, err := hub.OpenCodes(cfg.Hub.Access, store)
-	if err != nil || other.Set("u_gone", "7391") != nil {
+	before := cfg.Hub
+	before.Escalation.Contacts = append(slices.Clone(before.Escalation.Contacts), escalation.Contact{ID: "u_gone"})
+	if other, err := hub.OpenSiteCodes(before, store); err != nil || other.Set("u_gone", "7391") != nil {
 		t.Fatal(err)
 	}
 	if _, leftovers, err := c.People(); err != nil || !slices.Equal(leftovers, []string{"u_gone"}) {
@@ -98,12 +100,11 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	if _, leftovers, _ := c.People(); len(leftovers) != 0 {
 		t.Fatalf("%v", leftovers)
 	}
-	reg, err := hub.OpenCodes(cfg.Hub.Access, store)
-	if err != nil {
-		t.Fatal(err)
+	if err := c.Set(people[1].ID, "2580"); !errors.Is(err, consoleapp.ErrCodeTaken) {
+		t.Fatalf("the hub's files do not hold the code: %v", err)
 	}
-	if user, ok := reg.Verify("2580"); !ok || user != "u_owner" {
-		t.Fatalf("the hub does not know the code: %q %v", user, ok)
+	if err := c.Set("u_stranger", "2468"); !errors.Is(err, consoleapp.ErrNotAContact) {
+		t.Fatalf("a code for someone not a contact: %v", err)
 	}
 	if strings.Contains(logs.String(), "2580") {
 		t.Fatal("the code shows in the logs")

@@ -5,9 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/access"
 	"safehome/internal/contract"
-	"safehome/internal/driver"
 	"safehome/internal/engine"
 	"safehome/internal/inbox"
 )
@@ -35,13 +33,6 @@ type installMode struct {
 	endTimer context.CancelFunc
 }
 
-// OpenInstallerCode opens the installer code saved in store, as OpenCodes does the
-// people's codes.
-func OpenInstallerCode(cfg access.Config, store driver.Store) (*access.Registry, error) {
-	cfg.MaxUsers = 1
-	return openRegistry(cfg, store, keyInstaller)
-}
-
 // installerCode tells whether a code that is nobody's is the installer's. Only a
 // "disarm" from a keypad may open the mode: never an order from the app.
 func (h *Hub) installerCode(cmd contract.AlarmCommandData) bool {
@@ -56,14 +47,14 @@ func (h *Hub) installerCode(cmd contract.AlarmCommandData) bool {
 // Otherwise the code counts as a wrong one: it is nobody's, and must not help guess.
 func (h *Hub) openInstall(o order) {
 	o.cmd.Args.Code = ""
-	err := h.engLoop.Post(h.life, func(now time.Time) []engine.Action {
-		st := h.eng.State(now)
+	err := h.alarm.loop.Post(h.life, func(now time.Time) []engine.Action {
+		st := h.alarm.eng.State(now)
 		if st.Mode != engine.ModeDisarmed || !st.LockedUntil.IsZero() {
 			h.log.Warn("installer code refused: the alarm is not disarmed, or the keypad is locked", "alarm", st.Mode)
-			return h.eng.Handle(h.engineCommand(o, now, engine.Auth{Checked: true}))
+			return h.alarm.eng.Handle(h.engineCommand(o, now, engine.Auth{Checked: true}))
 		}
 		h.startInstall(now)
-		h.log.Warn("installation mode opened at the keypad", "until", h.inst.until.Format(time.RFC3339))
+		h.log.Warn("installation mode opened at the keypad", "until", h.alarm.inst.until.Format(time.RFC3339))
 		h.enqueue(srcEngine, contract.AlarmAckTopic(h.cfg.Site), contract.TypeAlarmAck, contract.AlarmAckData{
 			Ref: o.ref, Status: contract.AckDone, Detail: map[string]any{"install": contract.InstallOpen},
 		}, false, now)
@@ -78,18 +69,18 @@ func (h *Hub) openInstall(o order) {
 // exactly at until. It runs on the engine's loop.
 func (h *Hub) startInstall(now time.Time) {
 	h.stopInstallTimer()
-	h.inst.session++
-	h.inst.open, h.inst.until = true, now.Add(installLength)
+	h.alarm.inst.session++
+	h.alarm.inst.open, h.alarm.inst.until = true, now.Add(installLength)
 	fired, stop := h.deps.Clock.Timer(installLength)
 	ctx, cancel := context.WithCancel(h.life)
-	h.inst.endTimer = cancel
-	go h.installTimer(ctx, h.inst.session, fired, stop)
+	h.alarm.inst.endTimer = cancel
+	go h.installTimer(ctx, h.alarm.inst.session, fired, stop)
 }
 
 func (h *Hub) stopInstallTimer() {
-	if h.inst.endTimer != nil {
-		h.inst.endTimer()
-		h.inst.endTimer = nil
+	if h.alarm.inst.endTimer != nil {
+		h.alarm.inst.endTimer()
+		h.alarm.inst.endTimer = nil
 	}
 }
 
@@ -99,8 +90,8 @@ func (h *Hub) installTimer(ctx context.Context, session int, fired <-chan time.T
 	select {
 	case <-ctx.Done():
 	case <-fired:
-		err := h.engLoop.Post(h.life, func(now time.Time) []engine.Action {
-			if h.inst.session == session {
+		err := h.alarm.loop.Post(h.life, func(now time.Time) []engine.Action {
+			if h.alarm.inst.session == session {
 				h.closeInstall(now, contract.InstallTimeout)
 			}
 			return nil
@@ -112,7 +103,7 @@ func (h *Hub) installTimer(ctx context.Context, session int, fired <-chan time.T
 // installFollowsAlarm closes the mode once the alarm leaves the disarmed state (an
 // arming, an alarm of a 24-hour zone). It runs on the engine's loop after each change.
 func (h *Hub) installFollowsAlarm(now time.Time) {
-	if h.inst.open && h.eng.Mode() != engine.ModeDisarmed {
+	if h.alarm.inst.open && h.alarm.eng.Mode() != engine.ModeDisarmed {
 		h.closeInstall(now, contract.InstallArmed)
 	}
 }
@@ -121,10 +112,10 @@ func (h *Hub) installFollowsAlarm(now time.Time) {
 // configuration's application (internal/configapp), which follows the mode, has the
 // hub restart to load them at a quiet moment. It runs on the engine's loop.
 func (h *Hub) closeInstall(now time.Time, reason string) {
-	if !h.inst.open {
+	if !h.alarm.inst.open {
 		return
 	}
-	h.inst.open = false
+	h.alarm.inst.open = false
 	h.stopInstallTimer()
 	h.log.Info("installation mode closed", "reason", reason)
 	h.publishInstall(now, reason)
@@ -135,7 +126,7 @@ func (h *Hub) closeInstall(now time.Time, reason string) {
 // The engine still sees the signals, so what it knows of the devices stays right;
 // fire and panic are never dropped. It runs on the engine's loop.
 func (h *Hub) quietTamper(actions []engine.Action) []engine.Action {
-	if !h.inst.open {
+	if !h.alarm.inst.open {
 		return actions
 	}
 	return slices.DeleteFunc(actions, func(a engine.Action) bool {
@@ -158,7 +149,7 @@ func deviceOf(a engine.Alert) string {
 func (h *Hub) publishInstall(now time.Time, reason string) {
 	d := contract.InstallModeData{Status: contract.InstallClosed, Reason: reason}
 	if reason == "" {
-		d = contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(h.inst.until)}
+		d = contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(h.alarm.inst.until)}
 	}
 	h.enqueue(srcInstall, contract.InstallModeTopic(h.cfg.Site), contract.TypeInstallMode, d, true, now)
 }
@@ -168,7 +159,7 @@ func (h *Hub) installMessage(m inbox.Message) {
 	if _, _, ok := decode[contract.InstallCloseData](h, m, contract.TypeInstallClose, "end of installation"); !ok {
 		return
 	}
-	err := h.engLoop.Post(h.life, func(now time.Time) []engine.Action {
+	err := h.alarm.loop.Post(h.life, func(now time.Time) []engine.Action {
 		h.closeInstall(now, contract.InstallStopped)
 		return nil
 	})

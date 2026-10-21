@@ -12,11 +12,21 @@ import (
 	"testing"
 	"time"
 
+	"safehome/internal/configfile"
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
 	escwire "safehome/internal/escalation/wire"
 	"safehome/internal/health"
 )
+
+// parse reads and checks a configuration given as bytes.
+func parse(data []byte) (Result, error) {
+	var f file
+	if err := configfile.DecodeBytes(data, &f); err != nil {
+		return Result{}, err
+	}
+	return build(f)
+}
 
 // minimal is the smallest valid file: everything else takes the documented defaults.
 const minimal = `{
@@ -32,7 +42,7 @@ var base = strings.TrimSuffix(strings.TrimSpace(minimal), "}")
 func with(t *testing.T, extra string) Result {
 	t.Helper()
 	body := strings.TrimSuffix(strings.TrimSpace(minimal), "}") + "," + extra + "}"
-	r, err := Parse([]byte(body))
+	r, err := parse([]byte(body))
 	if err != nil {
 		t.Fatalf("%v\n%s", err, body)
 	}
@@ -96,7 +106,7 @@ func TestTheExampleFileIsValid(t *testing.T) {
 }
 
 func TestAPlanReplacesOnlyItsKind(t *testing.T) {
-	r, err := Parse([]byte(base + `,
+	r, err := parse([]byte(base + `,
   "escalation": { "plans": {
     "intrusion": { "waves": [ { "to": ["owner"] }, { "after": "3m", "to": ["everyone"], "sms_now": true } ], "repeat": { "every": "5m", "times": 6 } },
     "battery_low_hub": { "waves": [ { "to": ["owner", "guard"] } ], "internet_only": true, "gsm_after": "30m" }
@@ -140,7 +150,7 @@ func TestBadPlansAreRefusedWithTheirPlace(t *testing.T) {
 		`escalation.plans.tamper: GSMAfter`:                                 `"tamper": { "waves": [ { "to": ["owner"] } ], "gsm_after": "1h" }`,
 		`unknown field "delay"`:                                             `"tamper": { "waves": [ { "to": ["owner"], "delay": "1m" } ] }`,
 	} {
-		_, err := Parse([]byte(base + `, "escalation": { "plans": { ` + plans + ` } } }`))
+		_, err := parse([]byte(base + `, "escalation": { "plans": { ` + plans + ` } } }`))
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: got %v, want an error with %q", plans, err, want)
 		}
@@ -170,7 +180,7 @@ func TestContactsAndEscalation(t *testing.T) {
 }
 
 func TestDefaults(t *testing.T) {
-	r, err := Parse([]byte(minimal))
+	r, err := parse([]byte(minimal))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +300,7 @@ func TestMistakesAreRefused(t *testing.T) {
 		"zero siren cycles":          `{"site":"tg-lom-0001","state_dir":"/x","hub_device_id":"h","siren_ids":["s"],"alarm":{"siren_cycles":0}}`,
 	}
 	for name, body := range bad {
-		if _, err := Parse([]byte(body)); err == nil {
+		if _, err := parse([]byte(body)); err == nil {
 			t.Errorf("%s: want an error", name)
 		}
 	}

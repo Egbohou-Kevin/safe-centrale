@@ -49,7 +49,7 @@ type Snapshot struct {
 	Incident   *Incident       `json:"incident"`
 
 	// Devices whose tamper is active and was reported, so that a restart does not
-	// report it again. Absent from the snapshots of older versions.
+	// report it again.
 	Tampered map[string]bool `json:"tampered"`
 
 	// Memory of the last alarm, kept after the system goes back to armed.

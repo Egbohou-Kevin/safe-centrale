@@ -3,13 +3,26 @@ package gsmconfig
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"safehome/internal/configfile"
+	"safehome/internal/contract"
 	"safehome/internal/gateway"
 	"safehome/internal/gsm"
+	"safehome/internal/siteconfig"
 )
+
+// parse reads and checks a configuration given as bytes.
+func parse(data []byte) (Result, error) {
+	var f file
+	if err := configfile.DecodeBytes(data, &f); err != nil {
+		return Result{}, err
+	}
+	return build(f)
+}
 
 const minimal = `{"site": "tg-lom-0001", "state_dir": "/tmp/s", "lines": [{"id": "line1", "port": "/dev/ttyUSB2"}]}`
 
@@ -33,14 +46,14 @@ func TestTheExampleFileIsValidAndRepeatsTheDefaults(t *testing.T) {
 }
 
 func TestDefaultsAndOverrides(t *testing.T) {
-	r, err := Parse([]byte(minimal))
+	r, err := parse([]byte(minimal))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if r.BrokerURL != "mqtt://127.0.0.1:1883" || r.ClientID != "safehome-gsm-tg-lom-0001" || r.Ports["line1"].Baud != 115200 || r.Gateway.GSM.Country != "228" {
 		t.Fatalf("%+v", r)
 	}
-	r, err = Parse([]byte(`{"site": "tg-lom-0001", "state_dir": "/tmp/s", "log_level": "debug", "country": "229",
+	r, err = parse([]byte(`{"site": "tg-lom-0001", "state_dir": "/tmp/s", "log_level": "debug", "country": "229",
 		"broker_url": "mqtt://10.0.0.2:1883", "client_id": "gw",
 		"lines": [{"id": "a", "port": "/dev/a", "baud": 9600, "configure_port": false}, {"id": "b", "port": "/dev/b", "operator": "moov"}],
 		"ring_for": "30s", "status_every": "20s", "max_age": {"life_safety": "5m"}}`))
@@ -73,7 +86,7 @@ func TestMistakes(t *testing.T) {
 		"bad log level":     `{"site": "tg-lom-0001", "state_dir": "/s", "lines": [{"id": "l", "port": "/p"}], "log_level": "loud"}`,
 		"bad country":       `{"site": "tg-lom-0001", "state_dir": "/s", "lines": [{"id": "l", "port": "/p"}], "country": "+228"}`,
 	} {
-		if _, err := Parse([]byte(body)); err == nil {
+		if _, err := parse([]byte(body)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
@@ -84,5 +97,34 @@ func TestMistakes(t *testing.T) {
 	os.WriteFile(bad, []byte("{"), 0o600)
 	if _, err := Load(bad); err == nil || !strings.Contains(err.Error(), "bad.json") {
 		t.Fatalf("%v", err)
+	}
+}
+
+// The gateway knows every contact of the configuration from the cloud, those without
+// a number too, so that their acknowledgement in the app ends the incident for it as
+// it does for the escalation.
+func TestTheGatewayKnowsTheContactsOfTheCloudWithoutANumber(t *testing.T) {
+	state := t.TempDir()
+	path := filepath.Join(t.TempDir(), "gsm.json")
+	body := strings.Replace(minimal, `"/tmp/s"`, strconv.Quote(state), 1)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := Load(path); err != nil || r.Gateway.Contacts != nil {
+		t.Fatalf("without a configuration from the cloud: %v %v", r.Gateway.Contacts, err)
+	}
+	err := siteconfig.Write(state, contract.ConfigSetData{Version: 2, Contacts: []contract.ConfigContact{
+		{ID: "u_owner", Name: "Ama", Role: "owner", Channels: []string{"sms"}, Phone: "+22891112233"},
+		{ID: "u_deputy", Name: "Kofi", Role: "deputy", Channels: []string{"app"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := Load(path)
+	if err != nil || r.SiteVersion != 2 {
+		t.Fatal(r.SiteVersion, err)
+	}
+	if got := r.Gateway.Contacts; strings.Join(got, ",") != "u_owner,u_deputy" || len(r.Gateway.GSM.Contacts) != 1 {
+		t.Fatalf("contacts %v, with a number %v", got, len(r.Gateway.GSM.Contacts))
 	}
 }

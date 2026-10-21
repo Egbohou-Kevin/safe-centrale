@@ -42,21 +42,14 @@ func (c Cloud) LogValue() slog.Value {
 
 // Result is what the file describes.
 type Result struct {
-	App       agentapp.Config
-	Cloud     Cloud
-	BrokerURL string // the hub's broker
-	ClientID  string
-	StateDir  string
-	PhotoDir  string // the photos the video service took, for the agent to send
-	LogLevel  slog.Level
+	configfile.Program // BrokerURL is the hub's broker
+	App                agentapp.Config
+	Cloud              Cloud
+	PhotoDir           string // the photos the video service took, for the agent to send
 }
 
 type file struct {
-	Site        string     `json:"site"`
-	BrokerURL   string     `json:"broker_url"`
-	ClientID    string     `json:"client_id"`
-	StateDir    string     `json:"state_dir"`
-	LogLevel    string     `json:"log_level"`
+	configfile.ProgramFile
 	Uplink      string     `json:"uplink"`
 	Cloud       *cloudFile `json:"cloud"`
 	StatusEvery string     `json:"status_every"`
@@ -99,18 +92,13 @@ func Load(path string) (Result, error) {
 }
 
 func build(f file, dir string) (Result, error) {
-	if f.StateDir == "" {
-		return Result{}, errors.New("state_dir is required (where the agent keeps its queue)")
+	p, err := f.Build("safehome-agent-", "where the agent keeps its queue")
+	if err != nil {
+		return Result{}, err
 	}
 	r := Result{
-		BrokerURL: cmp.Or(f.BrokerURL, "mqtt://127.0.0.1:1883"),
-		ClientID:  cmp.Or(f.ClientID, "safehome-agent-"+f.Site),
-		StateDir:  f.StateDir,
-		PhotoDir:  filepath.Join(f.StateDir, "photos"), // the same folder as the video service's (videoconfig)
-	}
-	var err error
-	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
-		return Result{}, err
+		Program:  p,
+		PhotoDir: filepath.Join(f.StateDir, "photos"), // the same folder as the video service's (videoconfig)
 	}
 	if r.Cloud, err = cloud(f.Cloud, f.Site, dir); err != nil {
 		return Result{}, err

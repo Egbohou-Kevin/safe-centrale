@@ -100,7 +100,6 @@ func (m *Monitor) Restore(s Snapshot) {
 	}
 	m.s = s
 	for _, w := range m.watches() {
-		w.watch.migrate()
 		w.watch.forget()
 	}
 }

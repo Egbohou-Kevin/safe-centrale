@@ -3,7 +3,6 @@ package health
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 )
@@ -389,51 +388,5 @@ func TestASilentComponentStaysSilentAndToldAcrossARestart(t *testing.T) {
 	none(t, h.gsm(true))
 	if h.m.Status().GSM != LinkOK {
 		t.Fatalf("status %q", h.m.Status().GSM)
-	}
-}
-
-// A snapshot of an older version saved when the gateway last spoke ("seen") and not
-// "known": a gateway it had heard must still be watched after the upgrade, so that it
-// is told when it stays silent.
-func TestASnapshotOfAnOlderVersionStillWatchesTheGateway(t *testing.T) {
-	h := newHarness(t)
-	raw, err := json.Marshal(h.m.Snapshot())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var legacy map[string]any
-	if err := json.Unmarshal(raw, &legacy); err != nil {
-		t.Fatal(err)
-	}
-	legacy["gsm"] = map[string]any{"seen": t0.Format(time.RFC3339), "usable": true, "silent": false,
-		"down_since": time.Time{}.Format(time.RFC3339), "alerted": false}
-	legacy["zigbee"] = map[string]any{"seen": time.Time{}.Format(time.RFC3339), "usable": false, "silent": true,
-		"down_since": t0.Format(time.RFC3339), "alerted": false}
-	raw, _ = json.Marshal(legacy)
-	var s Snapshot
-	if err := json.Unmarshal(raw, &s); err != nil {
-		t.Fatal(err)
-	}
-	h.now = t0.Add(time.Minute)
-	m, err := New(h.cfg, func() string { h.ids++; return fmt.Sprintf("alert-%d", h.ids) }, h.now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m.Restore(s)
-	h.m = m
-	if st := h.m.Status(); st.GSM != LinkOK || st.Zigbee != LinkSilent {
-		t.Fatalf("after the upgrade: gsm %q, zigbee %q", st.GSM, st.Zigbee)
-	}
-	// The adapter, down at the upgrade and not told yet, is told; the gateway, which
-	// never speaks again, is told after its silence.
-	none(t, h.advance(0))
-	if al := alerts(t, h.advance(2*time.Minute)); len(al) != 1 || al[0].Kind != AlertZigbeeDown {
-		t.Fatalf("%+v", al)
-	}
-	if al := alerts(t, h.advance(11*time.Minute)); len(al) != 1 || al[0].Kind != AlertGSMDegraded {
-		t.Fatalf("%+v", al)
-	}
-	if b, _ := json.Marshal(h.m.Snapshot()); strings.Contains(string(b), `"seen"`) {
-		t.Fatalf("the old field must not be saved again: %s", b)
 	}
 }

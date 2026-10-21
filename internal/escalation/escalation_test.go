@@ -123,7 +123,7 @@ func TestIntrusionFollowsTheWaves(t *testing.T) {
 	if got := sends(tick(e, t0.Add(35*time.Minute))); len(got) == 0 {
 		t.Fatal("reminder 3 missing")
 	}
-	if e.Active() == 0 {
+	if len(e.s.Incidents) == 0 {
 		t.Fatal("the last reminders still wait for their confirmations")
 	}
 
@@ -132,7 +132,7 @@ func TestIntrusionFollowsTheWaves(t *testing.T) {
 	if c := concluded(end); len(c) != 1 || c[0].Outcome != OutcomeUnanswered || c[0].Kind != KindIntrusion {
 		t.Fatalf("%+v", end)
 	}
-	if e.Active() != 0 || !e.NextWake().IsZero() {
+	if len(e.s.Incidents) != 0 || !e.NextWake().IsZero() {
 		t.Fatal("nothing must remain once the escalation is over")
 	}
 	if got := sends(tick(e, t0.Add(2*time.Hour))); len(got) != 0 {
@@ -233,10 +233,10 @@ func TestAnAcknowledgementEndsTheEscalation(t *testing.T) {
 func TestAnAcknowledgementFromNobodyKnownIsIgnored(t *testing.T) {
 	e := newEsc(t)
 	raise(e, t0, KindIntrusion)
-	if out := e.Handle(Ack{Now: t0, Incident: "inc1", Contact: "stranger"}); len(out) != 0 || e.Active() != 1 {
+	if out := e.Handle(Ack{Now: t0, Incident: "inc1", Contact: "stranger"}); len(out) != 0 || len(e.s.Incidents) != 1 {
 		t.Fatalf("%+v", out)
 	}
-	if out := e.Handle(Ack{Now: t0, Incident: "other incident", Contact: "owner"}); len(out) != 0 || e.Active() != 1 {
+	if out := e.Handle(Ack{Now: t0, Incident: "other incident", Contact: "owner"}); len(out) != 0 || len(e.s.Incidents) != 1 {
 		t.Fatalf("%+v", out)
 	}
 }
@@ -261,7 +261,7 @@ func TestAnAcknowledgementCoversEveryKindOfTheIncident(t *testing.T) {
 	raise(e, t0, KindIntrusion)
 	raise(e, t0, KindTamper)
 	out := e.Handle(Ack{Now: t0, Incident: "inc1", Contact: "owner"})
-	if len(concluded(out)) != 2 || e.Active() != 0 {
+	if len(concluded(out)) != 2 || len(e.s.Incidents) != 0 {
 		t.Fatalf("%+v", out)
 	}
 }
@@ -275,7 +275,7 @@ func TestDetectorsOfTheSameIncidentAreGrouped(t *testing.T) {
 	if got := sends(again); len(got) != 0 {
 		t.Fatalf("the second detector must not send its own messages: %v", got)
 	}
-	if e.Active() != 1 {
+	if len(e.s.Incidents) != 1 {
 		t.Fatal("one incident")
 	}
 	// The next message names every device concerned.
@@ -293,14 +293,14 @@ func TestDetectorsOfTheSameIncidentAreGrouped(t *testing.T) {
 func TestDifferentKindsAreSeparateIncidents(t *testing.T) {
 	e := newEsc(t)
 	raise(e, t0, KindIntrusion)
-	if got := sends(raise(e, t0, KindTamper)); len(got) == 0 || e.Active() != 2 {
+	if got := sends(raise(e, t0, KindTamper)); len(got) == 0 || len(e.s.Incidents) != 2 {
 		t.Fatalf("%v", got)
 	}
 }
 
 func TestAnUnknownKindIsIgnored(t *testing.T) {
 	e := newEsc(t)
-	if out := raise(e, t0, "meteor"); len(out) != 0 || e.Active() != 0 {
+	if out := raise(e, t0, "meteor"); len(out) != 0 || len(e.s.Incidents) != 0 {
 		t.Fatalf("%+v", out)
 	}
 }

@@ -41,14 +41,11 @@ func (w Wifi) LogValue() slog.Value {
 
 // Result is what the file describes.
 type Result struct {
+	configfile.Program
 	App       consoleapp.Config
 	Wifi      Wifi
 	Port      int
 	HubConfig string // the hub's configuration: its zones and sirens, its state folder
-	BrokerURL string
-	ClientID  string
-	StateDir  string
-	LogLevel  slog.Level
 }
 
 // Listen is where the page is served: the hub's address on its own network.
@@ -71,11 +68,7 @@ type wifiFile struct {
 }
 
 type file struct {
-	Site      string    `json:"site"`
-	BrokerURL string    `json:"broker_url"`
-	ClientID  string    `json:"client_id"`
-	StateDir  string    `json:"state_dir"`
-	LogLevel  string    `json:"log_level"`
+	configfile.ProgramFile
 	HubConfig string    `json:"hub_config"`
 	Port      int       `json:"port"`
 	PairFor   string    `json:"pair_for"`
@@ -115,25 +108,16 @@ func parseService(f file) (Result, error) {
 	if !contract.ValidSite(f.Site) {
 		return Result{}, fmt.Errorf("invalid site %q", f.Site)
 	}
-	if f.StateDir == "" {
-		return Result{}, errors.New("state_dir is required (the hub's, where the zones and sirens are kept)")
+	p, err := f.Build("safehome-console-", "the hub's, where the zones and sirens are kept")
+	if err != nil {
+		return Result{}, err
 	}
 	if f.HubConfig == "" {
 		return Result{}, errors.New("hub_config is required (the hub's configuration file)")
 	}
-	r := Result{
-		BrokerURL: cmp.Or(f.BrokerURL, "mqtt://127.0.0.1:1883"),
-		ClientID:  cmp.Or(f.ClientID, "safehome-console-"+f.Site),
-		StateDir:  f.StateDir, HubConfig: f.HubConfig,
-		Port: cmp.Or(f.Port, 80),
-		App:  consoleapp.DefaultConfig(f.Site),
-	}
+	r := Result{Program: p, HubConfig: f.HubConfig, Port: cmp.Or(f.Port, 80), App: consoleapp.DefaultConfig(f.Site)}
 	if r.Port < 1 || r.Port > 65535 {
 		return Result{}, fmt.Errorf("port %d: from 1 to 65535", r.Port)
-	}
-	var err error
-	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
-		return Result{}, err
 	}
 	if f.PairFor != "" {
 		if r.App.PairFor, err = time.ParseDuration(f.PairFor); err != nil || r.App.PairFor <= 0 || r.App.PairFor > 10*time.Minute {

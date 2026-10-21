@@ -38,8 +38,8 @@ func (g *Gateway) sent(o Outcome) []Action {
 	g.remove(i)
 	g.s.LastGood = o.Line
 	if l, ok := g.s.Lines[o.Line]; ok {
-		if l.Credit == "empty" {
-			l.Credit = "ok"
+		if l.Credit == CreditEmpty {
+			l.Credit = CreditOK
 		}
 		g.s.Lines[o.Line] = l
 	}
@@ -99,7 +99,7 @@ func (g *Gateway) noteFailure(line string, reason Reason) {
 	}
 	switch reason {
 	case ReasonNoCredit:
-		l.Credit = "empty"
+		l.Credit = CreditEmpty
 	case ReasonNoNetwork:
 		l.Registered = false
 	}

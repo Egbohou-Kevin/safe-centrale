@@ -49,43 +49,29 @@ type Hub struct {
 	deps Deps
 	log  *slog.Logger
 
+	// Each domain's loop owns its side: only that loop's goroutine touches it.
+	alarm   alarmSide
+	monitor healthSide
+	escal   escalationSide
+	startup bootState
+
 	codes     *access.Registry
 	installer *access.Registry // the installer code, apart from the people's
 	reloading sync.Mutex       // one ReloadCodes at a time, so the last one read wins
-	inst      installMode      // owned by the engine's loop
-	siren     sirenOrder       // owned by the engine's loop
-
-	eng     *engine.Engine
-	engLoop *driver.Loop[engine.Input, engine.Action, engine.Snapshot]
-	mon     *health.Monitor
-	monLoop *driver.Loop[health.Input, health.Action, health.Snapshot]
-	esc     *escalation.Escalation
-	escLoop *driver.Loop[escalation.Input, escalation.Action, escalation.Snapshot]
 
 	out  *outbox.Outbox
 	seen *inbox.RecentIDs
 
 	bootID  string
 	started time.Time
-	mode    atomic.Value // the alarm state, for the heartbeat
-	mains   atomic.Bool  // a mains reading has been seen
 
-	gsm atomic.Pointer[contract.GSMHealth] // the GSM gateway's lines, once it spoke
-
-	// uplink is the last internet state given to the escalation, and lastHealth the
-	// last system.health published; both owned by the monitor's loop.
-	uplink     health.LinkState
-	lastHealth []byte
-
+	// Read from any goroutine.
+	mode  atomic.Value                       // the alarm state, for the heartbeat
+	mains atomic.Bool                        // a mains reading has been seen
+	gsm   atomic.Pointer[contract.GSMHealth] // the GSM gateway's lines, once it spoke
 	// faults is the monitor's latest summary, for the engine's loop: an arming that
 	// starts names the silent devices and the weak batteries.
 	faults atomic.Pointer[health.Status]
-
-	bootMu     sync.Mutex
-	booting    bool
-	linkUp     chan struct{}
-	linkOnce   sync.Once
-	bootStates map[string]contract.DeviceEventData
 
 	auth chan order
 
@@ -94,6 +80,38 @@ type Hub struct {
 	life context.Context
 	stop context.CancelFunc
 	ran  atomic.Bool
+}
+
+// alarmSide is owned by the engine's loop.
+type alarmSide struct {
+	eng   *engine.Engine
+	loop  *driver.Loop[engine.Input, engine.Action, engine.Snapshot]
+	inst  installMode
+	siren sirenOrder
+}
+
+// healthSide is owned by the monitor's loop.
+type healthSide struct {
+	mon        *health.Monitor
+	loop       *driver.Loop[health.Input, health.Action, health.Snapshot]
+	uplink     health.LinkState // the last internet state given to the escalation
+	lastHealth []byte           // the last system.health published
+}
+
+// escalationSide is owned by the escalation's loop.
+type escalationSide struct {
+	esc  *escalation.Escalation
+	loop *driver.Loop[escalation.Input, escalation.Action, escalation.Snapshot]
+}
+
+// bootState is the boot window (see boot): the retained device states collected
+// while it is open. HandleMessage and the boot share it, under mu.
+type bootState struct {
+	mu       sync.Mutex
+	open     bool
+	states   map[string]contract.DeviceEventData
+	linkUp   chan struct{} // closed by LinkUp
+	linkOnce sync.Once
 }
 
 // New builds the hub, loading what was saved (access codes, message counter,
@@ -113,13 +131,11 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 	now := deps.Clock.Now()
 	h := &Hub{
 		cfg: cfg, deps: deps, log: log,
-		seen:       inbox.NewRecentIDs(cfg.DedupeSize),
-		bootID:     deps.NewID(),
-		started:    now,
-		booting:    true,
-		linkUp:     make(chan struct{}),
-		bootStates: map[string]contract.DeviceEventData{},
-		auth:       make(chan order, cfg.AuthQueue),
+		seen:    inbox.NewRecentIDs(cfg.DedupeSize),
+		bootID:  deps.NewID(),
+		started: now,
+		startup: bootState{open: true, linkUp: make(chan struct{}), states: map[string]contract.DeviceEventData{}},
+		auth:    make(chan order, cfg.AuthQueue),
 	}
 	h.life, h.stop = context.WithCancel(context.Background())
 	h.mode.Store(string(engine.ModeDisarmed))
@@ -145,7 +161,7 @@ func (h *Hub) openSaved() (err error) {
 	if h.codes, err = h.openPeopleCodes(); err != nil {
 		return err
 	}
-	if h.installer, err = OpenInstallerCode(h.cfg.Access, h.deps.Store); err != nil {
+	if h.installer, err = openInstallerCode(h.cfg.Access, h.deps.Store); err != nil {
 		return err
 	}
 	h.out, err = outbox.Open(h.deps.Store, h.deps.Publisher, keySeq, h.cfg.Site, h.cfg.Outbox, h.log)
@@ -154,13 +170,13 @@ func (h *Hub) openSaved() (err error) {
 
 // buildEngine builds the alarm engine and its loop, which puts its saved state back.
 func (h *Hub) buildEngine(now time.Time) (err error) {
-	if h.eng, err = engine.New(h.cfg.Engine, h.deps.NewID, now); err != nil {
+	if h.alarm.eng, err = engine.New(h.cfg.Engine, h.deps.NewID, now); err != nil {
 		return err
 	}
-	h.engLoop, err = driver.New(driver.Options[engine.Input, engine.Action, engine.Snapshot]{
+	h.alarm.loop, err = driver.New(driver.Options[engine.Input, engine.Action, engine.Snapshot]{
 		Name: keyEngine, Clock: h.deps.Clock, Store: h.deps.Store, Logger: h.log,
 		Core: driver.Core[engine.Input, engine.Action, engine.Snapshot]{
-			Handle: h.eng.Handle, NextWake: h.eng.NextWake, Snapshot: h.eng.Snapshot, Restore: h.eng.Restore,
+			Handle: h.alarm.eng.Handle, NextWake: h.alarm.eng.NextWake, Snapshot: h.alarm.eng.Snapshot, Restore: h.alarm.eng.Restore,
 			Tick: func(t time.Time) engine.Input { return engine.Tick{Now: t} },
 		},
 		Dispatch: h.dispatchEngine,
@@ -175,13 +191,13 @@ func (h *Hub) buildEngine(now time.Time) (err error) {
 // buildMonitor builds the health monitor and its loop, which puts its saved state
 // back.
 func (h *Hub) buildMonitor(now time.Time) (err error) {
-	if h.mon, err = health.New(h.cfg.healthConfig(), h.deps.NewID, now); err != nil {
+	if h.monitor.mon, err = health.New(h.cfg.healthConfig(), h.deps.NewID, now); err != nil {
 		return err
 	}
-	h.monLoop, err = driver.New(driver.Options[health.Input, health.Action, health.Snapshot]{
+	h.monitor.loop, err = driver.New(driver.Options[health.Input, health.Action, health.Snapshot]{
 		Name: keyHealth, Clock: h.deps.Clock, Store: h.deps.Store, Logger: h.log,
 		Core: driver.Core[health.Input, health.Action, health.Snapshot]{
-			Handle: h.mon.Handle, NextWake: h.mon.NextWake, Snapshot: h.mon.Snapshot, Restore: h.mon.Restore,
+			Handle: h.monitor.mon.Handle, NextWake: h.monitor.mon.NextWake, Snapshot: h.monitor.mon.Snapshot, Restore: h.monitor.mon.Restore,
 			Tick: func(t time.Time) health.Input { return health.Tick{Now: t} },
 		},
 		Dispatch: h.dispatchHealth,
@@ -190,7 +206,7 @@ func (h *Hub) buildMonitor(now time.Time) (err error) {
 	if err != nil {
 		return err
 	}
-	st := h.mon.Status() // restored by the loop; nothing runs yet
+	st := h.monitor.mon.Status() // restored by the loop; nothing runs yet
 	h.faults.Store(&st)
 	return nil
 }
@@ -198,13 +214,13 @@ func (h *Hub) buildMonitor(now time.Time) (err error) {
 // buildEscalation builds the escalation and its loop, which puts its saved state
 // back.
 func (h *Hub) buildEscalation() (err error) {
-	if h.esc, err = escalation.New(h.cfg.Escalation); err != nil {
+	if h.escal.esc, err = escalation.New(h.cfg.Escalation); err != nil {
 		return err
 	}
-	h.escLoop, err = driver.New(driver.Options[escalation.Input, escalation.Action, escalation.Snapshot]{
+	h.escal.loop, err = driver.New(driver.Options[escalation.Input, escalation.Action, escalation.Snapshot]{
 		Name: keyEscalation, Clock: h.deps.Clock, Store: h.deps.Store, Logger: h.log,
 		Core: driver.Core[escalation.Input, escalation.Action, escalation.Snapshot]{
-			Handle: h.esc.Handle, NextWake: h.esc.NextWake, Snapshot: h.esc.Snapshot, Restore: h.esc.Restore,
+			Handle: h.escal.esc.Handle, NextWake: h.escal.esc.NextWake, Snapshot: h.escal.esc.Snapshot, Restore: h.escal.esc.Restore,
 			Tick: func(t time.Time) escalation.Input { return escalation.Tick{Now: t} },
 		},
 		Dispatch: h.dispatchEscalation,
@@ -214,7 +230,7 @@ func (h *Hub) buildEscalation() (err error) {
 
 // LinkUp tells the hub that the subscriptions are active: the boot window, in which
 // the retained device states arrive, starts now. Calling it again does nothing.
-func (h *Hub) LinkUp() { h.linkOnce.Do(func() { close(h.linkUp) }) }
+func (h *Hub) LinkUp() { h.startup.linkOnce.Do(func() { close(h.startup.linkUp) }) }
 
 // Alive returns once the engine, the health monitor and the escalation have each
 // taken what was queued for them: none of them is stuck. The program checks it before
@@ -223,7 +239,7 @@ func (h *Hub) Alive(ctx context.Context) error {
 	for _, l := range []struct {
 		name  string
 		alive func(context.Context) error
-	}{{"engine", h.engLoop.Alive}, {"health", h.monLoop.Alive}, {"escalation", h.escLoop.Alive}} {
+	}{{"engine", h.alarm.loop.Alive}, {"health", h.monitor.loop.Alive}, {"escalation", h.escal.loop.Alive}} {
 		if err := l.alive(ctx); err != nil {
 			return fmt.Errorf("hub: %s does not answer: %w", l.name, err)
 		}
@@ -265,9 +281,9 @@ func (h *Hub) Run(ctx context.Context) error {
 
 	var wg sync.WaitGroup
 	for _, run := range []func(context.Context){
-		func(c context.Context) { h.engLoop.Run(c) },
-		func(c context.Context) { h.monLoop.Run(c) },
-		func(c context.Context) { h.escLoop.Run(c) },
+		func(c context.Context) { h.alarm.loop.Run(c) },
+		func(c context.Context) { h.monitor.loop.Run(c) },
+		func(c context.Context) { h.escal.loop.Run(c) },
 		h.out.Run,
 		h.authWorker,
 		func(c context.Context) { driver.Every(c, h.deps.Clock, h.cfg.HeartbeatEvery, h.publishHeartbeat) },
@@ -291,8 +307,8 @@ func (h *Hub) boot(ctx context.Context) error {
 		return err
 	}
 	signals := h.endBootWindow()
-	err := h.engLoop.Do(ctx, func(now time.Time) []engine.Action {
-		actions := h.eng.Boot(now, signals)
+	err := h.alarm.loop.Do(ctx, func(now time.Time) []engine.Action {
+		actions := h.alarm.eng.Boot(now, signals)
 		h.publishState(now) // the first retained state, even if nothing changed since the last run
 		// An installation mode never survives a restart: one left open by a crash is
 		// closed for the console too.
@@ -302,7 +318,7 @@ func (h *Hub) boot(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return h.monLoop.Do(ctx, func(now time.Time) []health.Action {
+	return h.monitor.loop.Do(ctx, func(now time.Time) []health.Action {
 		h.publishHealth(now)
 		return nil
 	})
@@ -318,7 +334,7 @@ func (h *Hub) bootWindow(ctx context.Context) error {
 		gaveUp, stop := h.deps.Clock.Timer(h.cfg.LinkWait)
 		defer stop()
 		select {
-		case <-h.linkUp:
+		case <-h.startup.linkUp:
 		case <-gaveUp:
 			h.log.Warn("the broker link did not come up in time, listening for device states anyway")
 		case <-ctx.Done():
@@ -338,11 +354,11 @@ func (h *Hub) bootWindow(ctx context.Context) error {
 // endBootWindow stops collecting retained states and returns what they say to the
 // engine, in a stable order.
 func (h *Hub) endBootWindow() []engine.Signal {
-	h.bootMu.Lock()
-	h.booting = false
-	states := h.bootStates
-	h.bootStates = nil
-	h.bootMu.Unlock()
+	h.startup.mu.Lock()
+	h.startup.open = false
+	states := h.startup.states
+	h.startup.states = nil
+	h.startup.mu.Unlock()
 
 	var signals []engine.Signal
 	for _, key := range slices.Sorted(maps.Keys(states)) {

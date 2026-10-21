@@ -4,18 +4,106 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 
 	"safehome/internal/access"
 	"safehome/internal/driver"
+	"safehome/internal/escalation"
 )
 
-// OpenCodes opens the access codes saved in store, for the installer's tools (the
-// command-line tool, the local console), which set them without running a hub. Every
-// change is saved before it takes effect; the running hub reads them again when told
-// (ReloadCodes).
-func OpenCodes(cfg access.Config, store driver.Store) (*access.Registry, error) {
+// SiteCodes are the access codes as the installer's tools (the command-line tool,
+// the local console) change them, without running a hub: the people's and the
+// installer's, with the site's contacts. Every change is saved before it takes
+// effect; the running hub reads the codes again when told (ReloadCodes).
+type SiteCodes struct {
+	people, installer *access.Registry
+	contacts          []escalation.Contact
+}
+
+// ErrNotAContact refuses a code for someone who is neither a contact of the site nor
+// the installer: the hub would leave it aside.
+var ErrNotAContact = errors.New("hub: not a contact of the site")
+
+// OpenSiteCodes opens the codes saved in store, for the contacts of cfg.
+func OpenSiteCodes(cfg Config, store driver.Store) (*SiteCodes, error) {
+	people, err := openCodes(cfg.Access, store)
+	if err != nil {
+		return nil, err
+	}
+	installer, err := openInstallerCode(cfg.Access, store)
+	if err != nil {
+		return nil, err
+	}
+	return &SiteCodes{people: people, installer: installer, contacts: cfg.Escalation.Contacts}, nil
+}
+
+// openCodes opens the people's codes saved in store.
+func openCodes(cfg access.Config, store driver.Store) (*access.Registry, error) {
 	return openRegistry(cfg, store, keyAccess)
+}
+
+// openInstallerCode opens the installer code saved in store: one code at most.
+func openInstallerCode(cfg access.Config, store driver.Store) (*access.Registry, error) {
+	cfg.MaxUsers = 1
+	return openRegistry(cfg, store, keyInstaller)
+}
+
+// CodeHolder is a contact of the site, and whether they have a code.
+type CodeHolder struct {
+	escalation.Contact
+	HasCode bool
+}
+
+// CodeList says who has a code. It never holds a code.
+type CodeList struct {
+	Contacts  []CodeHolder // in the configuration's order
+	Leftovers []string     // users of codes who are not contacts, sorted: the hub leaves those codes aside
+	Installer bool         // the installer code is set
+}
+
+// List says who has a code.
+func (s *SiteCodes) List() CodeList {
+	have := map[string]bool{}
+	for _, u := range s.people.Users() {
+		have[u] = true
+	}
+	var l CodeList
+	for _, ct := range s.contacts {
+		l.Contacts = append(l.Contacts, CodeHolder{Contact: ct, HasCode: have[ct.ID]})
+		delete(have, ct.ID)
+	}
+	l.Leftovers = slices.Sorted(maps.Keys(have))
+	l.Installer = len(s.installer.Users()) > 0
+	return l
+}
+
+// Set gives user, a contact of the site or the installer, a code. One code opens one
+// thing: a person's code may not be the installer's, nor the reverse
+// (access.ErrCodeTaken). The code is never in an error.
+func (s *SiteCodes) Set(user, code string) error {
+	if user != InstallerUser && !slices.ContainsFunc(s.contacts, func(c escalation.Contact) bool { return c.ID == user }) {
+		return fmt.Errorf("%w: %s", ErrNotAContact, user)
+	}
+	own, other := s.of(user)
+	if _, taken := other.Verify(code); taken {
+		return access.ErrCodeTaken
+	}
+	return own.Set(user, code)
+}
+
+// Remove removes the code of user (access.ErrNoSuchUser if there is none).
+func (s *SiteCodes) Remove(user string) error {
+	own, _ := s.of(user)
+	return own.Remove(user)
+}
+
+// of returns the registry of user, and the other one.
+func (s *SiteCodes) of(user string) (own, other *access.Registry) {
+	if user == InstallerUser {
+		return s.installer, s.people
+	}
+	return s.people, s.installer
 }
 
 func openRegistry(cfg access.Config, store driver.Store, key string) (*access.Registry, error) {

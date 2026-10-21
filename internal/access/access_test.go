@@ -12,6 +12,13 @@ import (
 	"testing"
 )
 
+// records reads what the registry holds: hashes, never codes.
+func records(r *Registry) []Record {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return cloneRecords(r.records)
+}
+
 // counterRand gives predictable, distinct salts.
 type counterRand struct{ n byte }
 
@@ -255,11 +262,9 @@ func TestNothingSavedOrPrintedContainsTheCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(s.saved)
-	rec, _ := json.Marshal(r.Records())
 	for what, text := range map[string]string{
 		"saved records":  string(b),
-		"Records":        string(rec),
-		"%v of registry": fmt.Sprintf("%v %+v %#v", r.Users(), r.Records(), r.Records()),
+		"%v of registry": fmt.Sprintf("%v %+v %#v", r.Users(), r, r),
 	} {
 		if strings.Contains(text, code) {
 			t.Errorf("%s contains the code", what)
@@ -286,7 +291,7 @@ func TestEachCodeGetsItsOwnSaltAndTheRecordsHoldNoClearCode(t *testing.T) {
 	}
 	r.Set("a", "482915")
 	r.Set("a", "482915") // the same code again, for the same person
-	recs := r.Records()
+	recs := records(r)
 	prev := s.saved[0][0]
 	if bytes.Equal(prev.Salt, recs[0].Salt) || bytes.Equal(prev.Hash, recs[0].Hash) {
 		t.Fatal("a new salt is needed every time: the same code must not give the same hash")
@@ -313,18 +318,10 @@ func TestNoSaltNoCode(t *testing.T) {
 	}
 }
 
-func TestRecordsAreCopied(t *testing.T) {
+func TestNewCopiesItsInput(t *testing.T) {
 	r, _ := newRegistry(t)
 	r.Set("u_owner", "482915")
-	recs := r.Records()
-	recs[0].Hash[0] ^= 0xff
-	recs[0].User = "someone-else"
-	if u, ok := r.Verify("482915"); !ok || u != "u_owner" {
-		t.Fatal("changing the copy must not change the registry")
-	}
-
-	// The slices given to New are copied too.
-	in := r.Records()
+	in := records(r)
 	again, _ := New(testConfig(), in, (&store{}).persist)
 	in[0].Hash[0] ^= 0xff
 	if _, ok := again.Verify("482915"); !ok {
@@ -336,7 +333,7 @@ func TestNewRefusesDamagedRecords(t *testing.T) {
 	r, _ := newRegistry(t)
 	r.Set("a", "482915")
 	r.Set("b", "730264")
-	good := r.Records()
+	good := records(r)
 
 	mutate := map[string]func([]Record) []Record{
 		"duplicate user":    func(x []Record) []Record { x[1].User = x[0].User; return x },

@@ -174,7 +174,22 @@ func TestSchemaEnumsMatchConstants(t *testing.T) {
 			t.Errorf("%s.%s: schema %v, Go %v", file, prop, got, sorted(want))
 		}
 	}
-	check("envelope.json", "type", Types)
+	check("envelope.json", "type", []string{
+		TypeDeviceEvent, TypeDeviceState, TypeCommand, TypeCommandAck,
+		TypeAlarmCommand, TypeAlarmAck, TypeAlarmArming, TypeAlarmArmed, TypeAlarmDisarmed,
+		TypeAlarmEntryDelay, TypeAlarmTriggered, TypeAlarmSirenCycle, TypeAlarmCleared,
+		TypeAlarmArmingScheduled, TypeAlarmPostponed, TypeAlarmAuthFailed, TypeAlarmState,
+		TypeAlertRequest, TypeAlertResult, TypeAlertAck,
+		TypeRegistryPair, TypeRegistryRemove, TypeRegistrySnapshot, TypeRegistryDeviceAdded,
+		TypeRegistryDeviceRejected, TypeRegistryDeviceRemoved,
+		TypeHeartbeat, TypeHealth, TypeGSMStatus, TypeZigbeeStatus, TypeAgentStatus,
+		TypeVideoRequest, TypeVideoStop, TypeVideoSession, TypeVideoStatus,
+		TypeConfigSet, TypeConfigApplied,
+		TypePhotoTaken, TypePhotoUpload, TypePhotoSent,
+		TypeMaintOpen, TypeMaintClose, TypeMaintSession,
+		TypeAgentReplay, TypeAgentReplayed,
+		TypeInstallMode, TypeInstallClose,
+	})
 	check("alarm-command.json", "origin", origins)
 	check("alarm-ack.json", "status", []string{AckDone, AckRefused, AckExpired, AckFailed})
 	check("alarm-ack.json", "reason", []string{ReasonZoneOpen, ReasonBadCode, ReasonLockedOut,

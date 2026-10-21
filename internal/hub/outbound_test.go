@@ -85,7 +85,7 @@ func TestARetainedStateIsReplacedWhileItWaits(t *testing.T) {
 // settle2 waits for the domains only: the outbox is stuck on purpose.
 func (r *rig) settle2() {
 	r.t.Helper()
-	r.hub.monLoop.Do(context.Background(), func(time.Time) []health.Action { return nil })
+	r.hub.monitor.loop.Do(context.Background(), func(time.Time) []health.Action { return nil })
 }
 
 func TestARefusedMessageIsDroppedAndTheNextOnesGoOut(t *testing.T) {

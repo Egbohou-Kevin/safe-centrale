@@ -2,7 +2,6 @@ package agent
 
 import (
 	"encoding/json"
-	"fmt"
 	"maps"
 	"reflect"
 	"strings"
@@ -132,12 +131,12 @@ func TestRestoreReconcilesWhatACrashLeftOnDisk(t *testing.T) {
 			t.Fatalf("%+v", sent)
 		}
 	})
-	t.Run("a number of the snapshot is never given again", func(t *testing.T) {
+	t.Run("a number of the counter is never given again", func(t *testing.T) {
 		h := newHarness(t)
 		h.local(topic("alarm", "event"), contract.TypeAlarmArmed, armed)
 		h.linkUp()
 		h.send()
-		clear(h.disk) // nothing left on disk: the snapshot alone knows seq 1
+		clear(h.disk) // nothing left in the queue's store: the counter alone knows seq 1
 		h.restart()
 		h.local(topic("alarm", "event"), contract.TypeAlarmArmed, armed)
 		h.linkUp()
@@ -145,59 +144,4 @@ func TestRestoreReconcilesWhatACrashLeftOnDisk(t *testing.T) {
 			t.Fatalf("%+v", sent)
 		}
 	})
-}
-
-// A state saved by a version that kept the queue in the snapshot.
-func legacySnapshot(h *harness) ([]byte, []string) {
-	h.t.Helper()
-	var items []string
-	var ids []string
-	for _, tp := range []string{"device/dev_smoke/event", "alarm/event"} {
-		b, id := h.msg(contract.TypeAlarmArmed, armed)
-		prio := PriorityNormal
-		if tp == "alarm/event" {
-			prio = PriorityAlarm
-		}
-		items = append(items, fmt.Sprintf(`{"id":%q,"topic":%q,"payload":%s,"prio":%d,"retain":false,"at":"2026-10-20T21:00:00Z"}`,
-			id, topic()+tp, b, prio))
-		ids = append(ids, id)
-	}
-	snap := fmt.Sprintf(`{"queue":[%s],"pending":{},"incidents":{},"seen":[],"dropped":2,"tokens":20,"tokens_at":"0001-01-01T00:00:00Z","uplink":7}`,
-		strings.Join(items, ","))
-	return []byte(snap), ids
-}
-
-func TestAQueueSavedInTheSnapshotMovesToItsStore(t *testing.T) {
-	h := newHarness(t)
-	data, ids := legacySnapshot(h)
-	var snap Snapshot
-	if err := json.Unmarshal(data, &snap); err != nil {
-		t.Fatal(err)
-	}
-	h.r.Restore(snap)
-	acts := h.r.RestoreQueue(nil, 0)
-	s, u := of[QueueSave](acts), of[UplinkSave](acts)
-	if len(acts) != 3 || len(s) != 2 || s[0].Item.ID != ids[0] || s[1].Item.ID != ids[1] || len(u) != 1 || u[0].Last != 7 {
-		t.Fatalf("%+v", acts)
-	}
-	h.keep(acts)
-	if saved, _ := json.Marshal(h.r.Snapshot()); strings.Contains(string(saved), `"queue"`) || strings.Contains(string(saved), `"uplink"`) {
-		t.Fatalf("the queue or the counter stay in the snapshot: %s", saved)
-	}
-
-	// A crash before the snapshot without the queue was saved: the items are on disk
-	// and in the snapshot, and nothing is saved twice.
-	again := h.restored(snap, h.disk)
-	if len(again.queue) != 2 || len(h.disk) != 2 {
-		t.Fatalf("queue %+v, disk %v", again.queue, h.disk)
-	}
-	h.r = again
-	h.linkUp()
-	sent := h.send()
-	if len(sent) != 2 || sent[0].ID != ids[1] || sent[1].ID != ids[0] || seqOf(t, sent[0]) != 8 {
-		t.Fatalf("%+v", sent)
-	}
-	if h.r.Status(h.now).Dropped != 2 {
-		t.Fatal("the count of dropped items is kept")
-	}
 }

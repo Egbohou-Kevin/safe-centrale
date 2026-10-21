@@ -69,9 +69,9 @@ type PhotoReport struct {
 	Reason string
 }
 
-func (Upload) action()      {}
-func (RemovePhoto) action() {}
-func (PhotoReport) action() {}
+func (Upload) isAction()      {}
+func (RemovePhoto) isAction() {}
+func (PhotoReport) isAction() {}
 
 // photoTaken follows a photo announced by the video service.
 func (r *Relay) photoTaken(now time.Time, env contract.Envelope) []Action {

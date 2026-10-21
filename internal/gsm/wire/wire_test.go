@@ -60,14 +60,15 @@ func TestResultsAcksAndStatusAreValid(t *testing.T) {
 	}
 	ok := true
 	st := Status([]gsm.LineStatus{
-		{ID: "line1", Operator: "togocom", Responding: true, Registered: true, Signal: 70, Credit: "ok", LastTest: now, LastTestOK: &ok, Restarts: 2},
+		{ID: "line1", Operator: "togocom", Responding: true, Registered: true, Signal: 70, Credit: gsm.CreditOK, LastTest: now, LastTestOK: &ok, Restarts: 2},
 		{ID: "line2"},
 	}, 3)
 	raw, _ = json.Marshal(st)
 	if err := schematest.Check("gsm-status.json", raw); err != nil {
 		t.Fatal(err)
 	}
-	if st.Queued != 3 || st.Lines[0].LastTest == nil || st.Lines[1].LastTest != nil || st.Lines[0].Restarts != 2 {
+	if st.Queued != 3 || st.Lines[0].LastTest == nil || st.Lines[1].LastTest != nil || st.Lines[0].Restarts != 2 ||
+		st.Lines[0].Credit != contract.CreditOK || st.Lines[1].Credit != "" {
 		t.Fatalf("%+v", st)
 	}
 }

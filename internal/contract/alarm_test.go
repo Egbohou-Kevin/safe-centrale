@@ -27,9 +27,6 @@ func TestAlarmCommandValidate(t *testing.T) {
 	if !NeedsCode(CmdDisarm) || !NeedsCode(CmdSilence) || NeedsCode(CmdArm) {
 		t.Error("only disarm and silence need a code")
 	}
-	if !KnownAlarmCommand(CmdPostpone) || KnownAlarmCommand("alarm.explode") {
-		t.Error("wrong list of known commands")
-	}
 }
 
 // The access code must appear neither in a printout nor in a log.

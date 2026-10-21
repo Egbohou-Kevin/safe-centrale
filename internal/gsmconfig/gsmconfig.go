@@ -4,9 +4,7 @@ package gsmconfig
 
 import (
 	"cmp"
-	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"safehome/internal/configfile"
@@ -24,12 +22,9 @@ type Port struct {
 
 // Result is what the file describes.
 type Result struct {
-	Gateway   gateway.Config
-	Ports     map[string]Port // line -> port
-	BrokerURL string
-	ClientID  string
-	StateDir  string
-	LogLevel  slog.Level
+	configfile.Program
+	Gateway gateway.Config
+	Ports   map[string]Port // line -> port
 
 	// SiteVersion is the version of the configuration set from the cloud found in
 	// the state folder (0: none); SiteErr says why it was not applied (the gateway
@@ -53,11 +48,7 @@ type maxAgeFile struct {
 }
 
 type file struct {
-	Site       string            `json:"site"`
-	BrokerURL  string            `json:"broker_url"`
-	ClientID   string            `json:"client_id"`
-	StateDir   string            `json:"state_dir"`
-	LogLevel   string            `json:"log_level"`
+	configfile.ProgramFile
 	Country    string            `json:"country"`
 	Lines      []lineFile        `json:"lines"`
 	Contacts   map[string]string `json:"contacts"`
@@ -87,19 +78,24 @@ func Load(path string) (Result, error) {
 }
 
 // withSite lays the cloud's contacts over the file's: the contacts with a phone
-// number, and no other, can be reached by SMS and call.
+// number, and no other, can be reached by SMS and call. Every contact, those reached
+// by the app only too, goes to Gateway.Contacts: an acknowledgement from any of them
+// ends the incident for the escalation, so it does for the gateway.
 func withSite(r Result, f file) Result {
 	o, ok, err := siteconfig.Read(r.StateDir)
 	if err != nil || !ok {
 		r.SiteErr = err
 		return r
 	}
+	var all []string
 	if o.Contacts != nil {
 		f.Contacts = map[string]string{}
+		all = make([]string, 0, len(o.Contacts))
 		for _, c := range o.Contacts {
 			if c.Phone != "" {
 				f.Contacts[c.ID] = c.Phone
 			}
+			all = append(all, c.ID)
 		}
 	}
 	merged, err := build(f)
@@ -108,31 +104,16 @@ func withSite(r Result, f file) Result {
 		return r
 	}
 	merged.SiteVersion = o.Version
+	merged.Gateway.Contacts = all
 	return merged
 }
 
-// Parse reads and checks a configuration.
-func Parse(data []byte) (Result, error) {
-	var f file
-	if err := configfile.DecodeBytes(data, &f); err != nil {
-		return Result{}, err
-	}
-	return build(f)
-}
-
 func build(f file) (Result, error) {
-	if f.StateDir == "" {
-		return Result{}, errors.New("state_dir is required (where the gateway keeps its queue)")
-	}
-	r := Result{
-		BrokerURL: cmp.Or(f.BrokerURL, "mqtt://127.0.0.1:1883"),
-		ClientID:  cmp.Or(f.ClientID, "safehome-gsm-"+f.Site),
-		StateDir:  f.StateDir,
-	}
-	var err error
-	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
+	p, err := f.Build("safehome-gsm-", "where the gateway keeps its queue")
+	if err != nil {
 		return Result{}, err
 	}
+	r := Result{Program: p}
 	lines, ports, err := parseLines(f.Lines)
 	if err != nil {
 		return Result{}, err

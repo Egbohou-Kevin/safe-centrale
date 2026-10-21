@@ -23,7 +23,7 @@ import (
 
 const (
 	name    = "hub" // in the logs
-	pidName = "hub.pid"
+	pidName = hubconfig.PidFile
 )
 
 const usage = `usage:

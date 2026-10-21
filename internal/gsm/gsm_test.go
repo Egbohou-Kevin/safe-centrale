@@ -3,7 +3,6 @@ package gsm
 import (
 	"encoding/json"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 )
@@ -36,7 +35,7 @@ func up(t *testing.T, g *Gateway, now time.Time) {
 		}
 	}
 	for _, l := range g.Lines() {
-		if !l.Usable() {
+		if !l.Responding || !l.Registered {
 			t.Fatalf("%s is not usable after its check", l.ID)
 		}
 	}
@@ -167,7 +166,7 @@ func TestAFailureTriesTheOtherLineFirst(t *testing.T) {
 	if len(again) != 1 || again[0].Line != "line2" {
 		t.Fatalf("%+v", out)
 	}
-	if g.Lines()[0].Credit != "empty" {
+	if g.Lines()[0].Credit != CreditEmpty {
 		t.Fatal("the operator said the SIM has no credit")
 	}
 	onlyReport(t, g.Handle(Outcome{Now: t0.Add(2 * time.Second), Job: again[0].Job, Line: "line2", OK: true}), "r1", StatusSent, "")
@@ -327,19 +326,6 @@ func TestSnapshotsAreCopies(t *testing.T) {
 	}
 	if !reflect.DeepEqual(g.Snapshot().Lines, g.Snapshot().Lines) {
 		t.Fatal("stable")
-	}
-}
-
-func TestDescribeNeverShowsATextOrANumber(t *testing.T) {
-	for _, a := range []Action{
-		Execute{Job: 1, Line: "line1", Channel: ChannelSMS, Number: "+22890123456", Text: "secret"},
-		CheckLine{Line: "l"}, RestartModem{Line: "l"}, Report{Ref: "r", Status: StatusSent},
-		Acknowledge{Incident: "i", Contact: "c"}, LinesChanged{}, Ignored{Line: "l", Why: "w"}, Dropped{Incident: "i", Jobs: 2}, nil,
-	} {
-		d := Describe(a)
-		if d == "" || strings.Contains(d, "+228") || strings.Contains(d, "secret") {
-			t.Errorf("%q", d)
-		}
 	}
 }
 

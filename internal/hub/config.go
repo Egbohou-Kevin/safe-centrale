@@ -52,8 +52,8 @@ func DefaultConfig(site, hubDeviceID string, sirenIDs ...string) Config {
 	}
 }
 
-// ErrNoSiren refuses a site without a siren, for a tool to explain it.
-var ErrNoSiren = errors.New("hub: at least one siren is required: an alarm that cannot sound is a misconfiguration")
+// errNoSiren refuses a site without a siren.
+var errNoSiren = errors.New("hub: at least one siren is required: an alarm that cannot sound is a misconfiguration")
 
 // Validate checks the whole configuration, domains included, without building
 // anything.
@@ -79,7 +79,7 @@ func (c Config) validate() error {
 	case c.HubDeviceID == "":
 		return errors.New("hub: HubDeviceID is required")
 	case len(c.SirenIDs) == 0:
-		return ErrNoSiren
+		return errNoSiren
 	case c.HeartbeatEvery <= 0 || c.SirenCommandTTL <= 0:
 		return errors.New("hub: durations must be positive")
 	case c.BootWindow < 0:

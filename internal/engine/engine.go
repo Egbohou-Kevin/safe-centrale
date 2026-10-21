@@ -59,8 +59,6 @@ func (e *Engine) Restore(s Snapshot) {
 		s.Open = map[string]bool{}
 	}
 	if s.Tampered == nil {
-		// A snapshot from before tampers were remembered: Boot treats every tamper
-		// still active as new, as the older versions did, once.
 		s.Tampered = map[string]bool{}
 	}
 	e.s = s

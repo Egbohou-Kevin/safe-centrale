@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"safehome/internal/adapter/filestore"
@@ -38,6 +41,23 @@ func OpenState(name, dir, pidName string, log *slog.Logger) (*filestore.Store, f
 		return nil, nil, err
 	}
 	return store, release, nil
+}
+
+// ErrNotRunning: no live process holds the pid file.
+var ErrNotRunning = errors.New("not running")
+
+// Reload tells the program whose pid file is pidName in dir to read its files again
+// (SIGHUP; see the hub's codes). It returns the process told, or ErrNotRunning.
+func Reload(dir, pidName string) (pid int, err error) {
+	pid, ok := pidfile.Read(dir, pidName)
+	if !ok || !pidfile.Alive(pid) {
+		return 0, ErrNotRunning
+	}
+	p, err := os.FindProcess(pid)
+	if err == nil {
+		err = p.Signal(syscall.SIGHUP)
+	}
+	return pid, err
 }
 
 // Broker is one MQTT client of a program, and the publisher that sends through it.

@@ -307,14 +307,14 @@ func (r *rig) passTimer(d time.Duration) {
 func (r *rig) settle() {
 	r.t.Helper()
 	ctx := context.Background()
-	if err := r.hub.engLoop.Do(ctx, func(time.Time) []engine.Action { return nil }); err != nil {
+	if err := r.hub.alarm.loop.Do(ctx, func(time.Time) []engine.Action { return nil }); err != nil {
 		r.t.Fatal(err)
 	}
-	if err := r.hub.monLoop.Do(ctx, func(time.Time) []health.Action { return nil }); err != nil {
+	if err := r.hub.monitor.loop.Do(ctx, func(time.Time) []health.Action { return nil }); err != nil {
 		r.t.Fatal(err)
 	}
 	// The escalation is fed by the two loops above: it comes last.
-	if err := r.hub.escLoop.Do(ctx, func(time.Time) []escalation.Action { return nil }); err != nil {
+	if err := r.hub.escal.loop.Do(ctx, func(time.Time) []escalation.Action { return nil }); err != nil {
 		r.t.Fatal(err)
 	}
 	r.waitFor("the outbox to empty", func() bool { return r.hub.out.Depth() == 0 })
@@ -377,7 +377,7 @@ func (r *rig) order(cmd string, args contract.CommandArgs, origin, user string) 
 // is told to read them again.
 func (r *rig) setCode(user, code string) {
 	r.t.Helper()
-	reg, err := OpenCodes(testConfig().Access, r.store)
+	reg, err := openCodes(testConfig().Access, r.store)
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -392,7 +392,7 @@ func (r *rig) setCode(user, code string) {
 // mode reads the engine's mode from the loop's goroutine.
 func (r *rig) mode() (m engine.Mode) {
 	r.t.Helper()
-	if err := r.hub.engLoop.Do(context.Background(), func(time.Time) []engine.Action { m = r.hub.eng.Mode(); return nil }); err != nil {
+	if err := r.hub.alarm.loop.Do(context.Background(), func(time.Time) []engine.Action { m = r.hub.alarm.eng.Mode(); return nil }); err != nil {
 		r.t.Fatal(err)
 	}
 	return m

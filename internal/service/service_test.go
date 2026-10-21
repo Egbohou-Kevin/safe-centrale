@@ -5,12 +5,14 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -108,6 +110,29 @@ func TestASecondCopyRefusesTheState(t *testing.T) {
 	os.WriteFile(file, nil, 0o600)
 	if _, _, err := OpenState("hub", file, "hub.pid", nil); err == nil || !strings.Contains(err.Error(), "cannot open the state directory") {
 		t.Fatalf("a file as the state directory: %v", err)
+	}
+}
+
+func TestReloadSignalsTheProcessOfThePidFile(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Reload(dir, "hub.pid"); !errors.Is(err, ErrNotRunning) {
+		t.Fatalf("no pid file: %v", err)
+	}
+	stand := exec.Command("sleep", "30")
+	if err := stand.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stand.Process.Kill() })
+	os.WriteFile(filepath.Join(dir, "hub.pid"), []byte(strconv.Itoa(stand.Process.Pid)+"\n"), 0o600)
+	if pid, err := Reload(dir, "hub.pid"); err != nil || pid != stand.Process.Pid {
+		t.Fatalf("%d %v", pid, err)
+	}
+	var exit *exec.ExitError
+	if err := stand.Wait(); !errors.As(err, &exit) || exit.Sys().(syscall.WaitStatus).Signal() != syscall.SIGHUP {
+		t.Fatalf("not sent SIGHUP: %v", err)
+	}
+	if _, err := Reload(dir, "hub.pid"); !errors.Is(err, ErrNotRunning) {
+		t.Fatalf("a dead process: %v", err)
 	}
 }
 

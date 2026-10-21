@@ -49,7 +49,6 @@ type AlarmCommandData struct {
 	Exp     *Timestamp  `json:"exp,omitempty"`
 }
 
-var alarmCommands = []string{CmdArm, CmdArmNow, CmdDisarm, CmdSilence, CmdBypass, CmdPostpone}
 var origins = []string{OriginKeypad, OriginApp, OriginSchedule}
 
 // Validate checks the shape of the order. An unknown command is not a shape error:
@@ -63,9 +62,6 @@ func (d AlarmCommandData) Validate() error {
 	}
 	return nil
 }
-
-// KnownAlarmCommand reports whether the engine knows this command.
-func KnownAlarmCommand(name string) bool { return slices.Contains(alarmCommands, name) }
 
 // NeedsCode reports whether the command requires a valid code.
 func NeedsCode(name string) bool { return name == CmdDisarm || name == CmdSilence }

@@ -59,6 +59,7 @@ relie les deux : c'est le langage commun du projet.
 | plafond de données | `quota` | Données vidéo autorisées par mois pour un site |
 | horloge synchronisée | `clock_ok` | L'heure de la centrale a été vérifiée par internet (NTP) ; dit dans le heartbeat |
 | file d'envoi (partagée) | `outbox` | Messages MQTT gardés quand le broker est absent, renvoyés dans l'ordre ; partagée par toutes les couches application |
+| porte d'entrée (partagée) | `inbox` | Message reçu, abonnements, vérification d'un message contre le contrat, identifiants déjà vus ; partagée par toutes les couches application |
 | application (couche) | `hub`, `gateway`, `zigbeeapp`, `agentapp`, `videoapp`, `maintapp`, `configapp`, `consoleapp`, `install` | Relie MQTT aux domaines et à leurs boucles, par des ports qu'elle déclare |
 | racine de composition | les programmes de `cmd/` (avec `internal/service`) | Assemblent les vrais adaptateurs, seuls endroits à les connaître |
 | fenêtre de démarrage | `BootWindow` | Écoute des états retenus au lancement, après la connexion au broker |

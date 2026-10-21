@@ -102,11 +102,6 @@ type pendingAlert struct {
 // Snapshot is the relay's state, saved after every change. The queue for the cloud
 // is saved apart, item by item, and the numbering on its own (see queue.go).
 type Snapshot struct {
-	// Queue and Uplink are only read: the queue and the last number as an older
-	// version saved them here. Restore takes them, and RestoreQueue moves them to
-	// their own documents.
-	Queue     []Item                  `json:"queue,omitempty"`
-	Uplink    uint64                  `json:"uplink,omitempty"`
 	Pending   map[string]pendingAlert `json:"pending"`   // alert.request id -> its state
 	Incidents map[string]time.Time    `json:"incidents"` // incidents seen going up -> last seen
 	Seen      []string                `json:"seen"`      // ids of the last messages from the cloud
@@ -176,15 +171,8 @@ func (r *Relay) Restore(s Snapshot) {
 	if s.TokensAt.IsZero() {
 		s.Tokens = float64(r.cfg.DownBurst)
 	}
-	// A queue saved in the snapshot keeps its order; RestoreQueue saves it apart,
-	// with the counter.
-	r.queue, s.Queue = s.Queue, nil
-	for i := range r.queue {
-		r.queue[i].Order = uint64(i + 1)
-	}
-	r.order = uint64(len(r.queue))
-	r.uplink, s.Uplink = s.Uplink, 0
 	r.s = s
+	r.queue, r.order, r.uplink = nil, 0, 0
 	r.up, r.transport, r.sending = false, "", ""
 	r.journal, r.journalBytes, r.replay = nil, 0, nil
 	r.got = map[string]sentMark{}

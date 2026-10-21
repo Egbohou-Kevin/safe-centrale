@@ -79,21 +79,20 @@ type task[Act any] struct {
 
 // Loop runs one core.
 type Loop[In, Act, Snap any] struct {
-	o        Options[In, Act, Snap]
-	log      *slog.Logger
-	tasks    chan task[Act]
-	stopped  chan struct{}
-	last     time.Time // latest time handed to the core: time never goes back
-	saved    []byte    // last state written, to skip identical writes
-	seen     []byte    // last state observed, to tell OnChange something moved
-	restored bool
+	o       Options[In, Act, Snap]
+	log     *slog.Logger
+	tasks   chan task[Act]
+	stopped chan struct{}
+	last    time.Time // latest time handed to the core: time never goes back
+	saved   []byte    // last state written, to skip identical writes
+	seen    []byte    // last state observed, to tell OnChange something moved
 }
 
 const queueSize = 256
 
 // New builds a loop and puts the saved state back into the core, if there is one.
-// Check Restored afterwards: a core that was restored usually needs a Boot step
-// (see Engine.Boot) which the application runs with Do.
+// A core that was restored usually needs a Boot step (see Engine.Boot) which the
+// application runs with Do.
 //
 // If the saved state is damaged, New fails: the application must decide whether
 // to start empty, because for an alarm that is a decision, not a default.
@@ -128,7 +127,6 @@ func New[In, Act, Snap any](o Options[In, Act, Snap]) (*Loop[In, Act, Snap], err
 		}
 		o.Core.Restore(snap)
 		l.saved = data
-		l.restored = true
 	}
 	// What the core looks like now is the reference for "something changed".
 	if b, err := json.Marshal(o.Core.Snapshot()); err == nil {
@@ -136,9 +134,6 @@ func New[In, Act, Snap any](o Options[In, Act, Snap]) (*Loop[In, Act, Snap], err
 	}
 	return l, nil
 }
-
-// Restored reports whether the core's state came from a previous run.
-func (l *Loop[In, Act, Snap]) Restored() bool { return l.restored }
 
 // now reads the clock, never going back: if the system clock steps backward (a
 // clock correction, a dying RTC battery), the core keeps seeing time that moves

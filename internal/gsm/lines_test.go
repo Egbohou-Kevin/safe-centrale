@@ -16,7 +16,7 @@ func TestAtStartEveryLineIsChecked(t *testing.T) {
 	}
 	out := g.Handle(Probe{Now: t0, Line: "line1", Responding: true, Registered: true, Signal: 67, Operator: "togocom"})
 	ch := of[LinesChanged](out)
-	if len(ch) != 1 || ch[0].Lines[0].Signal != 70 || ch[0].Lines[0].Operator != "togocom" || !ch[0].Lines[0].Usable() {
+	if len(ch) != 1 || ch[0].Lines[0].Signal != 70 || ch[0].Lines[0].Operator != "togocom" || !ch[0].Lines[0].Responding || !ch[0].Lines[0].Registered {
 		t.Fatalf("%+v", out)
 	}
 	// The same reading again changes nothing public.
@@ -42,7 +42,7 @@ func TestAModemThatStopsAnsweringIsRestarted(t *testing.T) {
 	if len(restarts) != 1 {
 		t.Fatalf("restart after three silent checks, got %d", len(restarts))
 	}
-	if l := g.Lines()[0]; l.Usable() || l.Restarts != 1 {
+	if l := g.Lines()[0]; l.Responding || l.Restarts != 1 {
 		t.Fatalf("%+v", l)
 	}
 	// The restart is over: the line is checked again at once.

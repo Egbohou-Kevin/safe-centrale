@@ -177,14 +177,6 @@ func (r *Registry) Users() []string {
 	return users
 }
 
-// Records returns a copy of what is stored, for saving or inspection. It holds
-// hashes, never codes.
-func (r *Registry) Records() []Record {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return cloneRecords(r.records)
-}
-
 // Set gives user a code, or replaces the one they have. It refuses a code that is
 // badly formed, too easy to guess, or already used by someone else (a code must
 // identify one person).

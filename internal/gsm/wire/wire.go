@@ -71,13 +71,16 @@ func Ack(a gsm.Acknowledge) contract.AlertAckData {
 	return contract.AlertAckData{Incident: a.Incident, Contact: a.Contact, Via: contract.ChannelSMS}
 }
 
+// credits translates a line's credit; an unknown one is absent.
+var credits = map[gsm.Credit]string{gsm.CreditOK: contract.CreditOK, gsm.CreditEmpty: contract.CreditEmpty}
+
 // Status turns the lines into a gsm.status payload.
 func Status(lines []gsm.LineStatus, queued int) contract.GSMStatusData {
 	out := contract.GSMStatusData{Lines: make([]contract.GSMLine, 0, len(lines)), Queued: queued}
 	for _, l := range lines {
 		cl := contract.GSMLine{
 			ID: l.ID, Operator: l.Operator, Responding: l.Responding, Registered: l.Registered,
-			Signal: l.Signal, Credit: l.Credit, LastTestOK: l.LastTestOK, Restarts: l.Restarts,
+			Signal: l.Signal, Credit: credits[l.Credit], LastTestOK: l.LastTestOK, Restarts: l.Restarts,
 		}
 		if !l.LastTest.IsZero() {
 			cl.LastTest = contract.TSPtr(l.LastTest)

@@ -31,7 +31,7 @@ func TestBootLearnsTheDevicesFromRetainedStates(t *testing.T) {
 	r.settle()
 
 	var open map[string]bool
-	r.hub.engLoop.Do(context.Background(), func(time.Time) []engine.Action { open = r.hub.eng.Snapshot().Open; return nil })
+	r.hub.alarm.loop.Do(context.Background(), func(time.Time) []engine.Action { open = r.hub.alarm.eng.Snapshot().Open; return nil })
 	if !open[devBack] || open[devDoor] {
 		t.Fatalf("open doors after boot: %v", open)
 	}
@@ -82,7 +82,7 @@ func TestStatesAfterBootAreIgnored(t *testing.T) {
 	r.send(contract.DeviceStateTopic(site, devBack, contract.CapContact), contract.TypeDeviceState, event(devBack, contract.CapContact, "open"))
 	r.settle()
 	var open map[string]bool
-	r.hub.engLoop.Do(context.Background(), func(time.Time) []engine.Action { open = r.hub.eng.Snapshot().Open; return nil })
+	r.hub.alarm.loop.Do(context.Background(), func(time.Time) []engine.Action { open = r.hub.alarm.eng.Snapshot().Open; return nil })
 	if open[devBack] {
 		t.Fatal("after boot only events carry changes")
 	}
@@ -190,8 +190,8 @@ func TestConfigValidation(t *testing.T) {
 	}
 	c := testConfig()
 	c.SirenIDs = nil
-	if err := c.Validate(); !errors.Is(err, ErrNoSiren) {
-		t.Errorf("no siren: %v, want ErrNoSiren for the tools to explain", err)
+	if err := c.Validate(); !errors.Is(err, errNoSiren) {
+		t.Errorf("no siren: %v, want errNoSiren", err)
 	}
 }
 
@@ -239,7 +239,7 @@ func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 
 	r.cancel()
 	r.waitFor("the engine to stop", func() bool {
-		return errors.Is(r.hub.engLoop.Alive(context.Background()), driver.ErrStopped)
+		return errors.Is(r.hub.alarm.loop.Alive(context.Background()), driver.ErrStopped)
 	})
 	r.keypad(contract.ValArmNow, "")
 	r.device(devBack, contract.CapBattery, "50")

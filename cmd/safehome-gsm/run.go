@@ -73,7 +73,6 @@ func runGateway(ctx context.Context, cfg gsmconfig.Result, stderr io.Writer) int
 	defer closeModems()
 	ids := contract.NewIDGenerator()
 	pub := &service.Publisher{}
-	cfg.Gateway.Contacts = siteContacts(cfg)
 	g, err := gateway.New(cfg.Gateway, gateway.Deps{
 		Clock: driver.SystemClock(), Store: store, Publisher: pub, NewID: ids.New, Logger: log, Lines: lines,
 	})
@@ -106,24 +105,4 @@ func runGateway(ctx context.Context, cfg gsmconfig.Result, stderr io.Writer) int
 			}),
 		}}},
 	}.Run(ctx)
-}
-
-// siteContacts lists every contact of the configuration from the cloud the gateway
-// runs with, those reached by the app only too: an acknowledgement from any of them
-// ends the incident for the escalation, so it does for the gateway. Nil (no such
-// configuration, or one without contacts): the gateway knows the contacts with a
-// number only.
-func siteContacts(cfg gsmconfig.Result) []string {
-	if cfg.SiteVersion == 0 || cfg.SiteErr != nil {
-		return nil
-	}
-	o, ok, err := siteconfig.Read(cfg.StateDir)
-	if err != nil || !ok || o.Version != cfg.SiteVersion || o.Contacts == nil {
-		return nil
-	}
-	ids := make([]string, 0, len(o.Contacts))
-	for _, c := range o.Contacts {
-		ids = append(ids, c.ID)
-	}
-	return ids
 }

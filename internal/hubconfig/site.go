@@ -20,6 +20,10 @@ import (
 // hub, and the devices change after the installation (a sensor added, a siren moved).
 const DevicesFile = "site-devices.json"
 
+// PidFile is the hub's pid file in its state folder. The installer's tools signal
+// the process it names to have the access codes read again.
+const PidFile = "hub.pid"
+
 // devicesFile is the form of DevicesFile: what the installer's tools change, the zones
 // and the sirens (install.Site). Everything else (contacts, delays...) is written by
 // hand or sent by the cloud.

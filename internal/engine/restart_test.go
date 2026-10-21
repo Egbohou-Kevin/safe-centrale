@@ -279,30 +279,3 @@ func TestBootReportsOnlyNewTampers(t *testing.T) {
 		t.Fatalf("a tamper back after it ended is new: %v", al)
 	}
 }
-
-// A snapshot from before tampers were remembered has no "tampered": the tampers
-// still active at Boot count as new, as they did, but only at that first Boot.
-func TestBootWithASnapshotWithoutTampers(t *testing.T) {
-	h := newHarness(t)
-	b, err := json.Marshal(h.e.Snapshot())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var legacy map[string]any
-	if err := json.Unmarshal(b, &legacy); err != nil {
-		t.Fatal(err)
-	}
-	delete(legacy, "tampered")
-	b, _ = json.Marshal(legacy)
-	var snap Snapshot
-	if err := json.Unmarshal(b, &snap); err != nil {
-		t.Fatal(err)
-	}
-	h.e.Restore(snap)
-	tampered := []Signal{{DeviceID: tamper, Sensor: SensorTamper, Active: true}}
-	if al := alerts(h.e.Boot(h.now, tampered)); len(al) != 1 {
-		t.Fatalf("the first Boot after the upgrade reports the active tamper: %v", al)
-	}
-	h.e = restart(t, h)
-	noActions(t, h.e.Boot(h.now, tampered))
-}

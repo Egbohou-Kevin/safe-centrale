@@ -48,7 +48,7 @@ var healthUrgencies = map[health.Urgency]escalation.Urgency{
 
 // escalate hands an input to the escalation loop.
 func (h *Hub) escalate(in escalation.Input) {
-	err := h.escLoop.Submit(h.life, func(time.Time) escalation.Input { return in })
+	err := h.escal.loop.Submit(h.life, func(time.Time) escalation.Input { return in })
 	h.submitFailed(err)
 }
 
@@ -109,7 +109,7 @@ func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []esc
 				continue
 			}
 			id := h.deps.NewID()
-			h.esc.Bind(v.Key, id)
+			h.escal.esc.Bind(v.Key, id)
 			h.enqueueAs(id, srcEscalation, contract.AlertRequestTopic(h.cfg.Site), contract.TypeAlertRequest, data, false, now)
 		case escalation.Throttled:
 			h.log.Warn("a message was held back: the contact already got the hourly maximum",
@@ -128,7 +128,7 @@ func (h *Hub) alertResultMessage(m inbox.Message) {
 	if !ok {
 		return
 	}
-	err := h.escLoop.Submit(h.life, func(now time.Time) escalation.Input {
+	err := h.escal.loop.Submit(h.life, func(now time.Time) escalation.Input {
 		r, ok := escwire.ResultByRef(d, now)
 		if !ok {
 			return escalation.Tick{Now: now} // an unknown status says nothing: just let time pass
@@ -144,6 +144,6 @@ func (h *Hub) alertAckMessage(m inbox.Message) {
 	if !ok {
 		return
 	}
-	err := h.escLoop.Submit(h.life, func(now time.Time) escalation.Input { return escwire.Ack(d, now) })
+	err := h.escal.loop.Submit(h.life, func(now time.Time) escalation.Input { return escwire.Ack(d, now) })
 	h.submitFailed(err)
 }

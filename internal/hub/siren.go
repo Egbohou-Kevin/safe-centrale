@@ -35,12 +35,12 @@ func (h *Hub) orderSirens(now time.Time, actions []engine.Action) {
 		switch v := a.(type) {
 		case engine.SirenOn:
 			until := now.Add(v.Duration)
-			if h.siren.on && h.siren.until.Equal(until) {
+			if h.alarm.siren.on && h.alarm.siren.until.Equal(until) {
 				continue
 			}
-			h.siren = sirenOrder{on: true, until: until, sent: map[string]string{}, retries: map[string]int{}}
+			h.alarm.siren = sirenOrder{on: true, until: until, sent: map[string]string{}, retries: map[string]int{}}
 		case engine.SirenOff:
-			h.siren = sirenOrder{}
+			h.alarm.siren = sirenOrder{}
 		default:
 			continue
 		}
@@ -60,8 +60,8 @@ func (h *Hub) sendSiren(now time.Time, sirenID string, a engine.Action) {
 	}
 	data := out.Siren[0].Data(sirenID, now.Add(h.cfg.SirenCommandTTL))
 	ref := h.enqueue(srcEngine, contract.DeviceCmdTopic(h.cfg.Site, sirenID), contract.TypeCommand, data, false, now)
-	if ref != "" && h.siren.on {
-		h.siren.sent[ref] = sirenID
+	if ref != "" && h.alarm.siren.on {
+		h.alarm.siren.sent[ref] = sirenID
 	}
 }
 
@@ -74,7 +74,7 @@ func (h *Hub) sirenAckMessage(sirenID string, m inbox.Message) {
 	if !ok || (d.Status != contract.CmdFailed && d.Status != contract.CmdExpired) {
 		return
 	}
-	err := h.engLoop.Post(h.life, func(now time.Time) []engine.Action {
+	err := h.alarm.loop.Post(h.life, func(now time.Time) []engine.Action {
 		h.retrySiren(now, sirenID, d)
 		return nil
 	})
@@ -84,20 +84,20 @@ func (h *Hub) sirenAckMessage(sirenID string, m inbox.Message) {
 // retrySiren sends again a siren.on of the current order that did not take, for what
 // is left of the sounding. It runs on the engine's loop.
 func (h *Hub) retrySiren(now time.Time, sirenID string, ack contract.CommandAckData) {
-	if h.siren.sent[ack.Ref] != sirenID {
+	if h.alarm.siren.sent[ack.Ref] != sirenID {
 		return // an older order, or not one of ours
 	}
-	delete(h.siren.sent, ack.Ref)
-	left := h.siren.until.Sub(now)
+	delete(h.alarm.siren.sent, ack.Ref)
+	left := h.alarm.siren.until.Sub(now)
 	if left < time.Second {
 		return // the sounding is over anyway
 	}
-	if h.siren.retries[sirenID] >= sirenRetries {
+	if h.alarm.siren.retries[sirenID] >= sirenRetries {
 		h.log.Error("the siren does not take the order to sound", "siren", sirenID,
 			"status", ack.Status, "reason", ack.Reason, "attempts", 1+sirenRetries)
 		return
 	}
-	h.siren.retries[sirenID]++
+	h.alarm.siren.retries[sirenID]++
 	h.log.Warn("the siren did not take the order to sound, sending it again", "siren", sirenID,
 		"status", ack.Status, "reason", ack.Reason, "left", left.Round(time.Second))
 	h.sendSiren(now, sirenID, engine.SirenOn{Duration: left})

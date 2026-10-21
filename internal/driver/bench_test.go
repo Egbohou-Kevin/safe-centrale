@@ -2,30 +2,27 @@ package driver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 )
 
-// bigItem looks like an item of the link agent's queue, which may hold 10 MB.
-type bigItem struct {
-	ID      string          `json:"id"`
-	Topic   string          `json:"topic"`
-	Payload json.RawMessage `json:"payload"`
-	At      time.Time       `json:"at"`
+// bigSnap looks like the link agent's state, the largest a core saves: the ids of
+// the last 2048 messages from the cloud (some 60 KB), and the incidents it follows.
+type bigSnap struct {
+	Seen      []string             `json:"seen"`
+	Incidents map[string]time.Time `json:"incidents"`
 }
 
-type bigSnap struct{ Queue []bigItem }
-
 // BenchmarkInputThatChangesNothing measures what an input costs the loop when the
-// core's state is large (20000 items of 500 bytes) and the input leaves it as is.
+// core's state is large and the input leaves it as is.
 func BenchmarkInputThatChangesNothing(b *testing.B) {
-	payload := json.RawMessage(`{"data":"` + strings.Repeat("x", 480) + `"}`)
-	snap := bigSnap{Queue: make([]bigItem, 20000)}
-	for i := range snap.Queue {
-		snap.Queue[i] = bigItem{ID: fmt.Sprintf("id%05d", i), Topic: "safehome/s/device/d/event", Payload: payload, At: t0}
+	snap := bigSnap{Seen: make([]string, 2048), Incidents: map[string]time.Time{}}
+	for i := range snap.Seen {
+		snap.Seen[i] = fmt.Sprintf("01JB%022d", i) // a ULID's length
+	}
+	for i := range 20 {
+		snap.Incidents[fmt.Sprintf("inc%02d", i)] = t0
 	}
 	l, err := New(Options[int, int, bigSnap]{
 		Name: "big", Clock: newFakeClock(), Store: newMemStore(),

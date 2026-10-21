@@ -69,17 +69,6 @@ func TestMissingPlansTakeTheDefault(t *testing.T) {
 	}
 }
 
-func TestDescribe(t *testing.T) {
-	for _, a := range []Action{Send{Kind: KindFire, Contact: "c", Channel: ChannelSMS, Wave: 1}, Throttled{Incident: "i"}, Concluded{Incident: "i", Outcome: OutcomeClosed}} {
-		if Describe(a) == "" {
-			t.Fatalf("%T", a)
-		}
-	}
-	if Describe(nil) == "" {
-		t.Fatal("nil")
-	}
-}
-
 func TestTheHourlyLimitIsExactlyTheConfiguredMaximum(t *testing.T) {
 	e := newEsc(t, func(c *Config) {
 		c.MaxPerHour = 3

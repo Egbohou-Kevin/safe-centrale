@@ -190,12 +190,17 @@ type LineStatus struct {
 	Operator   string
 	Responding bool
 	Registered bool
-	Signal     int    // rounded to tens: the exact value changes all the time
-	Credit     string // "ok", "empty" (an operator said so), "" unknown
+	Signal     int // rounded to tens: the exact value changes all the time
+	Credit     Credit
 	LastTest   time.Time
 	LastTestOK *bool
 	Restarts   int
 }
 
-// Usable reports whether the line can send.
-func (l LineStatus) Usable() bool { return l.Responding && l.Registered }
+// Credit is what the gateway knows of a line's credit; empty when unknown.
+type Credit string
+
+const (
+	CreditOK    Credit = "ok"
+	CreditEmpty Credit = "empty" // an operator said so
+)

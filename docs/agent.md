@@ -97,8 +97,7 @@ Quand internet est coupé :
   réécrit pour chaque message. Vider 20 000 messages après une coupure écrit ainsi
   environ 7 Mo de données, au lieu de 1,2 Go (mesuré par
   `TestDrainingTheQueueWritesItemsNotTheQueue` : 330 Ko pour 1000 messages). Après une
-  coupure de courant, l'agent remet les fichiers d'accord au démarrage. Une file et un
-  numéro gardés par une version précédente sont repris sans perte.
+  coupure de courant, l'agent remet les fichiers d'accord au démarrage.
 - **Numérotation pour le cloud** : chaque programme numérote ses propres messages, et
   beaucoup restent sur le site. L'agent numérote donc de nouveau ce qui part au cloud,
   à la première tentative d'envoi : là-bas, `seq` est continu par site, et un trou

@@ -14,7 +14,6 @@
 package escalation
 
 import (
-	"fmt"
 	"maps"
 	"time"
 )
@@ -60,12 +59,6 @@ func (e *Escalation) Bind(key uint64, ref string) {
 		}
 	}
 }
-
-// Active reports how many incidents are being escalated.
-func (e *Escalation) Active() int { return len(e.s.Incidents) }
-
-// UplinkDown reports whether the cloud is considered unreachable.
-func (e *Escalation) UplinkDown() bool { return e.s.UplinkDown }
 
 // NextWake returns the time at which the driver must send a Tick: the earliest
 // step or timer, zero if there is none.
@@ -114,16 +107,3 @@ func (e *Escalation) Handle(in Input) []Action {
 func (e *Escalation) plan(in IncidentSnap) Plan { return e.cfg.Plans[in.Kind] }
 
 func incidentKey(id string, kind AlertKind) string { return id + "/" + string(kind) }
-
-// Describe gives a short account of an action, for logs.
-func Describe(a Action) string {
-	switch v := a.(type) {
-	case Send:
-		return fmt.Sprintf("send %s to %s by %s (wave %d)", v.Kind, v.Contact, v.Channel, v.Wave)
-	case Throttled:
-		return fmt.Sprintf("throttled %s for %s by %s", v.Incident, v.Contact, v.Channel)
-	case Concluded:
-		return fmt.Sprintf("concluded %s: %s", v.Incident, v.Outcome)
-	}
-	return fmt.Sprintf("%T", a)
-}

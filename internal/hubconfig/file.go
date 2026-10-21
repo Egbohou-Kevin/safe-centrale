@@ -9,14 +9,10 @@ import (
 // file is the configuration file as written. Every section is optional: what is
 // left out keeps its documented default.
 type file struct {
-	Site           string              `json:"site"`
+	configfile.ProgramFile
 	SiteName       string              `json:"site_name"`
 	Contacts       []contactFile       `json:"contacts"`
 	Escalation     *escalationFile     `json:"escalation"`
-	BrokerURL      string              `json:"broker_url"`
-	ClientID       string              `json:"client_id"`
-	StateDir       string              `json:"state_dir"`
-	LogLevel       string              `json:"log_level"`
 	Timezone       string              `json:"timezone"`
 	HubDeviceID    string              `json:"hub_device_id"`
 	SirenIDs       []string            `json:"siren_ids"`

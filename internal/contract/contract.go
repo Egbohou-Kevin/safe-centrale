@@ -65,24 +65,6 @@ const (
 	TypeMaintSession = "maint.session"
 )
 
-// Types lists every known message type.
-var Types = []string{
-	TypeDeviceEvent, TypeDeviceState, TypeCommand, TypeCommandAck,
-	TypeAlarmCommand, TypeAlarmAck, TypeAlarmArming, TypeAlarmArmed, TypeAlarmDisarmed,
-	TypeAlarmEntryDelay, TypeAlarmTriggered, TypeAlarmSirenCycle, TypeAlarmCleared,
-	TypeAlarmArmingScheduled, TypeAlarmPostponed, TypeAlarmAuthFailed, TypeAlarmState,
-	TypeAlertRequest, TypeAlertResult, TypeAlertAck,
-	TypeRegistryPair, TypeRegistryRemove, TypeRegistrySnapshot, TypeRegistryDeviceAdded,
-	TypeRegistryDeviceRejected, TypeRegistryDeviceRemoved,
-	TypeHeartbeat, TypeHealth, TypeGSMStatus, TypeZigbeeStatus, TypeAgentStatus,
-	TypeVideoRequest, TypeVideoStop, TypeVideoSession, TypeVideoStatus,
-	TypeConfigSet, TypeConfigApplied,
-	TypePhotoTaken, TypePhotoUpload, TypePhotoSent,
-	TypeMaintOpen, TypeMaintClose, TypeMaintSession,
-	TypeAgentReplay, TypeAgentReplayed,
-	TypeInstallMode, TypeInstallClose,
-}
-
 // AdapterZigbee names the Zigbee adapter: the source of its messages, and the
 // adapter of the devices it registers.
 const AdapterZigbee = "adapter.zigbee"

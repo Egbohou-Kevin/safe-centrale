@@ -7,7 +7,6 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"safehome/internal/configfile"
 	"safehome/internal/maint"
@@ -28,20 +27,13 @@ type Tunnel struct {
 
 // Result is what the file describes.
 type Result struct {
-	App       maintapp.Config
-	Tunnel    Tunnel
-	BrokerURL string
-	ClientID  string
-	StateDir  string
-	LogLevel  slog.Level
+	configfile.Program
+	App    maintapp.Config
+	Tunnel Tunnel
 }
 
 type file struct {
-	Site       string `json:"site"`
-	BrokerURL  string `json:"broker_url"`
-	ClientID   string `json:"client_id"`
-	StateDir   string `json:"state_dir"`
-	LogLevel   string `json:"log_level"`
+	configfile.ProgramFile
 	Enabled    *bool  `json:"enabled"`
 	SSH        string `json:"ssh"`
 	KeyFile    string `json:"key_file"`
@@ -70,19 +62,11 @@ func Load(path string) (Result, error) {
 }
 
 func build(f file) (Result, error) {
-	if f.StateDir == "" {
-		return Result{}, errors.New("state_dir is required (where a session is kept across a restart)")
-	}
-	r := Result{
-		BrokerURL: cmp.Or(f.BrokerURL, "mqtt://127.0.0.1:1883"),
-		ClientID:  cmp.Or(f.ClientID, "safehome-maint-"+f.Site),
-		StateDir:  f.StateDir,
-		Tunnel:    tunnel(f),
-	}
-	var err error
-	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
+	p, err := f.Build("safehome-maint-", "where a session is kept across a restart")
+	if err != nil {
 		return Result{}, err
 	}
+	r := Result{Program: p, Tunnel: tunnel(f)}
 	m := maint.DefaultConfig()
 	if f.Enabled != nil {
 		m.Enabled = *f.Enabled

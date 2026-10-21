@@ -27,8 +27,8 @@ type uplinkDoc struct {
 
 // restoreQueue puts the saved queue and numbering back into the core, after its
 // snapshot, and makes the stores agree with it. It runs before the loop starts. A
-// failed save stops the start: it may be a queue or a number that only the snapshot
-// holds (saved by an older version), which the next snapshot would no longer carry.
+// failed save stops the start: it may be a number given before a crash, which must
+// never be given again.
 func (a *App) restoreQueue() error {
 	docs, err := a.deps.Queue.Load()
 	if err != nil {

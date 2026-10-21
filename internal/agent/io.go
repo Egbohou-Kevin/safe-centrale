@@ -66,7 +66,7 @@ func (i Link) at() time.Time     { return i.Now }
 func (i Tick) at() time.Time     { return i.Now }
 
 // Action is what the relay asks the application to do.
-type Action interface{ action() }
+type Action interface{ isAction() }
 
 // PublishLocal: publish this message from the cloud on the hub's broker, as it came.
 type PublishLocal struct {
@@ -96,12 +96,12 @@ type Dropped struct {
 	Reason string
 }
 
-func (PublishLocal) action()  {}
-func (FailAlert) action()     {}
-func (StatusChanged) action() {}
-func (Refused) action()       {}
-func (Dropped) action()       {}
-func (Replayed) action()      {}
+func (PublishLocal) isAction()  {}
+func (FailAlert) isAction()     {}
+func (StatusChanged) isAction() {}
+func (Refused) isAction()       {}
+func (Dropped) isAction()       {}
+func (Replayed) isAction()      {}
 
 // Replayed: the cloud asked for messages again; publish agent.replayed.
 type Replayed struct{ Report contract.ReplayedData }

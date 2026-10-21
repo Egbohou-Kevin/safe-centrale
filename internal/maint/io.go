@@ -46,7 +46,7 @@ func (i Boot) at() time.Time  { return i.Now }
 func (i Tick) at() time.Time  { return i.Now }
 
 // Action is what the core asks the application to do.
-type Action interface{ action() }
+type Action interface{ isAction() }
 
 // Start: open the tunnel to the bastion.
 type Start struct{ Session string }
@@ -64,9 +64,9 @@ type Report struct {
 	Duration time.Duration // for Closed: how long it was open
 }
 
-func (Start) action()  {}
-func (Stop) action()   {}
-func (Report) action() {}
+func (Start) isAction()  {}
+func (Stop) isAction()   {}
+func (Report) isAction() {}
 
 // Status is the step of a session.
 type Status string

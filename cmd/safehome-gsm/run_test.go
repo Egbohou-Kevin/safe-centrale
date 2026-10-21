@@ -405,31 +405,3 @@ func TestTheGatewayRestartsForANewConfigurationFromTheCloud(t *testing.T) {
 		t.Fatal("a phone number in the logs")
 	}
 }
-
-// The gateway knows every contact of the configuration from the cloud, those without
-// a number too, so that their acknowledgement in the app ends the incident for it as
-// it does for the escalation.
-func TestTheGatewayKnowsTheContactsOfTheCloudWithoutANumber(t *testing.T) {
-	state := t.TempDir()
-	path := writeConfig(t, "mqtt://127.0.0.1:1", state)
-	cfg, err := gsmconfig.Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := siteContacts(cfg); got != nil {
-		t.Fatalf("without a configuration from the cloud: %v", got)
-	}
-	err = siteconfig.Write(state, contract.ConfigSetData{Version: 2, Contacts: []contract.ConfigContact{
-		{ID: "u_owner", Name: "Ama", Role: "owner", Channels: []string{"sms"}, Phone: "+22891112233"},
-		{ID: "u_deputy", Name: "Kofi", Role: "deputy", Channels: []string{"app"}},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg, err = gsmconfig.Load(path); err != nil {
-		t.Fatal(err)
-	}
-	if got := siteContacts(cfg); strings.Join(got, ",") != "u_owner,u_deputy" {
-		t.Fatalf("contacts %v", got)
-	}
-}

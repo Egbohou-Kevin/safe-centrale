@@ -3,10 +3,7 @@ package agentapp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"maps"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -81,53 +78,4 @@ func sum(sizes []int) int {
 		total += n
 	}
 	return total
-}
-
-// A state saved by the previous version, with the queue in the snapshot, loads
-// without losing an item: they move to the queue's store at start.
-func TestAQueueSavedInTheSnapshotIsKeptAfterTheUpgrade(t *testing.T) {
-	d := newDisk()
-	ids := contract.NewIDGenerator()
-	var items []string
-	var sent []string
-	for _, m := range []struct {
-		topic, typ string
-		prio       agent.Priority
-		data       any
-	}{
-		{topic("system", "health"), contract.TypeHealth, agent.PriorityState, contract.HealthData{Links: map[string]string{}}},
-		{topic("alarm", "event"), contract.TypeAlarmTriggered, agent.PriorityAlarm, triggered},
-	} {
-		env, err := contract.NewEnvelope(site, "hub", 1, ids.New(), t0, m.typ, m.data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		b, _ := json.Marshal(env)
-		items = append(items, fmt.Sprintf(`{"id":%q,"topic":%q,"payload":%s,"prio":%d,"retain":false,"at":"2026-10-20T21:00:00Z"}`,
-			env.ID, m.topic, b, m.prio))
-		sent = append(sent, env.ID)
-	}
-	d.store.docs[keyAgent] = []byte(`{"queue":[` + strings.Join(items, ",") + `],"pending":{},"incidents":{},"seen":[],` +
-		`"dropped":0,"tokens":20,"tokens_at":"0001-01-01T00:00:00Z","uplink":7}`)
-
-	r := newRig(t, d)
-	if items, _ := d.queue.Load(); items[sent[0]] == nil || items[sent[1]] == nil {
-		t.Fatalf("not moved to the queue's store: %v", slices.Collect(maps.Keys(items)))
-	}
-	r.app.LinkChanged(true, "mqtts")
-	eventually(t, "the saved messages on the cloud", func() bool {
-		return len(r.cloud.ofType(contract.TypeAlarmTriggered)) == 1 && len(r.cloud.ofType(contract.TypeHealth)) == 1
-	})
-	alarm, health := r.cloud.ofType(contract.TypeAlarmTriggered)[0], r.cloud.ofType(contract.TypeHealth)[0]
-	if alarm.env.ID != sent[1] || health.env.ID != sent[0] || alarm.env.Seq != 8 || health.env.Seq <= alarm.env.Seq {
-		t.Fatalf("alarm %s/%d, health %s/%d", alarm.env.ID, alarm.env.Seq, health.env.ID, health.env.Seq)
-	}
-	eventually(t, "a snapshot without the queue nor the counter", func() bool {
-		doc, _, _ := d.store.Load(keyAgent)
-		return !strings.Contains(string(doc), `"queue"`) && !strings.Contains(string(doc), `"uplink"`)
-	})
-	var counter uplinkDoc
-	if doc, _, _ := d.store.Load(keyUplink); json.Unmarshal(doc, &counter) != nil || counter.Last < health.env.Seq {
-		t.Fatalf("counter %s, last sent %d", doc, health.env.Seq)
-	}
 }

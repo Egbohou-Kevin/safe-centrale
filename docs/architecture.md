@@ -99,18 +99,24 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   n'a faites). La boucle est générique : elle ne connaît ni le moteur ni la supervision,
   seulement des fonctions (`Core`). Le temps, le stockage et la sortie sont des ports :
   les tests la font tourner avec une horloge simulée. Le temps ne recule jamais pour le
-  domaine, même si l'horloge système est corrigée en arrière.
+  domaine, même si l'horloge système est corrigée en arrière. `driver.Every` répète un
+  travail (un statut, le battement de cœur) sur la même horloge.
 - **La couche application** (`internal/hub`) relie tout cela pour la centrale : elle
   reçoit les messages MQTT, les traduit (`wire`), les remet aux domaines par leurs
-  boucles, et publie ce qui en sort. Elle déclare ses propres ports (`Publisher`) et
-  réutilise ceux du pilote (horloge, stockage). Elle ne connaît aucun adaptateur : les
+  boucles, et publie ce qui en sort. Elle publie par le port de la file d'envoi
+  (`outbox.Publisher`) et réutilise ceux du pilote (horloge, stockage). La fenêtre de
+  démarrage attend sur l'horloge du pilote. Elle ne connaît aucun adaptateur : les
   tests la font tourner avec un faux broker et une horloge simulée. Aucun domaine ne
-  l'importe.
+  l'importe. Les outils de l'installateur changent les codes par `hub.SiteCodes` : les
+  codes des personnes et celui de l'installateur, pour les contacts du site, et un code
+  n'ouvre qu'une chose.
 - **La passerelle GSM** a la même forme : son domaine (`internal/gsm`), sa couche
   application (`internal/gateway`, qui déclare le port `Modem`), son adaptateur
   (`internal/adapter/atmodem`). La file d'envoi MQTT (`internal/outbox`) est partagée
   par toutes les couches application des programmes de la centrale ; elle connaît le
-  contrat et le pilote, et aucun domaine.
+  contrat et le pilote, et aucun domaine. La porte d'entrée (`internal/inbox`) aussi :
+  le message reçu, les abonnements, la vérification d'un message contre le contrat
+  (`Open`), les identifiants déjà vus. Elle ne connaît que le contrat.
 - **L'adaptateur Zigbee** aussi : son domaine (`internal/zigbee`), sa couche
   application (`internal/zigbeeapp`). Zigbee2MQTT parle déjà MQTT : il n'y a pas
   d'adaptateur technique de plus, mais un paquet de traduction (`internal/zigbee/z2m`),
@@ -158,11 +164,14 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   contrat ; la centrale, la passerelle GSM et la vidéo le lisent au démarrage.
 - **Les lectures de configuration** (`internal/hubconfig`, `internal/gsmconfig`, etc.)
   partagent `internal/configfile` : JSON strict, niveau de journal, durées, secrets,
-  écriture atomique. Il ne connaît rien du module, et seuls les paquets `*config`
+  écriture atomique. L'en-tête commun des fichiers (`site`, `broker_url`, `client_id`,
+  `state_dir`, `log_level`) est `configfile.ProgramFile` ; sa méthode `Build` en fait un
+  `configfile.Program`, valeurs par défaut comprises. Il ne connaît rien du module, et seuls les paquets `*config`
   l'importent : aucun domaine ni aucune couche application ne lit de fichier.
 - **`internal/service`** est la part de la racine de composition commune à tous les
   programmes : ligne de commande, verrou du dossier d'état, clients MQTT, dialogue
-  avec systemd, arrêt propre. Il ne connaît que quelques adaptateurs et la file
+  avec systemd, arrêt propre. `service.Reload` envoie SIGHUP au programme d'un fichier
+  de pid : la centrale relit alors ses codes. Il ne connaît que quelques adaptateurs et la file
   d'envoi, rien des domaines ni des couches application, et seul `cmd/` l'importe.
 - **Les racines de composition** (`cmd/safehome-hub`, `cmd/safehome-gsm`,
   `cmd/safehome-zigbee`, `cmd/safehome-agent`, `cmd/safehome-video`, `cmd/safehome-maint`,
@@ -182,7 +191,9 @@ Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent 
   entrées-sorties ; si `internal/zigbee/z2m` connaît autre chose que le domaine Zigbee ;
 - si le pilote ou un adaptateur importe un paquet du module ; si le pilote lit
   l'horloge ailleurs que dans `SystemClock` ;
-- si la file d'envoi connaît autre chose que le contrat et le pilote ;
+- si la file d'envoi connaît autre chose que le contrat et le pilote ; si la porte
+  d'entrée connaît autre chose que le contrat, fait des entrées-sorties ou lit
+  l'horloge ;
 - si le cœur de l'agent connaît autre chose que le contrat ou lit l'horloge ; si
   `agentapp`, `videoapp`, `maintapp`, `configapp`, `install` ou `consoleapp` (et sa
   page) dépassent la liste de paquets qui leur est permise (aucun adaptateur), ou,

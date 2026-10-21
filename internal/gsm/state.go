@@ -53,7 +53,7 @@ type LineState struct {
 	Responding bool      `json:"responding"`
 	Registered bool      `json:"registered"`
 	Signal     int       `json:"signal"` // rounded to tens: the exact value changes all the time
-	Credit     string    `json:"credit"`
+	Credit     Credit    `json:"credit"`
 	LastTest   time.Time `json:"last_test"`
 	LastTestOK *bool     `json:"last_test_ok"`
 	Restarts   int       `json:"restarts"`

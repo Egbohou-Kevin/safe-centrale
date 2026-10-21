@@ -15,7 +15,7 @@ const installerCode = "259031"
 // withInstaller gives the rig an installer code.
 func (r *rig) withInstaller() {
 	r.t.Helper()
-	reg, err := OpenInstallerCode(testConfig().Access, r.store)
+	reg, err := openInstallerCode(testConfig().Access, r.store)
 	if err != nil {
 		r.t.Fatal(err)
 	}

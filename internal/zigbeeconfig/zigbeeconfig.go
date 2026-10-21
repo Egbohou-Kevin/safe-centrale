@@ -6,11 +6,9 @@
 package zigbeeconfig
 
 import (
-	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -25,19 +23,12 @@ import (
 
 // Result is what the files describe.
 type Result struct {
-	App       zigbeeapp.Config
-	BrokerURL string
-	ClientID  string
-	StateDir  string
-	LogLevel  slog.Level
+	configfile.Program
+	App zigbeeapp.Config
 }
 
 type file struct {
-	Site         string `json:"site"`
-	BrokerURL    string `json:"broker_url"`
-	ClientID     string `json:"client_id"`
-	StateDir     string `json:"state_dir"`
-	LogLevel     string `json:"log_level"`
+	configfile.ProgramFile
 	BaseTopic    string `json:"base_topic"`
 	ProfilesDir  string `json:"profiles_dir"`
 	ConfirmWait  string `json:"confirm_wait"`
@@ -89,21 +80,14 @@ func Load(path string) (Result, error) {
 }
 
 func build(f file, dir string) (Result, error) {
-	if f.StateDir == "" {
-		return Result{}, errors.New("state_dir is required (where the adapter keeps its registry)")
+	p, err := f.Build("safehome-zigbee-", "where the adapter keeps its registry")
+	if err != nil {
+		return Result{}, err
 	}
 	if f.ProfilesDir == "" {
 		return Result{}, errors.New("profiles_dir is required (the folder of the device profiles)")
 	}
-	r := Result{
-		BrokerURL: cmp.Or(f.BrokerURL, "mqtt://127.0.0.1:1883"),
-		ClientID:  cmp.Or(f.ClientID, "safehome-zigbee-"+f.Site),
-		StateDir:  f.StateDir,
-	}
-	var err error
-	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
-		return Result{}, err
-	}
+	r := Result{Program: p}
 	if r.App, err = f.app(dir); err != nil {
 		return Result{}, err
 	}

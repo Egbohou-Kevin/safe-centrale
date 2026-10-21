@@ -16,7 +16,7 @@ func TestWithoutUplinkTheGSMChannelsTakeOverAtOnce(t *testing.T) {
 	// When the uplink returns, the internet message that could not go is sent.
 	back := sends(e.Handle(Uplink{Now: t0.Add(30 * time.Second), Up: true}))
 	want(t, "uplink back", back, "deputy/app/1")
-	if e.UplinkDown() {
+	if e.s.UplinkDown {
 		t.Fatal("the uplink is back")
 	}
 }
@@ -58,7 +58,7 @@ func TestASummaryWaitsForTheUplink(t *testing.T) {
 	}
 	back := e.Handle(Uplink{Now: t0.Add(time.Hour), Up: true})
 	want(t, "uplink back", sends(back), "owner/app/1")
-	if c := concluded(back); len(c) != 1 || e.Active() != 0 {
+	if c := concluded(back); len(c) != 1 || len(e.s.Incidents) != 0 {
 		t.Fatalf("the held summary was the last thing owed: the escalation must end, got %+v", back)
 	}
 }
@@ -76,7 +76,7 @@ func TestAConfirmationThatStopsTheLastTimerEndsTheEscalation(t *testing.T) {
 	if c := concluded(done); len(c) != 1 || c[0].Outcome != OutcomeUnanswered {
 		t.Fatalf("the escalation must end once its last timer is stopped: %+v", done)
 	}
-	if e.Active() != 0 || !e.NextWake().IsZero() {
+	if len(e.s.Incidents) != 0 || !e.NextWake().IsZero() {
 		t.Fatal("an escalation with nothing left to do must not linger")
 	}
 }
@@ -108,7 +108,7 @@ func TestMainsRestoredIsNotDoubledWhenTheInternetWorked(t *testing.T) {
 	if got := sends(tick(e, t0.Add(2*time.Hour))); len(got) != 0 {
 		t.Fatalf("%v", got)
 	}
-	if e.Active() != 0 {
+	if len(e.s.Incidents) != 0 {
 		t.Fatal("the alert is over once its timers are done")
 	}
 }

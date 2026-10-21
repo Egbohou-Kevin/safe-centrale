@@ -119,7 +119,7 @@ func (h *Hub) authWorker(ctx context.Context) {
 }
 
 func (h *Hub) submitCommand(o order, auth engine.Auth) {
-	err := h.engLoop.Submit(h.life, func(now time.Time) engine.Input {
+	err := h.alarm.loop.Submit(h.life, func(now time.Time) engine.Input {
 		return h.engineCommand(o, now, auth)
 	})
 	h.submitFailed(err)

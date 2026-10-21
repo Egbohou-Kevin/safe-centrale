@@ -116,12 +116,12 @@ func (h *Hub) deviceState(d contract.DeviceEventData) {
 	if d.Capability == contract.CapKeypad {
 		return
 	}
-	h.bootMu.Lock()
-	booting := h.booting
+	h.startup.mu.Lock()
+	booting := h.startup.open
 	if booting {
-		h.bootStates[d.DeviceID+"/"+d.Capability] = d
+		h.startup.states[d.DeviceID+"/"+d.Capability] = d
 	}
-	h.bootMu.Unlock()
+	h.startup.mu.Unlock()
 	if booting {
 		h.feedHealth(d)
 	}
@@ -136,9 +136,9 @@ func (h *Hub) deviceEvent(env contract.Envelope, d contract.DeviceEventData) {
 		h.mains.Store(true)
 	}
 	if _, ok := signalOf(d); ok {
-		err := h.engLoop.Post(h.life, func(now time.Time) []engine.Action {
+		err := h.alarm.loop.Post(h.life, func(now time.Time) []engine.Action {
 			sig, _ := engwire.Signal(d, now)
-			return h.quietTamper(h.eng.Handle(sig))
+			return h.quietTamper(h.alarm.eng.Handle(sig))
 		})
 		h.submitFailed(err)
 	}
@@ -155,7 +155,7 @@ func (h *Hub) feedHealth(d contract.DeviceEventData) {
 	if _, ok := healthwire.Input(d, time.Time{}); !ok {
 		return
 	}
-	err := h.monLoop.Submit(h.life, func(now time.Time) health.Input {
+	err := h.monitor.loop.Submit(h.life, func(now time.Time) health.Input {
 		in, _ := healthwire.Input(d, now)
 		return in
 	})
@@ -177,9 +177,9 @@ func (h *Hub) registryMessage(m inbox.Message) {
 		h.log.Warn("ignoring a device removal without a device")
 		return
 	}
-	err := h.engLoop.Submit(h.life, func(now time.Time) engine.Input { return engwire.Forget(d, now) })
+	err := h.alarm.loop.Submit(h.life, func(now time.Time) engine.Input { return engwire.Forget(d, now) })
 	h.submitFailed(err)
-	err = h.monLoop.Submit(h.life, func(now time.Time) health.Input { return health.Forget{Now: now, DeviceID: d.DeviceID} })
+	err = h.monitor.loop.Submit(h.life, func(now time.Time) health.Input { return health.Forget{Now: now, DeviceID: d.DeviceID} })
 	h.submitFailed(err)
 }
 
@@ -225,8 +225,8 @@ func (h *Hub) agentStatusMessage(m inbox.Message) {
 // statusToMonitor hands the monitor a service's status, then publishes system.health
 // if it changed, even when the monitor's state did not move: the GSM lines may have.
 func (h *Hub) statusToMonitor(build func(now time.Time) health.Input) {
-	err := h.monLoop.Post(h.life, func(now time.Time) []health.Action {
-		actions := h.mon.Handle(build(now))
+	err := h.monitor.loop.Post(h.life, func(now time.Time) []health.Action {
+		actions := h.monitor.mon.Handle(build(now))
 		h.publishHealth(now)
 		return actions
 	})

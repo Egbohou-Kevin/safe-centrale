@@ -70,7 +70,7 @@ func (i Alarm) at() time.Time        { return i.Now }
 func (i PhotosTaken) at() time.Time  { return i.Now }
 
 // Action is what the core asks the application to do.
-type Action interface{ action() }
+type Action interface{ isAction() }
 
 // Start: start pushing the camera's stream to Target.
 type Start struct {
@@ -111,12 +111,12 @@ type NoPhotos struct {
 	Why      string
 }
 
-func (TakePhotos) action()   {}
-func (NoPhotos) action()     {}
-func (Start) action()        {}
-func (Halt) action()         {}
-func (Report) action()       {}
-func (CheckCameras) action() {}
+func (TakePhotos) isAction()   {}
+func (NoPhotos) isAction()     {}
+func (Start) isAction()        {}
+func (Halt) isAction()         {}
+func (Report) isAction()       {}
+func (CheckCameras) isAction() {}
 
 // Status is the step of a session.
 type Status string

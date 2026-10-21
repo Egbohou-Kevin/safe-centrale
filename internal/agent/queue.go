@@ -35,9 +35,9 @@ type QueueDrop struct{ IDs []string }
 // crash, and none is skipped.
 type UplinkSave struct{ Last uint64 }
 
-func (QueueSave) action()  {}
-func (QueueDrop) action()  {}
-func (UplinkSave) action() {}
+func (QueueSave) isAction()  {}
+func (QueueDrop) isAction()  {}
+func (UplinkSave) isAction() {}
 
 // push adds an item at the end of the queue, and returns the action that saves it.
 func (r *Relay) push(it Item) Action {
@@ -134,8 +134,6 @@ func (r *Relay) mostImportant() int {
 // RestoreQueue puts back, after Restore, the items read from the queue's store, in
 // any order, and the last number read from its document (0 if none). It returns what
 // the store must do to agree with the snapshot:
-//   - an item that only the snapshot holds (saved by a version that kept the queue
-//     in it) is saved;
 //   - of two items with the same key, the older goes: the crash came after the newer
 //     was saved and before the older was dropped;
 //   - an alert for a cloud channel that the snapshot does not follow goes: its
@@ -143,20 +141,9 @@ func (r *Relay) mostImportant() int {
 //     escalation does not wait for it: it turns to the GSM after 10 s on its own.
 //
 // The numbering goes on after the highest number found, saved at once if it is not
-// the one read: an item numbered just before a crash, or an older version's
-// snapshot.
+// the one read: an item numbered just before a crash.
 func (r *Relay) RestoreQueue(stored []Item, uplink uint64) []Action {
-	onDisk := make(map[string]bool, len(stored))
-	for _, it := range stored {
-		onDisk[it.ID] = true
-	}
 	var out []Action
-	for _, it := range r.queue {
-		if !onDisk[it.ID] {
-			stored = append(stored, it)
-			out = append(out, QueueSave{Item: it})
-		}
-	}
 	slices.SortFunc(stored, func(a, b Item) int {
 		return cmp.Or(cmp.Compare(a.Order, b.Order), strings.Compare(a.ID, b.ID))
 	})

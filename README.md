@@ -21,11 +21,12 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/health/wire` | La traduction entre la supervision et le contrat |
 | `internal/adapter/mqtt` | L'adaptateur MQTT 5 (client de Mosquitto) : seul paquet qui connaît la bibliothèque MQTT |
 | `internal/adapter/filestore` | Écriture atomique de l'état sur disque (survit à une coupure de courant) ; un fichier écrit prend le propriétaire du dossier |
-| `internal/hub` | La couche application de la centrale : relie MQTT aux domaines (moteur, supervision, codes), file d'envoi avec reprise, clavier, battement de cœur. Elle déclare ses propres ports |
+| `internal/hub` | La couche application de la centrale : relie MQTT aux domaines (moteur, supervision, codes), file d'envoi avec reprise, clavier, battement de cœur. Elle publie par `outbox.Publisher` et ne connaît aucun adaptateur. `SiteCodes` donne les codes aux outils de l'installateur : un code n'ouvre qu'une chose |
 | `internal/gsm` | La passerelle GSM (cinquième domaine) : file à priorités, lignes, reprises, réponses « 1 », surveillance du modem |
 | `internal/gsm/wire` | La traduction entre la passerelle et le contrat |
 | `internal/gateway` | La couche application de la passerelle : un fil par modem, publication des résultats et de l'état des lignes |
-| `internal/outbox` | La file d'envoi MQTT partagée par toutes les couches application des programmes de la centrale : ordre, reprises, numéro de message qui survit aux redémarrages |
+| `internal/outbox` | La file d'envoi MQTT partagée par toutes les couches application des programmes de la centrale : ordre, reprises, numéro de message qui survit aux redémarrages. Mêmes réglages partout (`Settings`), ouverture en un appel (`Open`) |
+| `internal/inbox` | La porte d'entrée partagée par toutes les couches application : le message reçu (`Message`), les abonnements (`Subscription`), la vérification d'un message (`Open`, `Envelope`) et les derniers identifiants vus (`RecentIDs`). Il ne connaît que le contrat |
 | `internal/adapter/atmodem` | L'adaptateur du modem : commandes AT sur le port série (bibliothèque standard seulement) ; `attest` est un faux modem pour les tests |
 | `internal/adapter/queuedir` | La file de l'agent pour le cloud sur disque : un petit fichier par message, écrit d'un coup, qui survit à une coupure de courant |
 | `internal/adapter/photodir` | Le dossier des photos prises à l'alarme : le service vidéo les y écrit, l'agent les lit et les efface ; borné en nombre et en taille |
@@ -33,7 +34,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/adapter/sdnotify` | Le dialogue avec systemd : « démarré », puis « fonctionne encore » tant que les boucles répondent (chien de garde, bibliothèque standard seulement) |
 | `internal/adapter/sysclock` | Dit si l'horloge du système est synchronisée, pour `clock_ok` du heartbeat (noyau Linux, bibliothèque standard seulement) |
 | `internal/adapter/pidfile` | Empêche un programme de tourner deux fois sur le même état |
-| `internal/gsmconfig` | Lecture du fichier de configuration de la passerelle |
+| `internal/gsmconfig` | Lecture du fichier de configuration de la passerelle, avec les contacts réglés depuis le cloud |
 | `cmd/safehome-gsm` | Le programme de la passerelle GSM |
 | `internal/zigbee` | L'adaptateur Zigbee (sixième domaine) : profils, changements, présence, commandes confirmées, appairage et registre |
 | `internal/zigbee/z2m` | La seule traduction depuis et vers Zigbee2MQTT |
@@ -66,11 +67,11 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `cmd/safehome-install` | L'outil de l'installateur, en ligne de commande sur la centrale |
 | `internal/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
 | `internal/configapp` | La couche application qui reçoit `config.set` dans la centrale : vérification, garde, redémarrage à un moment calme (jamais pendant le mode installation, et aussi quand les zones ou les sirènes ont changé), réponse `config.applied`. Elle ne connaît ni fichier ni processus (ports) |
-| `internal/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) |
+| `internal/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict), nom de son fichier de pid (`PidFile`) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) |
 | `cmd/safehome-hub` | Le programme de la centrale : sa racine de composition, qui branche le vrai client MQTT, le vrai disque et la vraie horloge sur la centrale et sur `configapp` |
-| `internal/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre. Seuls les programmes de `cmd/` s'en servent |
-| `internal/configfile` | Ce que les lectures de configuration ont en commun : JSON strict, niveau de journal, durées, secrets, écriture atomique d'un fichier |
-| `internal/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine |
+| `internal/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre, demande de relecture à un programme qui tourne (`Reload`). Seuls les programmes de `cmd/` s'en servent |
+| `internal/configfile` | Ce que les lectures de configuration ont en commun : l'en-tête des fichiers (`ProgramFile`, qui donne un `Program`), JSON strict, niveau de journal, durées, secrets, écriture atomique d'un fichier |
+| `internal/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine. `Every` répète un travail sur l'horloge |
 | `internal/archtest` | Les tests d'architecture : ils échouent si les règles de dépendance sont cassées |
 | `internal/schematest` | Validation des messages contre les schémas JSON (tests seulement) |
 | `schemas/` | Les schémas JSON du contrat, pour le cloud et le firmware |

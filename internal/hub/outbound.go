@@ -119,7 +119,7 @@ func (h *Hub) warnOfFaults(out *engwire.Out) {
 
 // publishState publishes the retained alarm state, and keeps the heartbeat's copy.
 func (h *Hub) publishState(now time.Time) {
-	st := h.eng.State(now)
+	st := h.alarm.eng.State(now)
 	h.mode.Store(string(st.Mode))
 	data, err := engwire.StateData(st)
 	if err != nil {
@@ -139,7 +139,7 @@ func (h *Hub) dispatchHealth(_ context.Context, now time.Time, actions []health.
 // services repeat their status every minute, and each copy would go to the cloud. It
 // runs on the monitor's loop.
 func (h *Hub) publishHealth(now time.Time) {
-	st := h.mon.Status()
+	st := h.monitor.mon.Status()
 	h.faults.Store(&st)
 	h.followUplink(now, st.Internet)
 	raw, err := json.Marshal(h.healthData(st))
@@ -147,10 +147,10 @@ func (h *Hub) publishHealth(now time.Time) {
 		h.log.Error("encoding system.health failed", "err", err)
 		return
 	}
-	if bytes.Equal(raw, h.lastHealth) {
+	if bytes.Equal(raw, h.monitor.lastHealth) {
 		return
 	}
-	h.lastHealth = raw
+	h.monitor.lastHealth = raw
 	h.enqueue(srcHealth, contract.HealthTopic(h.cfg.Site), contract.TypeHealth, json.RawMessage(raw), true, now)
 }
 
@@ -193,10 +193,10 @@ func linkOf(s health.LinkState) string {
 // GSM channels take over at once instead of waiting for a confirmation that cannot
 // come. Called from the monitor's loop, which owns uplink.
 func (h *Hub) followUplink(now time.Time, s health.LinkState) {
-	if s == h.uplink {
+	if s == h.monitor.uplink {
 		return
 	}
-	h.uplink = s
+	h.monitor.uplink = s
 	if s == health.LinkUnknown {
 		return // the agent never spoke: nothing to say yet
 	}

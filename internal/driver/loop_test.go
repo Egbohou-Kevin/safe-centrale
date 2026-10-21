@@ -441,16 +441,10 @@ func TestRestartRestoresTheStateAndTheScheduleKeepsRunning(t *testing.T) {
 	if err := first.stop(); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	if first.loop.Restored() {
-		t.Fatal("a new loop has nothing to restore")
-	}
 
 	// Power cut, then a new process on the same disk, 90 seconds later.
 	second := newRig(t, first.store)
 	second.clock.Set(t0.Add(90 * time.Second))
-	if !second.loop.Restored() {
-		t.Fatal("the state must be restored")
-	}
 	if second.eng.Mode() != engine.ModeArming {
 		t.Fatalf("restored mode %s", second.eng.Mode())
 	}

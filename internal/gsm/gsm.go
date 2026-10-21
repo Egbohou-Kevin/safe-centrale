@@ -13,7 +13,6 @@
 package gsm
 
 import (
-	"fmt"
 	"reflect"
 	"slices"
 	"time"
@@ -163,28 +162,4 @@ func (g *Gateway) lineIDs() []string {
 		ids = append(ids, l.ID)
 	}
 	return ids
-}
-
-// Describe gives a short account of an action, for logs. It never contains a text
-// or a number.
-func Describe(a Action) string {
-	switch v := a.(type) {
-	case Execute:
-		return fmt.Sprintf("%s job %d on %s", v.Channel, v.Job, v.Line)
-	case CheckLine:
-		return "check " + v.Line
-	case RestartModem:
-		return "restart " + v.Line
-	case Report:
-		return fmt.Sprintf("report %s %s %s", v.Ref, v.Status, v.Reason)
-	case Acknowledge:
-		return fmt.Sprintf("acknowledge %s by %s", v.Incident, v.Contact)
-	case LinesChanged:
-		return fmt.Sprintf("%d line(s) changed", len(v.Lines))
-	case Ignored:
-		return "ignored SMS on " + v.Line + ": " + v.Why
-	case Dropped:
-		return fmt.Sprintf("dropped %d job(s) of %s: the incident is over", v.Jobs, v.Incident)
-	}
-	return fmt.Sprintf("%T", a)
 }

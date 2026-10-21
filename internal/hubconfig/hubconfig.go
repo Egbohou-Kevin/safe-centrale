@@ -8,9 +8,7 @@
 package hubconfig
 
 import (
-	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 	_ "time/tzdata" // the hub's image may have no time zone database
 
@@ -22,11 +20,8 @@ import (
 
 // Result is what the file describes.
 type Result struct {
-	Hub       hub.Config
-	BrokerURL string
-	ClientID  string
-	StateDir  string
-	LogLevel  slog.Level
+	configfile.Program
+	Hub hub.Config
 
 	// SiteVersion is the version of the configuration set from the cloud found in
 	// the state folder (0: none). SiteErr says why it was not applied: the hub then
@@ -68,15 +63,6 @@ func WithSiteConfig(path string, o contract.ConfigSetData) (Result, error) {
 	}
 	f, _, _ = withStateDevices(f)
 	return withSite(f, o)
-}
-
-// Parse reads and checks a configuration.
-func Parse(data []byte) (Result, error) {
-	var f file
-	if err := configfile.DecodeBytes(data, &f); err != nil {
-		return Result{}, err
-	}
-	return build(f)
 }
 
 // withStateDevices lays over f the devices file of its state folder. A file that
@@ -154,31 +140,12 @@ func withSite(f file, o contract.ConfigSetData) (Result, error) {
 
 // build turns a file into the settings, and checks them all.
 func build(f file) (Result, error) {
-	r, err := programSettings(f)
+	p, err := f.Build("safehome-hub-", "where the hub keeps its state and its codes")
 	if err != nil {
 		return Result{}, err
 	}
+	r := Result{Program: p}
 	if r.Hub, err = hubConfig(f); err != nil {
-		return Result{}, err
-	}
-	return r, nil
-}
-
-// programSettings reads what the program needs around the hub: the broker, the
-// state folder, the log level.
-func programSettings(f file) (Result, error) {
-	if f.StateDir == "" {
-		return Result{}, errors.New("state_dir is required (where the hub keeps its state and its codes)")
-	}
-	r := Result{BrokerURL: f.BrokerURL, ClientID: f.ClientID, StateDir: f.StateDir}
-	if r.BrokerURL == "" {
-		r.BrokerURL = "mqtt://127.0.0.1:1883"
-	}
-	if r.ClientID == "" {
-		r.ClientID = "safehome-hub-" + f.Site
-	}
-	var err error
-	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
 		return Result{}, err
 	}
 	return r, nil

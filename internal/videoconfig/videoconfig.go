@@ -8,7 +8,6 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -23,15 +22,12 @@ import (
 
 // Result is what the file describes.
 type Result struct {
-	App       videoapp.Config
-	Sources   map[string]string // camera id -> its RTSP address; never printed
-	Go2rtc    string            // the go2rtc executable
-	FFmpeg    string            // decodes the photos' pictures
-	PhotoDir  string            // where the photos wait for the link agent
-	BrokerURL string
-	ClientID  string
-	StateDir  string
-	LogLevel  slog.Level
+	configfile.Program
+	App      videoapp.Config
+	Sources  map[string]string // camera id -> its RTSP address; never printed
+	Go2rtc   string            // the go2rtc executable
+	FFmpeg   string            // decodes the photos' pictures
+	PhotoDir string            // where the photos wait for the link agent
 
 	// SiteVersion is the version of the configuration set from the cloud found in
 	// the state folder (0: none); SiteErr says why it was not applied, SiteNote what
@@ -50,11 +46,7 @@ func (r Result) String() string {
 func (r Result) GoString() string { return r.String() }
 
 type file struct {
-	Site         string       `json:"site"`
-	BrokerURL    string       `json:"broker_url"`
-	ClientID     string       `json:"client_id"`
-	StateDir     string       `json:"state_dir"`
-	LogLevel     string       `json:"log_level"`
+	configfile.ProgramFile
 	Go2rtc       string       `json:"go2rtc"`
 	FFmpeg       string       `json:"ffmpeg"`
 	Photos       *bool        `json:"photos"`
@@ -125,13 +117,15 @@ func withSite(r Result) Result {
 }
 
 func build(f file) (Result, error) {
-	if f.StateDir == "" {
-		return Result{}, errors.New("state_dir is required (where the month's usage is kept)")
-	}
-	r := withDefaults(f)
-	var err error
-	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
+	p, err := f.Build("safehome-video-", "where the month's usage is kept")
+	if err != nil {
 		return Result{}, err
+	}
+	r := Result{
+		Program:  p,
+		Go2rtc:   cmp.Or(f.Go2rtc, "/usr/local/bin/go2rtc"),
+		FFmpeg:   cmp.Or(f.FFmpeg, "/usr/bin/ffmpeg"),
+		PhotoDir: filepath.Join(f.StateDir, "photos"),
 	}
 	var cams []video.Camera
 	if r.Sources, cams, err = parseCameras(f.Cameras); err != nil {
@@ -146,18 +140,6 @@ func build(f file) (Result, error) {
 		return Result{}, err
 	}
 	return r, nil
-}
-
-// withDefaults fills in the programs, the broker and the folders.
-func withDefaults(f file) Result {
-	return Result{
-		BrokerURL: cmp.Or(f.BrokerURL, "mqtt://127.0.0.1:1883"),
-		ClientID:  cmp.Or(f.ClientID, "safehome-video-"+f.Site),
-		StateDir:  f.StateDir,
-		Go2rtc:    cmp.Or(f.Go2rtc, "/usr/local/bin/go2rtc"),
-		FFmpeg:    cmp.Or(f.FFmpeg, "/usr/bin/ffmpeg"),
-		PhotoDir:  filepath.Join(f.StateDir, "photos"),
-	}
 }
 
 // parseCameras checks the cameras: at least one, each with its own id and an RTSP
