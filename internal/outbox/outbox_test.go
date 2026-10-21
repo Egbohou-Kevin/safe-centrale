@@ -12,9 +12,10 @@ import (
 )
 
 type memStore struct {
-	mu   sync.Mutex
-	docs map[string][]byte
-	fail bool
+	mu    sync.Mutex
+	docs  map[string][]byte
+	fail  bool
+	saves int
 }
 
 func (s *memStore) Save(name string, data []byte) error {
@@ -27,6 +28,7 @@ func (s *memStore) Save(name string, data []byte) error {
 		s.docs = map[string][]byte{}
 	}
 	s.docs[name] = append([]byte(nil), data...)
+	s.saves++
 	return nil
 }
 
@@ -134,7 +136,7 @@ func TestMessagesLeaveInOrderWithIncreasingNumbers(t *testing.T) {
 			t.Fatalf("%d: %+v", i, m.env)
 		}
 	}
-	if string(store.docs["seq"]) != `{"seq":5}` {
+	if string(store.docs["seq"]) != `{"seq":1000}` { // the reserved block
 		t.Fatalf("the counter must be saved: %s", store.docs["seq"])
 	}
 	if o.Depth() != 0 {
@@ -256,20 +258,41 @@ func TestABadMessageIsDroppedNotRetried(t *testing.T) {
 func TestTheCounterSurvivesARestartAndADiskError(t *testing.T) {
 	store := &memStore{}
 	s, _ := NewSequencer(store, "seq", nil)
-	s.Next()
-	s.Next()
+	if s.Next() != 1 || s.Next() != 2 {
+		t.Fatal("the first numbers")
+	}
+	// A restart skips the rest of the reserved block: up, never a number twice.
 	again, err := NewSequencer(store, "seq", nil)
-	if err != nil || again.Next() != 3 {
-		t.Fatalf("%v", err)
+	if n := again.Next(); err != nil || n != seqBlock+1 {
+		t.Fatalf("after a restart: %d %v", n, err)
+	}
+	for again.Next() < 2*seqBlock {
 	}
 	store.fail = true
-	if again.Next() != 4 {
+	if again.Next() != 2*seqBlock+1 {
 		t.Fatal("a number is still handed out when the disk refuses")
 	}
 	store.fail = false
+	if again.Next() != 2*seqBlock+2 {
+		t.Fatal("the next number")
+	}
+	if n, _ := NewSequencer(store, "seq", nil); n.Next() != 3*seqBlock+2 {
+		t.Fatal("the save was not tried again after the disk came back")
+	}
 	store.docs["seq"] = []byte("{")
 	if _, err := NewSequencer(store, "seq", nil); err == nil {
 		t.Fatal("a damaged counter is an error")
+	}
+}
+
+func TestTheCounterWritesOncePerBlock(t *testing.T) {
+	store := &memStore{}
+	s, _ := NewSequencer(store, "seq", nil)
+	for range 2500 {
+		s.Next()
+	}
+	if store.saves != 3 {
+		t.Fatalf("%d writes for 2500 numbers, want 3", store.saves)
 	}
 }
 

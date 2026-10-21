@@ -52,7 +52,7 @@ Tous les messages ont la même enveloppe.
 | `id` | ULID : unique et triable. Sert à dédupliquer. |
 | `site` | Identifiant du site, présent dès le début même avec un seul client. |
 | `src` | Composant émetteur (`adapter.zigbee`, `engine`, `gsm`, `video`, `agent.link`). |
-| `seq` | Sur le site, compteur croissant de chaque programme, conservé sur disque. Vers le cloud, l'agent renumérote : continu par site, dans l'ordre d'envoi, pour repérer les trous (rejeu : `agent.replay`, voir `agent.md`). 0 : non numéroté (dernier message). |
+| `seq` | Sur le site, compteur croissant de chaque programme, conservé sur disque par blocs de 1000 (pour ménager la carte SD) : il peut sauter après un redémarrage, jamais reculer. Vers le cloud, l'agent renumérote : continu par site, dans l'ordre d'envoi, pour repérer les trous (rejeu : `agent.replay`, voir `agent.md`). 0 : non numéroté (dernier message). |
 | `ts` | Heure UTC de la centrale, à la milliseconde. Peut être fausse si l'horloge a dérivé : le cloud ajoute sa propre heure de réception. |
 | `type` | Type de message (voir plus bas). |
 | `data` | Contenu propre au type. |
