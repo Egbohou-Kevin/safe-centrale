@@ -159,6 +159,9 @@ func (h *hubSide) closes() int {
 }
 
 func TestTheConsoleEndToEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("end-to-end scenario of about 10 s: run without -short")
+	}
 	broker := mqtttest.Start(t)
 	port := freePort(t)
 	consolePath, hubPath, nmcliLog := setup(t, broker.URL(), port)

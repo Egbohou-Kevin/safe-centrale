@@ -13,7 +13,6 @@ import (
 	"safehome/internal/adapter/photodir"
 	"safehome/internal/contract"
 	"safehome/internal/driver"
-	"safehome/internal/inbox"
 	"safehome/internal/service"
 	"safehome/internal/siteconfig"
 	"safehome/internal/videoapp"
@@ -155,20 +154,14 @@ func logStart(cfg videoconfig.Result, log *slog.Logger) {
 // viewer asks again.
 func daemon(cfg videoconfig.Result, app *videoapp.App, pub *service.Publisher, log *slog.Logger) service.Daemon {
 	applied := contract.ConfigAppliedTopic(cfg.App.Site)
+	changed := func(p []byte) (int, bool) { return siteconfig.Changed(cfg.StateDir, cfg.App.Site, cfg.SiteVersion, p) }
 	restart := service.NewRestart()
 	return service.Daemon{
 		Name: name, Log: log, Loops: []func(context.Context) error{app.Run}, Alive: app.Alive, Restart: restart,
 		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
 			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Logger: log,
 			Subscriptions: append(service.Subscriptions(app.Subscriptions()), mqtt.Subscription{Filter: applied, QoS: 1}),
-			OnMessage: service.Deliver(func(m inbox.Message) {
-				if m.Topic != applied {
-					app.HandleMessage(m)
-				} else if v, ok := siteconfig.Changed(cfg.StateDir, cfg.App.Site, cfg.SiteVersion, m.Payload); ok {
-					log.Info("restarting to load the configuration from the cloud", "site_config", v)
-					restart.Ask()
-				}
-			}),
+			OnMessage:     service.Deliver(restart.Watch(applied, changed, app.HandleMessage, log)),
 		}}},
 	}
 }

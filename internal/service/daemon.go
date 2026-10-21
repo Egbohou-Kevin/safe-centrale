@@ -14,6 +14,7 @@ import (
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/pidfile"
 	"safehome/internal/adapter/sdnotify"
+	"safehome/internal/inbox"
 )
 
 // closeWait bounds the clean disconnection from the brokers at a stop.
@@ -78,6 +79,22 @@ func (r Restart) Ask() {
 	select {
 	case r <- struct{}{}:
 	default:
+	}
+}
+
+// Watch returns the handler of a program that restarts to load a new configuration:
+// a message on topic goes to changed, and the program restarts when changed reports
+// a new version; any other message goes to handle.
+func (r Restart) Watch(topic string, changed func(payload []byte) (version int, ok bool), handle func(inbox.Message), log *slog.Logger) func(inbox.Message) {
+	return func(m inbox.Message) {
+		if m.Topic != topic {
+			handle(m)
+			return
+		}
+		if v, ok := changed(m.Payload); ok {
+			log.Info("restarting to load the configuration from the cloud", "site_config", v)
+			r.Ask()
+		}
 	}
 }
 

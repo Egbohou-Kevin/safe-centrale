@@ -160,6 +160,9 @@ func (c *cloud) request(t *testing.T, session, camera string) {
 }
 
 func TestTheServiceEndToEndWithASimulatedGo2rtc(t *testing.T) {
+	if testing.Short() {
+		t.Skip("end-to-end scenario of about 10 s: run without -short")
+	}
 	go2rtctest.Enable(t)
 	broker := mqtttest.Start(t)
 	state := t.TempDir()

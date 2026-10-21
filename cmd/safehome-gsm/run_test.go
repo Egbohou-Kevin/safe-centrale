@@ -94,6 +94,9 @@ func (c *collector) of(typ string) []contract.Envelope {
 }
 
 func TestTheGatewayEndToEndWithASimulatedModem(t *testing.T) {
+	if testing.Short() {
+		t.Skip("end-to-end scenario of about 10 s: run without -short")
+	}
 	broker := mqtttest.Start(t)
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state)

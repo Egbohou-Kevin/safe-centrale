@@ -60,7 +60,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/inbox` | La porte d'entrée partagée par toutes les couches application : le message reçu (`Message`), les abonnements (`Subscription`), la vérification d'un message (`Open`, `Envelope`) et les derniers identifiants vus (`RecentIDs`). Il ne connaît que le contrat |
 | `internal/outbox` | La file d'envoi MQTT partagée par toutes les couches application des programmes de la centrale : ordre, reprises, numéro de message qui survit aux redémarrages. Mêmes réglages partout (`Settings`), ouverture en un appel (`Open`), un message encodé et mis en file en un appel (`Send`) |
 | `internal/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine. `Every` répète un travail sur l'horloge. |
-| `internal/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre, demande de relecture à un programme qui tourne (`Reload`). Seuls les programmes de `cmd/` s'en servent |
+| `internal/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre, redémarrage pour charger une nouvelle configuration du cloud (`Restart.Watch`), demande de relecture à un programme qui tourne (`Reload`). Seuls les programmes de `cmd/` s'en servent |
 | `internal/configfile` | Ce que les lectures de configuration ont en commun : l'en-tête des fichiers (`ProgramFile`, qui donne un `Program`), JSON strict, niveau de journal, durées, secrets, écriture atomique d'un fichier |
 
 ### La lecture des configurations
@@ -112,9 +112,13 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | Dossier | Contenu |
 |---|---|
 | `internal/archtest` | Les tests d'architecture : ils échouent si les règles de dépendance sont cassées |
+| `internal/qualitytest` | Les garde-fous de qualité : tailles, gofmt, ASCII, copier-coller, code mort, faux de test redéclarés, règles de cohérence (voir « Lancer les tests ») |
 | `internal/schematest` | Validation des messages contre les schémas JSON (tests seulement) |
 | `internal/driver/drivertest` | Pour les tests : une fausse horloge (ses minuteries suivent une horloge monotone, comme la vraie), un faux disque, un journal partagé et de quoi attendre |
 | `internal/outbox/outboxtest` | Pour les tests : un faux broker qui garde ce qu'on lui publie, et qu'on peut rendre absent, faire refuser ou faire attendre |
+| `internal/adapter/mqtt/mqtttest` | Pour les tests : un vrai Mosquitto privé, lancé sur un port libre (TLS et WebSocket compris) |
+| `internal/adapter/atmodem/attest` | Pour les tests : un faux modem qui répond aux commandes AT |
+| `internal/adapter/go2rtc/go2rtctest` | Pour les tests : un faux go2rtc |
 
 Des tests vérifient que les schémas restent alignés avec les structures Go, que tout ce
 que le moteur publie est accepté par son schéma (enveloppe comprise), et que les schémas
@@ -123,10 +127,33 @@ refusent bien les messages invalides.
 ## Lancer les tests
 
 ```bash
-go test ./...
+go test ./...          # tout
+go test -short ./...   # sans les scénarios de bout en bout ni le script d'installation
+scripts/check.sh       # la vérification complète : gofmt, vet, règles, go test -race, build pour la centrale
 ```
 
 Go 1.27 ou plus récent.
+
+Des garde-fous tournent avec les tests : les règles d'architecture
+(`internal/archtest`) et de qualité (`internal/qualitytest` : tailles, gofmt, ASCII,
+copier-coller, code mort, faux de test redéclarés, cohérence). Un échec dit
+`fichier:ligne: [règle] problème. Fix: quoi faire`. Les seuils et la façon d'ajouter
+une exception (dans `exceptions_test.go`, toujours avec sa raison) sont dans
+`docs/architecture.md`, « Les garde-fous de qualité ».
+
+Avant chaque commit, un hook lance `scripts/check.sh --quick` (gofmt, vet,
+`go test -short ./...`). À activer une fois par clone :
+
+```bash
+git config core.hooksPath .githooks
+```
+
+L'intégration continue (`.github/workflows/ci.yml`) lance le même script, en entier, à
+chaque push et pull request : le hook, le script et la CI ne listent pas chacun leurs
+commandes. Elle s'active en poussant le dépôt sur GitHub ; une fois le dépôt distant
+créé, y rendre la CI obligatoire avant merge (protection de branche). La CI installe
+Mosquitto, donc les tests de bout en bout y tournent ; go2rtc n'est pas empaqueté : les
+tests vidéo qui en ont besoin y sont ignorés et ne tournent qu'en local.
 
 Les domaines, le contrat et la traduction n'ont aucune dépendance externe. Chaque
 bibliothèque externe est enfermée dans le seul paquet qui l'enveloppe, et un test

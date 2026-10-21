@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Runs the quick checks before each commit (scripts/check.sh --quick). Enable it once
+# per clone with:
+#
+#   git config core.hooksPath .githooks
+#
+# It checks the working tree, not only what is staged. Skip it once with
+# git commit --no-verify; the CI runs the full checks anyway.
+set -euo pipefail
+exec "$(git rev-parse --show-toplevel)/scripts/check.sh" --quick

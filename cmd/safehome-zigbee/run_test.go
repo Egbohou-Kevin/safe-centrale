@@ -144,6 +144,9 @@ func (f *fake) order(t *testing.T, topic, typ string, data any) string {
 }
 
 func TestTheAdapterEndToEndWithASimulatedZigbee2MQTT(t *testing.T) {
+	if testing.Short() {
+		t.Skip("end-to-end scenario of about 10 s: run without -short")
+	}
 	broker := mqtttest.Start(t)
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state)

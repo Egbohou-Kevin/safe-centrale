@@ -235,6 +235,9 @@ func (n *internet) cut() {
 func (n *internet) restore() { n.mu.Lock(); n.down = false; n.mu.Unlock() }
 
 func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
+	if testing.Short() {
+		t.Skip("end-to-end scenario of about 10 s: run without -short")
+	}
 	hubBroker := mqtttest.Start(t)
 	files := mqtttest.NewTLSFiles(t)
 	cloudBroker := mqtttest.StartWith(t, mqtttest.Options{TLS: &files})

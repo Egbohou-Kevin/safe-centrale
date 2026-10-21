@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,6 +55,34 @@ func TestDeliverHandsTheMessageOver(t *testing.T) {
 	Deliver(func(m inbox.Message) { got = m })(mqtt.Message{Topic: "t", Payload: []byte("x"), QoS: 1, Retain: true})
 	if got.Topic != "t" || string(got.Payload) != "x" || !got.Retain {
 		t.Fatalf("%+v", got)
+	}
+}
+
+func TestWatchRestartsOnlyForANewConfiguration(t *testing.T) {
+	r := NewRestart()
+	var handled []string
+	newVersion := false
+	logs := drivertest.Logs(t)
+	handle := r.Watch("applied", func(p []byte) (int, bool) { return 7, newVersion }, func(m inbox.Message) {
+		handled = append(handled, m.Topic)
+	}, slog.New(slog.NewTextHandler(logs, nil)))
+	asked := func() bool {
+		select {
+		case <-r:
+			return true
+		default:
+			return false
+		}
+	}
+	handle(inbox.Message{Topic: "other"})
+	handle(inbox.Message{Topic: "applied"})
+	if asked() || !slices.Equal(handled, []string{"other"}) {
+		t.Fatalf("restart asked %v, handled %v: want no restart, only the other message handled", asked(), handled)
+	}
+	newVersion = true
+	handle(inbox.Message{Topic: "applied"})
+	if !asked() || len(handled) != 1 || !strings.Contains(logs.String(), "site_config=7") {
+		t.Fatalf("a new version must ask for a restart, say which, and not reach the application (handled %v)", handled)
 	}
 }
 

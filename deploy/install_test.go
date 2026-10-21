@@ -44,6 +44,9 @@ type rig struct {
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("runs install.sh on a fake system (about 20 s in all)")
+	}
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash is not installed")
 	}

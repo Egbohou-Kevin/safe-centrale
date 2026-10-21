@@ -263,20 +263,20 @@ func (h *harness) request(session, camera string) {
 }
 
 // idle waits until the loop has taken what was given to it and the work away from
-// it (probes, photos) is over. Not while a stream runs: its work ends with it.
+// it (probes, photos) is over. Not while a stream runs: its work ends with it. The
+// wait runs on the loop's goroutine, the only one that starts work: waiting from
+// another one would race with a probe the clock starts meanwhile (a WaitGroup must
+// not grow from zero during a Wait). The work only queues inputs, so it never waits
+// for the loop.
 func (h *harness) idle() {
 	h.t.Helper()
 	h.app.Alive(context.Background())
-	done := make(chan struct{})
-	go func() { h.app.work.Wait(); close(done) }()
-	drivertest.WaitFor(h.t, "the work away from the loop", func() bool {
-		select {
-		case <-done:
-			return true
-		default:
-			return false
-		}
-	})
+	if err := h.app.loop.Do(context.Background(), func(time.Time) []video.Action {
+		h.app.work.Wait()
+		return nil
+	}); err != nil {
+		h.t.Fatal(err)
+	}
 	h.app.Alive(context.Background())
 }
 

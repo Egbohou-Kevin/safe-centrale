@@ -217,10 +217,38 @@ Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent 
   `internal/service` connaît autre chose que ses adaptateurs, la porte d'entrée et la
   file d'envoi, ou est
   importé hors de `cmd/` ;
+- si une couche application (`hub`, `gateway` et tout paquet `*app`, y compris ceux
+  ajoutés plus tard) lit l'horloge ou attend sans passer par le port `driver.Clock` ;
 - si un domaine, le contrat ou le pilote importe la couche application de la centrale ;
 - si une bibliothèque externe est importée hors de son adaptateur, ou si du code livré
   importe un outil de test (`schematest`, `mqtttest`, `attest`, `go2rtctest`, `drivertest`,
   `outboxtest`).
+
+### Les garde-fous de qualité
+
+`internal/qualitytest` empêche le code de revenir en arrière sur la lisibilité. Ses
+tests tournent avec `go test ./...` (environ une seconde) :
+
+| Règle | Seuil |
+|---|---|
+| `size` : longueur d'une fonction, d'un fichier | 50 et 400 lignes ; 160 et 750 lignes pour les tests |
+| `gofmt` : chaque fichier `.go` est formaté | – |
+| `ascii` : fichiers `.go` en ASCII seulement (le français va dans les gabarits et la doc) | – |
+| `duplication`, `test-duplication` : copier-coller, même avec des variables renommées | plus de 130 lexèmes (12 à 15 lignes) ; 200 pour les tests |
+| `fakes` : pas de copie des faux partagés (`drivertest`, `outboxtest`) ni des aides fusionnées (`decodeOrder`, `statusRepeater`…) ; un test peut les embarquer | – |
+| `dead` : un identifiant exporté de `internal/` que rien n'utilise hors des tests de son paquet (sauf méthodes d'interface, paquets de test, `cmd/`) | – |
+| `slog` : l'erreur d'un journal sous la clé `err`, jamais `error` | – |
+| `sleep` : pas de `time.Sleep` dans `internal/` hors adaptateurs et paquets de test | – |
+| `marker` : la méthode qui scelle une interface porte son nom (`isAction` pour `Action`) | – |
+| `packagedoc` : chaque paquet a un commentaire « Package nom … » (« Command nom … ») | – |
+| `readme` : chaque paquet de `internal/` et `cmd/` a sa ligne dans le README, et aucune ligne ne nomme un paquet disparu | – |
+
+Lire un échec : `fichier:ligne: [règle] ce qui ne va pas. Fix: quoi faire`. On corrige
+le code. Si la règle a vraiment tort à cet endroit, l'exception va dans `allowed`
+(`internal/qualitytest/exceptions_test.go`) avec sa raison ; une exception qui ne sert
+plus fait échouer le test. Les deux exceptions actuelles : le câblage du démon commun
+à `safehome-gsm` et `safehome-video`, et l'aide `publishApplied` de leurs tests (deux
+paquets `main` ne partagent pas de code de test).
 
 Le vocabulaire commun entre les documents (français) et le code (anglais) est dans
 `glossaire.md`. Convention : documents en français, code et commentaires en anglais.

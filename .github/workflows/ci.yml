@@ -1,0 +1,32 @@
+# Runs the project's full verification on every push and pull request. The steps are
+# not listed here: scripts/check.sh holds them, the same script the pre-commit hook
+# runs (with --quick), so the CI and the hook cannot drift apart.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # The hub's broker: without it the end-to-end tests are skipped. go2rtc is not
+      # packaged, so the video tests that need it still run only on a computer.
+      - name: Mosquitto for the end-to-end tests
+        run: sudo apt-get update -q && sudo apt-get install -y -q mosquitto
+      - name: Full verification
+        run: scripts/check.sh

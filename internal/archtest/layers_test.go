@@ -259,3 +259,31 @@ func TestZ2MOnlyBridgesZigbee2MQTTAndTheCore(t *testing.T) {
 		noStd: []string{"os", "net", "net/http", "database/sql", "log", "log/slog"},
 	}.check(t, filepath.Join("zigbee", "z2m"))
 }
+
+// Every application layer reads and waits on time only through the driver's Clock
+// port, so that its tests run on a fake clock: the hub, the gateway and every package
+// named *app, including those added later (several also have a rule of their own
+// above).
+func TestApplicationLayersUseOnlyTheClockPort(t *testing.T) {
+	dirs := []string{"hub", "gateway"}
+	entries, err := os.ReadDir(filepath.Join(root(t), "internal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.IsDir() && strings.HasSuffix(e.Name(), "app") {
+			dirs = append(dirs, e.Name())
+		}
+	}
+	if len(dirs) < 8 {
+		t.Fatalf("found only %v: the application layers moved?", dirs)
+	}
+	for _, dir := range dirs {
+		fset, files := parsePackage(t, filepath.Join(root(t), "internal", dir))
+		for name, f := range files {
+			for _, c := range clockCalls(fset, f) {
+				t.Errorf("internal/%s/%s reads the clock (%s): an application layer takes time from its driver.Clock port", dir, name, c)
+			}
+		}
+	}
+}
