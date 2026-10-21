@@ -99,10 +99,13 @@ type Raise struct {
 	Percent  int      // battery level, when it applies
 }
 
-// Result is a channel's report about a message sent with Send (Key identifies it).
+// Result is a channel's report about a message sent with Send. Ref, when set, is
+// the id of the request that carried it (see Escalation.Bind); otherwise Key
+// identifies it.
 type Result struct {
 	Now    time.Time
 	Key    uint64
+	Ref    string
 	Status ResultStatus
 }
 

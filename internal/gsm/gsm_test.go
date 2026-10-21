@@ -334,7 +334,7 @@ func TestDescribeNeverShowsATextOrANumber(t *testing.T) {
 	for _, a := range []Action{
 		Execute{Job: 1, Line: "line1", Channel: ChannelSMS, Number: "+22890123456", Text: "secret"},
 		CheckLine{Line: "l"}, RestartModem{Line: "l"}, Report{Ref: "r", Status: StatusSent},
-		Acknowledge{Incident: "i", Contact: "c"}, LinesChanged{}, Ignored{Line: "l", Why: "w"}, nil,
+		Acknowledge{Incident: "i", Contact: "c"}, LinesChanged{}, Ignored{Line: "l", Why: "w"}, Dropped{Incident: "i", Jobs: 2}, nil,
 	} {
 		d := Describe(a)
 		if d == "" || strings.Contains(d, "+228") || strings.Contains(d, "secret") {

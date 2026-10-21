@@ -18,7 +18,7 @@ func (g *Gateway) probe(p Probe) []Action {
 	l.NextCheck = p.Now.Add(g.cfg.CheckEvery)
 	var out []Action
 	if p.Responding {
-		l.Responding, l.Registered, l.Signal, l.Misses = true, p.Registered, min(max(p.Signal, 0), 100), 0
+		l.Responding, l.Registered, l.Signal, l.Misses = true, p.Registered, roundSignal(p.Signal), 0
 		if p.Operator != "" {
 			l.Operator = p.Operator
 		}
@@ -35,6 +35,9 @@ func (g *Gateway) probe(p Probe) []Action {
 	g.s.Lines[p.Line] = l
 	return out
 }
+
+// roundSignal keeps the signal to the nearest ten, from 0 to 100.
+func roundSignal(v int) int { return (min(max(v, 0), 100) + 5) / 10 * 10 }
 
 // restarted ends a modem restart; the line is checked again at once.
 func (g *Gateway) restarted(line string) {
@@ -63,7 +66,9 @@ func (g *Gateway) incoming(in Incoming) []Action {
 	if !ok || in.Now.Sub(open.At) > g.cfg.AckWindow {
 		return ignored("nothing to acknowledge")
 	}
-	return []Action{Acknowledge{Incident: open.Incident, Contact: contact}}
+	// The broker brings the acknowledgement back as a Cancel too; dropping now
+	// spares the round trip.
+	return append([]Action{Acknowledge{Incident: open.Incident, Contact: contact}}, g.cancel(open.Incident)...)
 }
 
 // lastTold returns, among contacts who share a phone, the one told most recently.

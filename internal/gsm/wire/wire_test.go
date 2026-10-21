@@ -19,7 +19,7 @@ func TestRequest(t *testing.T) {
 		contract.AlertMainsRestored: gsm.PriorityOther,
 	} {
 		r, ok := Request(contract.AlertRequestData{Incident: "i", Kind: kind, Urgency: "high", Contact: "owner", Channel: contract.ChannelSMS, Text: "x"}, "id1", now)
-		if !ok || r.Priority != want || r.Channel != gsm.ChannelSMS || r.ID != "id1" || r.Contact != "owner" || r.Text != "x" || r.Incident != "i" || !r.Now.Equal(now) {
+		if !ok || r.Priority != want || r.Channel != gsm.ChannelSMS || r.ID != "id1" || r.Contact != "owner" || r.Text != "x" || r.Incident != "i" || !r.Asked.Equal(now) || !r.Now.IsZero() {
 			t.Errorf("%s: %+v %v", kind, r, ok)
 		}
 	}
@@ -69,5 +69,23 @@ func TestResultsAcksAndStatusAreValid(t *testing.T) {
 	}
 	if st.Queued != 3 || st.Lines[0].LastTest == nil || st.Lines[1].LastTest != nil || st.Lines[0].Restarts != 2 {
 		t.Fatalf("%+v", st)
+	}
+}
+
+func TestCancel(t *testing.T) {
+	if c, ok := Cleared(contract.ClearedData{Incident: "i", Origin: contract.OriginUser}); !ok || c.Incident != "i" {
+		t.Fatalf("disarmed: %+v %v", c, ok)
+	}
+	if _, ok := Cleared(contract.ClearedData{Incident: "i", Origin: contract.OriginTimeout}); ok {
+		t.Fatal("the siren cycles ran out: the escalation goes on")
+	}
+	if _, ok := Cleared(contract.ClearedData{Origin: contract.OriginUser}); ok {
+		t.Fatal("no incident")
+	}
+	if c, ok := Acked(contract.AlertAckData{Incident: "i", Contact: "owner", Via: contract.ChannelApp}); !ok || c.Incident != "i" {
+		t.Fatalf("acknowledged: %+v %v", c, ok)
+	}
+	if _, ok := Acked(contract.AlertAckData{Contact: "owner"}); ok {
+		t.Fatal("no incident")
 	}
 }

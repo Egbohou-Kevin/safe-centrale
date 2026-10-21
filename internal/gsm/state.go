@@ -8,6 +8,11 @@ import (
 
 // Snapshot is the full state, saved by the driver after every change: a restart
 // loses no request (docs/gsm-gateway.md, "File d'envoi").
+//
+// What a line is doing now (a job, a check, a restart, and when its next check is
+// due) is not saved: it changes twice per check, every 30 seconds, and would wear
+// the SD card for nothing, since a restart starts every line afresh (Restore). The
+// fields tagged json:"-" are those.
 type Snapshot struct {
 	NextJob  uint64               `json:"next_job"`
 	Jobs     []Job                `json:"jobs"`
@@ -16,8 +21,9 @@ type Snapshot struct {
 	LastGood string               `json:"last_good"` // the line that sent last
 	// Pending matches delivery reports (line/reference) to requests.
 	Pending  map[string]string   `json:"pending"`
-	Order    []string            `json:"order"` // Pending keys, oldest first
-	Open     map[string]OpenItem `json:"open"`  // contact -> the incident last sent to them
+	Order    []string            `json:"order"`  // Pending keys, oldest first
+	Open     map[string]OpenItem `json:"open"`   // contact -> the incident last sent to them
+	Closed   []string            `json:"closed"` // the latest incidents over (Cancel), oldest first
 	NextTest time.Time           `json:"next_test"`
 }
 
@@ -31,12 +37,12 @@ type Job struct {
 	Channel   Channel   `json:"channel"`
 	Priority  Priority  `json:"priority"`
 	Text      string    `json:"text"`
-	Received  time.Time `json:"received"`
+	Received  time.Time `json:"received"`   // when it was asked, at most when it arrived
 	Attempts  int       `json:"attempts"`   // full rounds over the lines that failed
 	NotBefore time.Time `json:"not_before"` // waiting before the next round
 	Tried     []string  `json:"tried"`      // lines tried in the current round
-	Line      string    `json:"line"`       // the line sending it now, if any
-	Deadline  time.Time `json:"deadline"`   // when that line is given up
+	Line      string    `json:"-"`          // the line sending it now, if any
+	Deadline  time.Time `json:"-"`          // when that line is given up
 	Reported  bool      `json:"reported"`   // a failure was already reported
 	Test      bool      `json:"test"`
 }
@@ -46,15 +52,15 @@ type LineState struct {
 	Operator   string    `json:"operator"`
 	Responding bool      `json:"responding"`
 	Registered bool      `json:"registered"`
-	Signal     int       `json:"signal"`
+	Signal     int       `json:"signal"` // rounded to tens: the exact value changes all the time
 	Credit     string    `json:"credit"`
 	LastTest   time.Time `json:"last_test"`
 	LastTestOK *bool     `json:"last_test_ok"`
 	Restarts   int       `json:"restarts"`
 	Misses     int       `json:"misses"`
-	Busy       string    `json:"busy"` // "", busyJob, busyCheck or busyRestart
-	BusyUntil  time.Time `json:"busy_until"`
-	NextCheck  time.Time `json:"next_check"`
+	Busy       string    `json:"-"` // "", busyJob, busyCheck or busyRestart
+	BusyUntil  time.Time `json:"-"`
+	NextCheck  time.Time `json:"-"`
 }
 
 const (
@@ -78,6 +84,7 @@ type OpenItem struct {
 const (
 	seenSize    = 512
 	pendingSize = 256
+	closedSize  = 64
 )
 
 func (s Snapshot) clone() Snapshot {
@@ -88,6 +95,7 @@ func (s Snapshot) clone() Snapshot {
 		out.Jobs[i] = j
 	}
 	out.Seen = slices.Clone(s.Seen)
+	out.Closed = slices.Clone(s.Closed)
 	out.Lines = make(map[string]LineState, len(s.Lines))
 	for id, l := range s.Lines {
 		l.LastTestOK = cloneBool(l.LastTestOK)

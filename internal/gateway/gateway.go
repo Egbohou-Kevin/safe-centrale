@@ -158,9 +158,16 @@ func New(cfg Config, deps Deps) (*Gateway, error) {
 	return g, nil
 }
 
-// Subscriptions lists what the gateway listens to.
+// Subscriptions lists what the gateway listens to: the alert requests, and what
+// says an incident is over (an alarm disarmed, an acknowledgement), so that its
+// messages still waiting do not go.
 func (g *Gateway) Subscriptions() []Subscription {
-	return []Subscription{{Filter: contract.AlertRequestTopic(g.cfg.Site), QoS: 1}}
+	site := g.cfg.Site
+	return []Subscription{
+		{Filter: contract.AlertRequestTopic(site), QoS: 1},
+		{Filter: contract.AlarmEventTopic(site), QoS: 1},
+		{Filter: contract.AlertAckTopic(site), QoS: 1},
+	}
 }
 
 // Alive returns once the core's loop has taken what was queued for it: it is not
@@ -220,51 +227,6 @@ func (g *Gateway) repeatStatus(ctx context.Context) {
 	})
 }
 
-// --- inbound -----------------------------------------------------------------------------
-
-// HandleMessage takes a message from the broker. It returns quickly. Payloads are
-// never logged: they hold phone texts.
-func (g *Gateway) HandleMessage(m Message) {
-	if len(m.Payload) > maxPayload || m.Topic != contract.AlertRequestTopic(g.cfg.Site) {
-		return
-	}
-	env, err := contract.ParseEnvelope(m.Payload)
-	if err != nil || env.Site != g.cfg.Site || env.Type != contract.TypeAlertRequest {
-		g.log.Warn("ignoring an invalid alert request", "err", err)
-		return
-	}
-	if !g.seen.FirstTime(env.ID) {
-		return
-	}
-	d, err := contract.DecodeData[contract.AlertRequestData](env)
-	if err != nil {
-		g.log.Warn("ignoring an alert request with a damaged payload", "id", env.ID)
-		return
-	}
-	r, ok := gsmwire.Request(d, env.ID, time.Time{})
-	if !ok {
-		return // for another channel
-	}
-	g.submit(func(now time.Time) gsm.Input { r.Now = now; return r })
-}
-
-// Incoming is an SMS a modem received. The composition root wires the modems'
-// notifications to it.
-func (g *Gateway) Incoming(line, from, text string) {
-	g.submit(func(now time.Time) gsm.Input { return gsm.Incoming{Now: now, Line: line, From: from, Text: text} })
-}
-
-// Delivered is an operator's delivery report for the SMS with reference ref.
-func (g *Gateway) Delivered(line, ref string, ok bool) {
-	g.submit(func(now time.Time) gsm.Input { return gsm.DeliveryReport{Now: now, Line: line, MsgRef: ref, OK: ok} })
-}
-
-func (g *Gateway) submit(build func(time.Time) gsm.Input) {
-	if err := g.loop.Submit(g.life, build); err != nil && g.life.Err() == nil {
-		g.log.Error("handing an input to the gateway failed", "err", err)
-	}
-}
-
 // --- outbound ----------------------------------------------------------------------------
 
 // dispatch runs on the loop's goroutine: it hands modem work to the lines' workers
@@ -286,6 +248,8 @@ func (g *Gateway) dispatch(_ context.Context, now time.Time, actions []gsm.Actio
 			g.enqueue(contract.AlertAckTopic(g.cfg.Site), contract.TypeAlertAck, gsmwire.Ack(v), false, now)
 		case gsm.Ignored:
 			g.log.Info("an incoming SMS was ignored", "line", v.Line, "why", v.Why)
+		case gsm.Dropped:
+			g.log.Info("messages dropped: their incident is over", "incident", v.Incident, "jobs", v.Jobs)
 		case gsm.LinesChanged:
 			// Published by publishStatus, with the queue length.
 		}

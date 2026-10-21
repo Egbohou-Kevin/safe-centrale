@@ -65,6 +65,10 @@ func (g *Gateway) failed(id uint64, line string, reason Reason, now time.Time) [
 	}
 	j := &g.s.Jobs[i]
 	j.Line, j.Deadline = "", time.Time{}
+	if g.isClosed(j.Incident) {
+		g.remove(i) // its incident ended while the line was sending it
+		return nil
+	}
 	if !slices.Contains(j.Tried, line) {
 		j.Tried = append(j.Tried, line)
 	}

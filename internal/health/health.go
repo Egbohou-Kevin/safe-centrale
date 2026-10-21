@@ -88,7 +88,8 @@ func New(cfg Config, newID func() string, now time.Time) (*Monitor, error) {
 // Snapshot returns a copy of the current state.
 func (m *Monitor) Snapshot() Snapshot { return m.s.clone() }
 
-// Restore replaces the state with a saved one.
+// Restore replaces the state with a saved one. What is not saved (when each
+// component last spoke) is dropped, as a load from disk would.
 func (m *Monitor) Restore(s Snapshot) {
 	s = s.clone()
 	if s.Offline == nil {
@@ -98,6 +99,9 @@ func (m *Monitor) Restore(s Snapshot) {
 		s.LowBattery = map[string]bool{}
 	}
 	m.s = s
+	for _, w := range m.watches() {
+		w.watch.forget()
+	}
 }
 
 // NextWake returns the time at which the driver must send a Tick: the next daily
@@ -130,6 +134,9 @@ func (m *Monitor) Status() Status {
 // Handle processes an input and returns the alerts to send. A daily summary that
 // is due goes first, so it describes the state before this input.
 func (m *Monitor) Handle(in Input) []Action {
+	for _, w := range m.watches() {
+		w.watch.resume(in.at(), w.rule)
+	}
 	out := m.tick(in.at())
 	switch v := in.(type) {
 	case Mains:

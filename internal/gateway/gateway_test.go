@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -218,7 +219,76 @@ func TestConfigurationAndDependenciesAreChecked(t *testing.T) {
 		t.Error("no clock")
 	}
 	g, _ := New(good, deps)
-	if subs := g.Subscriptions(); len(subs) != 1 || subs[0].Filter != contract.AlertRequestTopic(site) || subs[0].QoS != 1 {
+	want := []Subscription{
+		{Filter: contract.AlertRequestTopic(site), QoS: 1},
+		{Filter: contract.AlarmEventTopic(site), QoS: 1},
+		{Filter: contract.AlertAckTopic(site), QoS: 1},
+	}
+	if subs := g.Subscriptions(); !slices.Equal(subs, want) {
 		t.Fatalf("%+v", subs)
 	}
+}
+
+func TestARequestHeldByTheBrokerTooLongIsGivenUp(t *testing.T) {
+	r := newRig(t, nil)
+	// Written eleven minutes ago, while the gateway was down.
+	ref := r.requestAt(t0.Add(-11*time.Minute), contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
+	r.waitFor("the failure", func() bool { return len(r.results(ref)) == 1 })
+	if got := r.results(ref); got[0] != "failed/timeout" {
+		t.Fatalf("%v", got)
+	}
+	if sent, _, _, _ := r.modem.count(); sent != 0 {
+		t.Fatal("an alert too old must not go out")
+	}
+}
+
+// failingRequest queues an SMS of incident inc1 that waits to be retried.
+func failingRequest(r *rig) {
+	r.t.Helper()
+	r.modem.mu.Lock()
+	r.modem.sendErr = ErrNoNetwork
+	r.modem.mu.Unlock()
+	ref := r.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
+	r.waitFor("the failure", func() bool { return len(r.results(ref)) == 2 })
+	r.modem.mu.Lock()
+	r.modem.sendErr = nil // the network is back
+	r.modem.mu.Unlock()
+}
+
+// noSMSAfterRetry lets the retry time pass and checks that nothing left.
+func noSMSAfterRetry(r *rig) {
+	r.t.Helper()
+	r.waitFor("the queue to be empty", func() bool { return r.status().Queued == 0 })
+	r.clock.Advance(time.Minute)
+	r.gw.loop.Do(context.Background(), func(time.Time) []gsm.Action { return nil })
+	time.Sleep(20 * time.Millisecond)
+	if sent, _, _, _ := r.modem.count(); sent != 0 {
+		r.t.Fatal("an SMS went out after the incident ended")
+	}
+	if !strings.Contains(r.logs.String(), "incident is over") {
+		r.t.Fatal("the drop must be logged")
+	}
+}
+
+func TestADisarmDropsTheWaitingMessages(t *testing.T) {
+	r := newRig(t, nil)
+	failingRequest(r)
+	// The siren cycles running out is not the end of the incident.
+	r.publish(contract.AlarmEventTopic(site), r.ids.New(), t0, contract.TypeAlarmCleared,
+		contract.ClearedData{Incident: "inc1", Origin: contract.OriginTimeout, DurationS: 300})
+	r.gw.loop.Do(context.Background(), func(time.Time) []gsm.Action { return nil })
+	if r.status().Queued != 1 {
+		t.Fatal("the message still waits")
+	}
+	r.publish(contract.AlarmEventTopic(site), r.ids.New(), t0, contract.TypeAlarmCleared,
+		contract.ClearedData{Incident: "inc1", Origin: contract.OriginUser, User: "u_owner", DurationS: 60})
+	noSMSAfterRetry(r)
+}
+
+func TestAnAcknowledgementDropsTheWaitingMessages(t *testing.T) {
+	r := newRig(t, nil)
+	failingRequest(r)
+	r.publish(contract.AlertAckTopic(site), r.ids.New(), t0, contract.TypeAlertAck,
+		contract.AlertAckData{Incident: "inc1", Contact: "u_owner", Via: contract.ChannelApp})
+	noSMSAfterRetry(r)
 }

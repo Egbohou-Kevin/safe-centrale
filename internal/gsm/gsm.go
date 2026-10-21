@@ -82,7 +82,7 @@ func (g *Gateway) Lines() []LineStatus {
 		st := g.s.Lines[l.ID]
 		out = append(out, LineStatus{
 			ID: l.ID, Operator: st.Operator, Responding: st.Responding, Registered: st.Registered,
-			Signal: (st.Signal + 5) / 10 * 10, Credit: st.Credit, LastTest: st.LastTest,
+			Signal: st.Signal, Credit: st.Credit, LastTest: st.LastTest,
 			LastTestOK: cloneBool(st.LastTestOK), Restarts: st.Restarts,
 		})
 	}
@@ -145,6 +145,8 @@ func (g *Gateway) Handle(in Input) []Action {
 		out = append(out, g.incoming(v)...)
 	case Probe:
 		out = append(out, g.probe(v)...)
+	case Cancel:
+		out = append(out, g.cancel(v.Incident)...)
 	case Restarted:
 		g.restarted(v.Line)
 	}
@@ -181,6 +183,8 @@ func Describe(a Action) string {
 		return fmt.Sprintf("%d line(s) changed", len(v.Lines))
 	case Ignored:
 		return "ignored SMS on " + v.Line + ": " + v.Why
+	case Dropped:
+		return fmt.Sprintf("dropped %d job(s) of %s: the incident is over", v.Jobs, v.Incident)
 	}
 	return fmt.Sprintf("%T", a)
 }

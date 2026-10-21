@@ -68,6 +68,15 @@ func TestResultAndAck(t *testing.T) {
 	if _, ok := Result(contract.AlertResultData{Ref: "x", Status: "lost"}, 1, now); ok {
 		t.Error("an unknown status must be refused")
 	}
+	if r, ok := ResultByRef(contract.AlertResultData{Ref: "x", Status: contract.ResultSent}, now); !ok ||
+		r.Ref != "x" || r.Key != 0 || r.Status != escalation.ResultSent || !r.Now.Equal(now) {
+		t.Errorf("%+v %v", r, ok)
+	}
+	for _, d := range []contract.AlertResultData{{Ref: "x", Status: "lost"}, {Status: contract.ResultSent}} {
+		if _, ok := ResultByRef(d, now); ok {
+			t.Errorf("%+v accepted", d)
+		}
+	}
 	a := Ack(contract.AlertAckData{Incident: "inc1", Contact: "owner", Via: "sms"}, now)
 	if a.Incident != "inc1" || a.Contact != "owner" || !a.Now.Equal(now) {
 		t.Errorf("%+v", a)

@@ -49,9 +49,12 @@ type Input interface{ at() time.Time }
 type Tick struct{ Now time.Time }
 
 // Request asks for a message to a contact. ID is the request's identifier, echoed
-// in the reports.
+// in the reports. Asked is when the escalation asked (the request's own time,
+// zero for Now): the maximum age counts from there, so a request held by the
+// broker while the gateway was down does not go out late.
 type Request struct {
 	Now      time.Time
+	Asked    time.Time
 	ID       string
 	Incident string
 	Contact  string
@@ -98,6 +101,14 @@ type Probe struct {
 	Operator   string
 }
 
+// Cancel says that an incident is over: the alarm was disarmed, or a contact
+// acknowledged it. Its messages still waiting are dropped, and so is any request
+// of it that arrives later. One a line is sending goes on, but is not retried.
+type Cancel struct {
+	Now      time.Time
+	Incident string
+}
+
 // Restarted says that a RestartModem is over.
 type Restarted struct {
 	Now  time.Time
@@ -111,6 +122,7 @@ func (d DeliveryReport) at() time.Time { return d.Now }
 func (i Incoming) at() time.Time       { return i.Now }
 func (p Probe) at() time.Time          { return p.Now }
 func (r Restarted) at() time.Time      { return r.Now }
+func (c Cancel) at() time.Time         { return c.Now }
 
 // Action is what the gateway asks the driver to do.
 type Action interface{ isAction() }
@@ -156,6 +168,13 @@ type Ignored struct {
 	Why  string // "unknown number", "unknown text", "nothing to acknowledge"
 }
 
+// Dropped reports the messages of an incident given up because it is over. Nothing
+// is reported to the escalation: it stopped waiting for them.
+type Dropped struct {
+	Incident string
+	Jobs     int
+}
+
 func (Execute) isAction()      {}
 func (CheckLine) isAction()    {}
 func (RestartModem) isAction() {}
@@ -163,6 +182,7 @@ func (Report) isAction()       {}
 func (Acknowledge) isAction()  {}
 func (LinesChanged) isAction() {}
 func (Ignored) isAction()      {}
+func (Dropped) isAction()      {}
 
 // LineStatus is the public state of a line.
 type LineStatus struct {

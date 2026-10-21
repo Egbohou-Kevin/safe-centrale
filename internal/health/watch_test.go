@@ -2,6 +2,7 @@ package health
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -301,5 +302,91 @@ func TestTheInternetDelayMustBePositive(t *testing.T) {
 	c.InternetSilentAfter = 0
 	if err := c.Validate(); err == nil {
 		t.Fatal("a zero internet delay was accepted")
+	}
+}
+
+// --- restarts ----------------------------------------------------------------
+
+// restart saves the state as the driver does (JSON), and starts a new monitor
+// from it d later.
+func (h *harness) restart(d time.Duration) {
+	h.t.Helper()
+	raw, err := json.Marshal(h.m.Snapshot())
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	var s Snapshot
+	if err := json.Unmarshal(raw, &s); err != nil {
+		h.t.Fatal(err)
+	}
+	h.now = h.now.Add(d)
+	m, err := New(h.cfg, func() string { h.ids++; return fmt.Sprintf("alert-%d", h.ids) }, h.now)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	m.Restore(s)
+	h.m = m
+}
+
+func TestARepeatedStatusDoesNotChangeTheSavedState(t *testing.T) {
+	h := newHarness(t)
+	none(t, h.gsm(true))
+	saved, _ := json.Marshal(h.m.Snapshot())
+	none(t, h.keepReporting(true, 10*time.Minute))
+	if now, _ := json.Marshal(h.m.Snapshot()); string(now) != string(saved) {
+		t.Fatalf("every status rewrites the state on disk:\n%s\n%s", saved, now)
+	}
+}
+
+func TestAComponentThatNeverSpeaksAfterARestartTurnsSilent(t *testing.T) {
+	h := newHarness(t)
+	none(t, h.gsm(true))
+	h.restart(time.Minute)
+	if h.m.Status().GSM != LinkOK {
+		t.Fatalf("status %q: what it said last still holds", h.m.Status().GSM)
+	}
+	if w := h.m.NextWake(); w.After(h.now) {
+		t.Fatalf("next wake %v: the silence must start counting at once", w)
+	}
+	none(t, h.advance(0))
+	start := h.now
+	none(t, h.advance(3*time.Minute-time.Second))
+	if h.m.Status().GSM != LinkOK {
+		t.Fatalf("status %q: its silence counts from the restart", h.m.Status().GSM)
+	}
+	none(t, h.advance(time.Second))
+	if h.m.Status().GSM != LinkSilent || !h.m.NextWake().Equal(start.Add(13*time.Minute)) {
+		t.Fatalf("status %q, next wake %v", h.m.Status().GSM, h.m.NextWake())
+	}
+	if al := one(t, h.advance(10*time.Minute)); al.Kind != AlertGSMDegraded {
+		t.Fatalf("%+v", al)
+	}
+}
+
+func TestAnOldRetainedStatusAfterARestartIsSilentAtOnce(t *testing.T) {
+	h := newHarness(t)
+	none(t, h.gsm(true))
+	h.restart(2 * time.Hour) // the gateway died with the hub, two hours ago
+	// The first tick may come before the retained status.
+	als := alerts(t, append(h.advance(0), h.m.Handle(GSM{Now: h.now, Seen: t0, Usable: true})...))
+	if len(als) != 1 || als[0].Kind != AlertGSMDegraded || h.m.Status().GSM != LinkSilent {
+		t.Fatalf("status %q, %+v", h.m.Status().GSM, als)
+	}
+}
+
+func TestASilentComponentStaysSilentAndToldAcrossARestart(t *testing.T) {
+	h := newHarness(t)
+	none(t, h.gsm(true))
+	one(t, h.advance(13*time.Minute))
+	h.restart(time.Minute)
+	none(t, h.advance(0))
+	if h.m.Status().GSM != LinkSilent {
+		t.Fatalf("status %q: a restart is no news from the gateway", h.m.Status().GSM)
+	}
+	none(t, h.advance(time.Hour))
+	// It speaks again: back to normal.
+	none(t, h.gsm(true))
+	if h.m.Status().GSM != LinkOK {
+		t.Fatalf("status %q", h.m.Status().GSM)
 	}
 }

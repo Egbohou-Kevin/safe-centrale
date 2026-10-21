@@ -13,17 +13,40 @@ const (
 )
 
 // Watch follows a component that repeats its state (the GSM gateway, the Zigbee
-// adapter): when it wrote its last state (zero: it never spoke), what it said, and
-// whether it has been silent too long since. A dead or stuck component cannot say
-// so itself: its silence does.
+// adapter): when it wrote its last state, what it said, and whether it has been
+// silent too long since. A dead or stuck component cannot say so itself: its
+// silence does.
+//
+// Seen moves with every state, about once a minute, so it is not saved: the state
+// file would be rewritten each time (docs/engine.md). After a restart it starts
+// again from the restart (see resume), unless a retained state says better.
 type Watch struct {
-	Seen   time.Time `json:"seen"`
+	Seen   time.Time `json:"-"`
+	Known  bool      `json:"known"` // it spoke at least once
 	Usable bool      `json:"usable"`
 	Silent bool      `json:"silent"`
 	// Down since when (zero while it works), and whether the owner was told for this
 	// outage.
 	DownSince time.Time `json:"down_since"`
 	Alerted   bool      `json:"alerted"`
+
+	assumed bool // Seen was set by resume, not by a state: any state replaces it
+}
+
+// forget drops what is not saved, as a load from disk does.
+func (w *Watch) forget() { w.Seen, w.assumed = time.Time{}, false }
+
+// resume gives a known component whose last state was not saved a Seen: the
+// restart, so that its silence counts from there. One that was silent stays so:
+// a restart is no news from it.
+func (w *Watch) resume(now time.Time, r watchRule) {
+	if !w.Known || !w.Seen.IsZero() {
+		return
+	}
+	w.Seen, w.assumed = now, true
+	if w.Silent {
+		w.Seen = now.Add(-r.silentAfter)
+	}
 }
 
 type watchRule struct {
@@ -34,16 +57,17 @@ type watchRule struct {
 
 // report records a state. A state from the future (a clock set back) counts as
 // written now. A state older than the last one (a retained copy delivered late)
-// is ignored, unless the last one is itself in the future: the clock was set back
-// since, and refusing every new state would make the component look silent.
+// is ignored, unless the last one is itself in the future (the clock was set back
+// since, and refusing every new state would make the component look silent) or
+// was only assumed at a restart (a retained state is better news).
 func (w *Watch) report(now, seen time.Time, usable bool) {
 	if seen.IsZero() || seen.After(now) {
 		seen = now
 	}
-	if seen.Before(w.Seen) && !w.Seen.After(now) {
+	if seen.Before(w.Seen) && !w.Seen.After(now) && !w.assumed {
 		return
 	}
-	w.Seen, w.Usable = seen, usable
+	w.Seen, w.Usable, w.Known, w.assumed = seen, usable, true, false
 }
 
 // check follows the component after every input: it works while its last state says
@@ -77,8 +101,11 @@ func (w *Watch) check(now time.Time, r watchRule) bool {
 // (a component that said it is down turns silent too, and the published state must
 // say so), or when its alert is due; zero if never.
 func (w *Watch) nextWake(r watchRule) time.Time {
-	if w.Seen.IsZero() {
+	switch {
+	case !w.Known:
 		return time.Time{}
+	case w.Seen.IsZero():
+		return time.Unix(0, 0) // restarted: its silence starts counting at once (resume)
 	}
 	var wake time.Time
 	if !w.Silent {
@@ -95,7 +122,7 @@ func (w *Watch) nextWake(r watchRule) time.Time {
 
 func (w *Watch) state() LinkState {
 	switch {
-	case w.Seen.IsZero():
+	case !w.Known:
 		return LinkUnknown
 	case w.Silent:
 		return LinkSilent

@@ -19,15 +19,33 @@ func (g *Gateway) request(r Request) []Action {
 	if len(g.s.Seen) > seenSize {
 		g.s.Seen = g.s.Seen[len(g.s.Seen)-seenSize:]
 	}
+	if g.isClosed(r.Incident) {
+		return []Action{Dropped{Incident: r.Incident, Jobs: 1}} // delivered after its incident ended
+	}
+	asked := askedAt(r)
+	if !r.Now.Before(asked.Add(g.cfg.MaxAge[r.Priority])) {
+		return []Action{Report{Ref: r.ID, Status: StatusFailed, Reason: ReasonTimeout}}
+	}
 	number, ok := g.numbers[r.Contact]
 	if !ok {
 		return []Action{Report{Ref: r.ID, Status: StatusFailed, Reason: ReasonUnreachable}}
 	}
 	g.addJob(Job{
 		Ref: r.ID, Incident: r.Incident, Contact: r.Contact, Number: number,
-		Channel: r.Channel, Priority: r.Priority, Text: r.Text, Received: r.Now,
+		Channel: r.Channel, Priority: r.Priority, Text: r.Text, Received: asked,
 	})
 	return []Action{Report{Ref: r.ID, Status: StatusQueued}}
+}
+
+// askedAt is when a request was asked, which its age counts from. A time ahead of
+// its arrival can only come from a clock set back since (the hub and the gateway
+// read the same clock): it counts from the arrival, so the request is not kept for
+// longer than its maximum age.
+func askedAt(r Request) time.Time {
+	if r.Asked.IsZero() || r.Asked.After(r.Now) {
+		return r.Now
+	}
+	return r.Asked
 }
 
 func (g *Gateway) addJob(j Job) {

@@ -260,17 +260,29 @@ func (r *rig) status() contract.GSMStatusData {
 
 func (r *rig) request(channel, contact, kind string) string {
 	r.t.Helper()
+	return r.requestAt(r.clock.Now(), channel, contact, kind)
+}
+
+// requestAt sends an alert request of incident inc1 written at ts, and returns its id.
+func (r *rig) requestAt(ts time.Time, channel, contact, kind string) string {
+	r.t.Helper()
 	id := r.ids.New()
-	env, err := contract.NewEnvelope(site, "escalation", 1, id, r.clock.Now(), contract.TypeAlertRequest, contract.AlertRequestData{
+	r.publish(contract.AlertRequestTopic(site), id, ts, contract.TypeAlertRequest, contract.AlertRequestData{
 		Incident: "inc1", Kind: kind, Urgency: contract.UrgencyCritical, Contact: contact, Channel: channel,
 		Text: "ALARME Boutique: intrusion a 21:04. Repondre 1 si vous gerez.",
 	})
+	return id
+}
+
+// publish hands the gateway a message of the site as the broker would.
+func (r *rig) publish(topic, id string, ts time.Time, typ string, data any) {
+	r.t.Helper()
+	env, err := contract.NewEnvelope(site, "hub", 1, id, ts, typ, data)
 	if err != nil {
 		r.t.Fatal(err)
 	}
 	b, _ := json.Marshal(env)
-	r.gw.HandleMessage(Message{Topic: contract.AlertRequestTopic(site), Payload: b})
-	return id
+	r.gw.HandleMessage(Message{Topic: topic, Payload: b})
 }
 
 func (r *rig) results(ref string) []string {

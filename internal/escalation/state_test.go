@@ -138,3 +138,34 @@ func TestMessageKeysAreUniqueAndIncreasing(t *testing.T) {
 		t.Fatalf("%v", keys)
 	}
 }
+
+func TestAResultFindsItsMessageByRequestIDAfterARestart(t *testing.T) {
+	a := newEsc(t)
+	k := keyOf(raise(a, t0, KindIntrusion), "deputy", ChannelApp)
+	a.Bind(k, "REQ-DEPUTY-APP")
+	a.Bind(9999, "REQ-NOBODY") // no such message: nothing to remember
+	raw, err := json.Marshal(a.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snap Snapshot
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		t.Fatal(err)
+	}
+	b := newEsc(t)
+	b.Restore(snap)
+	// The cloud confirms after the restart: the request id is all the result carries.
+	b.Handle(Result{Now: t0.Add(5 * time.Second), Ref: "REQ-DEPUTY-APP", Status: ResultDelivered})
+	d := b.Snapshot().Incidents["inc1/intrusion"].Deliveries[k]
+	if d.Status != ResultDelivered || d.Ref != "REQ-DEPUTY-APP" {
+		t.Fatalf("%+v", d)
+	}
+	if got := sends(tick(b, t0.Add(10*time.Second))); len(got) != 0 {
+		t.Fatalf("the deputy confirmed by the app needs no SMS: %v", got)
+	}
+	before := b.Snapshot()
+	if out := b.Handle(Result{Now: t0.Add(11 * time.Second), Ref: "REQ-NOBODY", Status: ResultFailed}); len(out) != 0 ||
+		!reflect.DeepEqual(before.Incidents, b.Snapshot().Incidents) {
+		t.Fatalf("a result for an unknown request must change nothing: %+v", out)
+	}
+}

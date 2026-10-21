@@ -10,23 +10,41 @@ import (
 // contact's current round moves its timers, and a confirmation that stops the last
 // timer ends the escalation.
 func (e *Escalation) result(r Result) []Action {
+	key, msg, ok := e.delivery(r)
+	if !ok {
+		return nil
+	}
+	in := e.s.Incidents[key]
+	d := in.Deliveries[msg]
+	d.Status = r.Status
+	in.Deliveries[msg] = d
+	round, current := in.Rounds[d.Contact]
+	if current && round.Step == d.Step {
+		applyResult(in, d, &round, r)
+		in.Rounds[d.Contact] = round
+		pullForwardIfAllUnreachable(&in, r.Now)
+	}
+	e.s.Incidents[key] = in
+	return e.finishIfDone(key)
+}
+
+// delivery finds the message a result is about: the incident's key and the
+// message's key.
+func (e *Escalation) delivery(r Result) (string, uint64, bool) {
 	for key, in := range e.s.Incidents {
-		d, ok := in.Deliveries[r.Key]
-		if !ok {
+		if r.Ref == "" {
+			if _, ok := in.Deliveries[r.Key]; ok {
+				return key, r.Key, true
+			}
 			continue
 		}
-		d.Status = r.Status
-		in.Deliveries[r.Key] = d
-		round, current := in.Rounds[d.Contact]
-		if current && round.Step == d.Step {
-			applyResult(in, d, &round, r)
-			in.Rounds[d.Contact] = round
-			pullForwardIfAllUnreachable(&in, r.Now)
+		for msg, d := range in.Deliveries {
+			if d.Ref == r.Ref {
+				return key, msg, true
+			}
 		}
-		e.s.Incidents[key] = in
-		return e.finishIfDone(key)
 	}
-	return nil
+	return "", 0, false
 }
 
 func applyResult(in IncidentSnap, d Delivery, round *Round, r Result) {

@@ -100,6 +100,17 @@ func Result(d contract.AlertResultData, key uint64, now time.Time) (escalation.R
 	return escalation.Result{Now: now, Key: key, Status: status}, true
 }
 
+// ResultByRef turns an alert.result into an escalation input that finds its
+// message by the request id (see escalation.Escalation.Bind), so the caller needs
+// no index of its own. ok is false for a status the contract does not define.
+func ResultByRef(d contract.AlertResultData, now time.Time) (escalation.Result, bool) {
+	status, ok := statuses[d.Status]
+	if !ok || d.Ref == "" {
+		return escalation.Result{}, false
+	}
+	return escalation.Result{Now: now, Ref: d.Ref, Status: status}, true
+}
+
 // Ack turns an alert.ack into an escalation input.
 func Ack(d contract.AlertAckData, now time.Time) escalation.Ack {
 	return escalation.Ack{Now: now, Incident: d.Incident, Contact: d.Contact}

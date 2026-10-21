@@ -45,6 +45,22 @@ func (e *Escalation) Snapshot() Snapshot { return e.s.clone() }
 // Restore replaces the state with a saved one.
 func (e *Escalation) Restore(s Snapshot) { e.s = s.clone() }
 
+// Bind records the id of the request that carries message key (a Send), so that
+// the request's results find the message by that id (Result.Ref), after a restart
+// too. It changes the state without being an input: the driver calls it while
+// carrying out the Send, on the loop's goroutine, before the state is saved. An
+// unknown key is ignored.
+func (e *Escalation) Bind(key uint64, ref string) {
+	for id, in := range e.s.Incidents {
+		if d, ok := in.Deliveries[key]; ok {
+			d.Ref = ref
+			in.Deliveries[key] = d
+			e.s.Incidents[id] = in
+			return
+		}
+	}
+}
+
 // Active reports how many incidents are being escalated.
 func (e *Escalation) Active() int { return len(e.s.Incidents) }
 

@@ -47,6 +47,9 @@ type Round struct {
 
 // Delivery is one message sent, for matching its result.
 type Delivery struct {
+	// Ref is the id of the request that carries the message (see Bind): saved with
+	// the rest, so a result still finds its message after a restart.
+	Ref     string       `json:"ref,omitempty"`
 	Contact string       `json:"contact"`
 	Channel Channel      `json:"channel"`
 	Step    int          `json:"step"`

@@ -15,17 +15,32 @@ var channels = map[string]gsm.Channel{
 	contract.ChannelCall: gsm.ChannelCall,
 }
 
-// Request turns an alert.request into a gateway input. ok is false when the request
-// is not for the GSM channels (app, WhatsApp) or has no contact.
-func Request(d contract.AlertRequestData, id string, now time.Time) (gsm.Request, bool) {
+// Request turns an alert.request into a gateway input, without its Now. id and ts
+// come from the envelope: ts is when the escalation asked. ok is false when the
+// request is not for the GSM channels (app, WhatsApp) or has no contact.
+func Request(d contract.AlertRequestData, id string, ts time.Time) (gsm.Request, bool) {
 	ch, ok := channels[d.Channel]
 	if !ok || d.Contact == "" || id == "" {
 		return gsm.Request{}, false
 	}
 	return gsm.Request{
-		Now: now, ID: id, Incident: d.Incident, Contact: d.Contact, Channel: ch,
+		Asked: ts, ID: id, Incident: d.Incident, Contact: d.Contact, Channel: ch,
 		Priority: priority(d.Kind), Text: d.Text,
 	}, true
+}
+
+// Cleared turns an alarm.cleared into a gateway input, without its Now: the
+// messages of an alarm stopped by a user have no reason to go. An alarm whose
+// siren cycles ran out (origin timeout) is not over for the escalation, which goes
+// on: ok is false.
+func Cleared(d contract.ClearedData) (gsm.Cancel, bool) {
+	return gsm.Cancel{Incident: d.Incident}, d.Origin == contract.OriginUser && d.Incident != ""
+}
+
+// Acked turns an alert.ack into a gateway input, without its Now: a contact took
+// the incident in hand and its escalation is over.
+func Acked(d contract.AlertAckData) (gsm.Cancel, bool) {
+	return gsm.Cancel{Incident: d.Incident}, d.Incident != ""
 }
 
 // priority: what protects lives first, then intrusions, then the rest.
