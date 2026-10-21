@@ -155,6 +155,12 @@ console, l'outil envoie `SIGHUP` à la centrale si elle
 tourne (il lit son pid dans `hub.pid`), qui relit les codes. Si le rechargement échoue,
 les anciens codes restent en usage et une erreur est journalisée.
 
+La centrale prend les contacts tels qu'ils sont enregistrés au moment où elle relit
+les codes (fichier de la centrale et configuration venue du cloud). Elle relit aussi
+les codes dès qu'une configuration venue du cloud est enregistrée, sans attendre de
+redémarrer : un contact ajouté pendant le mode installation peut recevoir un code tout
+de suite, un contact retiré ne désarme plus.
+
 ## Configuration venue du cloud
 
 Le client règle depuis l'application ses contacts, ses horaires de fermeture, ses
@@ -270,6 +276,23 @@ Il garde son registre et ses états dans le même dossier d'état (fichiers
 `zigbee.json`, `zigbee_seq.json` et leur copie `.prev`) et son propre fichier de pid
 (`zigbee.pid`). L'adresse Zigbee des appareils ne sort jamais de l'adaptateur, et
 aucun code de clavier n'apparaît dans ses journaux.
+
+Zigbee2MQTT doit dater chaque message (`last_seen: ISO_8601` sous `advanced:`, déjà
+dans `deploy/zigbee2mqtt/configuration.yaml`). Sans cela, une touche du clavier gardée
+par le broker pendant une coupure de l'adaptateur est datée de son arrivée, et peut
+encore désarmer (`adapter-zigbee.md`, « QoS »). `deploy/install.sh` ne pose ce fichier
+que la première fois. Sur un site installé avant cet ajout, l'ajouter à la main dans
+`/var/lib/zigbee2mqtt/configuration.yaml` (avec `sudo`), puis relancer Zigbee2MQTT :
+
+```yaml
+advanced:
+  # ... les lignes déjà là
+  last_seen: ISO_8601
+```
+
+```bash
+sudo systemctl restart zigbee2mqtt
+```
 
 Appairer un appareil se fait localement, par un message `registry.pair` sur
 `safehome/{site}/registry/cmd` (le cloud ne peut pas y écrire) : c'est le rôle de

@@ -61,7 +61,11 @@ standard : il ne reste ni dans l'historique du shell ni dans la liste des proces
 Un code faible (chiffres répétés, suite) ou déjà pris est refusé, 5 personnes au
 maximum. Si la centrale tourne, elle recharge les codes toute seule (signal SIGHUP).
 La centrale ignore le code d'une personne qui n'est plus contact du site (elle le
-journalise, sans le code). `safehome-hub codes set` refuse un utilisateur qui n'est pas
+journalise, sans le code). Elle prend les contacts tels qu'ils sont enregistrés au
+moment où elle relit les codes (fichier de la centrale et configuration venue du
+cloud). Elle relit aussi les codes dès qu'une configuration venue du cloud est
+enregistrée : un contact ajouté pendant le mode installation peut recevoir un code
+tout de suite, un contact retiré ne désarme plus. `safehome-hub codes set` refuse un utilisateur qui n'est pas
 un contact ; `codes list` signale ces codes restants. La console les liste (« Codes
 d'anciens contacts ») et permet de les retirer. Les fichiers d'état écrits par un outil
 lancé avec `sudo` prennent le propriétaire du dossier ; sinon l'outil échoue en le

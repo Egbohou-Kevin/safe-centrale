@@ -202,7 +202,10 @@ Là où le document laissait un doute :
   `alert.ack` (y compris un « 1 » reçu par elle-même, pris en compte tout de suite).
   Les messages de l'incident encore en attente sont abandonnés sans résultat publié
   (l'escalade ne les attend plus), un message en cours au modem n'est pas réessayé,
-  et une demande de cet incident arrivée plus tard est ignorée.
+  et une demande de cet incident arrivée plus tard est ignorée. Un `alert.ack` ne
+  compte que s'il vient d'un contact du site, comme pour l'escalade : tous ceux de la
+  configuration venue du cloud, même sans numéro ; à défaut, ceux qui ont un numéro.
+  Un acquittement d'un inconnu ne coupe pas le secours SMS.
 - **Une ligne en échec** : on essaie l'autre ligne avant de signaler l'échec. Pas de
   crédit (`no_credit`) marque la ligne `credit: "empty"` jusqu'au prochain envoi réussi ;
   pas de réseau la marque non enregistrée jusqu'à la vérification suivante.

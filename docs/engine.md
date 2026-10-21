@@ -277,22 +277,31 @@ L'état courant est écrit sur disque (écriture atomique) à chaque transition.
 redémarrage :
 
 1. le moteur lit son dernier état ;
-2. il lit l'état retenu des appareils sur le broker ;
-3. il rejoue à leur heure les échéances passées pendant l'arrêt, puis reprend l'état
-   obtenu : armé reste armé ; déclenché reste `triggered`, et la sirène reprend pour
-   ce qui reste du cycle en cours (rien pendant une pause ; si les cycles se sont
-   épuisés pendant l'arrêt, il est revenu à son état d'avant l'alarme, en général
-   `armed`) ;
-4. si une zone est déjà en alarme, il se déclenche ;
+2. il lit l'état retenu des appareils sur le broker et note quelles portes et
+   fenêtres sont ouvertes, sans encore agir ;
+3. il rejoue à leur heure les échéances passées pendant l'arrêt, avec les portes et
+   fenêtres telles qu'elles sont maintenant : une porte refermée pendant l'arrêt ne
+   lance pas le délai d'entrée à la fin du délai de sortie, une fenêtre refermée n'est
+   pas contournée ; ce qui est encore ouvert est traité comme à la fin de tout délai de
+   sortie (voir « Armement et délai de sortie »). Puis il reprend l'état obtenu : armé
+   reste armé ; déclenché reste `triggered`, et la sirène reprend pour ce qui reste du
+   cycle en cours (rien pendant une pause ; si les cycles se sont épuisés pendant
+   l'arrêt, il est revenu à son état d'avant l'alarme, en général `armed`) ;
+4. si une zone est encore en alarme, il se déclenche. Un sabotage déjà vu avant
+   l'arrêt et toujours actif n'est pas signalé de nouveau ; un sabotage apparu pendant
+   l'arrêt l'est ;
 5. il publie un événement de redémarrage (`boot_id` change dans le heartbeat).
 
-Après une restauration, le moteur ne demande aucun tic avant `Boot` : c'est `Boot` qui
-rejoue les échéances manquées. Un cycle de sirène rejoué en retard ne sonne que ce
-qui en reste, une seule fois (un seul `siren.on`, pas un par cycle rejoué).
+Après une restauration, le moteur ne rejoue aucune échéance avant `Boot` : ni tic, ni
+rattrapage au passage d'un ordre ou d'un signal reçu pendant la fenêtre de démarrage.
+Cet ordre ou ce signal s'applique à l'état sauvegardé. C'est `Boot` qui rejoue les
+échéances manquées, une fois les états connus. Un cycle de sirène rejoué en retard ne
+sonne que ce qui en reste, une seule fois (un seul `siren.on`, pas un par cycle
+rejoué).
 
 Un appareil retiré du réseau est oublié : la centrale envoie `Forget` au moteur et à
-la supervision à chaque `registry.device_removed`. Il ne tient plus une porte ouverte
-ni un contournement. Ce que les incidents en ont retenu reste.
+la supervision à chaque `registry.device_removed`. Il ne tient plus une porte ouverte,
+un contournement ni un sabotage déjà vu. Ce que les incidents en ont retenu reste.
 
 ## Contrat
 
