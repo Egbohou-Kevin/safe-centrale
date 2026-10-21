@@ -89,7 +89,7 @@ Les ordres reconnus sont décrits en tête de `vkit/fakemodem/control.go` et
 
 ## Ce qu'il a déjà trouvé
 
-Trois défauts que les tests unitaires ne voyaient pas, corrigés avec un test chacun :
+Quatre défauts que les tests unitaires ne voyaient pas, corrigés avec un test chacun :
 
 - **La sirène du catalogue n'était pas une sirène** : le profil Heiman ne rapporte
   rien quand elle sonne, donc le registre ne lui donnait pas la capacité `siren`, et
@@ -102,6 +102,11 @@ Trois défauts que les tests unitaires ne voyaient pas, corrigés avec un test c
 - **Un modem débranché restait perdu** pendant une alarme : la passerelle gardait le
   port mort, et ne le redémarrait que sur une ligne au repos. Le port est maintenant
   rouvert à la demande suivante.
+- **Le mode installation se refermait tout seul** quand l'installateur tapait son code
+  juste après un redémarrage de la centrale (coupure de courant, chien de garde) : la
+  fin du démarrage annonçait « fermé, redémarrage » par-dessus, et la console coupait
+  son Wi-Fi alors que la centrale tenait le mode ouvert. Trouvé seulement en
+  enchaînant les étapes du scénario.
 
 Et un détail : `pair` proposait `zone` comme étape suivante pour une sirène.
 

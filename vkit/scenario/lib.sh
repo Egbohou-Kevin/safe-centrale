@@ -88,6 +88,20 @@ expect() {
 	check_failed "$4 (no /$2/ in $1 within $3 s)"
 }
 
+# expect_retained TOPIC PATTERN SECONDS WHAT: the retained message of a topic of the
+# site (published at start and at each change, so maybe before the mark) matches.
+expect_retained() {
+	local deadline=$((SECONDS + $3))
+	while [ "$SECONDS" -lt "$deadline" ]; do
+		if timeout 3 mosquitto_sub -h 127.0.0.1 -t "safehome/$SITE/$1" -C 1 2>/dev/null | grep -E -- "$2" >/dev/null; then
+			check_passed "$4"
+			return 0
+		fi
+		sleep 2
+	done
+	check_failed "$4 (the retained $1 never matched /$2/ within $3 s)"
+}
+
 # expect_file FILE PATTERN WHAT: the file holds the pattern.
 expect_file() {
 	if grep -qE -- "$2" "$1"; then

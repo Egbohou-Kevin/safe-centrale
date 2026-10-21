@@ -19,7 +19,8 @@ step_reset() {
 	systemctl stop 'safehome-*' vkit-z2m mosquitto
 	rm -rf /var/lib/safehome/* /var/lib/mosquitto/*
 	systemctl start mosquitto vkit-z2m
-	systemctl start safehome-hub safehome-gsm safehome-zigbee safehome-agent safehome-console
+	# Every program install.sh enabled, whatever the site runs.
+	systemctl start $(systemctl list-unit-files 'safehome-*' --state=enabled --no-legend | awk '{print $1}')
 	sleep 3
 	record
 }
@@ -266,8 +267,7 @@ step_maint() {
 
 step_video() {
 	say "live video: the owner watches the camera from the app"
-	mark
-	expect bus '"type":"video.status".*"reachable":true' 330 "the camera is reachable"
+	expect_retained video/status '"reachable":true' 330 "the camera is reachable"
 	mark
 	cloud_send video/cmd video.request \
 		"{\"session\":\"v1\",\"camera\":\"cam_caisse\",\"reason\":\"demand\",\"user\":\"u_owner\",\"max_s\":60,\"push_url\":\"rtmps://127.0.0.1:1936/live/v1\",\"token\":\"vkit-video-token\",\"exp\":\"$(later '1 minute')\"}"
@@ -301,6 +301,20 @@ phone_radio() {
 join_wifi() {
 	phone_radio
 	pkill -f "wpa_supplicant -B -i wlan1" || true
+	# Up, and the network seen by a scan, before associating: a radio just moved into
+	# the namespace is down, and the hub's network takes a few seconds to beacon.
+	$PHONE ip link set wlan1 up
+	local _
+	for _ in $(seq 1 15); do
+		$PHONE iw dev wlan1 scan 2>/dev/null | grep -q "SSID: $1\$" && break
+		sleep 2
+	done
+	$PHONE ip link set wlan1 up
+	local _
+	for _ in $(seq 1 15); do
+		$PHONE iw dev wlan1 scan 2>/dev/null | grep -q "SSID: $1\$" && break
+		sleep 2
+	done
 	wpa_passphrase "$1" "$2" >/tmp/vkit-phone.conf
 	$PHONE wpa_supplicant -B -i wlan1 -c /tmp/vkit-phone.conf >/tmp/vkit-wifi.log 2>&1 || return 1
 	$PHONE dhcpcd -1 -4 -t 60 wlan1 >>/tmp/vkit-wifi.log 2>&1
