@@ -3,62 +3,39 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
-	"sync/atomic"
-	"time"
 
-	"safehome/internal/adapter/filestore"
 	"safehome/internal/adapter/go2rtc"
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/photodir"
-	"safehome/internal/adapter/pidfile"
-	"safehome/internal/adapter/sdnotify"
 	"safehome/internal/contract"
 	"safehome/internal/driver"
-	"safehome/internal/outbox"
+	"safehome/internal/service"
 	"safehome/internal/siteconfig"
 	"safehome/internal/videoapp"
 	"safehome/internal/videoconfig"
 )
 
-const pidName = "video.pid"
+const (
+	name    = "video service" // in the logs
+	pidName = "video.pid"
+)
 
-const usage = `usage:
+var commandLine = service.CLI{Program: "safehome-video", Version: version, Usage: `usage:
   safehome-video run   -config FILE   run the video service
   safehome-video check -config FILE   check the configuration and go2rtc, and exit
   safehome-video version
-`
+`}
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 {
-		fmt.Fprint(stderr, usage)
-		return 2
+	cmd, exit, ok := commandLine.Parse(args, stdout, stderr)
+	if !ok {
+		return exit
 	}
-	cmd, rest := args[0], args[1:]
-	switch cmd {
-	case "version":
-		fmt.Fprintln(stdout, "safehome-video", version)
-		return 0
-	case "run", "check":
-	default:
-		fmt.Fprintf(stderr, "unknown command %q\n%s", cmd, usage)
-		return 2
-	}
-	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	configPath := fs.String("config", "", "configuration file (required)")
-	if err := fs.Parse(rest); err != nil {
-		return 2
-	}
-	if *configPath == "" {
-		fmt.Fprintf(stderr, "%s: -config is required\n", cmd)
-		return 2
-	}
-	cfg, err := videoconfig.Load(*configPath)
+	cfg, err := videoconfig.Load(cmd.Config)
 	if err != nil {
 		fmt.Fprintln(stderr, "configuration error:", err)
 		return 1
@@ -67,47 +44,36 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "go2rtc is not installed at %s (see docs/systeme.md)\n", cfg.Go2rtc)
 		return 1
 	}
-	if cmd == "check" {
-		v := cfg.App.Video
-		uplink := "fixed line, no allowance"
-		if v.Mobile {
-			uplink = fmt.Sprintf("mobile data, %d MB a month, sessions of %v at most", v.Quota>>20, v.MaxLength)
-		}
-		fmt.Fprintf(stdout, "configuration OK: site %s, %d camera(s), %s, go2rtc %s, state in %s\n",
-			cfg.App.Site, len(v.Cameras), uplink, cfg.Go2rtc, cfg.StateDir)
-		if p := v.Photos; p.Count > 0 {
-			fmt.Fprintf(stdout, "photos at an alarm: %d per camera, %d px wide\n", p.Count, p.Width)
-			if fi, err := os.Stat(cfg.FFmpeg); err != nil || fi.IsDir() {
-				fmt.Fprintf(stdout, "warning: ffmpeg is not installed at %s: no photo at an alarm (see docs/systeme.md)\n", cfg.FFmpeg)
-			}
-		}
-		switch {
-		case cfg.SiteErr != nil:
-			fmt.Fprintf(stdout, "warning: the configuration from the cloud (version %d) is left aside: %v\n", cfg.SiteVersion, cfg.SiteErr)
-		case cfg.SiteVersion > 0:
-			fmt.Fprintf(stdout, "configuration from the cloud: version %d\n", cfg.SiteVersion)
-		}
-		if cfg.SiteNote != "" {
-			fmt.Fprintln(stdout, "note:", cfg.SiteNote)
-		}
+	if cmd.Name == "check" {
+		check(cfg, stdout)
 		return 0
 	}
 	return runService(ctx, cfg, stderr)
 }
 
-// brokerPublisher gives the service a publisher before the MQTT client exists.
-type brokerPublisher struct{ client atomic.Pointer[mqtt.Client] }
-
-func (b *brokerPublisher) Publish(ctx context.Context, topic string, payload []byte, qos byte, retain bool) error {
-	c := b.client.Load()
-	if c == nil {
-		return outbox.ErrUnavailable
+func check(cfg videoconfig.Result, stdout io.Writer) {
+	v := cfg.App.Video
+	uplink := "fixed line, no allowance"
+	if v.Mobile {
+		uplink = fmt.Sprintf("mobile data, %d MB a month, sessions of %v at most", v.Quota>>20, v.MaxLength)
 	}
-	err := c.Publish(ctx, mqtt.Message{Topic: topic, Payload: payload, QoS: qos, Retain: retain})
-	if errors.Is(err, mqtt.ErrDown) {
-		return outbox.ErrUnavailable
+	fmt.Fprintf(stdout, "configuration OK: site %s, %d camera(s), %s, go2rtc %s, state in %s\n",
+		cfg.App.Site, len(v.Cameras), uplink, cfg.Go2rtc, cfg.StateDir)
+	if p := v.Photos; p.Count > 0 {
+		fmt.Fprintf(stdout, "photos at an alarm: %d per camera, %d px wide\n", p.Count, p.Width)
+		if fi, err := os.Stat(cfg.FFmpeg); err != nil || fi.IsDir() {
+			fmt.Fprintf(stdout, "warning: ffmpeg is not installed at %s: no photo at an alarm (see docs/systeme.md)\n", cfg.FFmpeg)
+		}
 	}
-	return err
+	switch {
+	case cfg.SiteErr != nil:
+		fmt.Fprintf(stdout, "warning: the configuration from the cloud (version %d) is left aside: %v\n", cfg.SiteVersion, cfg.SiteErr)
+	case cfg.SiteVersion > 0:
+		fmt.Fprintf(stdout, "configuration from the cloud: version %d\n", cfg.SiteVersion)
+	}
+	if cfg.SiteNote != "" {
+		fmt.Fprintln(stdout, "note:", cfg.SiteNote)
+	}
 }
 
 // streamer fits go2rtc to the application's Streamer port.
@@ -138,15 +104,10 @@ func (p photographer) Open(ctx context.Context) (videoapp.Shooter, error) {
 }
 
 func runService(ctx context.Context, cfg videoconfig.Result, stderr io.Writer) int {
-	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
-	store, err := filestore.Open(cfg.StateDir, log)
+	log := service.Logger(stderr, cfg.LogLevel)
+	store, release, err := service.OpenState(name, cfg.StateDir, pidName, log)
 	if err != nil {
-		log.Error("cannot open the state directory", "dir", cfg.StateDir, "err", err)
-		return 1
-	}
-	release, err := pidfile.Lock(cfg.StateDir, pidName)
-	if err != nil {
-		log.Error("another video service is already using this state directory", "dir", cfg.StateDir, "err", err)
+		log.Error("cannot start", "err", err)
 		return 1
 	}
 	defer release()
@@ -163,7 +124,7 @@ func runService(ctx context.Context, cfg videoconfig.Result, stderr io.Writer) i
 		return 1
 	}
 	ids := contract.NewIDGenerator()
-	pub := &brokerPublisher{}
+	pub := &service.Publisher{}
 	app, err := videoapp.New(cfg.App, videoapp.Deps{
 		Clock: driver.SystemClock(), Store: store, Publisher: pub, Streamer: streamer{runner},
 		Camera: photographer{runner}, Photos: photos, NewID: ids.New, Logger: log,
@@ -172,6 +133,11 @@ func runService(ctx context.Context, cfg videoconfig.Result, stderr io.Writer) i
 		log.Error("cannot start the video service", "err", err)
 		return 1
 	}
+	logStart(cfg, log)
+	return daemon(cfg, app, pub, log).Run(ctx)
+}
+
+func logStart(cfg videoconfig.Result, log *slog.Logger) {
 	log.Info("starting", "site", cfg.App.Site, "cameras", len(cfg.Sources), "mobile", cfg.App.Video.Mobile, "broker", cfg.BrokerURL,
 		"version", version, "site_config", cfg.SiteVersion)
 	if cfg.SiteErr != nil {
@@ -180,69 +146,28 @@ func runService(ctx context.Context, cfg videoconfig.Result, stderr io.Writer) i
 	if cfg.SiteNote != "" {
 		log.Info(cfg.SiteNote, "site_config", cfg.SiteVersion)
 	}
+}
 
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	done := make(chan struct{})
-	go func() { app.Run(runCtx); close(done) }()
-
-	// The client outlives the application, which sends its last messages as it stops.
-	clientCtx, closeClient := context.WithCancel(context.Background())
-	defer closeClient()
-	// The allowance and the longest session may come from the cloud: once the hub runs
-	// with a new configuration, the service restarts to load it (systemd starts it
-	// again). A session under way ends; the viewer asks again.
+// daemon runs the application on the broker. The allowance and the longest session
+// may come from the cloud: once the hub runs with a new configuration, the service
+// restarts to load it (systemd starts it again). A session under way ends; the
+// viewer asks again.
+func daemon(cfg videoconfig.Result, app *videoapp.App, pub *service.Publisher, log *slog.Logger) service.Daemon {
 	applied := contract.ConfigAppliedTopic(cfg.App.Site)
-	restart := make(chan struct{}, 1)
-	subs := []mqtt.Subscription{{Filter: applied, QoS: 1}}
-	for _, s := range app.Subscriptions() {
-		subs = append(subs, mqtt.Subscription{Filter: s.Filter, QoS: s.QoS})
-	}
-	client, err := mqtt.Dial(clientCtx, mqtt.Options{
-		BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: subs, Logger: log,
-		OnMessage: func(m mqtt.Message) {
-			if m.Topic == applied {
-				if v, ok := siteconfig.Changed(cfg.StateDir, cfg.App.Site, cfg.SiteVersion, m.Payload); ok {
+	restart := service.NewRestart()
+	return service.Daemon{
+		Name: name, Log: log, Loops: []func(context.Context) error{app.Run}, Alive: app.Alive, Restart: restart,
+		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
+			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Logger: log,
+			Subscriptions: append(service.Subscriptions(app.Subscriptions()), mqtt.Subscription{Filter: applied, QoS: 1}),
+			OnMessage: func(m mqtt.Message) {
+				if m.Topic != applied {
+					app.HandleMessage(videoapp.Message{Topic: m.Topic, Payload: m.Payload})
+				} else if v, ok := siteconfig.Changed(cfg.StateDir, cfg.App.Site, cfg.SiteVersion, m.Payload); ok {
 					log.Info("restarting to load the configuration from the cloud", "site_config", v)
-					select {
-					case restart <- struct{}{}:
-					default:
-					}
+					restart.Ask()
 				}
-				return
-			}
-			app.HandleMessage(videoapp.Message{Topic: m.Topic, Payload: m.Payload})
-		},
-	})
-	if err != nil {
-		log.Error("cannot start the MQTT client", "err", err)
-		cancel()
-		<-done
-		return 1
+			},
+		}}},
 	}
-	pub.client.Store(client)
-
-	// systemd: started, then "still working" for as long as the loop answers. A stuck
-	// service stops saying so and systemd restarts it (WatchdogSec).
-	notify := sdnotify.FromEnv()
-	if err := notify.Ready(); err != nil {
-		log.Warn("could not tell systemd the service is ready", "err", err)
-	}
-	go notify.Keepalive(runCtx, app.Alive, log)
-
-	select {
-	case <-ctx.Done():
-		log.Info("stopping")
-	case <-restart:
-	case <-done:
-		log.Error("the video service stopped unexpectedly")
-		return 1
-	}
-	notify.Stopping()
-	cancel()
-	<-done
-	closeCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
-	client.Close(closeCtx)
-	stop()
-	return 0
 }

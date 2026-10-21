@@ -240,16 +240,24 @@ func TestEveryProgramIsWatchedAndTellsSystemd(t *testing.T) {
 			if err != nil || d < 10*time.Second || d > time.Minute {
 				t.Errorf("WatchdogSec = %v (%v): want from 10 s (a slow SD card) to 1 min (a stuck alarm)", d, err)
 			}
+			// The programs run under internal/service's Daemon, which says both.
 			src, err := os.ReadFile(filepath.Join("..", "cmd", "safehome-"+p, "run.go"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, call := range []string{"sdnotify.FromEnv()", ".Ready()", ".Keepalive(", ".Stopping()"} {
-				if !strings.Contains(string(src), call) {
-					t.Errorf("cmd/safehome-%s does not call %s", p, call)
-				}
+			if !strings.Contains(string(src), "service.Daemon{") {
+				t.Errorf("cmd/safehome-%s does not run under service.Daemon", p)
 			}
 		})
+	}
+	src, err := os.ReadFile(filepath.Join("..", "internal", "service", "daemon.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range []string{"sdnotify.FromEnv()", ".Ready()", ".Keepalive(", ".Stopping()"} {
+		if !strings.Contains(string(src), call) {
+			t.Errorf("internal/service/daemon.go does not call %s", call)
+		}
 	}
 }
 

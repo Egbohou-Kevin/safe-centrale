@@ -95,14 +95,33 @@ func TestMaintAppKnowsNoAdapter(t *testing.T) {
 // The configuration set from the cloud: the application that receives it knows no
 // file and no process (checking, keeping and restarting are ports, wired by
 // cmd/safehome-hub), and never reads the clock. The file that keeps it knows only the
-// contract.
+// contract, and writes through the configuration files' helpers.
 func TestTheCloudConfigurationKnowsNoAdapter(t *testing.T) {
 	layer{
 		local:   internal("contract", "driver", "outbox"),
 		noStd:   []string{"os", "os/exec", "io/fs", "syscall"},
 		noClock: true,
 	}.check(t, "configapp")
-	layer{local: internal("contract")}.check(t, "siteconfig")
+	layer{local: internal("contract", "configfile")}.check(t, "siteconfig")
+}
+
+// configfile holds what the configuration packages share (strict decoding, the log
+// level, durations, secrets, atomic writes). It knows nothing of the module and never
+// reads the clock. Only the configuration packages use it: it reads files, so no
+// domain or application may.
+func TestConfigFileServesOnlyTheConfigurationPackages(t *testing.T) {
+	layer{noClock: true, why: ": configfile is standard-library only"}.check(t, "configfile")
+	users := []string{"agentconfig", "consoleconfig", "gsmconfig", "hubconfig", "maintconfig", "siteconfig", "videoconfig", "zigbeeconfig"}
+	configfile := module + "/internal/configfile"
+	walkSources(t, func(rel string, f *ast.File) {
+		dir, name := filepath.Split(filepath.Dir(rel))
+		if dir == "internal"+string(filepath.Separator) && slices.Contains(users, name) {
+			return
+		}
+		if slices.Contains(importsOf(f), configfile) {
+			t.Errorf("%s imports %s: only the configuration packages may", rel, configfile)
+		}
+	})
 }
 
 // The installer's application layer talks to the broker through its own ports and
@@ -152,11 +171,13 @@ func TestDriverReadsTheClockOnlyInSystemClock(t *testing.T) {
 
 // The application layer (hub) assembles the domains through ports it declares
 // itself. It never imports an adapter: wiring the real MQTT client or the real disk
-// to those ports is the job of the composition root (cmd/), and nothing else.
+// to those ports is the job of the composition root (cmd/, with internal/service
+// that only cmd/ may use, see the next rule), and nothing else.
 func TestOnlyTheCompositionRootImportsAdapters(t *testing.T) {
 	adapters := module + "/internal/adapter/"
 	walkSources(t, func(rel string, f *ast.File) {
 		if strings.HasPrefix(rel, "cmd"+string(filepath.Separator)) ||
+			strings.HasPrefix(rel, filepath.Join("internal", "service")+string(filepath.Separator)) ||
 			strings.HasPrefix(rel, filepath.Join("internal", "adapter")+string(filepath.Separator)) {
 			return // the composition root and the adapters themselves
 		}
@@ -164,6 +185,26 @@ func TestOnlyTheCompositionRootImportsAdapters(t *testing.T) {
 			if strings.HasPrefix(imp, adapters) {
 				t.Errorf("%s imports %s: only cmd/ may wire adapters", rel, imp)
 			}
+		}
+	})
+}
+
+// internal/service is the part of the composition root every program shares: the
+// command line, the pid file, the MQTT clients and the life cycle under systemd. It
+// knows those adapters and the outbox's error, nothing of the domains, the
+// applications or the configuration files; and only cmd/ imports it.
+func TestServiceIsSharedAssemblyForThePrograms(t *testing.T) {
+	layer{
+		local: internal("adapter/filestore", "adapter/mqtt", "adapter/pidfile", "adapter/sdnotify", "outbox"),
+		why:   ": the service package only assembles adapters for cmd/",
+	}.check(t, "service")
+	service := module + "/internal/service"
+	walkSources(t, func(rel string, f *ast.File) {
+		if strings.HasPrefix(rel, "cmd"+string(filepath.Separator)) {
+			return
+		}
+		if slices.Contains(importsOf(f), service) {
+			t.Errorf("%s imports %s: only cmd/ may", rel, service)
 		}
 	})
 }

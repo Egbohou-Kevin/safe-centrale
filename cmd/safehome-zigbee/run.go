@@ -3,65 +3,40 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"errors"
-	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"strings"
-	"sync/atomic"
-	"time"
 
-	"safehome/internal/adapter/filestore"
 	"safehome/internal/adapter/mqtt"
-	"safehome/internal/adapter/pidfile"
-	"safehome/internal/adapter/sdnotify"
 	"safehome/internal/contract"
 	"safehome/internal/driver"
-	"safehome/internal/outbox"
+	"safehome/internal/service"
 	"safehome/internal/zigbeeapp"
 	"safehome/internal/zigbeeconfig"
 )
 
-const pidName = "zigbee.pid"
+const (
+	name    = "Zigbee adapter" // in the logs
+	pidName = "zigbee.pid"
+)
 
-const usage = `usage:
+var commandLine = service.CLI{Program: "safehome-zigbee", Version: version, Usage: `usage:
   safehome-zigbee run   -config FILE   run the Zigbee adapter
   safehome-zigbee check -config FILE   check the configuration and the profiles, and exit
   safehome-zigbee version
-`
+`}
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 {
-		fmt.Fprint(stderr, usage)
-		return 2
+	cmd, exit, ok := commandLine.Parse(args, stdout, stderr)
+	if !ok {
+		return exit
 	}
-	cmd, rest := args[0], args[1:]
-	switch cmd {
-	case "version":
-		fmt.Fprintln(stdout, "safehome-zigbee", version)
-		return 0
-	case "run", "check":
-	default:
-		fmt.Fprintf(stderr, "unknown command %q\n%s", cmd, usage)
-		return 2
-	}
-	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	configPath := fs.String("config", "", "configuration file (required)")
-	if err := fs.Parse(rest); err != nil {
-		return 2
-	}
-	if *configPath == "" {
-		fmt.Fprintf(stderr, "%s: -config is required\n", cmd)
-		return 2
-	}
-	cfg, err := zigbeeconfig.Load(*configPath)
+	cfg, err := zigbeeconfig.Load(cmd.Config)
 	if err != nil {
 		fmt.Fprintln(stderr, "configuration error:", err)
 		return 1
 	}
-	if cmd == "check" {
+	if cmd.Name == "check" {
 		var names []string
 		for _, p := range cfg.App.Zigbee.Profiles {
 			names = append(names, p.Name)
@@ -71,21 +46,6 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	return runAdapter(ctx, cfg, stderr)
-}
-
-// brokerPublisher gives the adapter a publisher before the MQTT client exists.
-type brokerPublisher struct{ client atomic.Pointer[mqtt.Client] }
-
-func (b *brokerPublisher) Publish(ctx context.Context, topic string, payload []byte, qos byte, retain bool) error {
-	c := b.client.Load()
-	if c == nil {
-		return outbox.ErrUnavailable
-	}
-	err := c.Publish(ctx, mqtt.Message{Topic: topic, Payload: payload, QoS: qos, Retain: retain})
-	if errors.Is(err, mqtt.ErrDown) {
-		return outbox.ErrUnavailable
-	}
-	return err
 }
 
 // idAlphabet leaves out the letters and digits that read alike (l, 1, o, 0, i).
@@ -106,21 +66,16 @@ func newDeviceID() string {
 }
 
 func runAdapter(ctx context.Context, cfg zigbeeconfig.Result, stderr io.Writer) int {
-	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
-	store, err := filestore.Open(cfg.StateDir, log)
+	log := service.Logger(stderr, cfg.LogLevel)
+	store, release, err := service.OpenState(name, cfg.StateDir, pidName, log)
 	if err != nil {
-		log.Error("cannot open the state directory", "dir", cfg.StateDir, "err", err)
-		return 1
-	}
-	release, err := pidfile.Lock(cfg.StateDir, pidName)
-	if err != nil {
-		log.Error("another Zigbee adapter is already using this state directory", "dir", cfg.StateDir, "err", err)
+		log.Error("cannot start", "err", err)
 		return 1
 	}
 	defer release()
 
 	ids := contract.NewIDGenerator()
-	pub := &brokerPublisher{}
+	pub := &service.Publisher{}
 	app, err := zigbeeapp.New(cfg.App, zigbeeapp.Deps{
 		Clock: driver.SystemClock(), Store: store, Publisher: pub, NewID: ids.New, NewDeviceID: newDeviceID, Logger: log,
 	})
@@ -130,49 +85,13 @@ func runAdapter(ctx context.Context, cfg zigbeeconfig.Result, stderr io.Writer) 
 	}
 	log.Info("starting", "site", cfg.App.Site, "profiles", len(cfg.App.Zigbee.Profiles), "broker", cfg.BrokerURL, "version", version)
 
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	done := make(chan struct{})
-	go func() { app.Run(runCtx); close(done) }()
-
-	var subs []mqtt.Subscription
-	for _, s := range app.Subscriptions() {
-		subs = append(subs, mqtt.Subscription{Filter: s.Filter, QoS: s.QoS})
-	}
-	client, err := mqtt.Dial(runCtx, mqtt.Options{
-		BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: subs, Logger: log,
-		OnMessage: func(m mqtt.Message) {
-			app.HandleMessage(zigbeeapp.Message{Topic: m.Topic, Payload: m.Payload, Retain: m.Retain})
-		},
-	})
-	if err != nil {
-		log.Error("cannot start the MQTT client", "err", err)
-		cancel()
-		<-done
-		return 1
-	}
-	pub.client.Store(client)
-
-	// systemd: started, then "still working" for as long as the loop answers. A stuck
-	// adapter stops saying so and systemd restarts it (WatchdogSec).
-	notify := sdnotify.FromEnv()
-	if err := notify.Ready(); err != nil {
-		log.Warn("could not tell systemd the adapter is ready", "err", err)
-	}
-	go notify.Keepalive(runCtx, app.Alive, log)
-
-	select {
-	case <-ctx.Done():
-		log.Info("stopping")
-		notify.Stopping()
-		cancel()
-		<-done
-		closeCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
-		client.Close(closeCtx)
-		stop()
-		return 0
-	case <-done:
-		log.Error("the adapter stopped unexpectedly")
-		return 1
-	}
+	return service.Daemon{
+		Name: name, Log: log, Loops: []func(context.Context) error{app.Run}, Alive: app.Alive,
+		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
+			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: service.Subscriptions(app.Subscriptions()), Logger: log,
+			OnMessage: func(m mqtt.Message) {
+				app.HandleMessage(zigbeeapp.Message{Topic: m.Topic, Payload: m.Payload, Retain: m.Retain})
+			},
+		}}},
+	}.Run(ctx)
 }

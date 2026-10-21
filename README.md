@@ -67,6 +67,8 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/configapp` | La couche application qui reçoit `config.set` dans la centrale : vérification, garde, redémarrage à un moment calme, réponse `config.applied`. Elle ne connaît ni fichier ni processus (ports) |
 | `internal/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`) |
 | `cmd/safehome-hub` | Le programme de la centrale : seul endroit qui assemble le vrai client MQTT, le vrai disque et la vraie horloge |
+| `internal/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre. Seuls les programmes de `cmd/` s'en servent |
+| `internal/configfile` | Ce que les lectures de configuration ont en commun : JSON strict, niveau de journal, durées, secrets, écriture atomique d'un fichier |
 | `internal/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine |
 | `internal/archtest` | Les tests d'architecture : ils échouent si les règles de dépendance sont cassées |
 | `internal/schematest` | Validation des messages contre les schémas JSON (tests seulement) |
