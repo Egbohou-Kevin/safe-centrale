@@ -13,12 +13,12 @@ func (h *harness) send() []Item {
 	h.t.Helper()
 	var out []Item
 	for {
-		it, ok := h.r.Next()
+		it, ok := h.next()
 		if !ok {
 			return out
 		}
 		out = append(out, it)
-		h.r.Handle(Sent{Now: h.now, ID: it.ID})
+		h.handle(Sent{Now: h.now, ID: it.ID})
 		if len(out) > 100 {
 			h.t.Fatal("the queue never empties")
 		}
@@ -53,8 +53,8 @@ func TestWhatGoesToTheCloudIsNumberedWithoutHoles(t *testing.T) {
 	h.linkUp()
 
 	// A message tried without an acknowledgement keeps its number.
-	first, _ := h.r.Next()
-	again, _ := h.r.Next()
+	first, _ := h.next()
+	again, _ := h.next()
 	if first.Seq != 1 || again.Seq != 1 || again.ID != first.ID {
 		t.Fatalf("%d then %d", first.Seq, again.Seq)
 	}
@@ -68,9 +68,7 @@ func TestWhatGoesToTheCloudIsNumberedWithoutHoles(t *testing.T) {
 	}
 
 	// The count survives a restart.
-	r, _ := New(DefaultConfig(site))
-	r.Restore(h.r.Snapshot())
-	h.r = r
+	h.restart()
 	h.local(topic("alarm", "event"), contract.TypeAlarmCleared, contract.ClearedData{Incident: "inc1"})
 	h.linkUp()
 	if got := h.send(); len(got) != 1 || seqOf(t, got[0]) != 4 {
@@ -82,7 +80,7 @@ func TestAReplacedStateTakesTheNumberOfTheOneItReplaces(t *testing.T) {
 	h := newHarness(t)
 	h.local(topic("system", "health"), contract.TypeHealth, health)
 	h.linkUp()
-	tried, _ := h.r.Next() // the link drops before the acknowledgement
+	tried, _ := h.next() // the link drops before the acknowledgement
 	newer, _ := h.local(topic("system", "health"), contract.TypeHealth, contract.HealthData{Links: map[string]string{"zigbee": "down"}})
 	got := h.send()
 	if len(got) != 1 || got[0].ID != newer || seqOf(t, got[0]) != tried.Seq {
@@ -105,7 +103,7 @@ func TestTheCloudGetsAgainWhatItMissed(t *testing.T) {
 		t.Fatalf("%+v", sent)
 	}
 	h.local(topic("alarm", "event"), contract.TypeAlarmArmed, armed)
-	queued, _ := h.r.Next() // 6, on its way
+	queued, _ := h.next() // 6, on its way
 
 	acts := h.replay(4, 9)
 	rep := of[Replayed](acts)
@@ -150,9 +148,7 @@ func TestTheJournalIsBoundedAndNotSaved(t *testing.T) {
 	}
 	h.send()
 
-	r, _ := New(h.r.cfg)
-	r.Restore(h.r.Snapshot())
-	h.r = r
+	h.restart()
 	rep = of[Replayed](h.replay(1, 3))[0].Report
 	if rep.Resent != 0 || rep.Last != 3 || !reflect.DeepEqual(rep.Missing, []contract.SeqRange{{First: 1, Last: 3}}) {
 		t.Fatalf("after a restart: %+v", rep)

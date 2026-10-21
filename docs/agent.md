@@ -75,12 +75,17 @@ Quand internet est coupé :
   `agent.status`, `video.status`), seul le dernier compte.
 - À la reconnexion, la file part par priorité : d'abord l'alarme et les alertes,
   puis les événements, puis les états, et dans l'ordre d'arrivée à priorité égale.
-- La file est bornée : 20 000 messages, 10 Mo ou 7 jours par défaut. La borne de
-  taille est plus basse que les 50 Mo envisagés au départ, parce que la file est
-  réécrite en entier sur la carte SD à chaque changement. Si elle est pleine, on
-  supprime d'abord les messages les moins importants : les événements d'alarme et
-  d'alerte ne sont jamais supprimés avant les autres. Les suppressions sont comptées
-  dans `agent.status` (`dropped`).
+- La file est bornée : 20 000 messages, 10 Mo ou 7 jours par défaut. Si elle est
+  pleine, on supprime d'abord les messages les moins importants : les événements
+  d'alarme et d'alerte ne sont jamais supprimés avant les autres. Les suppressions
+  sont comptées dans `agent.status` (`dropped`).
+- **Sur la carte SD**, chaque message de la file est un petit fichier, dans le
+  dossier `agent_queue` du répertoire d'état. Ajouter, numéroter ou envoyer un
+  message n'écrit que son fichier, jamais toute la file. Vider 20 000 messages après
+  une coupure écrit ainsi environ 15 Mo, au lieu de plus de 100 Go. Le reste de
+  l'état de l'agent est petit et tient dans un seul fichier. Après une coupure de
+  courant, l'agent remet les deux d'accord au démarrage. Une file gardée par une
+  version précédente est reprise sans perte.
 - **Numérotation pour le cloud** : chaque programme numérote ses propres messages, et
   beaucoup restent sur le site. L'agent numérote donc de nouveau ce qui part au cloud,
   à la première tentative d'envoi : là-bas, `seq` est continu par site, et un trou

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"slices"
 	"testing"
@@ -10,96 +9,6 @@ import (
 
 	"safehome/internal/contract"
 )
-
-const site = "tg-lom-0001"
-
-var t0 = time.Date(2026, 10, 20, 21, 0, 0, 0, time.UTC)
-
-type harness struct {
-	t   *testing.T
-	r   *Relay
-	now time.Time
-	ids *contract.IDGenerator
-}
-
-func newHarness(t *testing.T, edit ...func(*Config)) *harness {
-	t.Helper()
-	cfg := DefaultConfig(site)
-	for _, e := range edit {
-		e(&cfg)
-	}
-	r, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &harness{t: t, r: r, now: t0, ids: contract.NewIDGenerator()}
-}
-
-func topic(parts ...string) string { return contract.Topic(site, parts...) }
-
-// msg builds a message of the site; it returns its payload and id.
-func (h *harness) msg(typ string, data any) ([]byte, string) {
-	h.t.Helper()
-	id := h.ids.New()
-	env, err := contract.NewEnvelope(site, "hub", 1, id, h.now, typ, data)
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	b, _ := json.Marshal(env)
-	return b, id
-}
-
-func (h *harness) local(tp, typ string, data any) (string, []Action) {
-	h.t.Helper()
-	b, id := h.msg(typ, data)
-	return id, h.r.Handle(Local{Now: h.now, Topic: tp, Payload: b})
-}
-
-func (h *harness) cloud(tp, typ string, data any) (string, []byte, []Action) {
-	h.t.Helper()
-	b, id := h.msg(typ, data)
-	return id, b, h.r.Handle(Cloud{Now: h.now, Topic: tp, Payload: b})
-}
-
-func (h *harness) advance(d time.Duration) []Action {
-	h.now = h.now.Add(d)
-	return h.r.Handle(Tick{Now: h.now})
-}
-
-func (h *harness) linkUp() { h.r.Handle(Link{Now: h.now, Up: true, Transport: "mqtts"}) }
-
-func (h *harness) queued() []string {
-	var out []string
-	for _, it := range h.r.Snapshot().Queue {
-		out = append(out, it.Topic[len("safehome/"+site+"/"):])
-	}
-	return out
-}
-
-func of[A Action](actions []Action) []A {
-	var out []A
-	for _, a := range actions {
-		if v, ok := a.(A); ok {
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
-var (
-	armed     = contract.ArmedData{}
-	triggered = contract.TriggeredData{Incident: "inc1", DeviceID: "dev_door", Capability: contract.CapContact, Zone: "Entree"}
-	health    = contract.HealthData{Links: map[string]string{"zigbee": "ok"}}
-)
-
-func event(dev, capability, value, code string) contract.DeviceEventData {
-	return contract.DeviceEventData{DeviceID: dev, Capability: capability, Value: json.RawMessage(fmt.Sprintf("%q", value)), Code: code}
-}
-
-func appAlert(incident string) contract.AlertRequestData {
-	return contract.AlertRequestData{Incident: incident, Kind: contract.AlertIntrusion, Urgency: contract.UrgencyCritical,
-		Wave: 1, Contact: "u_owner", Channel: contract.ChannelApp, Text: "ALARME"}
-}
 
 func TestConfig(t *testing.T) {
 	if err := DefaultConfig(site).Validate(); err != nil {
@@ -144,7 +53,7 @@ func TestOnlyWhatTheContractListsGoesUp(t *testing.T) {
 	h.local(topic("gsm", "status"), contract.TypeGSMStatus, contract.GSMStatusData{})
 	h.local(topic("alarm", "event"), contract.TypeHealth, health) // wrong type for the topic
 	h.local(contract.Topic("tg-lom-0002", "alarm", "event"), contract.TypeAlarmArmed, armed)
-	h.r.Handle(Local{Now: h.now, Topic: topic("alarm", "event"), Payload: []byte("{oops")})
+	h.handle(Local{Now: h.now, Topic: topic("alarm", "event"), Payload: []byte("{oops")})
 
 	want := []string{"alarm/event", "alarm/event", "device/dev_smoke/event", "device/dev_hub/event", "alert/request", "system/health"}
 	if got := h.queued(); !reflect.DeepEqual(got, want) {
@@ -159,7 +68,7 @@ func TestOnlyTheLatestStateWaits(t *testing.T) {
 		h.local(topic("system", "heartbeat"), contract.TypeHeartbeat, contract.HeartbeatData{BootID: "b", UptimeS: int64(i)})
 		h.local(topic("alarm", "event"), contract.TypeAlarmArmed, armed)
 	}
-	q := h.r.Snapshot().Queue
+	q := h.r.queue
 	if got := h.queued(); !reflect.DeepEqual(got, []string{"alarm/event", "alarm/event", "system/health", "system/heartbeat", "alarm/event"}) {
 		t.Fatalf("queued %v", got)
 	}
@@ -176,9 +85,9 @@ func TestOnlyTheLatestStateWaits(t *testing.T) {
 func TestAMessageSeenTwiceWaitsOnce(t *testing.T) {
 	h := newHarness(t)
 	b, _ := h.msg(contract.TypeAlarmArmed, armed)
-	h.r.Handle(Local{Now: h.now, Topic: topic("alarm", "event"), Payload: b})
-	h.r.Handle(Local{Now: h.now, Topic: topic("alarm", "event"), Payload: b})
-	if n := len(h.r.Snapshot().Queue); n != 1 {
+	h.handle(Local{Now: h.now, Topic: topic("alarm", "event"), Payload: b})
+	h.handle(Local{Now: h.now, Topic: topic("alarm", "event"), Payload: b})
+	if n := len(h.r.queue); n != 1 {
 		t.Fatalf("%d items", n)
 	}
 }
@@ -192,18 +101,18 @@ func TestAlarmsLeaveFirstAndSentItemsLeaveTheQueue(t *testing.T) {
 
 	var order []string
 	for {
-		it, ok := h.r.Next()
+		it, ok := h.next()
 		if !ok {
 			break
 		}
-		order = append(order, it.Topic[len("safehome/"+site+"/"):])
+		order = append(order, it.Topic[len(topic()):])
 		if len(order) == 1 && it.ID != first {
 			t.Fatal("the first alarm message is not first")
 		}
 		if len(order) == 2 && it.ID != second {
 			t.Fatal("alarm messages keep their order")
 		}
-		h.r.Handle(Sent{Now: h.now, ID: it.ID})
+		h.handle(Sent{Now: h.now, ID: it.ID})
 	}
 	if !reflect.DeepEqual(order, []string{"alarm/event", "alarm/event", "device/dev_smoke/event", "system/health"}) {
 		t.Fatalf("order %v", order)
@@ -227,7 +136,7 @@ func TestAFullQueueDropsTheLeastImportantFirst(t *testing.T) {
 		t.Fatalf("then the device event: %v", got)
 	}
 	h.local(topic("alarm", "event"), contract.TypeAlarmDisarmed, contract.DisarmedData{})
-	if n := len(h.r.Snapshot().Queue); n != 3 || h.r.Status(h.now).Dropped != 3 {
+	if n := len(h.r.queue); n != 3 || h.r.Status(h.now).Dropped != 3 {
 		t.Fatalf("then the oldest alarm message: %d items, %d dropped", n, h.r.Status(h.now).Dropped)
 	}
 
@@ -236,11 +145,11 @@ func TestAFullQueueDropsTheLeastImportantFirst(t *testing.T) {
 		small.local(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
 	}
 	size := 0
-	for _, it := range small.r.Snapshot().Queue {
+	for _, it := range small.r.queue {
 		size += len(it.Payload)
 	}
-	if size > 1024 || len(small.r.Snapshot().Queue) == 0 {
-		t.Fatalf("%d bytes in %d items", size, len(small.r.Snapshot().Queue))
+	if size > 1024 || len(small.r.queue) == 0 {
+		t.Fatalf("%d bytes in %d items", size, len(small.r.queue))
 	}
 }
 
@@ -256,7 +165,7 @@ func TestOldItemsLeaveTheQueue(t *testing.T) {
 		t.Fatalf("%+v", st)
 	}
 	acts := h.advance(30 * time.Minute)
-	if d := of[Dropped](acts); len(d) != 1 || d[0].Count != 1 || d[0].Reason != "too old" || len(h.r.Snapshot().Queue) != 1 {
+	if d := of[Dropped](acts); len(d) != 1 || d[0].Count != 1 || d[0].Reason != "too old" || len(h.r.queue) != 1 {
 		t.Fatalf("%+v %v", acts, h.queued())
 	}
 }
@@ -267,7 +176,7 @@ func TestAnAppAlertFailsAtOnceWithoutTheCloud(t *testing.T) {
 	if f := of[FailAlert](acts); len(f) != 1 || f[0].Ref != id {
 		t.Fatalf("%+v", acts)
 	}
-	if len(h.r.Snapshot().Queue) != 0 {
+	if len(h.r.queue) != 0 {
 		t.Fatal("a failed alert must not wait: the escalation sends it again")
 	}
 	wa := appAlert("inc1")
@@ -281,7 +190,7 @@ func TestAnAppAlertTheCloudDoesNotConfirmFails(t *testing.T) {
 	h := newHarness(t)
 	h.linkUp()
 	id, acts := h.local(topic("alert", "request"), contract.TypeAlertRequest, appAlert("inc1"))
-	if len(acts) != 0 || len(h.r.Snapshot().Queue) != 1 {
+	if len(acts) != 1 || len(of[QueueSave](acts)) != 1 || len(h.r.queue) != 1 {
 		t.Fatalf("%+v", acts)
 	}
 	if !h.r.NextWake().Equal(t0.Add(10 * time.Second)) {
@@ -291,7 +200,7 @@ func TestAnAppAlertTheCloudDoesNotConfirmFails(t *testing.T) {
 		t.Fatalf("%+v", acts)
 	}
 	acts = h.advance(time.Millisecond)
-	if f := of[FailAlert](acts); len(f) != 1 || f[0].Ref != id || len(h.r.Snapshot().Queue) != 0 {
+	if f := of[FailAlert](acts); len(f) != 1 || f[0].Ref != id || len(h.r.queue) != 0 {
 		t.Fatalf("%+v %v", acts, h.queued())
 	}
 	if _, _, acts := h.cloud(topic("alert", "result"), contract.TypeAlertResult, contract.AlertResultData{Ref: id, Status: contract.ResultSent}); len(of[Refused](acts)) != 1 {
@@ -303,8 +212,8 @@ func TestTheCloudConfirmsAndDeliversAnAppAlert(t *testing.T) {
 	h := newHarness(t)
 	h.linkUp()
 	id, _ := h.local(topic("alert", "request"), contract.TypeAlertRequest, appAlert("inc1"))
-	it, _ := h.r.Next()
-	h.r.Handle(Sent{Now: h.now, ID: it.ID})
+	it, _ := h.next()
+	h.handle(Sent{Now: h.now, ID: it.ID})
 
 	_, raw, acts := h.cloud(topic("alert", "result"), contract.TypeAlertResult, contract.AlertResultData{Ref: id, Status: contract.ResultSent})
 	if p := of[PublishLocal](acts); len(p) != 1 || p[0].Topic != topic("alert", "result") || string(p[0].Payload) != string(raw) {
@@ -349,7 +258,7 @@ func TestLosingTheLinkFailsTheUnconfirmedAlerts(t *testing.T) {
 	h.cloud(topic("alert", "result"), contract.TypeAlertResult, contract.AlertResultData{Ref: b, Status: contract.ResultSent})
 	h.local(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
 
-	acts := h.r.Handle(Link{Now: h.now, Up: false})
+	acts := h.handle(Link{Now: h.now, Up: false})
 	if f := of[FailAlert](acts); len(f) != 1 || f[0].Ref != a {
 		t.Fatalf("%+v", acts)
 	}
@@ -359,10 +268,10 @@ func TestLosingTheLinkFailsTheUnconfirmedAlerts(t *testing.T) {
 	if got := h.queued(); !reflect.DeepEqual(got, []string{"alert/request", "alarm/event"}) {
 		t.Fatalf("the confirmed one and the event still wait: %v", got)
 	}
-	if acts := h.r.Handle(Link{Now: h.now, Up: false}); len(acts) != 0 {
+	if acts := h.handle(Link{Now: h.now, Up: false}); len(acts) != 0 {
 		t.Fatalf("the same link twice: %+v", acts)
 	}
-	acts = h.r.Handle(Link{Now: h.now, Up: true, Transport: "wss"})
+	acts = h.handle(Link{Now: h.now, Up: true, Transport: "wss"})
 	if s := of[StatusChanged](acts); len(s) != 1 || !s[0].Status.Up || s[0].Status.Transport != "wss" || s[0].Status.Queued != 2 {
 		t.Fatalf("%+v", acts)
 	}
@@ -389,7 +298,7 @@ func TestOrdersFromTheCloud(t *testing.T) {
 		t.Fatalf("%+v", acts)
 	}
 	// The same order again (QoS 1): passed on once.
-	if acts := h.r.Handle(Cloud{Now: h.now, Topic: topic("alarm", "cmd"), Payload: raw}); len(acts) != 0 {
+	if acts := h.handle(Cloud{Now: h.now, Topic: topic("alarm", "cmd"), Payload: raw}); len(acts) != 0 {
 		t.Fatalf("%+v", acts)
 	}
 
@@ -429,7 +338,7 @@ func TestOrdersFromTheCloud(t *testing.T) {
 			return a
 		},
 		"garbage": func() []Action {
-			return h.r.Handle(Cloud{Now: h.now, Topic: topic("alarm", "cmd"), Payload: []byte("[]")})
+			return h.handle(Cloud{Now: h.now, Topic: topic("alarm", "cmd"), Payload: []byte("[]")})
 		},
 	}
 	for name, send := range refused {
@@ -525,7 +434,7 @@ func TestDuplicatesAreRememberedWithinBounds(t *testing.T) {
 	if len(h.r.Snapshot().Seen) != 2 {
 		t.Fatalf("%d ids remembered", len(h.r.Snapshot().Seen))
 	}
-	if acts := h.r.Handle(Cloud{Now: h.now, Topic: topic("alarm", "cmd"), Payload: first}); len(of[PublishLocal](acts)) != 1 {
+	if acts := h.handle(Cloud{Now: h.now, Topic: topic("alarm", "cmd"), Payload: first}); len(of[PublishLocal](acts)) != 1 {
 		t.Fatal("the oldest id should be forgotten")
 	}
 }
@@ -535,25 +444,17 @@ func TestTheQueueSurvivesARestart(t *testing.T) {
 	h.linkUp()
 	h.local(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
 	h.local(topic("alert", "request"), contract.TypeAlertRequest, appAlert("inc1"))
-	data, err := json.Marshal(h.r.Snapshot())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var s Snapshot
-	if err := json.Unmarshal(data, &s); err != nil {
-		t.Fatal(err)
-	}
-	r2, _ := New(DefaultConfig(site))
-	r2.Restore(s)
-	q1, q2 := h.r.Snapshot().Queue, r2.Snapshot().Queue
-	if len(q2) != 2 || q2[0].ID != q1[0].ID || q2[1].ID != q1[1].ID || q2[0].Prio != PriorityAlarm || q2[0].At != q1[0].At {
+	q1 := slices.Clone(h.r.queue)
+	h.restart()
+	q2 := h.r.queue
+	if len(q2) != 2 || q2[0].ID != q1[0].ID || q2[1].ID != q1[1].ID || q2[0].Prio != PriorityAlarm || !q2[0].At.Equal(q1[0].At) {
 		t.Fatalf("%+v", q2)
 	}
-	if r2.Up() {
+	if h.r.Up() {
 		t.Fatal("a restored relay must wait for the link")
 	}
 	// The unconfirmed alert still fails at its deadline.
-	if acts := r2.Handle(Tick{Now: t0.Add(10 * time.Second)}); len(of[FailAlert](acts)) != 1 {
+	if acts := h.handle(Tick{Now: t0.Add(10 * time.Second)}); len(of[FailAlert](acts)) != 1 {
 		t.Fatalf("%+v", acts)
 	}
 }
@@ -561,7 +462,7 @@ func TestTheQueueSurvivesARestart(t *testing.T) {
 func TestOwnMessagesGoUpLikeTheOthers(t *testing.T) {
 	h := newHarness(t)
 	b, _ := h.msg(contract.TypeAgentStatus, contract.AgentStatusData{Uplink: contract.UplinkDown})
-	h.r.Handle(Own{Now: h.now, Topic: topic("agent", "status"), Payload: b})
+	h.handle(Own{Now: h.now, Topic: topic("agent", "status"), Payload: b})
 	if got := h.queued(); !reflect.DeepEqual(got, []string{"agent/status"}) {
 		t.Fatalf("%v", got)
 	}

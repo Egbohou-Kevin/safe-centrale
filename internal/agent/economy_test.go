@@ -30,7 +30,7 @@ func (h *harness) heartbeat(minute int) {
 
 func (h *harness) status(uplink, transport string) {
 	b, _ := h.msg(contract.TypeAgentStatus, contract.AgentStatusData{Uplink: uplink, Transport: transport})
-	h.r.Handle(Own{Now: h.now, Topic: topic("agent", "status"), Payload: b})
+	h.handle(Own{Now: h.now, Topic: topic("agent", "status"), Payload: b})
 }
 
 func TestOnAFixedLineEveryHeartbeatGoes(t *testing.T) {
@@ -63,11 +63,11 @@ func TestOnMobileDataTheCloudGetsTheLatestHeartbeat(t *testing.T) {
 	// The link breaks for a while. Within the five minutes, nothing waits: the cloud
 	// is not owed one yet. After, the waiting heartbeat is replaced by each newer one,
 	// and the latest goes when the link returns.
-	h.r.Handle(Link{Now: h.now, Up: false})
+	h.handle(Link{Now: h.now, Up: false})
 	for m := 1; m <= 8; m++ {
 		h.now = h.now.Add(time.Minute)
 		h.heartbeat(m)
-		if m == 4 && len(h.r.Snapshot().Queue) != 0 {
+		if m == 4 && len(h.r.queue) != 0 {
 			t.Fatal("a heartbeat waits though the cloud got one 4 minutes ago")
 		}
 	}
@@ -108,7 +108,7 @@ func TestAfterARestartTheFirstHeartbeatGoesAtOnce(t *testing.T) {
 	h.linkUp()
 	h.heartbeat(0)
 	h.send()
-	h.r.Restore(h.r.Snapshot())
+	h.restart()
 	h.linkUp()
 	h.now = h.now.Add(time.Minute)
 	h.heartbeat(1)

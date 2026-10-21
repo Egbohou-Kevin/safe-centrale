@@ -26,8 +26,8 @@ func (h *harness) address(id string, valid time.Duration) []Action {
 // sendQueue acknowledges everything queued, as the cloud's broker would.
 func (h *harness) sendQueue() []Action {
 	var out []Action
-	for _, it := range h.r.Snapshot().Queue {
-		out = append(out, h.r.Handle(Sent{Now: h.now, ID: it.ID})...)
+	for _, it := range h.r.queue {
+		out = append(out, h.handle(Sent{Now: h.now, ID: it.ID})...)
 	}
 	return out
 }
@@ -42,7 +42,7 @@ func TestAPhotoGoesUpThenIsSentAfterTheAlarm(t *testing.T) {
 	if q := h.queued(); !slices.Equal(q, []string{"alarm/event", "photo/taken"}) {
 		t.Fatalf("%v", q)
 	}
-	if it, _ := h.r.Next(); it.Topic != topic("alarm", "event") {
+	if it, _ := h.next(); it.Topic != topic("alarm", "event") {
 		t.Fatal("the alarm first")
 	}
 	// The address comes while the alarm still waits: no upload yet.
@@ -57,7 +57,7 @@ func TestAPhotoGoesUpThenIsSentAfterTheAlarm(t *testing.T) {
 	if acts := h.advance(time.Second); len(of[Upload](acts)) != 0 {
 		t.Fatal("one upload at a time, once")
 	}
-	acts = h.r.Handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadOK})
+	acts = h.handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadOK})
 	if r := reports(acts); len(r) != 1 || r[0].Status != contract.PhotoSent || len(of[RemovePhoto](acts)) != 1 {
 		t.Fatalf("%+v", acts)
 	}
@@ -74,7 +74,7 @@ func TestAFailedUploadIsTriedAgainLater(t *testing.T) {
 	if len(of[Upload](h.address("p1", time.Hour))) != 1 {
 		t.Fatal("upload at once")
 	}
-	h.r.Handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadRetry})
+	h.handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadRetry})
 	if acts := h.advance(29 * time.Second); len(of[Upload](acts)) != 0 {
 		t.Fatal("too soon")
 	}
@@ -84,17 +84,17 @@ func TestAFailedUploadIsTriedAgainLater(t *testing.T) {
 	if acts := h.advance(time.Second); len(of[Upload](acts)) != 1 {
 		t.Fatal("after 30 s")
 	}
-	h.r.Handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadRetry})
+	h.handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadRetry})
 	if acts := h.advance(59 * time.Second); len(of[Upload](acts)) != 0 {
 		t.Fatal("twice longer")
 	}
 	// The link drops when the retry is due: no upload, and no wake-up in the past.
-	h.r.Handle(Link{Now: h.now, Up: false})
+	h.handle(Link{Now: h.now, Up: false})
 	h.advance(time.Second)
 	if w := h.r.NextWake(); !w.After(h.now) {
 		t.Fatalf("wake %v at %v: the loop would spin", w, h.now)
 	}
-	if acts := h.r.Handle(Link{Now: h.now, Up: true, Transport: "mqtts"}); len(of[Upload](acts)) != 1 {
+	if acts := h.handle(Link{Now: h.now, Up: true, Transport: "mqtts"}); len(of[Upload](acts)) != 1 {
 		t.Fatalf("%+v: back up, the photo goes", acts)
 	}
 }
@@ -113,7 +113,7 @@ func TestAnAddressThatExpiresDuringItsUploadDoesNotSpinTheLoop(t *testing.T) {
 	if w := h.r.NextWake(); !w.After(h.now) {
 		t.Fatalf("wake %v at %v: the loop would spin until the upload ends", w, h.now)
 	}
-	acts := h.r.Handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadRetry})
+	acts := h.handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadRetry})
 	acts = append(acts, h.advance(time.Second)...)
 	if r := reports(acts); len(r) != 1 || r[0].Reason != contract.PhotoURLExpired {
 		t.Fatalf("%+v: once the upload ended, the stale address is dropped", acts)
@@ -133,7 +133,7 @@ func TestAnAddressThatExpires(t *testing.T) {
 	if acts := h.address("p1", 5*time.Minute); len(of[Upload](acts)) != 1 {
 		t.Fatalf("a new address: %+v", acts)
 	}
-	acts = h.r.Handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadExpired})
+	acts = h.handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadExpired})
 	if r := reports(acts); len(r) != 1 || r[0].Reason != contract.PhotoURLExpired || len(of[RemovePhoto](acts)) != 0 {
 		t.Fatalf("%+v", acts)
 	}
@@ -151,7 +151,7 @@ func TestPhotosThatAreDropped(t *testing.T) {
 	h.photo("p1") // QoS 1: again
 	h.sendQueue()
 	h.address("p1", time.Hour)
-	acts := h.r.Handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadMissing})
+	acts := h.handle(Uploaded{Now: h.now, Photo: "p1", Result: UploadMissing})
 	if r := reports(acts); len(r) != 1 || r[0].Reason != contract.PhotoMissing {
 		t.Fatalf("%+v", acts)
 	}
@@ -159,7 +159,7 @@ func TestPhotosThatAreDropped(t *testing.T) {
 	if len(of[Upload](acts)) != 1 {
 		t.Fatal(acts)
 	}
-	acts = h.r.Handle(Uploaded{Now: h.now, Photo: "p2", Result: UploadRefused})
+	acts = h.handle(Uploaded{Now: h.now, Photo: "p2", Result: UploadRefused})
 	if r := reports(acts); len(r) != 1 || r[0].Reason != contract.PhotoRefused || len(of[RemovePhoto](acts)) != 1 {
 		t.Fatalf("%+v", acts)
 	}
@@ -168,7 +168,7 @@ func TestPhotosThatAreDropped(t *testing.T) {
 	if r := reports(acts); len(r) != 1 || r[0].Photo != "p3" || r[0].Reason != contract.PhotoTooOld {
 		t.Fatalf("%+v", acts)
 	}
-	if h.r.Handle(Uploaded{Now: h.now, Photo: "p3", Result: UploadOK}) != nil {
+	if h.handle(Uploaded{Now: h.now, Photo: "p3", Result: UploadOK}) != nil {
 		t.Fatal("a photo no longer followed")
 	}
 }
@@ -216,9 +216,8 @@ func TestTheUploadIsForgottenAtARestart(t *testing.T) {
 	h.photo("p1")
 	h.sendQueue()
 	h.address("p1", time.Hour)
-	r2, _ := New(DefaultConfig(site))
-	r2.Restore(h.r.Snapshot())
-	if acts := r2.Handle(Link{Now: h.now, Up: true, Transport: "mqtts"}); len(of[Upload](acts)) != 1 {
+	h.restart()
+	if acts := h.handle(Link{Now: h.now, Up: true, Transport: "mqtts"}); len(of[Upload](acts)) != 1 {
 		t.Fatalf("%+v: the upload under way died with the process; it starts again", acts)
 	}
 }

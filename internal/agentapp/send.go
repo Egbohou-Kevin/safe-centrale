@@ -28,8 +28,11 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action)
 			} else {
 				a.log.Warn("the cloud cannot be reached", "queued", v.Status.Queued)
 			}
-			a.publishStatus(now, v.Status)
+			// Before the status enters the queue, whose save wakes the sender: the
+			// sender takes this signal now, rather than later, where it would cut a
+			// retry's wait short.
 			signal(a.relink)
+			a.publishStatus(now, v.Status)
 		case agent.Refused:
 			a.log.Warn("refused a message from the cloud", "topic", v.Topic, "reason", v.Reason)
 		case agent.Dropped:
@@ -40,6 +43,12 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action)
 			a.publishOwn(now, contract.AgentReplayedTopic(a.cfg.Site), contract.TypeAgentReplayed, v.Report, false)
 		case agent.Upload, agent.RemovePhoto, agent.PhotoReport:
 			a.dispatchPhoto(now, act)
+		case agent.QueueSave, agent.QueueDrop:
+			// Before the snapshot is saved: see internal/agent/queue.go. An item not
+			// saved still goes from memory; it would be lost to a crash.
+			if err := a.storeQueue(act); err != nil {
+				a.log.Error("the queue for the cloud could not be saved", "err", err)
+			}
 		}
 	}
 	a.poke()
@@ -149,13 +158,15 @@ func (a *App) sender(ctx context.Context) {
 }
 
 // next asks the core, on its loop, for the item to send now: none while the link is
-// down.
+// down. An item numbered at this first attempt is saved before Do returns.
 func (a *App) next(ctx context.Context) (it agent.Item, ok bool, err error) {
 	err = a.loop.Do(ctx, func(time.Time) []agent.Action {
-		if a.core.Up() {
-			it, ok = a.core.Next()
+		if !a.core.Up() {
+			return nil
 		}
-		return nil
+		var save []agent.Action
+		it, save, ok = a.core.Next()
+		return save
 	})
 	return it, ok, err
 }

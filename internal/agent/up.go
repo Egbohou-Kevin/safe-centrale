@@ -15,7 +15,7 @@ import (
 // there.
 func (r *Relay) local(now time.Time, topic string, payload []byte) []Action {
 	route, env, ok := r.goesUp(topic, payload)
-	if !ok || slices.ContainsFunc(r.s.Queue, func(it Item) bool { return it.ID == env.ID }) {
+	if !ok || slices.ContainsFunc(r.queue, func(it Item) bool { return it.ID == env.ID }) {
 		return nil // not for the cloud, or the same message again (QoS 1)
 	}
 	if inc := incidentOf(env); inc != "" {
@@ -27,14 +27,17 @@ func (r *Relay) local(now time.Time, topic string, payload []byte) []Action {
 		return []Action{FailAlert{Ref: env.ID}}
 	}
 	it := Item{ID: env.ID, Topic: topic, Payload: json.RawMessage(payload), Prio: route.prio, Retain: route.retain, At: now}
+	var replaced []Action
 	if route.retain || env.Type == contract.TypeHeartbeat {
 		if r.thinned(now, env, topic) {
 			return nil // economy: the cloud got one a moment ago
 		}
-		r.replaceKeyed(&it, topic)
+		replaced = r.replaceKeyed(&it, topic)
 	}
-	r.s.Queue = append(r.s.Queue, it)
-	out := r.bound()
+	// The newer is saved before the older is dropped: a crash in between leaves both
+	// on disk, never neither.
+	out := append([]Action{r.push(it)}, replaced...)
+	out = append(out, r.bound()...)
 	if env.Type == contract.TypePhotoTaken {
 		out = append(out, r.photoTaken(now, env)...)
 	}
@@ -82,17 +85,18 @@ func (r *Relay) followAlert(now time.Time, env contract.Envelope) bool {
 func cloudChannel(ch string) bool { return ch == contract.ChannelApp || ch == contract.ChannelWhatsApp }
 
 // replaceKeyed makes it replace the waiting item with the same key, of which only
-// the latest is worth sending. An older one may have been tried without an
-// acknowledgement: the newer takes its number, so that replacing it leaves no hole
-// in the cloud.
-func (r *Relay) replaceKeyed(it *Item, key string) {
+// the latest is worth sending, and returns the action that drops the older. An older
+// one may have been tried without an acknowledgement: the newer takes its number, so
+// that replacing it leaves no hole in the cloud.
+func (r *Relay) replaceKeyed(it *Item, key string) []Action {
 	it.Key = key
-	for _, q := range r.s.Queue {
-		if q.Key == key && q.Seq != 0 {
+	older, drop := r.removeIf(func(q Item) bool { return q.Key == key })
+	for _, q := range older {
+		if q.Seq != 0 {
 			stamp(it, q.Seq)
 		}
 	}
-	r.s.Queue = slices.DeleteFunc(r.s.Queue, func(q Item) bool { return q.Key == key })
+	return drop
 }
 
 // incidentOf reads the incident a message is about, if any.
@@ -110,37 +114,40 @@ func incidentOf(env contract.Envelope) string {
 // first, the oldest of them first.
 func (r *Relay) bound() []Action {
 	size := 0
-	for _, it := range r.s.Queue {
+	for _, it := range r.queue {
 		size += len(it.Payload)
 	}
-	dropped := 0
+	var gone []Item
 	var out []Action
-	for len(r.s.Queue) > r.cfg.QueueItems || (size > r.cfg.QueueBytes && len(r.s.Queue) > 1) {
-		victim := r.victim()
-		id := r.s.Queue[victim].ID
-		size -= len(r.s.Queue[victim].Payload)
-		r.s.Queue = slices.Delete(r.s.Queue, victim, victim+1)
-		dropped++
-		if _, ok := r.s.Pending[id]; ok {
-			delete(r.s.Pending, id) // an alert that will not reach the cloud: the hub must know
-			out = append(out, FailAlert{Ref: id})
+	for len(r.queue) > r.cfg.QueueItems || (size > r.cfg.QueueBytes && len(r.queue) > 1) {
+		i := r.victim()
+		it := r.queue[i]
+		r.queue = slices.Delete(r.queue, i, i+1)
+		size -= len(it.Payload)
+		gone = append(gone, it)
+		if _, ok := r.s.Pending[it.ID]; ok {
+			delete(r.s.Pending, it.ID) // an alert that will not reach the cloud: the hub must know
+			out = append(out, FailAlert{Ref: it.ID})
 		}
 	}
-	if dropped == 0 {
+	if len(gone) == 0 {
 		return out
 	}
-	r.s.Dropped += dropped
-	return append(out, Dropped{Count: dropped, Reason: "queue full"})
+	r.s.Dropped += len(gone)
+	out = append(out, dropOf(gone)...)
+	return append(out, Dropped{Count: len(gone), Reason: "queue full"})
 }
 
 // victim is the index of the item to drop: the oldest of the lowest priority.
 func (r *Relay) victim() int {
-	for _, p := range []Priority{PriorityState, PriorityNormal, PriorityAlarm} {
-		for i, it := range r.s.Queue {
-			if it.Prio == p {
-				return i
-			}
+	best := 0
+	for i, it := range r.queue {
+		if it.Prio < r.queue[best].Prio {
+			best = i
+		}
+		if r.queue[best].Prio == PriorityState {
+			break
 		}
 	}
-	return 0
+	return best
 }

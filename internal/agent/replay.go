@@ -41,19 +41,20 @@ func stamp(it *Item, seq uint64) {
 
 // sent takes an acknowledged item out of the queue, or of the replays, and keeps a
 // numbered one in the journal.
-func (r *Relay) sent(now time.Time, id string) {
-	if i := slices.IndexFunc(r.s.Queue, func(it Item) bool { return it.ID == id }); i >= 0 {
-		it := r.s.Queue[i]
-		r.s.Queue = slices.Delete(r.s.Queue, i, i+1)
+func (r *Relay) sent(now time.Time, id string) []Action {
+	if i := slices.IndexFunc(r.queue, func(it Item) bool { return it.ID == id }); i >= 0 {
+		it := r.queue[i]
+		r.queue = slices.Delete(r.queue, i, i+1)
 		r.noteSent(now, it)
 		if it.Seq != 0 {
 			r.remember(it)
 		}
-		return
+		return dropOf([]Item{it})
 	}
 	if i := slices.IndexFunc(r.replay, func(it Item) bool { return it.ID == id }); i >= 0 {
 		r.replay = slices.Delete(r.replay, i, i+1)
 	}
+	return nil
 }
 
 // remember keeps a sent item in the journal, within its bounds: the oldest go first.
@@ -78,7 +79,7 @@ func (r *Relay) replayRange(d contract.ReplayData) []Action {
 		}
 	}
 	queued := map[uint64]bool{}
-	for _, it := range r.s.Queue {
+	for _, it := range r.queue {
 		if it.Seq != 0 {
 			queued[it.Seq] = true
 		}

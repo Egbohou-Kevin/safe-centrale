@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/photodir"
+	"safehome/internal/adapter/queuedir"
 	"safehome/internal/adapter/upload"
 	"safehome/internal/agentapp"
 	"safehome/internal/agentconfig"
@@ -18,8 +20,9 @@ import (
 )
 
 const (
-	name    = "link agent" // in the logs
-	pidName = "agent.pid"
+	name      = "link agent" // in the logs
+	pidName   = "agent.pid"
+	queueName = "agent_queue" // the folder of the queue for the cloud, in the state directory
 )
 
 var commandLine = service.CLI{Program: "safehome-agent", Version: version, Usage: `usage:
@@ -54,6 +57,11 @@ func runAgent(ctx context.Context, cfg agentconfig.Result, stderr io.Writer) int
 		return 1
 	}
 	defer release()
+	queue, err := queuedir.Open(filepath.Join(cfg.StateDir, queueName), log)
+	if err != nil {
+		log.Error("cannot open the queue for the cloud", "err", err)
+		return 1
+	}
 
 	dir, err := photodir.Open(cfg.PhotoDir, 60, 8<<20)
 	if err != nil {
@@ -69,7 +77,7 @@ func runAgent(ctx context.Context, cfg agentconfig.Result, stderr io.Writer) int
 	ids := contract.NewIDGenerator()
 	local, cloud := &service.Publisher{}, &service.Publisher{}
 	app, err := agentapp.New(cfg.App, agentapp.Deps{
-		Clock: driver.SystemClock(), Store: store, Local: local, Cloud: cloud,
+		Clock: driver.SystemClock(), Store: store, Queue: queue, Local: local, Cloud: cloud,
 		Photos: photos{dir}, Uploader: uploader{https}, NewID: ids.New, Logger: log,
 	})
 	if err != nil {

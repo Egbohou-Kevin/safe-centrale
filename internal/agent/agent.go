@@ -99,10 +99,12 @@ type pendingAlert struct {
 	Confirmed bool      `json:"confirmed"`
 }
 
-// Snapshot is the relay's state, saved after every change: the queue survives a
-// restart of the agent and of the hub.
+// Snapshot is the relay's state, saved after every change. The queue for the cloud
+// is saved apart, item by item (see queue.go).
 type Snapshot struct {
-	Queue     []Item                  `json:"queue"`
+	// Queue is only read: the queue as an older version saved it here. Restore takes
+	// it, and RestoreQueue moves it to the queue's store.
+	Queue     []Item                  `json:"queue,omitempty"`
 	Pending   map[string]pendingAlert `json:"pending"`   // alert.request id -> its state
 	Incidents map[string]time.Time    `json:"incidents"` // incidents seen going up -> last seen
 	Seen      []string                `json:"seen"`      // ids of the last messages from the cloud
@@ -117,6 +119,8 @@ type Snapshot struct {
 type Relay struct {
 	cfg       Config
 	s         Snapshot
+	queue     []Item // saved item by item (see queue.go)
+	order     uint64 // the last Order given
 	up        bool
 	transport string
 	sending   string // the photo being uploaded: one at a time
@@ -143,7 +147,6 @@ func New(cfg Config) (*Relay, error) {
 // Snapshot returns the state to save.
 func (r *Relay) Snapshot() Snapshot {
 	s := r.s
-	s.Queue = slices.Clone(s.Queue)
 	s.Seen = slices.Clone(s.Seen)
 	s.Pending = maps.Clone(s.Pending)
 	s.Incidents = maps.Clone(s.Incidents)
@@ -151,7 +154,8 @@ func (r *Relay) Snapshot() Snapshot {
 	return s
 }
 
-// Restore puts a saved state back. The link is down until told otherwise.
+// Restore puts a saved state back, without the queue: RestoreQueue follows. The link
+// is down until told otherwise.
 func (r *Relay) Restore(s Snapshot) {
 	if s.Pending == nil {
 		s.Pending = map[string]pendingAlert{}
@@ -165,30 +169,16 @@ func (r *Relay) Restore(s Snapshot) {
 	if s.TokensAt.IsZero() {
 		s.Tokens = float64(r.cfg.DownBurst)
 	}
+	// A queue saved in the snapshot keeps its order; RestoreQueue saves it apart.
+	r.queue, s.Queue = s.Queue, nil
+	for i := range r.queue {
+		r.queue[i].Order = uint64(i + 1)
+	}
+	r.order = uint64(len(r.queue))
 	r.s = s
 	r.up, r.transport, r.sending = false, "", ""
 	r.journal, r.journalBytes, r.replay = nil, 0, nil
 	r.got = map[string]sentMark{}
-}
-
-// Next returns the item to send now: alarm and alert messages first, then device
-// events, then states, each in order of arrival, then what the cloud asked for again.
-// An item gets its number for the cloud here, at its first attempt, and keeps it.
-func (r *Relay) Next() (Item, bool) {
-	for _, p := range []Priority{PriorityAlarm, PriorityNormal, PriorityState} {
-		for i := range r.s.Queue {
-			if it := &r.s.Queue[i]; it.Prio == p {
-				if it.Seq == 0 {
-					r.number(it)
-				}
-				return *it, true
-			}
-		}
-	}
-	if len(r.replay) > 0 {
-		return r.replay[0], true
-	}
-	return Item{}, false
 }
 
 // Up says whether the cloud can be reached.
@@ -196,8 +186,8 @@ func (r *Relay) Up() bool { return r.up }
 
 // Status returns the state of the link at now.
 func (r *Relay) Status(now time.Time) Status {
-	st := Status{Up: r.up, Transport: r.transport, Queued: len(r.s.Queue) + len(r.replay), Dropped: r.s.Dropped}
-	for _, it := range r.s.Queue {
+	st := Status{Up: r.up, Transport: r.transport, Queued: len(r.queue) + len(r.replay), Dropped: r.s.Dropped}
+	for _, it := range r.queue {
 		if age := now.Sub(it.At); age > st.Oldest {
 			st.Oldest = age
 		}
@@ -224,7 +214,7 @@ func (r *Relay) NextWake() time.Time {
 	for _, at := range r.s.Incidents {
 		soonest(at.Add(incidentMemory))
 	}
-	for _, it := range r.s.Queue {
+	for _, it := range r.queue {
 		soonest(it.At.Add(r.cfg.QueueAge))
 	}
 	for _, t := range r.photoWakes() {
@@ -244,7 +234,7 @@ func (r *Relay) Handle(in Input) []Action {
 	case Cloud:
 		out = append(out, r.cloud(v)...)
 	case Sent:
-		r.sent(v.Now, v.ID)
+		out = append(out, r.sent(v.Now, v.ID)...)
 	case Link:
 		out = append(out, r.link(v)...)
 	case Uploaded:
@@ -287,7 +277,8 @@ func (r *Relay) failUnconfirmed(match func(pendingAlert) bool) []Action {
 	var out []Action
 	for _, ref := range refs {
 		delete(r.s.Pending, ref)
-		r.s.Queue = slices.DeleteFunc(r.s.Queue, func(it Item) bool { return it.ID == ref })
+		_, drop := r.removeIf(func(it Item) bool { return it.ID == ref })
+		out = append(out, drop...)
 		out = append(out, FailAlert{Ref: ref})
 	}
 	return out
@@ -307,11 +298,11 @@ func (r *Relay) expire(now time.Time) []Action {
 			delete(r.s.Incidents, inc)
 		}
 	}
-	n := len(r.s.Queue)
-	r.s.Queue = slices.DeleteFunc(r.s.Queue, func(it Item) bool { return !now.Before(it.At.Add(r.cfg.QueueAge)) })
-	if old := n - len(r.s.Queue); old > 0 {
-		r.s.Dropped += old
-		out = append(out, Dropped{Count: old, Reason: "too old"})
+	old, drop := r.removeIf(func(it Item) bool { return !now.Before(it.At.Add(r.cfg.QueueAge)) })
+	if len(old) > 0 {
+		r.s.Dropped += len(old)
+		out = append(out, drop...)
+		out = append(out, Dropped{Count: len(old), Reason: "too old"})
 	}
 	return append(out, r.expirePhotos(now)...)
 }

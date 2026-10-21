@@ -120,6 +120,9 @@ type Item struct {
 	// Seq is its number for the cloud, given at its first attempt to leave (also
 	// written in Payload); 0 before.
 	Seq uint64 `json:"seq,omitempty"`
+	// Order is its place in the queue: at equal priority, items leave in this order.
+	// It is saved with the item, so the order survives a restart.
+	Order uint64 `json:"order"`
 }
 
 // Status is the state of the link, as agent.status says it.

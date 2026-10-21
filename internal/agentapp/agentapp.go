@@ -2,9 +2,9 @@
 // broker and the cloud's broker, feeds the agent core (internal/agent), sends its
 // queue to the cloud, and publishes on the hub what the cloud may send.
 //
-// It knows two publishers (the hub's broker, the cloud's broker), the photos' folder
-// and an uploader, and no adapter: the composition root (cmd/safehome-agent) wires
-// the two MQTT clients, the folder and HTTPS to it.
+// It knows two publishers (the hub's broker, the cloud's broker), the queue's store,
+// the photos' folder and an uploader, and no adapter: the composition root
+// (cmd/safehome-agent) wires the two MQTT clients, the disk and HTTPS to it.
 package agentapp
 
 import (
@@ -60,7 +60,8 @@ func (c Config) Validate() error {
 // Deps are the ports the agent needs.
 type Deps struct {
 	Clock    driver.Clock
-	Store    driver.Store
+	Store    driver.Store     // the core's snapshot and the agent's counter
+	Queue    QueueStore       // the core's queue for the cloud
 	Local    outbox.Publisher // the hub's broker
 	Cloud    outbox.Publisher // the cloud's broker; ErrUnavailable while it cannot be reached
 	Photos   Photos
@@ -116,9 +117,9 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	if deps.Clock == nil || deps.Store == nil || deps.Local == nil || deps.Cloud == nil || deps.Photos == nil ||
-		deps.Uploader == nil || deps.NewID == nil {
-		return nil, errors.New("agentapp: Clock, Store, Local, Cloud, Photos, Uploader and NewID are required")
+	if deps.Clock == nil || deps.Store == nil || deps.Queue == nil || deps.Local == nil || deps.Cloud == nil ||
+		deps.Photos == nil || deps.Uploader == nil || deps.NewID == nil {
+		return nil, errors.New("agentapp: Clock, Store, Queue, Local, Cloud, Photos, Uploader and NewID are required")
 	}
 	log := deps.Logger
 	if log == nil {
@@ -145,6 +146,9 @@ func New(cfg Config, deps Deps) (*App, error) {
 		OnChange: func(context.Context, time.Time) { a.poke() }, // the queue moved
 	})
 	if err != nil {
+		return nil, err
+	}
+	if err := a.restoreQueue(); err != nil {
 		return nil, err
 	}
 	return a, nil

@@ -27,7 +27,7 @@ var alarmEvents = []string{
 	contract.TypeAlarmArmingScheduled, contract.TypeAlarmPostponed, contract.TypeAlarmAuthFailed,
 }
 
-// upRoutes is keyed by the topic without "safehome/{site}/"; "device/+/event" stands
+// upRoutes is keyed by the topic without its root and site; "device/+/event" stands
 // for any device.
 var upRoutes = map[string]upRoute{
 	"alarm/event":      {types: alarmEvents, prio: PriorityAlarm},
@@ -55,7 +55,7 @@ var upRoutes = map[string]upRoute{
 func UpFilters(site string) []string {
 	var out []string
 	for key := range upRoutes {
-		out = append(out, "safehome/"+site+"/"+key)
+		out = append(out, contract.Topic(site, key))
 	}
 	slices.Sort(out)
 	return out
@@ -90,7 +90,7 @@ var downRoutes = map[string][]string{
 func DownFilters(site string) []string {
 	var out []string
 	for key := range downRoutes {
-		out = append(out, "safehome/"+site+"/"+key)
+		out = append(out, contract.Topic(site, key))
 	}
 	slices.Sort(out)
 	return out

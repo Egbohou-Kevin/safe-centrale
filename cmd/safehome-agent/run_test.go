@@ -334,8 +334,11 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	waitFor(t, logs, "the link down on the hub", func() bool { return hub.lastStatus().Uplink == contract.UplinkDown })
 	second := hub.publish(contract.AlarmEventTopic(site), "engine.alarm", contract.TypeAlarmTriggered, triggered)
 	waitFor(t, logs, "the alarm queued", func() bool { return hub.lastStatus().Queued > 0 || strings.Contains(logs.String(), "queued=1") })
+	waiting := filepath.Join(state, queueName, second+".json") // a file of its own, not the whole queue
+	waitFor(t, logs, "the alarm on the disk", func() bool { _, err := os.Stat(waiting); return err == nil })
 	link.restore()
 	waitFor(t, logs, "the queued alarm on the cloud", func() bool { return cloud.has(contract.TypeAlarmTriggered, second) })
+	waitFor(t, logs, "the alarm off the disk", func() bool { _, err := os.Stat(waiting); return os.IsNotExist(err) })
 	waitFor(t, logs, "the link up again", func() bool { return hub.lastStatus().Uplink == contract.UplinkUp })
 	waitFor(t, logs, "the site online on the cloud", func() bool { return cloud.lastStatus().Uplink == contract.UplinkUp })
 

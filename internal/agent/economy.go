@@ -44,7 +44,7 @@ func (r *Relay) thinned(now time.Time, env contract.Envelope, key string) bool {
 	if r.cfg.Economy <= 0 || !repeated(env.Type) {
 		return false
 	}
-	for _, q := range r.s.Queue {
+	for _, q := range r.queue {
 		if q.Key == key {
 			return false
 		}

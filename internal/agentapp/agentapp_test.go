@@ -6,281 +6,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"reflect"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"safehome/internal/agent"
 	"safehome/internal/contract"
-	"safehome/internal/outbox"
 	"safehome/internal/schematest"
 )
 
 const site = "tg-lom-0001"
 
 var t0 = time.Date(2026, 10, 20, 21, 0, 0, 0, time.UTC)
-
-// --- fakes ---------------------------------------------------------------------
-
-type fakeClock struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers map[*fakeTimer]bool
-}
-
-type fakeTimer struct {
-	when time.Time
-	c    chan time.Time
-}
-
-func newClock() *fakeClock { return &fakeClock{now: t0, timers: map[*fakeTimer]bool{}} }
-
-func (c *fakeClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
-
-func (c *fakeClock) Timer(d time.Duration) (<-chan time.Time, func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	t := &fakeTimer{when: c.now.Add(d), c: make(chan time.Time, 1)}
-	if d <= 0 {
-		t.c <- c.now
-		return t.c, func() {}
-	}
-	c.timers[t] = true
-	return t.c, func() { c.mu.Lock(); delete(c.timers, t); c.mu.Unlock() }
-}
-
-func (c *fakeClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = c.now.Add(d)
-	for t := range c.timers {
-		if !t.when.After(c.now) {
-			t.c <- c.now
-			delete(c.timers, t)
-		}
-	}
-}
-
-type memStore struct {
-	mu   sync.Mutex
-	docs map[string][]byte
-}
-
-func (s *memStore) Save(name string, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.docs[name] = append([]byte(nil), data...)
-	return nil
-}
-
-func (s *memStore) Load(name string) ([]byte, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	d, ok := s.docs[name]
-	return d, ok, nil
-}
-
-type published struct {
-	topic  string
-	retain bool
-	raw    []byte
-	env    contract.Envelope
-}
-
-// fakeBroker records what is published; while down it answers ErrUnavailable.
-type fakeBroker struct {
-	mu   sync.Mutex
-	msgs []published
-	down bool
-}
-
-func (b *fakeBroker) Publish(_ context.Context, topic string, payload []byte, _ byte, retain bool) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.down {
-		return outbox.ErrUnavailable
-	}
-	env, _ := contract.ParseEnvelope(payload)
-	b.msgs = append(b.msgs, published{topic: topic, retain: retain, raw: append([]byte(nil), payload...), env: env})
-	return nil
-}
-
-func (b *fakeBroker) setDown(down bool) { b.mu.Lock(); b.down = down; b.mu.Unlock() }
-
-func (b *fakeBroker) all() []published {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return append([]published(nil), b.msgs...)
-}
-
-func (b *fakeBroker) ofType(typ string) []published {
-	var out []published
-	for _, m := range b.all() {
-		if m.env.Type == typ {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
-func eventually(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
-// --- rig -----------------------------------------------------------------------
-
-// memPhotos is the photos' folder.
-type memPhotos struct {
-	mu      sync.Mutex
-	files   map[string][]byte
-	removed []string
-}
-
-func (m *memPhotos) Open(id string) (io.ReadCloser, int64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	b, ok := m.files[id]
-	if !ok {
-		return nil, 0, fmt.Errorf("%w: %s", ErrNoPhoto, id)
-	}
-	return io.NopCloser(bytes.NewReader(b)), int64(len(b)), nil
-}
-
-func (m *memPhotos) Remove(id string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.files, id)
-	m.removed = append(m.removed, id)
-	return nil
-}
-
-// fakeUploader plays the cloud's upload endpoint: errs are answered in turn.
-type fakeUploader struct {
-	mu   sync.Mutex
-	errs []error
-	got  []string // url token bytes
-}
-
-func (u *fakeUploader) Put(_ context.Context, url, token string, body io.Reader, size int64) error {
-	b, _ := io.ReadAll(body)
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	if int64(len(b)) != size {
-		return fmt.Errorf("size %d, read %d", size, len(b))
-	}
-	u.got = append(u.got, fmt.Sprintf("%s %s %d", url, token, len(b)))
-	if len(u.errs) > 0 {
-		err := u.errs[0]
-		u.errs = u.errs[1:]
-		return err
-	}
-	return nil
-}
-
-func (u *fakeUploader) calls() []string { u.mu.Lock(); defer u.mu.Unlock(); return slices.Clone(u.got) }
-
-type rig struct {
-	t      *testing.T
-	clock  *fakeClock
-	store  *memStore
-	local  *fakeBroker
-	cloud  *fakeBroker
-	photos *memPhotos
-	upl    *fakeUploader
-	app    *App
-	ids    *contract.IDGenerator
-	stop   func()
-}
-
-func newRig(t *testing.T, store *memStore) *rig {
-	t.Helper()
-	return newRigWith(t, store, DefaultConfig(site))
-}
-
-func newRigWith(t *testing.T, store *memStore, cfg Config) *rig {
-	t.Helper()
-	if store == nil {
-		store = &memStore{docs: map[string][]byte{}}
-	}
-	r := &rig{t: t, clock: newClock(), store: store, local: &fakeBroker{}, cloud: &fakeBroker{}, ids: contract.NewIDGenerator(),
-		photos: &memPhotos{files: map[string][]byte{}}, upl: &fakeUploader{}}
-	app, err := New(cfg, Deps{Clock: r.clock, Store: store, Local: r.local, Cloud: r.cloud,
-		Photos: r.photos, Uploader: r.upl, NewID: r.ids.New})
-	if err != nil {
-		t.Fatal(err)
-	}
-	r.app = app
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { app.Run(ctx); close(done) }()
-	r.stop = func() { cancel(); <-done }
-	t.Cleanup(r.stop)
-	eventually(t, "the first status", func() bool { return len(r.local.ofType(contract.TypeAgentStatus)) > 0 })
-	return r
-}
-
-// msg builds a message of the site.
-func (r *rig) msg(typ string, data any) []byte {
-	r.t.Helper()
-	env, err := contract.NewEnvelope(site, "hub", 1, r.ids.New(), r.clock.Now(), typ, data)
-	if err != nil {
-		r.t.Fatal(err)
-	}
-	b, _ := json.Marshal(env)
-	return b
-}
-
-func (r *rig) fromHub(topic, typ string, data any) []byte {
-	b := r.msg(typ, data)
-	r.app.HandleLocal(Message{Topic: topic, Payload: b})
-	return b
-}
-
-func (r *rig) fromCloud(topic, typ string, data any) []byte {
-	b := r.msg(typ, data)
-	r.app.HandleCloud(Message{Topic: topic, Payload: b})
-	return b
-}
-
-func lastStatus(t *testing.T, b *fakeBroker) contract.AgentStatusData {
-	t.Helper()
-	st := b.ofType(contract.TypeAgentStatus)
-	if len(st) == 0 {
-		t.Fatal("no agent.status")
-	}
-	d, err := contract.DecodeData[contract.AgentStatusData](st[len(st)-1].env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return d
-}
-
-func topic(parts ...string) string { return contract.Topic(site, parts...) }
-
-// same says whether m is the message sent: the agent numbers again what goes to the
-// cloud, so only seq may differ.
-func same(m published, sent []byte) bool {
-	env, err := contract.ParseEnvelope(sent)
-	if err != nil {
-		return false
-	}
-	got := m.env
-	got.Seq, env.Seq = 0, 0
-	return reflect.DeepEqual(got, env)
-}
-
-var triggered = contract.TriggeredData{Incident: "inc1", DeviceID: "dev_door", Capability: contract.CapContact, Zone: "Entree"}
 
 // --- tests -----------------------------------------------------------------------
 
@@ -296,11 +34,16 @@ func TestTheStatusSaysWhetherTheClientsDataIsSpared(t *testing.T) {
 }
 
 func TestNewNeedsItsPortsAndAGoodConfig(t *testing.T) {
-	store := &memStore{docs: map[string][]byte{}}
-	good := Deps{Clock: newClock(), Store: store, Local: &fakeBroker{}, Cloud: &fakeBroker{}, Photos: &memPhotos{},
+	d := newDisk()
+	good := Deps{Clock: newClock(), Store: d.store, Queue: d.queue, Local: &fakeBroker{}, Cloud: &fakeBroker{}, Photos: &memPhotos{},
 		Uploader: &fakeUploader{}, NewID: contract.NewIDGenerator().New}
-	if _, err := New(DefaultConfig(site), Deps{Clock: good.Clock, Store: store, Local: good.Local, NewID: good.NewID}); err == nil {
+	if _, err := New(DefaultConfig(site), Deps{Clock: good.Clock, Store: d.store, Queue: d.queue, Local: good.Local, NewID: good.NewID}); err == nil {
 		t.Error("an agent without the cloud was built")
+	}
+	noQueue := good
+	noQueue.Queue = nil
+	if _, err := New(DefaultConfig(site), noQueue); err == nil {
+		t.Error("an agent without a store for its queue was built")
 	}
 	bad := DefaultConfig(site)
 	bad.StatusEvery = 0
@@ -489,16 +232,21 @@ func TestOrdersFromTheCloudReachTheHubUnchanged(t *testing.T) {
 }
 
 func TestTheQueueSurvivesARestartOfTheAgent(t *testing.T) {
-	store := &memStore{docs: map[string][]byte{}}
-	r := newRig(t, store)
+	d := newDisk()
+	r := newRig(t, d)
 	alarm := r.fromHub(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
 	eventually(t, "the queue to be saved", func() bool {
-		d, _, _ := store.Load("agent")
-		return bytes.Contains(d, []byte("alarm/event"))
+		items, _ := d.queue.Load()
+		for _, it := range items {
+			if bytes.Contains(it, []byte("alarm/event")) {
+				return true
+			}
+		}
+		return false
 	})
 	r.stop()
 
-	again := newRig(t, store)
+	again := newRig(t, d)
 	again.app.LinkChanged(true, "mqtts")
 	eventually(t, "the saved message", func() bool {
 		for _, m := range again.cloud.all() {
