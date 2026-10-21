@@ -34,6 +34,13 @@ broker Mosquitto, qui tourne à côté).
 Les codes ne s'affichent jamais, ni en succès ni en erreur. Exemple :
 `read -s CODE; echo "$CODE" | safehome-hub codes -config hub.json set u_owner`.
 
+La centrale ignore le code d'une personne qui n'est plus contact du site (journalisé
+sans le code). `codes set` refuse un utilisateur qui n'est pas un contact (ni
+`installer`) ; `codes list` signale ces codes restants, à retirer avec `codes remove`
+ou depuis la console (« Codes d'anciens contacts »). Les fichiers d'état écrits par un
+outil lancé avec `sudo` prennent le propriétaire du dossier ; sinon l'outil échoue en
+le disant (il faut alors le lancer avec `sudo -u safehome`).
+
 L'utilisateur `installer` porte le **code installateur**. Tapé au clavier puis
 « désarmer », alarme désarmée, il ouvre le mode installation pour 30 minutes, et donc la
 console locale (`security-install.md`). Ce code est à part de ceux des personnes : il
@@ -159,9 +166,11 @@ délais et, en données mobiles, son forfait vidéo (`config.set`, voir `contrac
 2. Acceptée, elle la garde dans `site-config.json`, dans le dossier d'état
    (`/var/lib/safehome`, lisible par le service seul : le fichier contient les
    numéros). `/etc/safehome` reste en lecture seule.
-3. Elle redémarre pour l'appliquer, **jamais pendant un délai ni une alarme** : elle
-   attend que l'alarme soit désarmée ou armée. systemd la relance (`Restart=always`),
-   l'état armé ou désarmé est repris comme après une coupure.
+3. Elle redémarre pour l'appliquer, **jamais pendant un délai, une alarme ni le mode
+   installation** : elle attend que l'alarme soit désarmée ou armée et le mode fermé.
+   Une configuration reçue pendant le mode installation est gardée et appliquée à sa
+   fermeture. systemd la relance (`Restart=always`), l'état armé ou désarmé est repris
+   comme après une coupure.
 4. Relancée, elle pose la configuration sur son fichier et publie `config.applied`
    `applied` (retenu).
 5. La passerelle GSM et la vidéo voient ce message et redémarrent à leur tour si le
@@ -451,10 +460,14 @@ ou le nouveau). Lancer l'outil sous l'utilisateur de la centrale
 (`sudo -u safehome`) : le dossier d'état est le sien. Lancé avec `sudo` seul, il rend
 quand même le fichier à cet utilisateur.
 
-**La centrale ne relit pas les zones toute seule** : après un changement par l'outil,
-il faut la redémarrer (`sudo systemctl restart safehome-hub`). L'état est conservé : une
-alarme armée le reste. Avec la console locale, la centrale redémarre d'elle-même à la
-fin du mode installation.
+**La centrale applique les zones d'elle-même** : elle compare `site-devices.json` à
+celui qu'elle a chargé à chaque état de l'alarme, à chaque ouverture ou fermeture du
+mode installation et à chaque configuration reçue. Une modification faite avec
+`safehome-install` hors mode installation est ainsi appliquée au prochain moment calme
+(alarme désarmée ou armée, mode fermé) : la centrale redémarre. Pour l'appliquer tout
+de suite, la redémarrer (`sudo systemctl restart safehome-hub`). L'état est conservé :
+une alarme armée le reste. Avec la console locale, la centrale redémarre d'elle-même à
+la fin du mode installation.
 
 Limites :
 

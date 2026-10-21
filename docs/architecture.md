@@ -128,12 +128,18 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   (`internal/videoapp`, qui déclare le port `Streamer`) et son adaptateur
   (`internal/adapter/go2rtc`, qui lance un go2rtc par session).
 - **L'outil de l'installateur** : une couche application (`internal/install`) sans
-  domaine propre (les règles de zones viennent du moteur), avec ses ports (`Publisher`,
-  messages reçus) et sans horloge ; l'outil en ligne de commande
-  (`cmd/safehome-install`) et la console locale s'appuient dessus. Les zones et les
-  sirènes sont gardées par `internal/hubconfig`, dans le dossier d'état.
+  domaine propre, avec ses ports (`Publisher`, messages reçus, `Sites`) et sans
+  horloge ; l'outil en ligne de commande (`cmd/safehome-install`) et la console locale
+  s'appuient dessus. Les règles de zones viennent du moteur : la table des capteurs
+  acceptés par chaque type de zone est dans `internal/engine` (`engine.Accepts`).
+  `internal/install` est seul à modifier le site (zones et sirènes) : son `Editor`
+  lit, change et écrit par le port `Sites`, pour la console comme pour l'outil.
+  L'adaptateur de ce port est `hubconfig.SiteFiles`, qui garde les zones et les
+  sirènes dans le dossier d'état.
 - **La console locale** : sa couche application (`internal/consoleapp`) suit le mode
-  installation et déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`). Sa page
+  installation et déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`). `Sites` est
+  `install.Sites` ; `Codes` a `People` (les contacts, et à part les codes d'anciens
+  contacts) et `Remove`. Sa page
   (`internal/consoleapp/web`) ne connaît qu'elle. Le Wi-Fi est l'adaptateur
   `internal/adapter/hotspot` (`nmcli`).
 - **La maintenance à distance** a la forme de la vidéo : son domaine (`internal/maint`,
@@ -144,7 +150,10 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 - **La configuration réglée depuis le cloud** (`config.set`) : sa couche application
   (`internal/configapp`) tourne dans le programme de la centrale. Elle ne connaît ni
   fichier ni processus : vérifier, garder et redémarrer sont des ports (`Check`,
-  `Save`, `Restart`), et elle ne lit pas l'horloge. Le fichier qui garde cette
+  `Save`, `Restart`), et elle ne lit pas l'horloge. Elle redémarre aussi la centrale,
+  à un moment calme, quand `site-devices.json` a changé (port `DevicesChanged`) : elle
+  le vérifie à chaque état de l'alarme, mode installation ou message de configuration.
+  `internal/hub` n'y a aucune part. Le fichier qui garde cette
   configuration dans le dossier d'état est `internal/siteconfig`, qui ne connaît que le
   contrat ; la centrale, la passerelle GSM et la vidéo le lisent au démarrage.
 - **Les lectures de configuration** (`internal/hubconfig`, `internal/gsmconfig`, etc.)
@@ -208,8 +217,10 @@ Le vocabulaire commun entre les documents (français) et le code (anglais) est d
    relais du cloud (voir `video.md`). Jamais dans la chaîne d'alarme.
 8. **Agent de liaison** : envoie les événements au cloud avec un heartbeat, et
    garde les messages en file d'attente quand internet tombe.
-9. **Surveillance de la centrale** : coupure secteur (via la prise connectée),
-   batterie faible, redémarrage.
+9. **Surveillance de la centrale** : coupure secteur, batterie faible, redémarrage.
+   La source de la coupure et de la batterie reste à décider (module batterie de la
+   centrale ou prise connectée) : rien ne publie encore la capacité `mains` (voir
+   `escalation.md`, « Coupures de courant »).
 
 ## Composants cloud
 

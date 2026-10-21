@@ -96,4 +96,4 @@ relie les deux : c'est le langage commun du projet.
 | zones réglées sur place | `site-devices.json`, `DevicesFile` | Zones et sirènes écrites par la console ou l'outil, dans le dossier d'état ; remplacent celles de `hub.json` |
 | maintenance à distance | `maint`, `maint.open`, `safehome-maint` | Tunnel SSH sortant de la centrale vers notre bastion, sur demande, une heure au plus |
 | bastion | `bastion` | Notre serveur où arrivent les tunnels ; les administrateurs passent par lui |
-| moment calme | `restartIfQuiet` | Alarme désarmée ou armée : la centrale peut redémarrer pour appliquer une configuration |
+| moment calme | `restartIfQuiet` | Alarme désarmée ou armée, mode installation fermé : la centrale peut redémarrer pour appliquer une configuration ou de nouvelles zones |

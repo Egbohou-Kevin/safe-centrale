@@ -91,14 +91,21 @@ Chaque appareil appartient à une zone, qui détermine son comportement.
 
 | Type de zone | Capteurs | Quand le système est armé | Quand il est désarmé |
 |---|---|---|---|
-| `entry` | contact de la porte d'entrée | `entry_delay` | rien |
-| `instant` | contacts périmètre, bris de vitre, vibration | déclenchement immédiat | rien |
-| `interior` | mouvement | déclenchement, sauf pendant un délai d'entrée | rien |
+| `entry` | contact, mouvement, vibration, bris de vitre | `entry_delay` | rien |
+| `instant` | contact, mouvement, vibration, bris de vitre | déclenchement immédiat | rien |
+| `interior` | mouvement, contact | déclenchement, sauf pendant un délai d'entrée | rien |
 | `24h_fire` | fumée | déclenchement | déclenchement |
-| `24h_panic` | bouton panique | alerte silencieuse (sans sirène par défaut) | alerte silencieuse |
-| `24h_tamper` | sabotage d'un appareil | déclenchement | alerte sans sirène |
+| `24h_panic` | panique | alerte silencieuse (sans sirène par défaut) | alerte silencieuse |
+| `24h_tamper` | sabotage | déclenchement | alerte sans sirène |
 
 Les zones permanentes (`24h_*`) surveillent même désarmé.
+
+Le capteur de sabotage d'un appareil compte toujours comme un sabotage (règle
+`24h_tamper`), quelle que soit sa zone, même sans zone (clavier, sirène). Ouvrir un
+détecteur de fumée n'est donc pas un feu. Les autres capteurs ne comptent que si le
+type de zone les accepte (`engine.Accepts`, dans `internal/engine/zones.go`). Les
+outils d'installation lisent la même table : un appareil n'est jamais mis dans une
+zone qu'il ne peut pas déclencher.
 
 ## Transitions détaillées
 
@@ -136,8 +143,10 @@ Tous sont réglables par site.
 ## Armement et délai de sortie
 
 Quand le client arme, le système démarre le délai de sortie de 2 minutes et
-l'annonce : bips du clavier et message sur l'application. Le message donne
-l'heure de fin (« armement automatique dans 2 min »). Le client peut aussi
+l'annonce : message sur l'application (événement `alarm.arming`). Le message donne
+l'heure de fin (« armement automatique dans 2 min »). Les bips du clavier ne sont pas
+faits : le contrat n'a pas de commande vers le clavier (seulement `siren.on`,
+`siren.off` et `device.identify`). Le client peut aussi
 **armer tout de suite**, sans attendre la fin, avec une touche du clavier ou
 l'ordre `alarm.arm_now` de l'application.
 
@@ -146,6 +155,13 @@ immédiatement. Si quelqu'un est encore à l'intérieur, un mouvement déclenche
 l'alarme, donc cette action est réservée à celui qui sait être sorti.
 
 Le désarmement pendant le délai de sortie annule l'armement.
+
+À la fin du délai de sortie (ou à `arm_now`), une porte `entry` restée ouverte
+démarre le délai d'entrée, comme si elle venait de s'ouvrir. Une zone `instant`
+restée ouverte est contournée, et une alerte `arming_bypassed` liste les appareils
+(`devices`) : personne n'est plus au clavier pour l'apprendre. Un contact ne signale
+que ses changements : une fenêtre ouverte pendant le délai et restée ouverte ne
+dirait plus rien ensuite.
 
 ## Reprise de la sirène
 
@@ -198,13 +214,14 @@ changer celui des autres. Le verrouillage après 3 codes faux s'applique au site
 Le client définit une heure de fermeture, éventuellement différente chaque jour
 de la semaine, dans le fuseau du site (Lomé : UTC, sans changement d'heure).
 
-1. **Avant l'heure** : 10 minutes avant, le système prévient (bips du clavier,
-   message sur l'application) que l'armement est prévu à l'heure indiquée.
+1. **Avant l'heure** : 10 minutes avant, le système prévient (message sur
+   l'application ; bips du clavier pas faits, voir plus haut) que l'armement est
+   prévu à l'heure indiquée.
 2. **Report** : le client peut repousser la fermeture, avec une touche du clavier
    ou depuis l'application. Chaque report ajoute 30 minutes. Il y a un plafond de
    3 reports et une heure limite après laquelle le système arme quand même.
 3. **À l'heure** : le système passe en `arming` et déclenche le délai de sortie de
-   2 minutes, avec les mêmes bips. Quelqu'un encore à l'intérieur peut désarmer,
+   2 minutes, avec le même message. Quelqu'un encore à l'intérieur peut désarmer,
    ou repousser si le plafond n'est pas atteint.
 4. **Zone ouverte à l'heure prévue** : l'armement automatique ne peut pas être
    refusé en silence. Il tente d'armer, contourne les zones ouvertes et le signale
@@ -235,7 +252,8 @@ Choix faits au codage :
 ## Armement avec une zone ouverte
 
 Par défaut, l'armement est refusé si une zone `entry` ou `instant` est ouverte. Le
-moteur publie les zones concernées et le clavier signale l'erreur. Un armement
+moteur publie les zones concernées (dans la réponse à l'ordre). Le clavier ne signale
+pas encore l'erreur : le contrat n'a pas de commande vers le clavier. Un armement
 forcé (`force: true`) met ces zones en contournement pour cette période d'armement
 et le signale dans l'événement.
 
@@ -248,6 +266,8 @@ et le signale dans l'événement.
   batterie.
 - **Batterie de la centrale basse** : alertes à 40 % puis à 10 %, car le site
   risque de s'éteindre.
+- Ces deux points ne marchent pas encore : rien ne publie la capacité `mains` (voir
+  `escalation.md`, « Coupures de courant »).
 - **Modem ou adaptateur en panne** : défaut signalé dans `system.health`. Le
   moteur continue.
 
@@ -258,9 +278,21 @@ redémarrage :
 
 1. le moteur lit son dernier état ;
 2. il lit l'état retenu des appareils sur le broker ;
-3. il reprend en `armed` s'il était armé ou déclenché ;
+3. il rejoue à leur heure les échéances passées pendant l'arrêt, puis reprend l'état
+   obtenu : armé reste armé ; déclenché reste `triggered`, et la sirène reprend pour
+   ce qui reste du cycle en cours (rien pendant une pause ; si les cycles se sont
+   épuisés pendant l'arrêt, il est revenu à son état d'avant l'alarme, en général
+   `armed`) ;
 4. si une zone est déjà en alarme, il se déclenche ;
 5. il publie un événement de redémarrage (`boot_id` change dans le heartbeat).
+
+Après une restauration, le moteur ne demande aucun tic avant `Boot` : c'est `Boot` qui
+rejoue les échéances manquées. Un cycle de sirène rejoué en retard ne sonne que ce
+qui en reste, une seule fois (un seul `siren.on`, pas un par cycle rejoué).
+
+Un appareil retiré du site peut être oublié par le moteur (entrée `Forget`) : il ne
+tient plus une porte ouverte ni un contournement. Ce que les incidents en ont retenu
+reste.
 
 ## Contrat
 
@@ -271,10 +303,11 @@ compte à rebours) et `alarm.armed` quand le système est réellement armé.
 
 ## Alertes et escalade
 
-Le moteur publie les `alert.request` avec un `kind` (`intrusion`, `fire`, `panic`,
-`tamper`, `mains_lost`, `device_offline`, `battery_low`) et une urgence. Qui est
-prévenu, dans quel ordre et après combien de temps sans réponse est décrit dans le
-document d'escalade. Cette logique reste sur le site pour fonctionner sans
+Le moteur lève des alertes d'un genre (`intrusion`, `fire`, `panic`, `tamper`,
+`auth_failed`, `arming_bypassed`) ; la supervision lève les siennes (appareil muet,
+pile faible, passerelles). L'escalade, dans la centrale, en fait les `alert.request` :
+qui est prévenu, dans quel ordre et après combien de temps sans réponse est décrit
+dans le document d'escalade. Cette logique reste sur le site pour fonctionner sans
 internet.
 
 ## Tests
@@ -330,6 +363,10 @@ règles : pur, sans horloge) :
   du courant seulement si une alerte de batterie est partie.
 - Piles faibles des capteurs (15 %, réarmées au-dessus de 30 %) et appareils muets,
   regroupés dans un résumé quotidien à 9 h.
+- Services suivis par leur état répété (GSM, Zigbee, agent) : l'heure du dernier état
+  de chaque service n'est pas sauvegardée (elle change chaque minute et userait la
+  carte SD). Après un redémarrage, le silence compte depuis le redémarrage, sauf si
+  un état retenu plus ancien arrive : il fait foi. Un service déjà muet le reste.
 
 Codé et testé côté pilote (`internal/driver`, `internal/adapter/filestore`) :
 

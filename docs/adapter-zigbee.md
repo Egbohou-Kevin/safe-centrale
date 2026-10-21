@@ -81,6 +81,8 @@ un par fichier, dans le dossier `profiles_dir` (exemples dans `config/profiles/`
   bouge d'au moins `step` (5 par défaut).
 - `momentary` : une action (bouton panique, touche de clavier), annoncée à chaque
   message, jamais gardée comme état. `code_from` : le champ du code tapé (clavier).
+  Seuls `disarm` et `silence` portent le code ; un code tapé avec une autre touche est
+  écarté, la touche reste (un clavier peut envoyer le code tapé avant « armer »).
 - Une commande envoie `payload` ; la chaîne `"{duration_s}"` y est remplacée par la
   durée. Avec `confirm` (`capability`, `value`), la commande n'est `done` que quand
   l'appareil rapporte cet état ; sans, elle l'est dès l'envoi.
@@ -243,6 +245,10 @@ Choix faits au codage :
 - **Messages retenus** : ils mettent à jour l'état sans événement, ne ramènent pas un
   appareil hors ligne, ne confirment aucune commande, et une action retenue est
   ignorée.
+- **QoS** : Zigbee2MQTT publie les messages des appareils en QoS 1, non retenus
+  (`deploy/zigbee2mqtt/configuration.yaml`). L'adaptateur garde une session durable :
+  le broker garde ces messages pendant un redémarrage de l'adaptateur (une porte
+  ouverte entre-temps n'est pas perdue).
 - **Présence** : l'heure du dernier message n'est pas sauvegardée (elle change à
   chaque message et userait la carte SD). Après un redémarrage, le silence de chaque
   appareil compte à partir de ce moment.

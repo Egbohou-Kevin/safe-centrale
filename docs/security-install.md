@@ -60,6 +60,12 @@ centrale (`safehome-hub codes ... set UTILISATEUR`, le code est lu sur l'entrée
 standard : il ne reste ni dans l'historique du shell ni dans la liste des processus).
 Un code faible (chiffres répétés, suite) ou déjà pris est refusé, 5 personnes au
 maximum. Si la centrale tourne, elle recharge les codes toute seule (signal SIGHUP).
+La centrale ignore le code d'une personne qui n'est plus contact du site (elle le
+journalise, sans le code). `safehome-hub codes set` refuse un utilisateur qui n'est pas
+un contact ; `codes list` signale ces codes restants. La console les liste (« Codes
+d'anciens contacts ») et permet de les retirer. Les fichiers d'état écrits par un outil
+lancé avec `sudo` prennent le propriétaire du dossier ; sinon l'outil échoue en le
+disant.
 Le nombre de tours du hachage (`access.iterations`) doit être réglé sur le
 Raspberry Pi réel : à mesurer à l'installation, il n'a pas encore été chronométré.
 
@@ -106,7 +112,8 @@ Avec la console locale (voir plus bas), l'installateur :
 
 Le code est choisi sur place par le propriétaire. Il ne passe jamais par le cloud.
 Il le tape lui-même sur la console locale, pendant le mode installation (voir plus
-bas). Il se règle aussi en SSH (`safehome-hub codes`), seul moyen de retirer un code.
+bas). Il se règle aussi en SSH (`safehome-hub codes`), seul moyen de retirer le code
+d'un contact (la console ne retire que les codes d'anciens contacts).
 
 ### 6. Contacts et configuration
 
@@ -206,7 +213,8 @@ alors la box : l'agent garde ses messages et le GSM reste là. Le câble est con
   lui-même son code, deux fois, sur le téléphone. Le code n'est ni affiché, ni dans
   l'adresse, ni dans les journaux. Il est refusé s'il est trop facile, déjà pris, ou
   si c'est le code installateur. La centrale le prend aussitôt (`SIGHUP`, comme après
-  `safehome-hub codes set`). La page ne retire pas de code : cela reste en SSH.
+  `safehome-hub codes set`). La page ne retire que les codes d'anciens contacts
+  (« Codes d'anciens contacts ») ; retirer le code d'un contact reste en SSH.
 - **Terminer** : elle demande à la centrale de fermer le mode (`install.close`).
 
 **Sabotage.** Pendant le mode, la centrale ne déclenche pas d'alarme de sabotage :
@@ -225,6 +233,12 @@ l'outil en ligne de commande, et vérifiées comme la centrale les vérifierait.
 désarmé), la centrale redémarre si les zones ou les sirènes ont changé. Elle attend un
 moment calme pour cela, comme pour une configuration du cloud : jamais pendant un
 délai ni une alarme.
+
+La partie de la centrale qui applique la configuration (`configapp`) suit
+`install/mode` : aucun redémarrage tant que le mode installation est ouvert ; une
+configuration reçue pendant le mode est gardée et appliquée à sa fermeture (au premier
+moment calme). Une modification faite avec `safehome-install` hors mode installation
+est appliquée d'elle-même au prochain moment calme.
 
 Un fichier abîmé n'empêche jamais la centrale de démarrer. Elle reprend alors les
 zones de `hub.json` et le dit dans son journal.

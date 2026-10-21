@@ -12,7 +12,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | Dossier | Contenu |
 |---|---|
 | `internal/contract` | Le contrat d'événements : enveloppe, types de messages, identifiants (ULID), topics MQTT |
-| `internal/engine` | Le moteur d'alarme (le domaine) : machine à états déterministe, sans horloge ni entrées-sorties, sans connaître le contrat |
+| `internal/engine` | Le moteur d'alarme (le domaine) : machine à états déterministe, sans horloge ni entrées-sorties, sans connaître le contrat. Il tient aussi la table des capteurs acceptés par chaque type de zone (`engine.Accepts`), reprise par l'installateur |
 | `internal/engine/wire` | La traduction entre le domaine et le contrat |
 | `internal/health` | La supervision (second domaine) : batterie de la centrale, piles, appareils muets, résumé quotidien. Même règles que le moteur |
 | `internal/access` | Les codes d'accès (troisième domaine) : un code par personne, 5 au maximum, stockés hachés avec un algorithme lent, vérification qui dit à qui appartient le code |
@@ -20,7 +20,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/escalation/wire` | La traduction entre l'escalade et le contrat |
 | `internal/health/wire` | La traduction entre la supervision et le contrat |
 | `internal/adapter/mqtt` | L'adaptateur MQTT 5 (client de Mosquitto) : seul paquet qui connaît la bibliothèque MQTT |
-| `internal/adapter/filestore` | Écriture atomique de l'état sur disque (survit à une coupure de courant) |
+| `internal/adapter/filestore` | Écriture atomique de l'état sur disque (survit à une coupure de courant) ; un fichier écrit prend le propriétaire du dossier |
 | `internal/hub` | La couche application de la centrale : relie MQTT aux domaines (moteur, supervision, codes), file d'envoi avec reprise, clavier, battement de cœur. Elle déclare ses propres ports |
 | `internal/gsm` | La passerelle GSM (cinquième domaine) : file à priorités, lignes, reprises, réponses « 1 », surveillance du modem |
 | `internal/gsm/wire` | La traduction entre la passerelle et le contrat |
@@ -57,16 +57,16 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/adapter/sshtunnel` | Le tunnel : le client OpenSSH vers le bastion (`ssh -R`), bastion épinglé, aucune configuration lue |
 | `internal/maintconfig` | Lecture de la configuration de la maintenance |
 | `cmd/safehome-maint` | Le programme de la maintenance à distance |
-| `internal/install` | La couche application de l'installateur : appairage, retrait, zones et sirènes, vérification de la configuration contre les appareils appairés, tests en direct. L'outil en ligne de commande et la console locale s'en servent |
-| `internal/consoleapp` | La couche application de la console locale : suit le mode installation, allume le Wi-Fi de la centrale et sert la page pendant qu'il dure, fait l'appairage, les zones, les sirènes, les codes des contacts et les tests. Elle déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`) |
+| `internal/install` | La couche application de l'installateur : appairage, retrait, zones et sirènes (seul à modifier le site : `Editor`, port `Sites`), vérification de la configuration contre les appareils appairés, tests en direct. L'outil en ligne de commande et la console locale s'en servent |
+| `internal/consoleapp` | La couche application de la console locale : suit le mode installation, allume le Wi-Fi de la centrale et sert la page pendant qu'il dure, fait l'appairage, les zones et les sirènes (par `internal/install`), les codes des contacts (et retire ceux d'anciens contacts) et les tests. Elle déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`) |
 | `internal/consoleapp/web` | La page de la console : formulaires HTML en français, lisibles sur un téléphone, rien de chargé d'ailleurs, seulement à l'adresse de la centrale sur son réseau |
 | `internal/adapter/hotspot` | Le réseau Wi-Fi propre à la centrale, créé et supprimé par `nmcli` (NetworkManager), jamais démarré au boot (bibliothèque standard seulement) |
 | `internal/consoleconfig` | Lecture de la configuration de la console et de la phrase de passe de son Wi-Fi |
 | `cmd/safehome-console` | Le programme de la console locale |
 | `cmd/safehome-install` | L'outil de l'installateur, en ligne de commande sur la centrale |
 | `internal/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
-| `internal/configapp` | La couche application qui reçoit `config.set` dans la centrale : vérification, garde, redémarrage à un moment calme, réponse `config.applied`. Elle ne connaît ni fichier ni processus (ports) |
-| `internal/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`) |
+| `internal/configapp` | La couche application qui reçoit `config.set` dans la centrale : vérification, garde, redémarrage à un moment calme (jamais pendant le mode installation, et aussi quand les zones ou les sirènes ont changé), réponse `config.applied`. Elle ne connaît ni fichier ni processus (ports) |
+| `internal/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) |
 | `cmd/safehome-hub` | Le programme de la centrale : sa racine de composition, qui branche le vrai client MQTT, le vrai disque et la vraie horloge sur la centrale et sur `configapp` |
 | `internal/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre. Seuls les programmes de `cmd/` s'en servent |
 | `internal/configfile` | Ce que les lectures de configuration ont en commun : JSON strict, niveau de journal, durées, secrets, écriture atomique d'un fichier |

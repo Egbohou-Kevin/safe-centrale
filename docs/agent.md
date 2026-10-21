@@ -203,8 +203,10 @@ dans le heartbeat si l'horloge est synchronisée (`clock_ok`, lu dans le noyau p
 `internal/adapter/sysclock`). Le noyau cesse de la dire synchronisée après quelques
 heures sans correction : après une longue coupure d'internet, `false` veut dire « pas
 vérifiée depuis longtemps ». Le cloud ajoute sa propre
-heure de réception, comme prévu dans `contract.md`. Un module d'horloge à pile
-(quelques euros) règle le problème : à décider pour le kit.
+heure de réception, comme prévu dans `contract.md`. Le kit ajoute un module d'horloge à
+pile (DS3231, `fake-hwclock` retiré, voir `systeme.md`, étape 4) : l'heure est juste dès
+le démarrage, mais `clock_ok` reste à `false` jusqu'au retour d'internet, le noyau ne
+connaissant que la synchronisation par NTP. À valider avec le module choisi.
 
 ## Authentification
 

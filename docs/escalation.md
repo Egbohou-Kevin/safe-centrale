@@ -94,10 +94,10 @@ moyen utilisé.
 | `panic` | bouton panique | Tous les contacts tout de suite, sans sirène |
 | `tamper` | sabotage | Premier contact (responsable ou propriétaire) tout de suite |
 | `auth_failed` | codes faux répétés | Premier contact (responsable ou propriétaire) tout de suite |
-| `arming_bypassed` | armement automatique avec une zone ouverte (zone contournée) | Premier contact (responsable ou propriétaire) tout de suite |
-| `mains_lost` | coupure du secteur | Aucune alerte en soi, voir « Coupures de courant » |
-| `battery_low_hub` | batterie de la centrale à 40 % (urgence `high`), puis à 10 % (`critical`), seulement pendant une coupure | Premier contact (responsable ou propriétaire), une alerte à chaque seuil |
-| `mains_restored` | retour du courant, seulement si une alerte de batterie est partie (champ `percent` : niveau actuel) | Internet de préférence, urgence basse |
+| `arming_bypassed` | armement automatique avec une zone ouverte, ou fin d'un délai de sortie (ou `arm_now`) avec une zone `instant` restée ouverte (zone contournée) | Premier contact (responsable ou propriétaire) tout de suite |
+| `mains_lost` | coupure du secteur | Aucune alerte en soi, voir « Coupures de courant » (pas encore de source) |
+| `battery_low_hub` | batterie de la centrale à 40 % (urgence `high`), puis à 10 % (`critical`), seulement pendant une coupure | Premier contact (responsable ou propriétaire), une alerte à chaque seuil (ne part pas encore : voir « Coupures de courant ») |
+| `mains_restored` | retour du courant, seulement si une alerte de batterie est partie (champ `percent` : niveau actuel) | Internet de préférence, urgence basse (ne part pas encore) |
 | `device_offline`, `battery_low` | appareil muet, pile faible | Résumé quotidien au propriétaire, tous les jours tant que le défaut dure (liste dans `devices`) |
 | `gsm_degraded` | secours SMS inutilisable ou passerelle GSM muette depuis 10 minutes | Propriétaire, par internet seulement |
 | `zigbee_down` | capteurs injoignables (Zigbee2MQTT, sa clé ou l'adaptateur arrêtés) depuis 3 minutes : l'alarme est aveugle | Premier contact (responsable ou propriétaire) tout de suite, doublé par SMS ; « 1 » pour acquitter |
@@ -145,6 +145,15 @@ Pendant une coupure, la box du client est probablement éteinte (elle existe ava
 nous et nous ne la gérons pas). Les alertes de batterie suivent la règle générale :
 internet d'abord, GSM quand internet est inutilisable. En pratique, elles partent
 donc par SMS.
+
+**Pas encore fait.** La supervision (`internal/health`) applique ces règles, mais rien
+ne publie aujourd'hui la capacité `mains` : aucun programme ne la produit, et
+`internal/zigbeeconfig` l'interdit dans les profils d'appareil. La coupure n'est donc
+jamais vue, et ni `battery_low_hub` (qui n'est envoyée que pendant une coupure) ni
+`mains_restored` ne partent. La source reste à décider : un module batterie de la
+centrale (`contract.md`) ou une prise connectée (`architecture.md`). La centrale
+attend déjà son identifiant d'appareil (`hub_device_id`, dans son fichier de
+configuration).
 
 ## Canaux interchangeables
 
@@ -201,7 +210,9 @@ les détails.
 ## Regroupement et limites
 
 - Plusieurs détecteurs qui s'ouvrent pendant le même incident ne produisent pas
-  chacun leur SMS : ils sont regroupés dans l'incident en cours.
+  chacun leur SMS. En pratique, une fois l'alarme déclenchée, le moteur n'émet plus
+  rien pour les détecteurs suivants : l'incident ne connaît que le premier. Un feu ou
+  une panique pendant une intrusion part quand même, comme une alerte à part.
 - Un maximum de messages par contact et par heure limite le coût et le bruit. Les
   alertes de type `fire` et `panic` ne sont jamais bridées.
 - Un incident a un identifiant, repris dans tous ses messages et événements.
@@ -280,7 +291,9 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
   serait absurde de relancer les contacts après coup. L'arrêt de la sirène par
   expiration ne l'arrête pas.
 - **Regroupement.** Un même incident et un même type d'alerte levés plusieurs fois se
-  fusionnent : les appareils s'ajoutent, aucun message de plus ne part.
+  fusionnent : les appareils s'ajoutent, aucun message de plus ne part. Le moteur ne
+  lève jamais deux fois la même intrusion (il se tait une fois déclenché) : c'est une
+  sécurité, qui ne sert pas aujourd'hui pour les intrusions.
 - **Limite par heure.** 20 messages par contact et par heure (réglable), sauf fire et panic.
   Un message retenu est journalisé.
 - **Alertes non urgentes** (résumés, retour du courant, protection dégradée) : internet

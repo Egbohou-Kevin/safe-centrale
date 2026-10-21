@@ -27,6 +27,7 @@ ordre reçu par SMS dans la v1.
 | Entrée | Source |
 |---|---|
 | `alert.request` avec `channel` = `sms` ou `call` | moteur d'alarme |
+| `alarm.cleared` et `alert.ack` (fin d'un incident) | moteur d'alarme, passerelle elle-même, application |
 | SMS entrants, état du réseau | modem |
 
 | Sortie | Destination |
@@ -192,6 +193,16 @@ Là où le document laissait un doute :
   plus) jusqu'à l'âge maximum. Un envoi réussi plus tard publie `sent`.
 - **Âge maximum** : 10 minutes pour fire, panic et intrusion, une heure pour le reste
   (réglable). Une demande abandonnée publie `failed` avec la raison `timeout`.
+  L'âge d'une demande compte depuis son `ts` (l'heure où l'escalade l'a écrite), pas
+  depuis sa réception : une demande gardée par le broker pendant que la passerelle
+  était arrêtée part en échec `timeout` dès son arrivée si elle est trop vieille, sans
+  être envoyée. Un `ts` dans le futur compte depuis la réception.
+- **Fin d'incident** : la passerelle écoute `alarm.cleared` (origine `user` seulement :
+  une alarme dont les cycles de sirène se sont épuisés continue son escalade) et
+  `alert.ack` (y compris un « 1 » reçu par elle-même, pris en compte tout de suite).
+  Les messages de l'incident encore en attente sont abandonnés sans résultat publié
+  (l'escalade ne les attend plus), un message en cours au modem n'est pas réessayé,
+  et une demande de cet incident arrivée plus tard est ignorée.
 - **Une ligne en échec** : on essaie l'autre ligne avant de signaler l'échec. Pas de
   crédit (`no_credit`) marque la ligne `credit: "empty"` jusqu'au prochain envoi réussi ;
   pas de réseau la marque non enregistrée jusqu'à la vérification suivante.
@@ -204,7 +215,11 @@ Là où le document laissait un doute :
   puis réouverture du port (un modem USB revient comme un nouveau périphérique). La
   coupure d'alimentation du port USB n'est pas faite.
 - **Redémarrage de la passerelle** : la file est sur disque. Un message qu'une ligne était
-  en train d'envoyer repart : mieux vaut un SMS en double qu'aucun.
+  en train d'envoyer repart : mieux vaut un SMS en double qu'aucun. Ce que fait une
+  ligne (envoi, vérification, redémarrage du modem) et l'heure de sa prochaine
+  vérification ne sont pas sauvegardés : chaque ligne est vérifiée de nouveau au
+  démarrage. Le signal est sauvegardé arrondi à la dizaine, pour ne pas réécrire
+  l'état à chaque vérification.
 - **« 1 »** : il acquitte le dernier incident envoyé à ce contact, pendant 24 heures. Un
   « 1 » d'un numéro inconnu, un autre texte, ou rien à acquitter : ignoré et journalisé,
   sans le numéro ni le texte.

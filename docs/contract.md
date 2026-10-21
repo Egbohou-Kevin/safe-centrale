@@ -115,7 +115,7 @@ Zigbee) reste dans l'adaptateur.
 | `tamper` | `triggered`, `clear` |
 | `keypad` | `arm`, `arm_now`, `disarm`, `silence`, `postpone` (`disarm` et `silence` portent un champ `code`) |
 | `siren` | `on`, `off` |
-| `mains` | `present`, `lost` (émis par le module batterie de la centrale, pas par un appareil Zigbee) |
+| `mains` | `present`, `lost` (de l'appareil `hub_device_id` de la centrale, jamais d'un profil Zigbee ; source à décider, rien ne la publie encore : voir `escalation.md`) |
 | `battery` | pourcentage, 0 à 100 |
 | `link` | qualité du lien radio, 0 à 100 |
 | `availability` | `online`, `offline` (présence de l'appareil, émis par l'adaptateur) |
@@ -305,6 +305,9 @@ automatique).
   secondes. Le moteur s'en sert pour décider d'escalader.
 - `alert.ack` : un contact acquitte. Champs : `incident`, `contact`, `via` (`sms`
   ou `app`). Il arrête l'escalade vers les autres contacts.
+- La passerelle GSM (`safehome-gsm`) lit aussi `alert/ack` et `alarm/event` (les
+  `alarm.cleared` d'origine `user` seulement) : elle abandonne alors les messages de
+  l'incident encore en attente (voir `gsm-gateway.md`).
 
 Le détail de l'escalade est dans `escalation.md`.
 
@@ -440,6 +443,8 @@ Le détail est dans `security-install.md` (console locale).
   la centrale (`restart`), qui publie toujours un mode fermé.
 - `install.mode` part au cloud : le propriétaire voit qu'un mode installation a été
   ouvert. `install/cmd` ne vient jamais du cloud.
+- Dans la centrale, `configapp` suit aussi `install/mode` : la centrale ne redémarre
+  pas pour une configuration tant que le mode est ouvert (voir `operations.md`).
 
 ### Configuration venue du cloud (`config.*`)
 
