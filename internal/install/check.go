@@ -46,31 +46,19 @@ func (f Finding) String() string {
 	return fmt.Sprintf("%s: %s: %s", f.Level, f.DeviceID, f.Text)
 }
 
-// zoneSensors lists, for each kind of zone, the capabilities that can trigger it.
-// The engine reacts to any active sensor of a zone's device; a device with none of
-// these would sit in its zone and never raise anything.
-var zoneSensors = map[engine.ZoneKind][]string{
-	engine.ZoneEntry:    {contract.CapContact, contract.CapMotion, contract.CapVibration, contract.CapGlassBreak},
-	engine.ZoneInstant:  {contract.CapContact, contract.CapMotion, contract.CapVibration, contract.CapGlassBreak},
-	engine.ZoneInterior: {contract.CapMotion, contract.CapContact},
-	engine.ZoneFire:     {contract.CapSmoke},
-	engine.ZonePanic:    {contract.CapPanic},
-	engine.ZoneTamper:   {contract.CapTamper},
-}
-
-// ZoneKinds lists the kinds of zone, for help texts.
+// ZoneKinds lists the kinds of zone, for help texts. The engine owns them, with the
+// sensors each kind reacts to.
 func ZoneKinds() []string {
-	out := make([]string, 0, len(zoneSensors))
-	for k := range zoneSensors {
+	var out []string
+	for _, k := range engine.ZoneKinds() {
 		out = append(out, string(k))
 	}
-	slices.Sort(out)
 	return out
 }
 
 // ValidKind checks a kind of zone.
 func ValidKind(kind string) error {
-	if _, ok := zoneSensors[engine.ZoneKind(kind)]; !ok {
+	if !slices.Contains(engine.ZoneKinds(), engine.ZoneKind(kind)) {
 		return fmt.Errorf("unknown zone kind %q (use %s)", kind, strings.Join(ZoneKinds(), ", "))
 	}
 	return nil
@@ -89,11 +77,16 @@ func CanServe(kind string, capabilities []string) error {
 	if err := ValidKind(kind); err != nil {
 		return err
 	}
-	sensors := zoneSensors[engine.ZoneKind(kind)]
+	// A device with none of the sensors its zone reacts to would sit in that zone
+	// and never raise anything. Sensor kinds are spelled like the capabilities.
 	for _, c := range capabilities {
-		if slices.Contains(sensors, c) {
+		if engine.Accepts(engine.ZoneKind(kind), engine.SensorKind(c)) {
 			return nil
 		}
+	}
+	var sensors []string
+	for _, s := range engine.ZoneKind(kind).Sensors() {
+		sensors = append(sensors, string(s))
 	}
 	return fmt.Errorf("%w: a %s zone needs one of %s, the device has %s",
 		ErrCannotServe, kind, strings.Join(sensors, ", "), strings.Join(capabilities, ", "))
