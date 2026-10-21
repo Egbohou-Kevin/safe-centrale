@@ -60,7 +60,7 @@ sudo vkit-power mains lost                                  # coupure du secteur
 sudo vkit-power battery 3650 38                             # l'accu à 3,65 V, 38 %
 echo 'network off' | sudo tee /run/vkit/modem               # plus de réseau GSM
 echo 'send 0x00158d0000000001 {"contact":false}' | sudo tee /run/vkit/zigbee  # la porte s'ouvre
-sudo systemctl stop vkit-cloud                              # coupure d'internet
+sudo systemctl stop vkit-cloud                              # coupure d'internet (le cloud tombe)
 journalctl -u vkit-modem -f                                 # les SMS et appels partis
 ```
 
@@ -79,7 +79,9 @@ Les ordres reconnus sont décrits en tête de `vkit/fakemodem/control.go`,
    aucun journal ni sur le disque.
 4. **Trois codes faux** : alerte, verrouillage.
 5. **Fumée** sans armement : alarme incendie, SMS immédiat.
-6. **Coupure d'internet** pendant l'armement : le cloud reçoit tout au retour.
+6. **Coupure d'internet** pendant l'armement : le cloud reçoit tout au retour. Le
+   scénario coupe l'agent seul au pare-feu ; arrêter le broker du cloud ferait aussi
+   perdre son abonnement à l'écoute du scénario, juste quand l'agent renvoie sa file.
 7. **Modem débranché** puis rebranché, **perte du réseau GSM**.
 8. **Plantage** de la centrale armée (elle reste armée), **gel** (le chien de garde de
    systemd la redémarre).
