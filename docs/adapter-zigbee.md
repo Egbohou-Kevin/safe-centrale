@@ -88,7 +88,8 @@ un par fichier, dans le dossier `profiles_dir` (exemples dans `config/profiles/`
 
 Chaque profil est vérifié contre le contrat au démarrage : une valeur que le contrat
 refuse, une capacité inconnue, un clavier qui ne serait pas une action, une commande
-qui n'existe pas arrêtent l'adaptateur avec un message clair (`safehome-zigbee check`).
+qui n'existe pas, une valeur de `confirm` que la règle de sa capacité ne peut jamais
+produire (par exemple `"ON"` brut au lieu de `"on"`) arrêtent l'adaptateur avec un message clair (`safehome-zigbee check`).
 
 Les champs de Zigbee2MQTT les plus courants pour nos capteurs : `contact`
 (vrai = fermé), `occupancy` (mouvement), `smoke`, `vibration`, `tamper`,

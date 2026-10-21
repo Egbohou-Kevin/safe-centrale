@@ -249,7 +249,9 @@ Configuration (`config/zigbee.example.json`), stricte :
 - `profiles_dir` : le dossier des profils d'appareils (un fichier JSON par modèle,
   exemples dans `config/profiles/`). Un chemin relatif part du dossier du fichier de
   configuration. `check` liste les profils lus ; un profil faux arrête le programme.
-- `base_topic` : le sujet de base de Zigbee2MQTT (`zigbee2mqtt` par défaut).
+- `base_topic` : le sujet de base de Zigbee2MQTT (`zigbee2mqtt` par défaut). Il ne
+  peut pas être `safehome` ni commencer par `safehome/` : l'adaptateur lirait ses
+  propres messages comme des appareils.
 - `confirm_wait` (3 s) et `attempts` (3) : attente de la confirmation d'une commande
   et nombre d'envois ; `offline_after` (4 h) : silence avant « hors ligne » pour les
   profils qui ne disent rien ; `pair_max` (10 min) : durée maximale d'appairage ;
@@ -338,7 +340,8 @@ safehome-video run   -config /etc/safehome/video.json
 - `ffmpeg` (`/usr/bin/ffmpeg`) : décode les photos ; `check` prévient s'il manque.
   `photos` (`true`) : `false` coupe les photos à l'alarme.
 - `uplink` : `fixed` (la box du commerce : ni plafond ni durée limite) ou `mobile`
-  (routeur 4G). En `mobile`, `quota_mb` (1024 par défaut, 0 pour aucun) et
+  (routeur 4G). En `mobile`, `quota_mb` (1024 par défaut, 0 pour aucun, 8 388 608
+  au plus) et
   `max_session` (`5m` par défaut, `0` pour aucune) ; en `fixed`, ces deux réglages
   sont refusés.
 - `max_sessions` (2) : sessions en même temps ; `start_timeout` (20 s) : délai pour que
@@ -476,7 +479,7 @@ du mode. Le reste du temps, il attend sans rien ouvrir. Fonctionnement et sécur
 - `hub_config` : le fichier de la centrale (`/etc/safehome/hub.json`), qui sert à
   vérifier chaque changement comme la centrale le ferait.
 - `wifi.interface` (`wlan0`), `wifi.ssid` (`safehome-` puis le site), `wifi.address`
-  (`10.42.0.1`), `wifi.passphrase_file` : la phrase de passe WPA2 (8 à 63 caractères),
+  (`10.42.0.1`), `wifi.passphrase_file` : la phrase de passe WPA2 (8 à 63 caractères ASCII imprimables, sans accent),
   celle de l'étiquette. Un chemin relatif part du dossier du fichier. Le script
   d'installation la crée (`console.secret`) s'il n'y en a pas.
 - `port` (80), `pair_for` (2 min, la durée d'un appairage depuis la page).

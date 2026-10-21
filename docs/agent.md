@@ -113,7 +113,7 @@ Quand le moteur demande une alerte par application ou WhatsApp :
 Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
 
 - **Seuls sont acceptés** : un ordre de l'application sur `alarm/cmd` (`origin` à
-  `app`), une session vidéo sur `video/cmd`, la configuration du site sur
+  `app`), une session vidéo sur `video/cmd` (un `video.stop` sans session est refusé), la configuration du site sur
   `config/set` (vérifiée : version, limites, numéros), un ordre de maintenance sur
   `maint/cmd` (une heure au plus, voir `maintenance.md`), et sur `alert/result` et
   `alert/ack` les réponses à une alerte que l'agent a transmise (un `alert.ack` doit

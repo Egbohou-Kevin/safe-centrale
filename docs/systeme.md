@@ -218,7 +218,7 @@ sudo apt install --no-install-recommends ffmpeg     # site avec caméras : les p
 
 sudo mkdir -p /etc/safehome
 # hub.json, gsm.json, zigbee.json, agent.json, video.json, maint.json, console.json et profiles/ : partir de config/*.example.json
-# console.secret : la phrase de passe du Wi-Fi de la console, pour l'étiquette (8 à 63 caractères)
+# console.secret : la phrase de passe du Wi-Fi de la console, pour l'étiquette (8 à 63 caractères ASCII imprimables)
 # maint.key, maint_known_hosts : la clé de la centrale et celle du bastion (maintenance.md)
 # cloud.secret : le secret du site pour le cloud, fourni à l'installation (security-install.md)
 sudo chown -R root:safehome /etc/safehome

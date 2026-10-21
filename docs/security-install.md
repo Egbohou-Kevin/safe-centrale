@@ -175,6 +175,10 @@ s'appelle `safehome-tg-lom-0001` et la page est à l'adresse `http://10.42.0.1/`
 - **La page refuse une adresse inconnue.** Elle ne répond qu'à `10.42.0.1` (protection
   contre le « DNS rebinding »). Elle ne charge rien d'ailleurs et ne s'affiche pas
   dans une autre page.
+- **La page refuse les ordres venus d'un autre site.** Un téléphone connecté en même
+  temps aux données mobiles ne peut pas se faire envoyer, par une page piégée, un
+  ordre vers `10.42.0.1` (retrait, fin, code) : la page refuse tout envoi d'une autre
+  origine (réponse 403).
 - **Le réseau ne survit pas au mode.** Il est créé à l'ouverture, jamais démarré au
   boot, et supprimé à la fin. Il est aussi supprimé quand le service s'arrête.
 - NetworkManager crée le réseau (`nmcli`). Le service tourne sans droits

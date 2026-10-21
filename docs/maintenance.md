@@ -71,6 +71,9 @@ Cloud ──maint.open──► Agent ──► safehome-maint ──maint.sessi
 | `maint.close` | `maint/cmd` | cloud → centrale | `session` |
 | `maint.session` | `maint/session` | centrale → cloud | `session`, `user`, `status` (`opening`, `open`, `closed`, `failed`), `reason`, `until`, `duration_s` |
 
+Après un redémarrage de la centrale, une session trouvée finie annonce une durée
+(`duration_s`) bornée à sa fin prévue : jamais plus que la durée accordée.
+
 Raisons : `stopped` (fermé par le cloud), `timeout` (durée écoulée), `busy` (une
 session déjà ouverte), `expired`, `disabled`, `unreachable` (le bastion n'a pas laissé
 entrer la centrale).
