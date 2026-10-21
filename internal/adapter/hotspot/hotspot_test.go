@@ -97,6 +97,8 @@ func TestNewRefusesABadNetwork(t *testing.T) {
 		"long name":        func(c *Config) { c.SSID = strings.Repeat("x", 33) },
 		"short passphrase": func(c *Config) { c.Passphrase = "1234567" },
 		"long passphrase":  func(c *Config) { c.Passphrase = strings.Repeat("x", 64) },
+		"accented":         func(c *Config) { c.Passphrase = "\u00e9t\u00e9-\u00e0-lom\u00e9" },
+		"control":          func(c *Config) { c.Passphrase = "k7p2m9x4\tq8" },
 		"no address":       func(c *Config) { c.Address = "" },
 		"IPv6 address":     func(c *Config) { c.Address = "fe80::1" },
 	} {

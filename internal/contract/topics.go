@@ -7,6 +7,26 @@ func Topic(site string, parts ...string) string {
 	return "safehome/" + site + "/" + strings.Join(parts, "/")
 }
 
+// ParseTopic splits "safehome/{site}/a/b/c" into the site and the parts after it
+// (["a", "b", "c"]). ok is false for any topic that is not one of ours, including
+// one with an empty part.
+func ParseTopic(topic string) (site string, parts []string, ok bool) {
+	rest, found := strings.CutPrefix(topic, "safehome/")
+	if !found {
+		return "", nil, false
+	}
+	fields := strings.Split(rest, "/")
+	if len(fields) < 2 || !sitePattern.MatchString(fields[0]) {
+		return "", nil, false
+	}
+	for _, f := range fields[1:] {
+		if f == "" {
+			return "", nil, false
+		}
+	}
+	return fields[0], fields[1:], true
+}
+
 func DeviceEventTopic(site, deviceID string) string { return Topic(site, "device", deviceID, "event") }
 
 // DeviceStateTopic carries the retained state of one capability of a device: one
@@ -27,26 +47,6 @@ func AlarmAckTopic(site string) string   { return Topic(site, "alarm", "ack") }
 func AlertRequestTopic(site string) string { return Topic(site, "alert", "request") }
 func AlertResultTopic(site string) string  { return Topic(site, "alert", "result") }
 func AlertAckTopic(site string) string     { return Topic(site, "alert", "ack") }
-
-// ParseTopic splits "safehome/{site}/a/b/c" into the site and the parts after it
-// (["a", "b", "c"]). ok is false for any topic that is not one of ours, including
-// one with an empty part.
-func ParseTopic(topic string) (site string, parts []string, ok bool) {
-	rest, found := strings.CutPrefix(topic, "safehome/")
-	if !found {
-		return "", nil, false
-	}
-	fields := strings.Split(rest, "/")
-	if len(fields) < 2 || !sitePattern.MatchString(fields[0]) {
-		return "", nil, false
-	}
-	for _, f := range fields[1:] {
-		if f == "" {
-			return "", nil, false
-		}
-	}
-	return fields[0], fields[1:], true
-}
 
 func HeartbeatTopic(site string) string { return Topic(site, "system", "heartbeat") }
 func HealthTopic(site string) string    { return Topic(site, "system", "health") }

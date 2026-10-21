@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ErrCorrupt means a document exists but neither it nor its previous version holds
@@ -30,6 +31,11 @@ type Store struct {
 	log *slog.Logger
 }
 
+// staleAfter is the age from which a temporary file is a crash's leftover. Several
+// programs open the same directory (the hub, and the console or a command-line tool
+// reading the codes): a younger one may be another process's save under way.
+const staleAfter = 10 * time.Minute
+
 // Open creates the directory if needed and removes the temporary files that a crash
 // may have left behind. A nil logger discards the logs.
 func Open(dir string, log *slog.Logger) (*Store, error) {
@@ -39,11 +45,18 @@ func Open(dir string, log *slog.Logger) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("filestore: %w", err)
 	}
-	stale, _ := filepath.Glob(filepath.Join(dir, "*.tmp"))
-	for _, f := range stale {
-		os.Remove(f)
-	}
+	removeStale(dir, time.Now().Add(-staleAfter))
 	return &Store{dir: dir, log: log}, nil
+}
+
+// removeStale removes the temporary files last written before limit.
+func removeStale(dir string, limit time.Time) {
+	tmps, _ := filepath.Glob(filepath.Join(dir, "*.tmp"))
+	for _, f := range tmps {
+		if info, err := os.Stat(f); err == nil && info.ModTime().Before(limit) {
+			os.Remove(f)
+		}
+	}
 }
 
 func (s *Store) path(name string) string { return filepath.Join(s.dir, name+".json") }

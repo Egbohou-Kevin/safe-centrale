@@ -5,6 +5,7 @@ package consoleconfig
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"safehome/internal/consoleapp"
 	"safehome/internal/contract"
@@ -57,21 +57,24 @@ func (r Result) Host() string {
 	return r.Listen()
 }
 
+// wifiFile is the "wifi" object of the file.
+type wifiFile struct {
+	Interface      string `json:"interface"`
+	SSID           string `json:"ssid"`
+	PassphraseFile string `json:"passphrase_file"`
+	Address        string `json:"address"`
+}
+
 type file struct {
-	Site      string `json:"site"`
-	BrokerURL string `json:"broker_url"`
-	ClientID  string `json:"client_id"`
-	StateDir  string `json:"state_dir"`
-	LogLevel  string `json:"log_level"`
-	HubConfig string `json:"hub_config"`
-	Port      int    `json:"port"`
-	PairFor   string `json:"pair_for"`
-	Wifi      *struct {
-		Interface      string `json:"interface"`
-		SSID           string `json:"ssid"`
-		PassphraseFile string `json:"passphrase_file"`
-		Address        string `json:"address"`
-	} `json:"wifi"`
+	Site      string    `json:"site"`
+	BrokerURL string    `json:"broker_url"`
+	ClientID  string    `json:"client_id"`
+	StateDir  string    `json:"state_dir"`
+	LogLevel  string    `json:"log_level"`
+	HubConfig string    `json:"hub_config"`
+	Port      int       `json:"port"`
+	PairFor   string    `json:"pair_for"`
+	Wifi      *wifiFile `json:"wifi"`
 }
 
 // Load reads the configuration at path. A relative passphrase_file is taken from the
@@ -98,21 +101,36 @@ func parse(data []byte, dir string) (Result, error) {
 	if dec.More() {
 		return Result{}, errors.New("invalid JSON: trailing data")
 	}
+	r, err := parseService(f)
+	if err != nil {
+		return Result{}, err
+	}
+	if f.Wifi == nil {
+		return Result{}, errors.New("wifi is required (the hub's own network for the console)")
+	}
+	if r.Wifi, err = parseWifi(*f.Wifi, f.Site, dir); err != nil {
+		return Result{}, err
+	}
+	return r, nil
+}
+
+// parseService reads everything but the network, with its defaults.
+func parseService(f file) (Result, error) {
+	if !contract.ValidSite(f.Site) {
+		return Result{}, fmt.Errorf("invalid site %q", f.Site)
+	}
 	if f.StateDir == "" {
 		return Result{}, errors.New("state_dir is required (the hub's, where the zones and sirens are kept)")
 	}
 	if f.HubConfig == "" {
 		return Result{}, errors.New("hub_config is required (the hub's configuration file)")
 	}
-	r := Result{BrokerURL: f.BrokerURL, ClientID: f.ClientID, StateDir: f.StateDir, HubConfig: f.HubConfig, Port: f.Port}
-	if r.BrokerURL == "" {
-		r.BrokerURL = "mqtt://127.0.0.1:1883"
-	}
-	if r.ClientID == "" {
-		r.ClientID = "safehome-console-" + f.Site
-	}
-	if r.Port == 0 {
-		r.Port = 80
+	r := Result{
+		BrokerURL: cmp.Or(f.BrokerURL, "mqtt://127.0.0.1:1883"),
+		ClientID:  cmp.Or(f.ClientID, "safehome-console-"+f.Site),
+		StateDir:  f.StateDir, HubConfig: f.HubConfig,
+		Port: cmp.Or(f.Port, 80),
+		App:  consoleapp.DefaultConfig(f.Site),
 	}
 	if r.Port < 1 || r.Port > 65535 {
 		return Result{}, fmt.Errorf("port %d: from 1 to 65535", r.Port)
@@ -121,35 +139,27 @@ func parse(data []byte, dir string) (Result, error) {
 	if r.LogLevel, err = parseLevel(f.LogLevel); err != nil {
 		return Result{}, err
 	}
-	r.App = consoleapp.DefaultConfig(f.Site)
 	if f.PairFor != "" {
 		if r.App.PairFor, err = time.ParseDuration(f.PairFor); err != nil || r.App.PairFor <= 0 || r.App.PairFor > 10*time.Minute {
 			return Result{}, fmt.Errorf("pair_for %q: from 1s to 10m (the Zigbee adapter's own bound), for example 2m", f.PairFor)
 		}
 	}
-	if !contract.ValidSite(f.Site) {
-		return Result{}, fmt.Errorf("invalid site %q", f.Site)
-	}
+	return r, nil
+}
 
-	w := f.Wifi
-	if w == nil {
-		return Result{}, errors.New("wifi is required (the hub's own network for the console)")
+// parseWifi reads the network, with its defaults, and its passphrase from its own
+// file (relative to dir).
+func parseWifi(w wifiFile, site, dir string) (Wifi, error) {
+	out := Wifi{
+		Interface: cmp.Or(w.Interface, "wlan0"),
+		SSID:      cmp.Or(w.SSID, "safehome-"+site),
+		Address:   cmp.Or(w.Address, "10.42.0.1"),
 	}
-	r.Wifi = Wifi{Interface: w.Interface, SSID: w.SSID, Address: w.Address}
-	if r.Wifi.Interface == "" {
-		r.Wifi.Interface = "wlan0"
-	}
-	if r.Wifi.SSID == "" {
-		r.Wifi.SSID = "safehome-" + f.Site
-	}
-	if r.Wifi.Address == "" {
-		r.Wifi.Address = "10.42.0.1"
-	}
-	if ip := net.ParseIP(r.Wifi.Address); ip == nil || ip.To4() == nil {
-		return Result{}, fmt.Errorf("wifi.address %q: an IPv4 address", r.Wifi.Address)
+	if ip := net.ParseIP(out.Address); ip == nil || ip.To4() == nil {
+		return Wifi{}, fmt.Errorf("wifi.address %q: an IPv4 address", out.Address)
 	}
 	if w.PassphraseFile == "" {
-		return Result{}, errors.New("wifi.passphrase_file is required (the passphrase printed on the hub's label)")
+		return Wifi{}, errors.New("wifi.passphrase_file is required (the passphrase printed on the hub's label)")
 	}
 	pf := w.PassphraseFile
 	if !filepath.IsAbs(pf) {
@@ -157,13 +167,28 @@ func parse(data []byte, dir string) (Result, error) {
 	}
 	b, err := os.ReadFile(pf)
 	if err != nil {
-		return Result{}, fmt.Errorf("wifi.passphrase_file: %w", err)
+		return Wifi{}, fmt.Errorf("wifi.passphrase_file: %w", err)
 	}
-	r.Wifi.Passphrase = strings.TrimSpace(string(b))
-	if n := utf8.RuneCountInString(r.Wifi.Passphrase); n < 8 || len(r.Wifi.Passphrase) > 63 {
-		return Result{}, errors.New("wifi.passphrase_file: the passphrase must be 8 to 63 characters (WPA2)")
+	out.Passphrase = strings.TrimSpace(string(b))
+	if !validPassphrase(out.Passphrase) {
+		return Wifi{}, errors.New("wifi.passphrase_file: the passphrase must be 8 to 63 printable ASCII characters (WPA2)")
 	}
-	return r, nil
+	return out, nil
+}
+
+// validPassphrase reports whether s is a WPA2 passphrase: 8 to 63 printable ASCII
+// characters. The network would refuse anything else, but only when it starts, in
+// the middle of an installation.
+func validPassphrase(s string) bool {
+	if len(s) < 8 || len(s) > 63 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < ' ' || s[i] > '~' {
+			return false
+		}
+	}
+	return true
 }
 
 func parseLevel(s string) (slog.Level, error) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func open(t *testing.T) (*Store, string) {
@@ -71,11 +72,27 @@ func TestOpenRemovesTemporaryFilesFromACrash(t *testing.T) {
 	_, dir := open(t)
 	stale := filepath.Join(dir, "engine.12345.tmp")
 	os.WriteFile(stale, []byte(`{"half`), 0o600)
+	old := time.Now().Add(-time.Hour)
+	os.Chtimes(stale, old, old)
 	if _, err := Open(dir, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Fatal("the stale temporary file must be removed")
+	}
+}
+
+// Another program opening the same directory (the console reading the codes while
+// the hub saves its snapshot) must not remove a save under way.
+func TestOpenLeavesASaveUnderWay(t *testing.T) {
+	_, dir := open(t)
+	writing := filepath.Join(dir, "engine.67890.tmp")
+	os.WriteFile(writing, []byte(`{"ha`), 0o600)
+	if _, err := Open(dir, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(writing); err != nil {
+		t.Fatalf("another process's save was removed: %v", err)
 	}
 }
 

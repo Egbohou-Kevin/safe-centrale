@@ -2,6 +2,7 @@ package contract
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 )
@@ -62,7 +63,9 @@ func TestConfigSetValidate(t *testing.T) {
 
 func TestTheConfigNeverShowsPhones(t *testing.T) {
 	d := goodConfig()
-	for _, s := range []string{fmt.Sprint(d), fmt.Sprintf("%+v", d), fmt.Sprintf("%#v", d)} {
+	var logs strings.Builder
+	slog.New(slog.NewJSONHandler(&logs, nil)).Info("config received", "config", d)
+	for _, s := range []string{fmt.Sprint(d), fmt.Sprintf("%+v", d), fmt.Sprintf("%#v", d), logs.String()} {
 		if strings.Contains(s, "+228") {
 			t.Errorf("a phone shows in %q", s)
 		}

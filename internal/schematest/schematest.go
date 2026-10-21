@@ -21,6 +21,11 @@ var (
 	compiler *jsonschema.Compiler
 	ids      map[string]string // file name -> $id
 	loadErr  error
+
+	// The compiler is not safe for concurrent use: compiling goes under mu, and each
+	// schema is compiled once.
+	mu       sync.Mutex
+	compiled = map[string]*jsonschema.Schema{}
 )
 
 func dir() string {
@@ -49,7 +54,8 @@ func load() {
 			loadErr = fmt.Errorf("%s: %w", f, err)
 			return
 		}
-		id, _ := doc.(map[string]any)["$id"].(string)
+		obj, _ := doc.(map[string]any)
+		id, _ := obj["$id"].(string)
 		if id == "" {
 			loadErr = fmt.Errorf("%s: missing $id", f)
 			return
@@ -69,19 +75,34 @@ func Check(file string, raw []byte) error {
 	if loadErr != nil {
 		return loadErr
 	}
-	id, ok := ids[file]
-	if !ok {
-		return fmt.Errorf("unknown schema %q", file)
-	}
-	schema, err := compiler.Compile(id)
+	schema, err := schemaOf(file)
 	if err != nil {
-		return fmt.Errorf("invalid schema %s: %w", file, err)
+		return err
 	}
 	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
 	if err != nil {
 		return fmt.Errorf("unreadable message: %w", err)
 	}
 	return schema.Validate(inst)
+}
+
+// schemaOf returns the compiled schema of a file of the schemas/ folder.
+func schemaOf(file string) (*jsonschema.Schema, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	if s, ok := compiled[file]; ok {
+		return s, nil
+	}
+	id, ok := ids[file]
+	if !ok {
+		return nil, fmt.Errorf("unknown schema %q", file)
+	}
+	s, err := compiler.Compile(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid schema %s: %w", file, err)
+	}
+	compiled[file] = s
+	return s, nil
 }
 
 // Validate marshals v to JSON and validates it against the schema. It fails the

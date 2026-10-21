@@ -16,14 +16,13 @@ import (
 	"net"
 	"os/exec"
 	"strings"
-	"unicode/utf8"
 )
 
 // Config says which network to make.
 type Config struct {
 	Interface  string // the Wi-Fi interface, "wlan0"
 	SSID       string // the network's name, 1 to 32 bytes
-	Passphrase string // WPA2, 8 to 63 characters: on the hub's label
+	Passphrase string // WPA2, 8 to 63 printable ASCII characters: on the hub's label
 	Address    string // the hub's address on it, "10.42.0.1" (a /24)
 	Connection string // NetworkManager's name for it, "safehome-console"
 	NMCLI      string // the client's path, "nmcli" by default
@@ -46,12 +45,27 @@ func New(cfg Config) (*Hotspot, error) {
 		return nil, errors.New("hotspot: the Wi-Fi interface is required")
 	case len(cfg.SSID) < 1 || len(cfg.SSID) > 32:
 		return nil, errors.New("hotspot: the network name must be 1 to 32 bytes")
-	case utf8.RuneCountInString(cfg.Passphrase) < 8 || len(cfg.Passphrase) > 63:
-		return nil, errors.New("hotspot: the passphrase must be 8 to 63 characters (WPA2)")
+	case !validPassphrase(cfg.Passphrase):
+		return nil, errors.New("hotspot: the passphrase must be 8 to 63 printable ASCII characters (WPA2)")
 	case ip == nil || ip.To4() == nil:
 		return nil, fmt.Errorf("hotspot: %q is not an IPv4 address", cfg.Address)
 	}
 	return &Hotspot{cfg: cfg}, nil
+}
+
+// validPassphrase reports whether s is a WPA2 passphrase: 8 to 63 printable ASCII
+// characters. NetworkManager refuses anything else, but only when the network
+// starts, in the middle of an installation.
+func validPassphrase(s string) bool {
+	if len(s) < 8 || len(s) > 63 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < ' ' || s[i] > '~' {
+			return false
+		}
+	}
+	return true
 }
 
 // Up makes the network and starts it. A connection left by a crash is replaced.

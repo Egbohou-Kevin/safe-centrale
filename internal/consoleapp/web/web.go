@@ -41,6 +41,7 @@ type Handler struct {
 	loc   *time.Location
 	pages *template.Template
 	mux   *http.ServeMux
+	csrf  *http.CrossOriginProtection
 }
 
 // New builds the page for the console, answering only requests made to host (the
@@ -50,7 +51,7 @@ func New(c Console, host string, loc *time.Location) (*Handler, error) {
 	if loc == nil {
 		loc = time.UTC
 	}
-	h := &Handler{c: c, host: host, loc: loc, mux: http.NewServeMux()}
+	h := &Handler{c: c, host: host, loc: loc, mux: http.NewServeMux(), csrf: http.NewCrossOriginProtection()}
 	funcs := template.FuncMap{
 		"clock": func(t time.Time) string { return t.In(h.loc).Format("15:04:05") },
 		"hour":  func(t time.Time) string { return t.In(h.loc).Format("15:04") },
@@ -80,10 +81,16 @@ func New(c Console, host string, loc *time.Location) (*Handler, error) {
 	return h, nil
 }
 
-// ServeHTTP checks the request's host and sets the headers of every answer.
+// ServeHTTP checks the request's host and origin, and sets the headers of every
+// answer. An order posted from another site's page is refused: the installer's
+// phone may browse the internet over its mobile data while on the hub's network.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Host != h.host {
 		http.Error(w, "unknown host", http.StatusMisdirectedRequest)
+		return
+	}
+	if err := h.csrf.Check(r); err != nil {
+		http.Error(w, "cross-origin request refused", http.StatusForbidden)
 		return
 	}
 	hd := w.Header()
@@ -165,44 +172,47 @@ func (h *Handler) act(code string, do func(r *http.Request, id string) error) ht
 	}
 }
 
+// refusals are the console's known refusals, by the code the templates know them by.
+var refusals = []struct {
+	err  error
+	code string
+}{
+	{consoleapp.ErrClosed, "closed"},
+	{consoleapp.ErrBusy, "busy"},
+	{consoleapp.ErrUnknown, "unknown"},
+	{consoleapp.ErrNotASiren, "not_siren"},
+	{consoleapp.ErrNoZone, "no_zone"},
+	{consoleapp.ErrNoRegistry, "no_registry"},
+	{consoleapp.ErrNotAContact, "not_contact"},
+	{consoleapp.ErrCodeMismatch, "code_mismatch"},
+	{consoleapp.ErrCodeInvalid, "code_invalid"},
+	{consoleapp.ErrCodeWeak, "code_weak"},
+	{consoleapp.ErrCodeTaken, "code_taken"},
+	{consoleapp.ErrCodeFull, "code_full"},
+}
+
+// refusalTexts recognise the refusals of the installer's application and of the
+// hub, which come as plain errors, by their text.
+var refusalTexts = []struct{ in, code string }{
+	{"empty zone name", "empty_name"},
+	{"longer than", "long_name"},
+	{"at least one siren", "last_siren"},
+	{"zone needs one of", "cannot_serve"},
+	{"did not answer", "no_answer"},
+}
+
 // Refusal names a known refusal for the templates; an unknown one is "other", with
 // its own text.
 func Refusal(err error) (code, detail string) {
-	switch {
-	case errors.Is(err, consoleapp.ErrClosed):
-		return "closed", ""
-	case errors.Is(err, consoleapp.ErrBusy):
-		return "busy", ""
-	case errors.Is(err, consoleapp.ErrUnknown):
-		return "unknown", ""
-	case errors.Is(err, consoleapp.ErrNotASiren):
-		return "not_siren", ""
-	case errors.Is(err, consoleapp.ErrNoRegistry):
-		return "no_registry", ""
-	case errors.Is(err, consoleapp.ErrNotAContact):
-		return "not_contact", ""
-	case errors.Is(err, consoleapp.ErrCodeMismatch):
-		return "code_mismatch", ""
-	case errors.Is(err, consoleapp.ErrCodeInvalid):
-		return "code_invalid", ""
-	case errors.Is(err, consoleapp.ErrCodeWeak):
-		return "code_weak", ""
-	case errors.Is(err, consoleapp.ErrCodeTaken):
-		return "code_taken", ""
-	case errors.Is(err, consoleapp.ErrCodeFull):
-		return "code_full", ""
+	for _, r := range refusals {
+		if errors.Is(err, r.err) {
+			return r.code, ""
+		}
 	}
 	text := err.Error()
-	for _, k := range []struct{ in, code string }{
-		{"empty zone name", "empty_name"},
-		{"longer than", "long_name"},
-		{"at least one siren", "last_siren"},
-		{"zone needs one of", "cannot_serve"},
-		{"has no zone", "no_zone"},
-		{"did not answer", "no_answer"},
-	} {
-		if strings.Contains(text, k.in) {
-			return k.code, ""
+	for _, r := range refusalTexts {
+		if strings.Contains(text, r.in) {
+			return r.code, ""
 		}
 	}
 	return "other", text

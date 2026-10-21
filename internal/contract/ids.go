@@ -2,8 +2,8 @@ package contract
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"io"
-	"math/big"
 	"regexp"
 	"sync"
 	"time"
@@ -17,11 +17,13 @@ var idPattern = regexp.MustCompile(`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`)
 func ValidID(s string) bool { return idPattern.MatchString(s) }
 
 // IDGenerator produces ULIDs: unique, sortable by creation time, and strictly
-// increasing even within the same millisecond. It is safe for concurrent use.
+// increasing even within the same millisecond, or when the clock steps back (NTP
+// correcting a Raspberry Pi after a power cut). It is safe for concurrent use.
 type IDGenerator struct {
 	mu      sync.Mutex
 	entropy io.Reader
 	now     func() time.Time
+	started bool
 	lastMs  uint64
 	last    [10]byte
 }
@@ -43,22 +45,19 @@ func (g *IDGenerator) New() string {
 	defer g.mu.Unlock()
 
 	ms := uint64(g.now().UnixMilli())
-	if ms == g.lastMs && ms != 0 {
+	if g.started && ms <= g.lastMs {
+		// Same millisecond, or the clock went back: keep the last time and count on
+		// from the last random part, so the order still holds.
 		incrementBytes(&g.last)
 	} else {
 		if _, err := io.ReadFull(g.entropy, g.last[:]); err != nil {
 			panic("contract: entropy source unavailable: " + err.Error())
 		}
-		g.lastMs = ms
+		g.lastMs, g.started = ms, true
 	}
 
 	var raw [16]byte
-	raw[0] = byte(ms >> 40)
-	raw[1] = byte(ms >> 32)
-	raw[2] = byte(ms >> 24)
-	raw[3] = byte(ms >> 16)
-	raw[4] = byte(ms >> 8)
-	raw[5] = byte(ms)
+	binary.BigEndian.PutUint64(raw[0:8], g.lastMs<<16) // 48 bits of time first
 	copy(raw[6:], g.last[:])
 	return encodeID(raw)
 }
@@ -73,14 +72,15 @@ func incrementBytes(b *[10]byte) {
 }
 
 // encodeID writes 128 bits as 26 Crockford characters (130 bits, so the two
-// leading bits are zero).
+// leading bits are zero), five bits at a time from the right.
 func encodeID(raw [16]byte) string {
-	n := new(big.Int).SetBytes(raw[:])
-	mask := big.NewInt(31)
-	out := make([]byte, 26)
-	for i := 25; i >= 0; i-- {
-		out[i] = crockford[new(big.Int).And(n, mask).Int64()]
-		n.Rsh(n, 5)
+	hi := binary.BigEndian.Uint64(raw[0:8])
+	lo := binary.BigEndian.Uint64(raw[8:16])
+	var out [26]byte
+	for i := len(out) - 1; i >= 0; i-- {
+		out[i] = crockford[lo&31]
+		lo = lo>>5 | hi<<59
+		hi >>= 5
 	}
-	return string(out)
+	return string(out[:])
 }

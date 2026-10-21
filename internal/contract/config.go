@@ -2,6 +2,7 @@ package contract
 
 import (
 	"fmt"
+	"log/slog"
 	"regexp"
 	"slices"
 )
@@ -91,6 +92,16 @@ func (d ConfigSetData) String() string {
 // GoString hides them for %#v.
 func (d ConfigSetData) GoString() string { return d.String() }
 
+// LogValue hides them in slog logs, whatever the handler (a JSON one would print the
+// fields otherwise).
+func (d ConfigSetData) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.Int("version", d.Version), slog.String("site_name", d.SiteName), slog.Int("contacts", len(d.Contacts)),
+		slog.Any("closing", d.Closing), slog.Int("exit_delay_s", d.ExitDelayS), slog.Int("entry_delay_s", d.EntryDelayS),
+		slog.Bool("video", d.Video != nil),
+	)
+}
+
 // Validate checks the shape. The site checks the rest (roles, closing times) against
 // its own rules before applying anything. No phone number is part of an error.
 func (d ConfigSetData) Validate() error {
@@ -106,29 +117,40 @@ func (d ConfigSetData) Validate() error {
 	}
 	seen := map[string]bool{}
 	for _, c := range d.Contacts {
-		switch {
-		case !contactID.MatchString(c.ID) || seen[c.ID]:
+		if seen[c.ID] {
 			return fmt.Errorf("%w: contact id %q invalid or repeated", ErrInvalid, c.ID)
-		case c.Name == "" || !slices.Contains(configRoles, c.Role):
-			return fmt.Errorf("%w: contact %s needs a name and a known role", ErrInvalid, c.ID)
-		case len(c.Channels) == 0:
-			return fmt.Errorf("%w: contact %s has no channel", ErrInvalid, c.ID)
-		case c.Phone != "" && !ValidPhone(c.Phone):
-			return fmt.Errorf("%w: contact %s: phone not in international form (+228...)", ErrInvalid, c.ID)
+		}
+		if err := c.validate(); err != nil {
+			return err
 		}
 		seen[c.ID] = true
-		for _, ch := range c.Channels {
-			if !slices.Contains(channels, ch) {
-				return fmt.Errorf("%w: contact %s: unknown channel %q", ErrInvalid, c.ID, ch)
-			}
-			if (ch == ChannelSMS || ch == ChannelCall) && c.Phone == "" {
-				return fmt.Errorf("%w: contact %s: %s needs a phone number", ErrInvalid, c.ID, ch)
-			}
-		}
 	}
 	if v := d.Video; v != nil {
 		if (v.QuotaMB != nil && *v.QuotaMB < 0) || (v.MaxS != nil && (*v.MaxS < 0 || *v.MaxS > MaxVideoLength)) {
 			return fmt.Errorf("%w: video quota_mb must not be negative, max_s from 0 to %d", ErrInvalid, MaxVideoLength)
+		}
+	}
+	return nil
+}
+
+// validate checks one contact. No phone number is part of an error.
+func (c ConfigContact) validate() error {
+	switch {
+	case !contactID.MatchString(c.ID):
+		return fmt.Errorf("%w: contact id %q invalid or repeated", ErrInvalid, c.ID)
+	case c.Name == "" || !slices.Contains(configRoles, c.Role):
+		return fmt.Errorf("%w: contact %s needs a name and a known role", ErrInvalid, c.ID)
+	case len(c.Channels) == 0:
+		return fmt.Errorf("%w: contact %s has no channel", ErrInvalid, c.ID)
+	case c.Phone != "" && !ValidPhone(c.Phone):
+		return fmt.Errorf("%w: contact %s: phone not in international form (+228...)", ErrInvalid, c.ID)
+	}
+	for _, ch := range c.Channels {
+		if !slices.Contains(channels, ch) {
+			return fmt.Errorf("%w: contact %s: unknown channel %q", ErrInvalid, c.ID, ch)
+		}
+		if (ch == ChannelSMS || ch == ChannelCall) && c.Phone == "" {
+			return fmt.Errorf("%w: contact %s: %s needs a phone number", ErrInvalid, c.ID, ch)
 		}
 	}
 	return nil

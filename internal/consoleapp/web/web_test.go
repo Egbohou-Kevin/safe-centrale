@@ -170,11 +170,12 @@ func TestOrdersAndTheirOutcome(t *testing.T) {
 	}
 
 	for err, want := range map[error]string{
-		consoleapp.ErrBusy:                         "Un appairage est en cours",
-		consoleapp.ErrClosed:                       "retapez le code installateur",
-		errors.New("hub: at least one siren"):      "garder au moins une sir\u00e8ne",
-		errors.New("something odd <script>"):       "Refus\u00e9 : something odd &lt;script&gt;",
-		fmt.Errorf("x: %w", consoleapp.ErrUnknown): "dev_door n'est pas appair\u00e9",
+		consoleapp.ErrBusy:                               "Un appairage est en cours",
+		consoleapp.ErrClosed:                             "retapez le code installateur",
+		errors.New("hub: at least one siren"):            "garder au moins une sir\u00e8ne",
+		errors.New("something odd <script>"):             "Refus\u00e9 : something odd &lt;script&gt;",
+		fmt.Errorf("x: %w", consoleapp.ErrUnknown):       "dev_door n'est pas appair\u00e9",
+		fmt.Errorf("%w: dev_door", consoleapp.ErrNoZone): "dev_door n'a pas de zone",
 	} {
 		c.err = err
 		loc := post(h, "/zone", url.Values{"id": {"dev_door"}, "name": {"X"}, "kind": {"entry"}}).Header().Get("Location")
@@ -241,5 +242,36 @@ func TestTheCodesSection(t *testing.T) {
 		if body := get(h, loc).Body.String(); !strings.Contains(body, want) || strings.Contains(loc+body, "1357") {
 			t.Errorf("%v: missing %q, or the code shows", err, want)
 		}
+	}
+}
+
+// The installer's phone may browse the internet over its mobile data while on the
+// hub's network: a page from elsewhere must not be able to post orders.
+func TestOrdersFromAnotherSiteAreRefused(t *testing.T) {
+	c := &fakeConsole{o: overview()}
+	h := newHandler(t, c)
+	order := func(headers map[string]string) int {
+		r := httptest.NewRequest("POST", "/finish", nil)
+		r.Host = host
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	for _, headers := range []map[string]string{
+		{"Sec-Fetch-Site": "cross-site"},
+		{"Origin": "http://evil.example"},
+	} {
+		if code := order(headers); code != http.StatusForbidden {
+			t.Errorf("%v: %d", headers, code)
+		}
+	}
+	if len(c.calls) != 0 {
+		t.Fatalf("a cross-site order went through: %v", c.calls)
+	}
+	if code := order(map[string]string{"Sec-Fetch-Site": "same-origin", "Origin": "http://" + host}); code != http.StatusSeeOther {
+		t.Fatalf("the page's own order: %d", code)
 	}
 }
