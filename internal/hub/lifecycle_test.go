@@ -158,6 +158,11 @@ func TestConfigValidation(t *testing.T) {
 	if _, err := New(testConfig(), Deps{}); err == nil {
 		t.Error("the ports are required")
 	}
+	c := testConfig()
+	c.SirenIDs = nil
+	if err := c.Validate(); !errors.Is(err, ErrNoSiren) {
+		t.Errorf("no siren: %v, want ErrNoSiren for the tools to explain", err)
+	}
 }
 
 func TestNewRefusesADamagedSavedState(t *testing.T) {

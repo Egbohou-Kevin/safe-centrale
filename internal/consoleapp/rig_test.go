@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"slices"
 	"sync"
 	"testing"
@@ -79,21 +80,31 @@ func (h *fakeHotspot) counts() (int, int) { h.mu.Lock(); defer h.mu.Unlock(); re
 
 // fakeSites keeps the site in memory, and refuses one without siren as the hub does.
 type fakeSites struct {
-	mu   sync.Mutex
-	site install.Site
+	mu       sync.Mutex
+	site     install.Site
+	slowRead time.Duration // a read returns this long after it took the site
+	onCheck  func()        // if set, called as Check starts; may block
 }
 
 func (s *fakeSites) Read() (install.Site, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := install.Site{Zones: map[string]install.Zone{}, SirenIDs: slices.Clone(s.site.SirenIDs)}
-	for k, v := range s.site.Zones {
-		out.Zones[k] = v
+	out := install.Site{Zones: maps.Clone(s.site.Zones), SirenIDs: slices.Clone(s.site.SirenIDs)}
+	s.mu.Unlock()
+	if out.Zones == nil {
+		out.Zones = map[string]install.Zone{}
 	}
+	time.Sleep(s.slowRead)
 	return out, nil
 }
 
 func (s *fakeSites) Check(site install.Site) error {
+	if s.onCheck != nil {
+		s.onCheck()
+	}
+	return s.check(site)
+}
+
+func (s *fakeSites) check(site install.Site) error {
 	if len(site.SirenIDs) == 0 {
 		return errors.New("hub: at least one siren is required")
 	}
@@ -101,7 +112,7 @@ func (s *fakeSites) Check(site install.Site) error {
 }
 
 func (s *fakeSites) Write(site install.Site) error {
-	if err := s.Check(site); err != nil {
+	if err := s.check(site); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -147,6 +158,7 @@ type rig struct {
 	hotspot *fakeHotspot
 	sites   *fakeSites
 	ids     *contract.IDGenerator
+	stop    func() // stops the console and waits for its end
 
 	mu       sync.Mutex
 	sent     []published
@@ -264,7 +276,8 @@ func newRig(t *testing.T) *rig {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { app.Run(ctx); close(done) }()
-	t.Cleanup(func() { cancel(); <-done })
+	r.stop = sync.OnceFunc(func() { cancel(); <-done })
+	t.Cleanup(r.stop)
 	r.registry()
 	r.deliver(contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus, zigbee(false), true)
 	r.waitFor("the registry", func() bool { return r.app.Overview().Known })

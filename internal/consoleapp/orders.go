@@ -99,7 +99,11 @@ func (a *App) Remove(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.deps.Sites.Check(siteWithout(site, id)); err != nil {
+	without := siteWithout(site, id)
+	if len(site.SirenIDs) > 0 && len(without.SirenIDs) == 0 {
+		return ErrLastSiren
+	}
+	if err := a.deps.Sites.Check(without); err != nil {
 		return fmt.Errorf("cannot be removed yet: %w", err)
 	}
 	result := make(chan error, 1)
@@ -110,6 +114,8 @@ func (a *App) Remove(ctx context.Context, id string) error {
 	case err = <-result:
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-sctx.Done():
+		return ErrClosed // the console may stop before the order's turn comes
 	}
 	if err != nil {
 		return err

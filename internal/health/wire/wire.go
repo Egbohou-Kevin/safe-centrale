@@ -72,7 +72,7 @@ func Translate(actions []health.Action) ([]contract.AlertRequestData, error) {
 // network and has not run out of credit. The caller sets Now.
 func GSM(d contract.GSMStatusData, seen time.Time) health.GSM {
 	for _, l := range d.Lines {
-		if l.Responding && l.Registered && l.Credit != "empty" {
+		if l.Responding && l.Registered && l.Credit != contract.CreditEmpty {
 			return health.GSM{Seen: seen, Usable: true}
 		}
 	}

@@ -64,8 +64,7 @@ func (c Config) Validate() error {
 // overlapsContract tells whether a base topic would take in the contract's own
 // topics: the adapter would read its own messages as Zigbee devices.
 func overlapsContract(base string) bool {
-	root, _, _ := strings.Cut(contract.Topic("x"), "/")
-	return base == root || strings.HasPrefix(base, root+"/")
+	return base == contract.TopicRoot || strings.HasPrefix(base, contract.TopicRoot+"/")
 }
 
 // Deps are the ports the adapter needs.

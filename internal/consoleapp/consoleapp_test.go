@@ -101,10 +101,13 @@ func TestZonesAndSirensFromThePage(t *testing.T) {
 		want error
 	}{
 		{"unknown device", func() error { return r.app.SetZone("dev_nope", "X", "entry") }, ErrUnknown},
-		{"empty name", func() error { return r.app.SetZone("dev_motion", " ", "interior") }, nil},
-		{"wrong kind", func() error { return r.app.SetZone("dev_motion", "Salle", "24h_fire") }, nil},
+		{"empty name", func() error { return r.app.SetZone("dev_motion", " ", "interior") }, ErrEmptyName},
+		{"long name", func() error {
+			return r.app.SetZone("dev_motion", strings.Repeat("a", install.MaxNameLength+1), "interior")
+		}, ErrNameTooLong},
+		{"wrong kind", func() error { return r.app.SetZone("dev_motion", "Salle", "24h_fire") }, ErrCannotServe},
 		{"a contact as a siren", func() error { return r.app.Siren("dev_door", true) }, ErrNotASiren},
-		{"the last siren", func() error { return r.app.Siren("dev_siren", false) }, nil},
+		{"the last siren", func() error { return r.app.Siren("dev_siren", false) }, ErrLastSiren},
 		{"no zone to remove", func() error { return r.app.Unzone("dev_motion") }, ErrNoZone},
 	}
 	for _, c := range cases {
@@ -134,7 +137,7 @@ func TestZonesAndSirensFromThePage(t *testing.T) {
 func TestRemovingADevice(t *testing.T) {
 	r := newRig(t)
 	r.open()
-	if err := r.app.Remove(context.Background(), "dev_siren"); err == nil || !strings.Contains(err.Error(), "siren") {
+	if err := r.app.Remove(context.Background(), "dev_siren"); !errors.Is(err, ErrLastSiren) {
 		t.Fatalf("the last siren: %v", err)
 	}
 	if n := len(r.sentOn(contract.RegistryCmdTopic(site))); n != 0 {
@@ -284,5 +287,69 @@ func TestAPairingOfAClosedModeStaysOutOfTheNextOne(t *testing.T) {
 	r.waitFor("the order's end", func() bool { return !r.app.Overview().Busy })
 	if o := r.app.Overview(); !o.Open || o.Pairing != nil {
 		t.Fatalf("open %v, pairing %+v: the old window shows in the new mode", o.Open, o.Pairing)
+	}
+}
+
+// Typing the installer code again while the mode is open starts a new half hour at
+// the hub: the console follows it instead of stopping at the first end.
+func TestTheConsoleFollowsAModeOpenedAgain(t *testing.T) {
+	r := newRig(t)
+	r.open()
+	r.clock.Advance(20 * time.Minute)
+	r.mode(contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(r.clock.Now().Add(30 * time.Minute))})
+	r.waitFor("the new end", func() bool { return r.app.Overview().Until.Equal(t0.Add(50 * time.Minute)) })
+	r.clock.Advance(10 * time.Minute) // the first end
+	if err := r.app.Alive(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, down := r.hotspot.counts(); down != 0 || !r.app.Overview().Open {
+		t.Fatal("the console stopped at the first end of a mode opened again")
+	}
+	r.clock.Advance(20 * time.Minute)
+	r.waitFor("the end", func() bool { _, down := r.hotspot.counts(); return down == 1 })
+}
+
+// Two orders of the page at once (two taps, two phones) each change the site: none
+// is lost.
+func TestChangesOfTheSiteAtOnceAreAllKept(t *testing.T) {
+	r := newRig(t)
+	r.open()
+	r.sites.slowRead = 5 * time.Millisecond
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	wg.Go(func() { errs <- r.app.SetZone("dev_motion", "Salle", "interior") })
+	wg.Go(func() { errs <- r.app.SetZone("dev_door", "Porte", "instant") })
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	site, _ := r.sites.Read()
+	if len(site.Zones) != 2 || site.Zones["dev_motion"].Name != "Salle" || site.Zones["dev_door"].Name != "Porte" {
+		t.Fatalf("a change was lost: %+v", site.Zones)
+	}
+}
+
+// A removal whose order is queued as the console stops gives up instead of waiting
+// for a worker that is gone.
+func TestARemovalDoesNotOutliveTheConsole(t *testing.T) {
+	r := newRig(t)
+	r.open()
+	checking, release := make(chan struct{}), make(chan struct{})
+	r.sites.onCheck = func() { close(checking); <-release }
+	result := make(chan error, 1)
+	go func() { result <- r.app.Remove(context.Background(), "dev_door") }()
+	<-checking
+	r.stop()
+	close(release)
+	select {
+	case err := <-result:
+		if !errors.Is(err, ErrClosed) {
+			t.Fatalf("err %v, want ErrClosed", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the removal still waits for a console that stopped")
 	}
 }

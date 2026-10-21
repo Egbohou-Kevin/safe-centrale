@@ -2,16 +2,19 @@ package contract
 
 import "strings"
 
+// TopicRoot is the first level of every topic of the contract.
+const TopicRoot = "safehome"
+
 // Topic builds an MQTT topic: safehome/{site}/{parts...}.
 func Topic(site string, parts ...string) string {
-	return "safehome/" + site + "/" + strings.Join(parts, "/")
+	return TopicRoot + "/" + site + "/" + strings.Join(parts, "/")
 }
 
 // ParseTopic splits "safehome/{site}/a/b/c" into the site and the parts after it
 // (["a", "b", "c"]). ok is false for any topic that is not one of ours, including
 // one with an empty part.
 func ParseTopic(topic string) (site string, parts []string, ok bool) {
-	rest, found := strings.CutPrefix(topic, "safehome/")
+	rest, found := strings.CutPrefix(topic, TopicRoot+"/")
 	if !found {
 		return "", nil, false
 	}

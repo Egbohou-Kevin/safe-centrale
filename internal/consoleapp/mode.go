@@ -54,6 +54,8 @@ func (a *App) Run(ctx context.Context) {
 				if m := a.begin(ctx, d.Until.Time, last); m != nil {
 					current, last = m, m
 				}
+			default:
+				a.extend(current, d.Until.Time)
 			}
 		}
 	}
@@ -85,6 +87,23 @@ func (a *App) begin(ctx context.Context, until time.Time, prev *mode) *mode {
 		a.network(ctx, sctx)
 	}()
 	return m
+}
+
+// extend moves the end of the open mode m to until, if that is later: the installer
+// typed the code again, and the hub started a new half hour.
+func (a *App) extend(m *mode, until time.Time) {
+	a.mu.Lock()
+	later := until.After(a.until)
+	if later {
+		a.until = until
+	}
+	a.mu.Unlock()
+	if !later {
+		return // the same message again
+	}
+	a.log.Info("installation mode extended", "until", until.Format(time.RFC3339))
+	m.stopTimer()
+	m.deadline, m.stopTimer = a.deps.Clock.Timer(until.Sub(a.deps.Clock.Now()))
 }
 
 // end closes the installation mode m, if any: the orders are refused at once, the

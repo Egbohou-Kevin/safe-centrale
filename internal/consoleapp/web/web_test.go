@@ -170,9 +170,14 @@ func TestOrdersAndTheirOutcome(t *testing.T) {
 	}
 
 	for err, want := range map[error]string{
-		consoleapp.ErrBusy:                               "Un appairage est en cours",
-		consoleapp.ErrClosed:                             "retapez le code installateur",
-		errors.New("hub: at least one siren"):            "garder au moins une sir\u00e8ne",
+		consoleapp.ErrBusy:      "Un appairage est en cours",
+		consoleapp.ErrClosed:    "retapez le code installateur",
+		consoleapp.ErrLastSiren: "garder au moins une sir\u00e8ne",
+		fmt.Errorf("zone name %q is %w", "x", consoleapp.ErrNameTooLong): "Nom de zone trop long",
+		fmt.Errorf("%w: a fire zone...", consoleapp.ErrCannotServe):      "ne peut pas servir",
+		consoleapp.ErrEmptyName:                          "Donnez un nom",
+		consoleapp.ErrNoAnswer:                           "n'a pas r\u00e9pondu",
+		errors.New("hub: at least one siren"):            "Refus\u00e9 : hub: at least one siren",
 		errors.New("something odd <script>"):             "Refus\u00e9 : something odd &lt;script&gt;",
 		fmt.Errorf("x: %w", consoleapp.ErrUnknown):       "dev_door n'est pas appair\u00e9",
 		fmt.Errorf("%w: dev_door", consoleapp.ErrNoZone): "dev_door n'a pas de zone",

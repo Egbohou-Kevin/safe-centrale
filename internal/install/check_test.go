@@ -1,6 +1,8 @@
 package install
 
 import (
+	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -29,40 +31,51 @@ func TestCanServe(t *testing.T) {
 	for _, c := range []struct {
 		kind string
 		caps []string
-		ok   bool
+		want error // nil: it can; errAny: refused, not as ErrCannotServe
 	}{
-		{"entry", []string{"contact", "battery"}, true},
-		{"instant", []string{"vibration"}, true},
-		{"interior", []string{"motion", "battery"}, true},
-		{"24h_fire", []string{"smoke", "battery"}, true},
-		{"24h_panic", []string{"panic"}, true},
-		{"24h_tamper", []string{"contact", "tamper"}, true},
-		{"24h_fire", []string{"contact", "battery"}, false},
-		{"entry", []string{"siren", "mains"}, false},
-		{"24h_panic", []string{"keypad"}, false},
-		{"interior", []string{"glass_break"}, false},
-		{"garage", []string{"contact"}, false},
+		{"entry", []string{"contact", "battery"}, nil},
+		{"instant", []string{"vibration"}, nil},
+		{"interior", []string{"motion", "battery"}, nil},
+		{"24h_fire", []string{"smoke", "battery"}, nil},
+		{"24h_panic", []string{"panic"}, nil},
+		{"24h_tamper", []string{"contact", "tamper"}, nil},
+		{"24h_fire", []string{"contact", "battery"}, ErrCannotServe},
+		{"entry", []string{"siren", "mains"}, ErrCannotServe},
+		{"24h_panic", []string{"keypad"}, ErrCannotServe},
+		{"interior", []string{"glass_break"}, ErrCannotServe},
+		{"garage", []string{"contact"}, errAny},
 	} {
-		if err := CanServe(c.kind, c.caps); (err == nil) != c.ok {
-			t.Errorf("CanServe(%s, %v) = %v, want ok=%v", c.kind, c.caps, err, c.ok)
-		}
+		checkRefusal(t, fmt.Sprintf("CanServe(%s, %v)", c.kind, c.caps), CanServe(c.kind, c.caps), c.want)
 	}
 }
 
 func TestValidName(t *testing.T) {
-	for name, ok := range map[string]bool{
-		"Entree":                                true,
-		"Porte d'entr\u00e9e":                   true,
-		"":                                      false,
-		"   ":                                   false,
-		"Vitrine\n":                             false,
-		strings.Repeat("a", MaxNameLength):      true,
-		strings.Repeat("\u00e9", MaxNameLength): true,
-		strings.Repeat("a", MaxNameLength+1):    false,
+	for name, want := range map[string]error{
+		"Entree":                                nil,
+		"Porte d'entr\u00e9e":                   nil,
+		"":                                      ErrEmptyName,
+		"   ":                                   ErrEmptyName,
+		"Vitrine\n":                             errAny,
+		strings.Repeat("a", MaxNameLength):      nil,
+		strings.Repeat("\u00e9", MaxNameLength): nil,
+		strings.Repeat("a", MaxNameLength+1):    ErrNameTooLong,
 	} {
-		if err := ValidName(name); (err == nil) != ok {
-			t.Errorf("ValidName(%q) = %v, want ok=%v", name, err, ok)
-		}
+		checkRefusal(t, fmt.Sprintf("ValidName(%q)", name), ValidName(name), want)
+	}
+}
+
+// errAny stands for a refusal that has no sentinel of its own.
+var errAny = errors.New("any refusal")
+
+func checkRefusal(t *testing.T, call string, err, want error) {
+	t.Helper()
+	switch {
+	case want == nil && err != nil:
+		t.Errorf("%s = %v, want nil", call, err)
+	case want == errAny && err == nil:
+		t.Errorf("%s = nil, want a refusal", call)
+	case want != nil && want != errAny && !errors.Is(err, want):
+		t.Errorf("%s = %v, want %v", call, err, want)
 	}
 }
 

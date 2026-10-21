@@ -8,6 +8,7 @@
 package install
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -86,6 +87,13 @@ func ValidKind(kind string) error {
 	return nil
 }
 
+// The refusals of a zone, for a tool to explain them.
+var (
+	ErrEmptyName   = errors.New("empty zone name")
+	ErrNameTooLong = fmt.Errorf("longer than %d characters", MaxNameLength)
+	ErrCannotServe = errors.New("the device cannot trigger this kind of zone")
+)
+
 // CanServe says whether a device with these capabilities can be used in a zone of
 // this kind.
 func CanServe(kind string, capabilities []string) error {
@@ -98,8 +106,8 @@ func CanServe(kind string, capabilities []string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("a %s zone needs one of %s, the device has %s",
-		kind, strings.Join(sensors, ", "), strings.Join(capabilities, ", "))
+	return fmt.Errorf("%w: a %s zone needs one of %s, the device has %s",
+		ErrCannotServe, kind, strings.Join(sensors, ", "), strings.Join(capabilities, ", "))
 }
 
 // MaxNameLength bounds a zone name: it goes into SMS and voice messages.
@@ -109,9 +117,9 @@ const MaxNameLength = 32
 func ValidName(name string) error {
 	switch {
 	case strings.TrimSpace(name) == "":
-		return fmt.Errorf("empty zone name")
+		return ErrEmptyName
 	case utf8.RuneCountInString(name) > MaxNameLength:
-		return fmt.Errorf("zone name %q is longer than %d characters", name, MaxNameLength)
+		return fmt.Errorf("zone name %q is %w", name, ErrNameTooLong)
 	case strings.IndexFunc(name, unicode.IsControl) >= 0:
 		return fmt.Errorf("zone name %q contains a control character", name)
 	}

@@ -29,6 +29,8 @@ func (a *App) change(edit func(*install.Site) error) error {
 	if _, err := a.sessionCtx(); err != nil {
 		return err
 	}
+	a.siteMu.Lock()
+	defer a.siteMu.Unlock()
 	site, err := a.deps.Sites.Read()
 	if err != nil {
 		return err
@@ -110,6 +112,9 @@ func (a *App) Siren(id string, on bool) error {
 			s.SirenIDs = append(s.SirenIDs, id)
 		case !on && has:
 			s.SirenIDs = slices.DeleteFunc(s.SirenIDs, func(x string) bool { return x == id })
+			if len(s.SirenIDs) == 0 {
+				return ErrLastSiren
+			}
 		}
 		return nil
 	})

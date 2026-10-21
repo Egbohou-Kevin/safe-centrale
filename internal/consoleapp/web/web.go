@@ -183,22 +183,17 @@ var refusals = []struct {
 	{consoleapp.ErrNotASiren, "not_siren"},
 	{consoleapp.ErrNoZone, "no_zone"},
 	{consoleapp.ErrNoRegistry, "no_registry"},
+	{consoleapp.ErrLastSiren, "last_siren"},
+	{consoleapp.ErrEmptyName, "empty_name"},
+	{consoleapp.ErrNameTooLong, "long_name"},
+	{consoleapp.ErrCannotServe, "cannot_serve"},
+	{consoleapp.ErrNoAnswer, "no_answer"},
 	{consoleapp.ErrNotAContact, "not_contact"},
 	{consoleapp.ErrCodeMismatch, "code_mismatch"},
 	{consoleapp.ErrCodeInvalid, "code_invalid"},
 	{consoleapp.ErrCodeWeak, "code_weak"},
 	{consoleapp.ErrCodeTaken, "code_taken"},
 	{consoleapp.ErrCodeFull, "code_full"},
-}
-
-// refusalTexts recognise the refusals of the installer's application and of the
-// hub, which come as plain errors, by their text.
-var refusalTexts = []struct{ in, code string }{
-	{"empty zone name", "empty_name"},
-	{"longer than", "long_name"},
-	{"at least one siren", "last_siren"},
-	{"zone needs one of", "cannot_serve"},
-	{"did not answer", "no_answer"},
 }
 
 // Refusal names a known refusal for the templates; an unknown one is "other", with
@@ -209,11 +204,5 @@ func Refusal(err error) (code, detail string) {
 			return r.code, ""
 		}
 	}
-	text := err.Error()
-	for _, r := range refusalTexts {
-		if strings.Contains(text, r.in) {
-			return r.code, ""
-		}
-	}
-	return "other", text
+	return "other", err.Error()
 }

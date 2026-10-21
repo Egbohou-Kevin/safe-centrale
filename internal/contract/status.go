@@ -18,12 +18,18 @@ type GSMLine struct {
 	Operator   string     `json:"operator,omitempty"`
 	Responding bool       `json:"responding"` // the modem answers
 	Registered bool       `json:"registered"`
-	Signal     int        `json:"signal"` // 0 to 100
-	Credit     string     `json:"credit,omitempty"`
+	Signal     int        `json:"signal"`           // 0 to 100
+	Credit     string     `json:"credit,omitempty"` // CreditOK, CreditEmpty, or absent when unknown
 	LastTest   *Timestamp `json:"last_test,omitempty"`
 	LastTestOK *bool      `json:"last_test_ok,omitempty"`
 	Restarts   int        `json:"restarts,omitempty"` // modem restarts since the gateway started
 }
+
+// The credit of a GSM line.
+const (
+	CreditOK    = "ok"
+	CreditEmpty = "empty" // an operator said so
+)
 
 // GSMStatusData is the payload of gsm.status: the GSM gateway's lines, published
 // retained at every change. The hub copies the lines into system.health.

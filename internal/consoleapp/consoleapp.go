@@ -101,6 +101,15 @@ var (
 	ErrNotASiren  = errors.New("this device cannot sound")
 	ErrNoZone     = errors.New("the device has no zone")
 	ErrNoRegistry = errors.New("the devices are not known yet: is safehome-zigbee running?")
+	// ErrLastSiren: the hub refuses a site without a siren. The console says so
+	// before asking the hub, for the page to explain it.
+	ErrLastSiren = errors.New("the site must keep at least one siren")
+
+	// The installer's application's refusals, named here for the page.
+	ErrEmptyName   = install.ErrEmptyName
+	ErrNameTooLong = install.ErrNameTooLong
+	ErrCannotServe = install.ErrCannotServe
+	ErrNoAnswer    = install.ErrNoAnswer
 
 	ErrNotAContact  = errors.New("no such person among the site's contacts")
 	ErrCodeMismatch = errors.New("the two codes differ")
@@ -120,6 +129,10 @@ type App struct {
 	modes chan contract.InstallModeData
 	jobs  chan func(context.Context)
 	ping  chan chan struct{}
+
+	// siteMu has the changes of the site wait for each other: each one reads the
+	// site, edits it and writes it, and two at once would lose one.
+	siteMu sync.Mutex
 
 	mu         sync.Mutex
 	open       bool
