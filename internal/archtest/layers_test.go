@@ -194,8 +194,9 @@ func TestOnlyTheCompositionRootImportsAdapters(t *testing.T) {
 	walkSources(t, func(rel string, f *ast.File) {
 		if strings.HasPrefix(rel, "cmd"+string(filepath.Separator)) ||
 			strings.HasPrefix(rel, filepath.Join("internal", "service")+string(filepath.Separator)) ||
-			strings.HasPrefix(rel, filepath.Join("internal", "adapter")+string(filepath.Separator)) {
-			return // the composition root and the adapters themselves
+			strings.HasPrefix(rel, filepath.Join("internal", "adapter")+string(filepath.Separator)) ||
+			inVirtualKit(rel) {
+			return // the composition root, the adapters themselves and the kit's fakes
 		}
 		for _, imp := range importsOf(f) {
 			if strings.HasPrefix(imp, adapters) {
@@ -204,6 +205,30 @@ func TestOnlyTheCompositionRootImportsAdapters(t *testing.T) {
 		}
 	})
 }
+
+// The virtual kit (vkit/, docs/kit-virtuel.md) is test equipment: fake devices that
+// speak to the real programs from the outside, through an adapter or a test
+// simulator. It knows nothing of the domains or the applications, and nothing
+// shipped imports it.
+func TestTheVirtualKitStaysOutside(t *testing.T) {
+	walkSources(t, func(rel string, f *ast.File) {
+		for _, imp := range importsOf(f) {
+			if !strings.HasPrefix(imp, module+"/") {
+				continue
+			}
+			kit := strings.HasPrefix(imp, module+"/vkit/")
+			outside := kit || strings.HasPrefix(imp, module+"/internal/adapter/")
+			if inVirtualKit(rel) && !outside {
+				t.Errorf("%s imports %s: the virtual kit may use only adapters, test simulators and itself", rel, imp)
+			}
+			if !inVirtualKit(rel) && kit {
+				t.Errorf("%s imports %s: only the virtual kit may", rel, imp)
+			}
+		}
+	})
+}
+
+func inVirtualKit(rel string) bool { return strings.HasPrefix(rel, "vkit"+string(filepath.Separator)) }
 
 // internal/service is the part of the composition root every program shares: the
 // command line, the pid file, the MQTT clients and the life cycle under systemd. It

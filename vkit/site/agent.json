@@ -1,0 +1,28 @@
+{
+  "site": "tg-lom-0001",
+  "broker_url": "mqtt://127.0.0.1:1883",
+  "client_id": "safehome-agent-tg-lom-0001",
+  "state_dir": "/var/lib/safehome",
+  "log_level": "info",
+  "uplink": "fixed",
+  "cloud": {
+    "urls": [
+      "mqtts://127.0.0.1:8883"
+    ],
+    "client_id": "safehome-agent-tg-lom-0001",
+    "username": "tg-lom-0001",
+    "password_file": "cloud.secret",
+    "ca_file": "vkit-cloud-ca.pem"
+  },
+  "status_every": "1m",
+  "confirm_wait": "10s",
+  "queue": {
+    "max_items": 20000,
+    "max_bytes": 10485760,
+    "max_age": "168h"
+  },
+  "down": {
+    "burst": 20,
+    "per_minute": 60
+  }
+}

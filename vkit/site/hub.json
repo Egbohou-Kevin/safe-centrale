@@ -1,0 +1,250 @@
+{
+  "site": "tg-lom-0001",
+  "broker_url": "mqtt://127.0.0.1:1883",
+  "client_id": "safehome-hub-tg-lom-0001",
+  "state_dir": "/var/lib/safehome",
+  "log_level": "info",
+  "timezone": "Africa/Lome",
+  "site_name": "Boutique virtuelle",
+  "contacts": [
+    {
+      "id": "u_owner",
+      "name": "Proprietaire",
+      "role": "owner",
+      "channels": [
+        "app",
+        "whatsapp",
+        "sms",
+        "call"
+      ]
+    },
+    {
+      "id": "u_deputy",
+      "name": "Responsable",
+      "role": "deputy",
+      "channels": [
+        "app",
+        "sms",
+        "call"
+      ]
+    },
+    {
+      "id": "u_guard",
+      "name": "Gardien",
+      "role": "guard",
+      "channels": [
+        "sms",
+        "call"
+      ]
+    },
+    {
+      "id": "u_mgr",
+      "name": "Gerant",
+      "role": "manager",
+      "channels": [
+        "app",
+        "sms"
+      ]
+    }
+  ],
+  "escalation": {
+    "internet_confirm": "10s",
+    "gsm_delay": "15s",
+    "max_per_hour": 20,
+    "plans": {
+      "intrusion": {
+        "waves": [
+          {
+            "after": "0s",
+            "to": [
+              "first",
+              "guard"
+            ],
+            "double": true
+          },
+          {
+            "after": "2m",
+            "to": [
+              "owner",
+              "guard",
+              "first"
+            ],
+            "double": true
+          },
+          {
+            "after": "5m",
+            "to": [
+              "rest"
+            ],
+            "double": true
+          }
+        ],
+        "repeat": {
+          "every": "10m",
+          "times": 3
+        }
+      },
+      "fire": {
+        "waves": [
+          {
+            "to": [
+              "everyone"
+            ],
+            "sms_now": true,
+            "double": true
+          }
+        ],
+        "repeat": {
+          "every": "10m",
+          "times": 3
+        }
+      },
+      "panic": {
+        "waves": [
+          {
+            "to": [
+              "everyone"
+            ],
+            "sms_now": true,
+            "double": true
+          }
+        ],
+        "repeat": {
+          "every": "10m",
+          "times": 3
+        }
+      },
+      "tamper": {
+        "waves": [
+          {
+            "to": [
+              "first"
+            ],
+            "double": true
+          }
+        ]
+      },
+      "auth_failed": {
+        "waves": [
+          {
+            "to": [
+              "first"
+            ],
+            "double": true
+          }
+        ]
+      },
+      "arming_bypassed": {
+        "waves": [
+          {
+            "to": [
+              "first"
+            ],
+            "double": true
+          }
+        ]
+      },
+      "battery_low_hub": {
+        "waves": [
+          {
+            "to": [
+              "first"
+            ],
+            "double": true
+          }
+        ]
+      },
+      "zigbee_down": {
+        "waves": [
+          {
+            "to": [
+              "first"
+            ],
+            "double": true
+          }
+        ]
+      },
+      "mains_restored": {
+        "waves": [
+          {
+            "to": [
+              "first"
+            ]
+          }
+        ],
+        "internet_only": true,
+        "gsm_after": "1h"
+      },
+      "device_offline": {
+        "waves": [
+          {
+            "to": [
+              "owner"
+            ]
+          }
+        ],
+        "internet_only": true
+      },
+      "battery_low": {
+        "waves": [
+          {
+            "to": [
+              "owner"
+            ]
+          }
+        ],
+        "internet_only": true
+      },
+      "gsm_degraded": {
+        "waves": [
+          {
+            "to": [
+              "owner"
+            ]
+          }
+        ],
+        "internet_only": true
+      }
+    }
+  },
+  "hub_device_id": "dev_hubpower",
+  "siren_ids": [
+    "dev_siren1"
+  ],
+  "zones": {},
+  "closing": {
+    "daily": "off"
+  },
+  "alarm": {
+    "exit_delay": "15s",
+    "entry_delay": "10s",
+    "siren_cycle": "20s",
+    "siren_pause": "10s",
+    "siren_cycles": 2,
+    "lockout_attempts": 3,
+    "lockout_duration": "1m",
+    "panic_siren": false,
+    "auto_arm_notice": "10m",
+    "postpone_step": "30m",
+    "postpone_max": 3,
+    "auto_arm_limit": "2h"
+  },
+  "health": {
+    "hub_battery_warn": 40,
+    "hub_battery_critical": 10,
+    "hub_battery_rearm": 60,
+    "device_battery_low": 15,
+    "device_battery_rearm": 30,
+    "summary_at": "09:00",
+    "gsm_degraded_after": "10m",
+    "gsm_silent_after": "3m",
+    "zigbee_silent_after": "3m",
+    "zigbee_down_after": "3m",
+    "internet_silent_after": "3m"
+  },
+  "access": {
+    "iterations": 200000
+  },
+  "heartbeat_every": "1m",
+  "boot_window": "2s"
+}

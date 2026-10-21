@@ -1,0 +1,16 @@
+# Virtual Raspberry Pi for safeHome: Debian 13 arm64 (Raspberry Pi OS base),
+# 1 GiB like the Pi 4 1 GB, a separate data disk like partition 3 of the SD card.
+minimumLimaVersion: 2.0.0
+base:
+- template:_images/debian-13
+vmType: vz
+cpus: 4
+memory: 1GiB
+disk: 12GiB
+additionalDisks:
+- name: safehome-data
+  format: false
+mounts: []
+containerd:
+  system: false
+  user: false

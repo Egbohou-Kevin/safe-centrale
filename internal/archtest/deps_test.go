@@ -52,7 +52,8 @@ func TestProductionCodeHasNoThirdPartyDependencies(t *testing.T) {
 // mqtttest starts a broker process, internal/adapter/atmodem/attest pretends to be
 // a modem, internal/adapter/go2rtc/go2rtctest a video relay,
 // internal/driver/drivertest fakes the clock and the disk and
-// internal/outbox/outboxtest the broker: shipped code must never import them.
+// internal/outbox/outboxtest the broker: shipped code must never import them. The
+// virtual kit's fake devices (vkit/) are test equipment too, and may.
 func TestOnlyTestsImportTestSupport(t *testing.T) {
 	testSupport := []string{
 		module + "/internal/schematest",
@@ -63,6 +64,9 @@ func TestOnlyTestsImportTestSupport(t *testing.T) {
 		module + "/internal/adapter/go2rtc/go2rtctest",
 	}
 	walkSources(t, func(rel string, f *ast.File) {
+		if inVirtualKit(rel) {
+			return
+		}
 		for _, imp := range importsOf(f) {
 			if slices.Contains(testSupport, imp) {
 				t.Errorf("%s imports %s, which is for tests only", rel, imp)

@@ -1,0 +1,12 @@
+# Virtual kit: the fake GSM modem, on /dev/ttyVMODEM (docs/kit-virtuel.md).
+[Unit]
+Description=safeHome virtual kit: fake GSM modem
+Before=safehome-gsm.service
+
+[Service]
+ExecStart=/usr/local/bin/vkit-fakemodem -link /dev/ttyVMODEM -control /run/vkit/modem
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

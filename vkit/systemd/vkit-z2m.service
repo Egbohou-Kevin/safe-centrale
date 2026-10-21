@@ -1,0 +1,12 @@
+# Virtual kit: the fake Zigbee2MQTT, on the hub's broker (docs/kit-virtuel.md).
+[Unit]
+Description=safeHome virtual kit: fake Zigbee2MQTT
+After=mosquitto.service
+
+[Service]
+ExecStart=/usr/local/bin/vkit-fakez2m -broker mqtt://127.0.0.1:1883 -control /run/vkit/zigbee
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

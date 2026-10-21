@@ -1,0 +1,16 @@
+{
+  "site": "tg-lom-0001",
+  "broker_url": "mqtt://127.0.0.1:1883",
+  "client_id": "safehome-console-tg-lom-0001",
+  "state_dir": "/var/lib/safehome",
+  "log_level": "info",
+  "hub_config": "/etc/safehome/hub.json",
+  "port": 80,
+  "pair_for": "2m",
+  "wifi": {
+    "interface": "wlan0",
+    "ssid": "safehome-tg-lom-0001",
+    "passphrase_file": "console.secret",
+    "address": "10.42.0.1"
+  }
+}

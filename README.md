@@ -155,6 +155,11 @@ créé, y rendre la CI obligatoire avant merge (protection de branche). La CI in
 Mosquitto, donc les tests de bout en bout y tournent ; go2rtc n'est pas empaqueté : les
 tests vidéo qui en ont besoin y sont ignorés et ne tournent qu'en local.
 
+Avant le vrai matériel, le **kit virtuel** (`vkit/`, `docs/kit-virtuel.md`) installe la
+centrale dans une VM Debian ARM sur le Mac, avec un faux modem, un faux Zigbee2MQTT et
+un faux cloud, et rejoue la vie d'un site (`vkit/up.sh`, `vkit/deploy.sh`,
+`vkit/test.sh`).
+
 Les domaines, le contrat et la traduction n'ont aucune dépendance externe. Chaque
 bibliothèque externe est enfermée dans le seul paquet qui l'enveloppe, et un test
 d'architecture refuse tout autre import :
@@ -204,3 +209,4 @@ Pour la centrale elle-même (compilation pour le Raspberry Pi comprise) :
 | `docs/security-install.md` | Sécurité et installation d'un site |
 | `docs/systeme.md` | Système de la centrale : installation pas à pas, lecture seule, services, recette |
 | `docs/operations.md` | Exploitation de la centrale : configuration, commandes, démarrage, arrêt, codes |
+| `docs/kit-virtuel.md` | Kit virtuel : la centrale dans une VM avec de faux équipements, et son scénario |
