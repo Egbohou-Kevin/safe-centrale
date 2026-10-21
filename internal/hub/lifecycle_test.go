@@ -29,6 +29,7 @@ func TestBootLearnsTheDevicesFromRetainedStates(t *testing.T) {
 	state(devBack, contract.CapContact, "open")
 	state(devDoor, contract.CapContact, "closed")
 	state(devHub, contract.CapBattery, "88")
+	state(devHub, contract.CapMains, "lost")
 	r.start()
 	r.settle()
 
@@ -43,9 +44,9 @@ func TestBootLearnsTheDevicesFromRetainedStates(t *testing.T) {
 	if got := lastAck(t, r); got.Status != contract.AckRefused || got.Reason != contract.ReasonZoneOpen {
 		t.Fatalf("%+v", got)
 	}
-	// And the health knows the battery, learned from a state too.
+	// And the health knows the battery and the power cut, learned from states too.
 	h := r.broker.On(contract.HealthTopic(site))
-	if d := dataOf[contract.HealthData](t, h[len(h)-1]); d.HubBattery == nil || *d.HubBattery != 88 {
+	if d := dataOf[contract.HealthData](t, h[len(h)-1]); d.HubBattery == nil || *d.HubBattery != 88 || d.Mains != contract.ValLost {
 		t.Fatalf("%+v", d)
 	}
 }

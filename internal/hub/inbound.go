@@ -122,9 +122,13 @@ func (h *Hub) deviceState(d contract.DeviceEventData) {
 		h.startup.states[d.DeviceID+"/"+d.Capability] = d
 	}
 	h.startup.mu.Unlock()
-	if booting {
-		h.feedHealth(d)
+	if !booting {
+		return
 	}
+	if d.Capability == contract.CapMains {
+		h.mains.Store(true)
+	}
+	h.feedHealth(d)
 }
 
 func (h *Hub) deviceEvent(env contract.Envelope, d contract.DeviceEventData) {
