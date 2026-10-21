@@ -183,6 +183,10 @@ Zigbee est une radio : un message peut se perdre. La sirène est le cas critique
 la confirmation et les nouvelles tentatives comptent. Un détecteur de fumée avec sa
 sirène intégrée sonne de toute façon localement, sans dépendre de nous.
 
+La centrale lit `device/{sirène}/ack` : un `siren.on` répondu `expired` ou `failed`
+alors que l'alarme sonne encore est renvoyé pour le temps qui reste du cycle, 3 fois au
+plus par sirène et par ordre ; ensuite la centrale journalise une erreur.
+
 ## État de la liaison
 
 L'adaptateur surveille l'état du pont Zigbee2MQTT et de la clé :

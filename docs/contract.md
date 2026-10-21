@@ -76,7 +76,7 @@ Tous les topics commencent par `safehome/{site}/`.
 | `.../alert/result` | Résultat d'un envoi (envoyé, échoué, acquitté) | non |
 | `.../alert/ack` | Acquittement d'un contact (SMS ou application) | non |
 | `.../registry/cmd` | Appairage et retrait d'appareils, **local seulement** | non |
-| `.../registry/event` | Appareil ajouté, refusé ou retiré | non |
+| `.../registry/event` | Appareil ajouté, refusé ou retiré (la centrale oublie un appareil retiré) | non |
 | `.../registry/devices` | Liste des appareils connus | oui |
 | `.../config/set` | Nouvelle configuration du site, numérotée par version (cloud vers site) | non |
 | `.../config/applied` | Version de configuration appliquée par le site, ou refusée | oui |
@@ -243,6 +243,10 @@ de l'application (via le cloud) ou du planning (interne).
 - `origin` : `keypad`, `app`, `schedule`. Il n'y a pas de SMS dans la v1.
 - `user` : identifiant de la personne, quand il est connu (application).
 - Le moteur répond sur `alarm/ack`.
+- Un ordre sans `exp` vaut une minute après son `ts` (un `ts` en avance sur l'horloge
+  de la centrale compte pour maintenant). Les touches du clavier aussi : une touche
+  gardée par le broker pendant une coupure répond `expired`. Un ordre périmé n'est pas
+  vérifié : son code ne compte pas comme faux.
 
 ```json
 {
@@ -519,7 +523,8 @@ sait pas le dire.
 
 ### `system.health`
 
-Retenu, publié à chaque changement :
+Retenu, publié à chaque changement (les statuts répétés des services ne le republient
+pas) :
 
 ```json
 {

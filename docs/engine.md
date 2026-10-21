@@ -290,9 +290,9 @@ Après une restauration, le moteur ne demande aucun tic avant `Boot` : c'est `Bo
 rejoue les échéances manquées. Un cycle de sirène rejoué en retard ne sonne que ce
 qui en reste, une seule fois (un seul `siren.on`, pas un par cycle rejoué).
 
-Un appareil retiré du site peut être oublié par le moteur (entrée `Forget`) : il ne
-tient plus une porte ouverte ni un contournement. Ce que les incidents en ont retenu
-reste.
+Un appareil retiré du réseau est oublié : la centrale envoie `Forget` au moteur et à
+la supervision à chaque `registry.device_removed`. Il ne tient plus une porte ouverte
+ni un contournement. Ce que les incidents en ont retenu reste.
 
 ## Contrat
 
