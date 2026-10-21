@@ -1,0 +1,11 @@
+# Virtual kit: the cloud's photo store, HTTPS on 127.0.0.1:8443 (docs/kit-virtuel.md).
+[Unit]
+Description=safeHome virtual kit: photo store
+
+[Service]
+ExecStart=/usr/local/bin/vkit-fakeupload -listen 127.0.0.1:8443 -cert /etc/vkit/cloud.pem -key /etc/vkit/cloud.key
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

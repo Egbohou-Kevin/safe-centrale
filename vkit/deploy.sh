@@ -26,7 +26,7 @@ fi
 
 "$repo/deploy/bundle.sh" -v vkit -s "$here/site" -g "$go2rtc" "$work/bundle"
 mkdir -p "$work/vkit/bin"
-for tool in fakemodem fakez2m; do
+for tool in fakemodem fakez2m fakeupload; do
 	(cd "$repo" && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o "$work/vkit/bin/vkit-$tool" "./vkit/$tool")
 done
 cp -R "$here/systemd" "$here/cloud.conf" "$here/camera.yaml" "$here/install-kit.sh" "$work/vkit/"

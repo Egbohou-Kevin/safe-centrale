@@ -20,6 +20,7 @@ d'intégration entre programmes et de comportement face aux pannes.
 | Cloud | Un second Mosquitto en TLS sur `127.0.0.1:8883`, avec sa propre autorité |
 | Caméra du commerce | `vkit-camera` : un go2rtc qui diffuse une mire de test en RTSP (H.264) sur `127.0.0.1:8554` |
 | Relais vidéo du cloud | `vkit-relay` (ffmpeg qui reçoit le flux RTMP) derrière `vkit-relay-tls` (rtmps sur `127.0.0.1:1936`, certificat du faux cloud, reconnu par le système comme le serait le vrai) |
+| Stockage des photos du cloud | `vkit-fakeupload` : reçoit les `PUT` HTTPS de l'agent (certificat du faux cloud), vérifie qu'il s'agit d'un JPEG ; un jeton qui ne commence pas par `vkit-ok` est refusé (401) |
 | Bastion de maintenance | Le serveur SSH de la VM : un compte `tunnel` sans shell, la clé de la centrale limitée à son port (`permitlisten`), comme dans `maintenance.md` |
 | Wi-Fi de la console, téléphone de l'installateur | Deux radios simulées par le noyau (`mac80211_hwsim`) : `wlan0` pour la centrale, `wlan1` pour le téléphone |
 
@@ -86,6 +87,10 @@ Les ordres reconnus sont décrits en tête de `vkit/fakemodem/control.go` et
 11. **Vidéo en direct** demandée depuis l'application : la caméra est joignable, le
     flux arrive au relais en H.264 sans réencodage, s'arrête sur demande, et son jeton
     n'apparaît dans aucun journal.
+12. **Photos à l'alarme** : la centrale prend une photo au déclenchement, le cloud
+    l'apprend ; une adresse refusée est signalée (`url_expired`), puis la photo
+    arrive au stockage en JPEG et l'agent confirme l'envoi ; le jeton n'apparaît
+    dans aucun journal.
 
 ## Ce qu'il a déjà trouvé
 

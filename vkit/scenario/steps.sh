@@ -284,6 +284,40 @@ step_video() {
 	fi
 }
 
+step_photo() {
+	say "photos at the alarm, sent to the cloud's store"
+	mark
+	app_order alarm.arm
+	sleep 1
+	app_order alarm.arm_now
+	expect bus '"type":"alarm.armed"' 10 "armed"
+	zigbee send $DOOR '{"contact":false}'
+	expect bus '"type":"alarm.triggered"' 25 "the alarm goes off"
+	expect cloud '"type":"photo.taken"' 60 "the cloud hears of a photo"
+	zigbee send $DOOR '{"contact":true}'
+	local photo
+	photo="$(tail -n +"$((cloud_from + 1))" "$CLOUDLOG" | grep -o '"type":"photo.taken","data":{"photo":"[0-9A-Z]*' | head -1 | grep -o '[0-9A-Z]*$')"
+	send_photo "$photo" vkit-bad-token
+	expect cloud "\"type\":\"photo.sent\".*\"photo\":\"$photo\".*\"reason\":\"url_expired\"" 30 "a refused address is reported (url_expired)"
+	mark
+	send_photo "$photo" vkit-ok-token
+	expect vkit-upload "PUT /photos/$photo.jpg bytes=[0-9]+ jpeg=true" 60 "the store receives the JPEG"
+	expect cloud "\"type\":\"photo.sent\".*\"photo\":\"$photo\".*\"status\":\"sent\"" 30 "the agent reports it sent"
+	if journalctl -u 'safehome-*' --since "-5min" --no-pager -o cat | grep -q "vkit-ok-token"; then
+		check_failed "the upload token is in no log"
+	else
+		check_passed "the upload token is in no log"
+	fi
+	app_order alarm.disarm "{\"code\":\"$OWNER_CODE\"}"
+	expect bus '"type":"alarm.disarmed"' 10 "disarmed"
+}
+
+# send_photo PHOTO TOKEN: the cloud tells the agent where to send a photo.
+send_photo() {
+	cloud_send photo/cmd photo.upload \
+		"{\"photo\":\"$1\",\"url\":\"https://127.0.0.1:8443/photos/$1.jpg\",\"token\":\"$2\",\"exp\":\"$(later '5 minutes')\"}"
+}
+
 # The installer's phone: the second radio, in a network namespace of its own so
 # that its traffic really goes over the simulated air to the hub (in one namespace
 # the kernel would shortcut it). A new network takes a few seconds to show up.

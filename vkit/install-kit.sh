@@ -9,7 +9,7 @@ set -euo pipefail
 src="$1"
 bundle="$src/bundle"
 
-install -m 755 "$src/vkit/bin/vkit-fakemodem" "$src/vkit/bin/vkit-fakez2m" /usr/local/bin/
+install -m 755 "$src"/vkit/bin/vkit-* /usr/local/bin/
 install -m 644 "$src"/vkit/systemd/*.service /etc/systemd/system/
 
 # The cloud's broker: its own authority and certificate, made once.
@@ -50,7 +50,7 @@ echo "127.0.0.1 $(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)" >"$bundle/
 systemctl daemon-reload
 systemctl enable --now vkit-modem vkit-cloud
 "$bundle/deploy/install.sh"
-systemctl enable --now vkit-z2m vkit-camera vkit-relay vkit-relay-tls
+systemctl enable --now vkit-z2m vkit-camera vkit-relay vkit-relay-tls vkit-upload
 
 # The hub's tunnel key, allowed on the bastion for its own port only.
 install -d -m 700 -o tunnel -g tunnel ~tunnel/.ssh
