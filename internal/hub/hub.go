@@ -313,8 +313,11 @@ func (h *Hub) boot(ctx context.Context) error {
 		actions := h.alarm.eng.Boot(now, signals)
 		h.publishState(now) // the first retained state, even if nothing changed since the last run
 		// An installation mode never survives a restart: one left open by a crash is
-		// closed for the console too.
-		h.publishInstall(now, contract.InstallRestart)
+		// closed for the console too. One opened at the keypad during the boot window
+		// is this run's own: it stands, and the console keeps its network.
+		if !h.alarm.inst.open {
+			h.publishInstall(now, contract.InstallRestart)
+		}
 		return actions
 	})
 	if err != nil {

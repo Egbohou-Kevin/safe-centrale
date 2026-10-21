@@ -89,6 +89,24 @@ func TestTheInstallerCodeOpensTheInstallationModeForHalfAnHour(t *testing.T) {
 	}
 }
 
+// Found with the virtual kit: the installer typed the code right after the hub
+// restarted (a power cut, the watchdog), within the boot window; the end of the boot
+// then announced "closed: restart" and the console dropped its network while the hub
+// held the mode open.
+func TestAModeOpenedDuringTheBootWindowStands(t *testing.T) {
+	r := newRig(t, nil, func(c *Config) { c.BootWindow = 300 * time.Millisecond })
+	r.withInstaller()
+	r.startWithoutWaiting()
+	r.keypad(contract.ValDisarm, installerCode)
+	drivertest.WaitFor(t, "the mode opened in the boot window", func() bool { return r.lastInstall().Status == contract.InstallOpen })
+	r.clock.PassTimer(t, 300*time.Millisecond)
+	drivertest.WaitFor(t, "the boot", func() bool { return len(r.broker.OfType(contract.TypeAlarmState)) > 0 })
+	r.settle()
+	if got := r.lastInstall(); got.Status != contract.InstallOpen {
+		t.Fatalf("after the boot: %+v, want the mode still open", got)
+	}
+}
+
 func TestArmingClosesTheInstallationMode(t *testing.T) {
 	r := newRig(t, nil)
 	r.withInstaller()
