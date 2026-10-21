@@ -86,7 +86,7 @@ func TestAReplacedStateTakesTheNumberOfTheOneItReplaces(t *testing.T) {
 	if len(got) != 1 || got[0].ID != newer || seqOf(t, got[0]) != tried.Seq {
 		t.Fatalf("%+v, tried %d", got, tried.Seq)
 	}
-	if h.r.Snapshot().Uplink != 1 {
+	if h.uplink != 1 {
 		t.Fatal("no number may be lost")
 	}
 }

@@ -59,11 +59,13 @@ func (c Config) Validate() error {
 
 // Deps are the ports the agent needs.
 type Deps struct {
-	Clock    driver.Clock
-	Store    driver.Store     // the core's snapshot and the agent's counter
-	Queue    QueueStore       // the core's queue for the cloud
-	Local    outbox.Publisher // the hub's broker
-	Cloud    outbox.Publisher // the cloud's broker; ErrUnavailable while it cannot be reached
+	Clock driver.Clock
+	Store driver.Store     // the core's snapshot, its numbering for the cloud, the agent's counter
+	Queue QueueStore       // the core's queue for the cloud
+	Local outbox.Publisher // the hub's broker
+	// Cloud is the cloud's broker: outbox.ErrUnavailable while it cannot be reached, an
+	// error wrapping ErrRefused for a message it refuses for good.
+	Cloud    outbox.Publisher
 	Photos   Photos
 	Uploader Uploader
 	NewID    func() string
@@ -89,6 +91,7 @@ const (
 	src        = contract.AgentLink
 	keyAgent   = "agent"
 	keySeq     = "agent_seq"
+	keyUplink  = "agent_uplink"
 	maxPayload = 256 * 1024
 )
 

@@ -125,6 +125,11 @@ func TestReasonCodes(t *testing.T) {
 			t.Errorf("failed(%#x) = %v", code, !bad)
 		}
 	}
+	for code, final := range map[byte]bool{0x00: false, 0x10: false, 0x80: true, 0x87: true, 0x90: true, 0x91: false, 0x97: false, 0x99: true} {
+		if refused(code) != final {
+			t.Errorf("refused(%#x) = %v", code, !final)
+		}
+	}
 }
 
 func TestPublishBeforeAnyBrokerFails(t *testing.T) {

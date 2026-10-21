@@ -77,7 +77,7 @@ func runAgent(ctx context.Context, cfg agentconfig.Result, stderr io.Writer) int
 	ids := contract.NewIDGenerator()
 	local, cloud := &service.Publisher{}, &service.Publisher{}
 	app, err := agentapp.New(cfg.App, agentapp.Deps{
-		Clock: driver.SystemClock(), Store: store, Queue: queue, Local: local, Cloud: cloud,
+		Clock: driver.SystemClock(), Store: store, Queue: queue, Local: local, Cloud: cloudPublisher{cloud},
 		Photos: photos{dir}, Uploader: uploader{https}, NewID: ids.New, Logger: log,
 	})
 	if err != nil {

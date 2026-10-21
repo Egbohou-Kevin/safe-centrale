@@ -233,6 +233,53 @@ func TestTheCloudConfirmsAndDeliversAnAppAlert(t *testing.T) {
 	}
 }
 
+// An alert the hub waits for does not queue behind a backlog of alarm messages: the
+// cloud has 10 s to confirm it, or the hub turns to the GSM for nothing.
+func TestAnAppAlertLeavesBeforeABacklogOfAlarms(t *testing.T) {
+	h := newHarness(t)
+	for range 50 {
+		h.local(topic("alarm", "event"), contract.TypeAlarmArmed, armed)
+	}
+	h.linkUp()
+	tried, _ := h.next() // the cloud's broker did not acknowledge it
+	sms := appAlert("inc1")
+	sms.Channel = contract.ChannelSMS // the GSM's: no hurry, it goes up for the record
+	record, _ := h.local(topic("alert", "request"), contract.TypeAlertRequest, sms)
+	awaited, _ := h.local(topic("alert", "request"), contract.TypeAlertRequest, appAlert("inc1"))
+	it, _ := h.next()
+	if it.ID != awaited {
+		t.Fatalf("sent %s first, want the awaited alert", it.Topic)
+	}
+	h.handle(Sent{Now: h.now, ID: it.ID})
+	sent := h.send()
+	if len(sent) != 51 || sent[0].ID != tried.ID || sent[0].Seq != tried.Seq || sent[50].ID != record {
+		t.Fatalf("%d sent; the one tried keeps its number, the SMS alert its place in arrival order", len(sent))
+	}
+}
+
+// A message the cloud's broker refuses for good leaves the queue, counted as dropped:
+// tried again, it would hold everything behind it for days.
+func TestAMessageTheCloudsBrokerRefusesIsDropped(t *testing.T) {
+	h := newHarness(t)
+	h.linkUp()
+	refused, _ := h.local(topic("alarm", "event"), contract.TypeAlarmArmed, armed)
+	after, _ := h.local(topic("alarm", "event"), contract.TypeAlarmDisarmed, contract.DisarmedData{})
+	alert, _ := h.local(topic("alert", "request"), contract.TypeAlertRequest, appAlert("inc1"))
+	h.next() // the awaited alert goes first
+	acts := h.handle(Rejected{Now: h.now, ID: alert})
+	if f := of[FailAlert](acts); len(f) != 1 || f[0].Ref != alert {
+		t.Fatalf("%+v: the hub must turn to the GSM now", acts)
+	}
+	h.next()
+	acts = h.handle(Rejected{Now: h.now, ID: refused})
+	if d := of[Dropped](acts); len(d) != 1 || d[0].Count != 1 || len(of[QueueDrop](acts)) != 1 {
+		t.Fatalf("%+v", acts)
+	}
+	if it, ok := h.next(); !ok || it.ID != after || h.r.Status(h.now).Dropped != 2 {
+		t.Fatalf("next %s, %d dropped", it.ID, h.r.Status(h.now).Dropped)
+	}
+}
+
 func TestAConfirmedAlertIsForgottenAfterAnHour(t *testing.T) {
 	h := newHarness(t)
 	h.linkUp()
@@ -463,14 +510,62 @@ func TestOwnMessagesGoUpLikeTheOthers(t *testing.T) {
 	h := newHarness(t)
 	b, _ := h.msg(contract.TypeAgentStatus, contract.AgentStatusData{Uplink: contract.UplinkDown})
 	h.handle(Own{Now: h.now, Topic: topic("agent", "status"), Payload: b})
-	if got := h.queued(); !reflect.DeepEqual(got, []string{"agent/status"}) {
+	b, _ = h.msg(contract.TypePhotoSent, contract.PhotoSentData{Photo: "01JB8ZQ7V2T4X9H6N5R0WYCE00", Status: contract.PhotoSent})
+	h.handle(Own{Now: h.now, Topic: topic("photo", "sent"), Payload: b})
+	if got := h.queued(); !reflect.DeepEqual(got, []string{"agent/status", "photo/sent"}) {
 		t.Fatalf("%v", got)
+	}
+}
+
+// The hub's broker gives the retained messages again at each new connection of the
+// agent. An old state sent again would take a new number, which the cloud drops as a
+// duplicate of its id: a hole that never closes.
+func TestARetainedStateGivenBackDoesNotGoUpAgain(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.QueueAge = time.Hour })
+	state, _ := h.msg(contract.TypeAlarmState, contract.AlarmStateData{State: contract.StateArmed})
+	given := func() Input { return Local{Now: h.now, Topic: topic("alarm", "state"), Payload: state} }
+	h.handle(given())
+	h.linkUp()
+	if len(h.send()) != 1 {
+		t.Fatal("the state went up")
+	}
+	h.handle(given())
+	h.restart()
+	h.handle(given())
+	if len(h.r.queue) != 0 {
+		t.Fatalf("the same state given back waits again: %v", h.queued())
+	}
+	// A state that changed while the agent was away goes.
+	changed, _ := h.msg(contract.TypeAlarmState, contract.AlarmStateData{State: contract.StateDisarmed})
+	h.handle(Local{Now: h.now, Topic: topic("alarm", "state"), Payload: changed})
+	if len(h.r.queue) != 1 {
+		t.Fatal("a new state must go")
+	}
+	// A state that never reached the cloud goes if the broker gives it back.
+	h.handle(Link{Now: h.now, Up: false})
+	if acts := h.advance(time.Hour); len(of[Dropped](acts)) != 1 {
+		t.Fatalf("%+v: dropped as too old", acts)
+	}
+	h.handle(Local{Now: h.now, Topic: topic("alarm", "state"), Payload: changed})
+	if len(h.r.queue) != 1 {
+		t.Fatalf("%v", h.queued())
+	}
+}
+
+// The agent's own status, retained on the hub's broker, comes back at each new
+// connection, even with NoLocal: it is not the hub's, and the latest goes already.
+func TestTheAgentsOwnStatusGivenBackIsIgnored(t *testing.T) {
+	h := newHarness(t)
+	b, _ := h.msg(contract.TypeAgentStatus, contract.AgentStatusData{Uplink: contract.UplinkUp})
+	h.handle(Local{Now: h.now, Topic: topic("agent", "status"), Payload: b})
+	if len(h.r.queue) != 0 {
+		t.Fatal("an old status of the agent went up")
 	}
 }
 
 func TestFilters(t *testing.T) {
 	up := UpFilters(site)
-	for _, want := range []string{topic("alarm", "event"), topic("device", "+", "event"), topic("system", "heartbeat"), topic("agent", "status")} {
+	for _, want := range []string{topic("alarm", "event"), topic("device", "+", "event"), topic("system", "heartbeat"), topic("system", "health")} {
 		if !slices.Contains(up, want) {
 			t.Errorf("up filters miss %s: %v", want, up)
 		}
@@ -478,7 +573,8 @@ func TestFilters(t *testing.T) {
 	if !slices.Contains(up, topic("install", "mode")) {
 		t.Errorf("up filters miss install/mode: the owner would not see the installation mode")
 	}
-	for _, never := range []string{topic("registry", "cmd"), topic("device", "+", "cmd"), topic("alarm", "cmd"), topic("install", "cmd")} {
+	for _, never := range []string{topic("registry", "cmd"), topic("device", "+", "cmd"), topic("alarm", "cmd"), topic("install", "cmd"),
+		topic("agent", "status"), topic("agent", "replayed")} { // the agent's own
 		if slices.Contains(up, never) {
 			t.Errorf("up filters include %s", never)
 		}

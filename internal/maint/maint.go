@@ -145,9 +145,11 @@ func (v *Service) down(d Down) []Action {
 }
 
 // boot runs once the service started: a session saved before a restart goes on
-// until its time, or is said to be over.
+// until its time, or is said to be over. An order may come before it: the session it
+// opened is live already (its tunnel started, or waits to be started again), and is
+// left alone.
 func (v *Service) boot(now time.Time) []Action {
-	if v.s.Session == "" {
+	if v.s.Session == "" || v.running || !v.retryAt.IsZero() {
 		return nil
 	}
 	if !now.Before(v.s.Until) {

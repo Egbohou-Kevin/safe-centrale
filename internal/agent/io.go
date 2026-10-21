@@ -39,6 +39,13 @@ type Sent struct {
 	ID  string
 }
 
+// Rejected says the cloud's broker refused an item for good (not authorized,
+// invalid): tried again, it would hold the queue behind it for days.
+type Rejected struct {
+	Now time.Time
+	ID  string
+}
+
 // Link says the connection to the cloud came up or went down. Transport is the URL
 // scheme in use ("mqtts", "wss").
 type Link struct {
@@ -50,12 +57,13 @@ type Link struct {
 // Tick says time has passed.
 type Tick struct{ Now time.Time }
 
-func (i Local) at() time.Time { return i.Now }
-func (i Own) at() time.Time   { return i.Now }
-func (i Cloud) at() time.Time { return i.Now }
-func (i Sent) at() time.Time  { return i.Now }
-func (i Link) at() time.Time  { return i.Now }
-func (i Tick) at() time.Time  { return i.Now }
+func (i Local) at() time.Time    { return i.Now }
+func (i Own) at() time.Time      { return i.Now }
+func (i Cloud) at() time.Time    { return i.Now }
+func (i Sent) at() time.Time     { return i.Now }
+func (i Rejected) at() time.Time { return i.Now }
+func (i Link) at() time.Time     { return i.Now }
+func (i Tick) at() time.Time     { return i.Now }
 
 // Action is what the relay asks the application to do.
 type Action interface{ action() }
@@ -81,7 +89,8 @@ type Refused struct {
 	Reason string
 }
 
-// Dropped: items left the queue without reaching the cloud (full, or too old).
+// Dropped: items left the queue without reaching the cloud (full, too old, refused
+// by the cloud's broker).
 type Dropped struct {
 	Count  int
 	Reason string

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 
+	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/photodir"
 	"safehome/internal/adapter/upload"
 	"safehome/internal/agentapp"
+	"safehome/internal/service"
 )
 
 // photos fits the photos' folder to the application's port.
@@ -23,6 +25,18 @@ func (p photos) Open(id string) (io.ReadCloser, int64, error) {
 }
 
 func (p photos) Remove(id string) error { return p.d.Remove(id) }
+
+// cloudPublisher fits the cloud's client to the application's port: a message its
+// broker refused for good says so.
+type cloudPublisher struct{ p *service.Publisher }
+
+func (c cloudPublisher) Publish(ctx context.Context, topic string, payload []byte, qos byte, retain bool) error {
+	err := c.p.Publish(ctx, topic, payload, qos, retain)
+	if errors.Is(err, mqtt.ErrRefused) {
+		return fmt.Errorf("%w: %w", agentapp.ErrRefused, err)
+	}
+	return err
+}
 
 // uploader fits HTTPS to the application's port.
 type uploader struct{ c *upload.Client }

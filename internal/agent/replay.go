@@ -3,7 +3,6 @@ package agent
 import (
 	"encoding/json"
 	"slices"
-	"time"
 
 	"safehome/internal/contract"
 )
@@ -20,8 +19,8 @@ import (
 
 // number gives an item the next number, at its first attempt to leave.
 func (r *Relay) number(it *Item) {
-	r.s.Uplink++
-	stamp(it, r.s.Uplink)
+	r.uplink++
+	stamp(it, r.uplink)
 }
 
 // stamp writes seq into the item and into its envelope, which keeps the order of
@@ -41,11 +40,11 @@ func stamp(it *Item, seq uint64) {
 
 // sent takes an acknowledged item out of the queue, or of the replays, and keeps a
 // numbered one in the journal.
-func (r *Relay) sent(now time.Time, id string) []Action {
+func (r *Relay) sent(id string) []Action {
 	if i := slices.IndexFunc(r.queue, func(it Item) bool { return it.ID == id }); i >= 0 {
 		it := r.queue[i]
 		r.queue = slices.Delete(r.queue, i, i+1)
-		r.noteSent(now, it)
+		r.noteSent(it)
 		if it.Seq != 0 {
 			r.remember(it)
 		}
@@ -55,6 +54,19 @@ func (r *Relay) sent(now time.Time, id string) []Action {
 		r.replay = slices.Delete(r.replay, i, i+1)
 	}
 	return nil
+}
+
+// rejected drops an item the cloud's broker refused for good, or a replay of it. An
+// alert the hub waits for fails at once: the hub turns to the GSM.
+func (r *Relay) rejected(id string) []Action {
+	r.replay = slices.DeleteFunc(r.replay, func(it Item) bool { return it.ID == id })
+	gone, _ := r.removeIf(func(it Item) bool { return it.ID == id })
+	out := r.dropped(gone, "refused by the cloud's broker")
+	if p, ok := r.s.Pending[id]; ok && !p.Confirmed && len(gone) > 0 {
+		delete(r.s.Pending, id)
+		out = append(out, FailAlert{Ref: id})
+	}
+	return out
 }
 
 // remember keeps a sent item in the journal, within its bounds: the oldest go first.
@@ -84,7 +96,7 @@ func (r *Relay) replayRange(d contract.ReplayData) []Action {
 			queued[it.Seq] = true
 		}
 	}
-	report := contract.ReplayedData{From: d.From, To: d.To, Last: r.s.Uplink}
+	report := contract.ReplayedData{From: d.From, To: d.To, Last: r.uplink}
 	for seq := d.From; seq <= d.To; seq++ {
 		it, ok := held[seq]
 		switch {

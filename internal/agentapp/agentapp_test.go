@@ -163,6 +163,21 @@ func TestAMessageTheCloudDidNotTakeIsTriedAgain(t *testing.T) {
 	})
 }
 
+func TestAMessageTheCloudRefusesForGoodIsDropped(t *testing.T) {
+	r := newRig(t, nil)
+	r.cloud.mu.Lock()
+	r.cloud.refuse = contract.TypeAlarmArmed
+	r.cloud.mu.Unlock()
+	r.fromHub(topic("alarm", "event"), contract.TypeAlarmArmed, contract.ArmedData{})
+	r.fromHub(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
+	r.app.LinkChanged(true, "mqtts")
+	// No retry delay to wait for: the clock does not move.
+	eventually(t, "the next message to leave", func() bool { return len(r.cloud.ofType(contract.TypeAlarmTriggered)) == 1 })
+	eventually(t, "the refused one to leave the queue", func() bool { return r.queued() == 0 })
+	r.clock.Advance(time.Minute)
+	eventually(t, "the status", func() bool { return lastStatus(t, r.local).Dropped == 1 })
+}
+
 func TestTheCloudGetsAgainWhatItMissed(t *testing.T) {
 	r := newRig(t, nil)
 	r.app.LinkChanged(true, "mqtts")

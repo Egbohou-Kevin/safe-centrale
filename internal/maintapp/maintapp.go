@@ -177,6 +177,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	start(func(c context.Context) { a.loop.Run(c) })
 	start(a.out.Run)
+	// An order received before this point is taken first; Boot leaves its session alone.
 	a.loop.Do(runCtx, func(now time.Time) []maint.Action { return a.core.Handle(maint.Boot{Now: now}) })
 	<-runCtx.Done()
 	cancel()

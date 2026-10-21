@@ -1,6 +1,6 @@
 # Agent de liaison
 
-Statut : v1 codée (`internal/agent`, `internal/agentapp`, `cmd/safehome-agent`), sauf
+Statut : v1 codée (`internal/agent`, `internal/agentapp`, `cmd/safehome-agent`), avec
 les photos, le rejeu d'une plage de `seq` et la configuration venue du cloud. Voir
 « Ce qui est codé » à la fin.
 
@@ -33,7 +33,7 @@ sirène et la passerelle GSM continuent.
 | Local vers cloud | Photos | Envoi à part (voir « Photos ») |
 | Cloud vers local | `alarm/cmd` | Ordres de l'application |
 | Cloud vers local | `video/cmd` | Sessions vidéo en direct |
-| Cloud vers local | Configuration | Contacts, planning, délais, politique de canaux (pas encore : refusée) |
+| Cloud vers local | Configuration (`config/set`) | Contacts, planning, délais, forfait vidéo : contrôlée, puis publiée sur la centrale |
 | Cloud vers local | Résultats et acquittements des canaux du cloud | Republiés en `alert.result` et `alert.ack` |
 
 Les événements `keypad` ne partent jamais, car ils portent le code. Les
@@ -55,6 +55,10 @@ La reconnexion se fait avec un délai croissant (1 s, 2 s, 4 s… plafonné à 3
 l'agent n'attend qu'une part tirée au hasard, la première tentative comprise (jusqu'à
 2 s) : des centaines de sites ne se reconnectent pas tous au même instant après une
 panne du cloud.
+
+L'agent ne se dit relié au cloud qu'une fois abonné à ses ordres. Si le broker ne
+répond pas à l'abonnement (10 s), l'agent le redemande, avec le même délai croissant,
+tant que la connexion tient.
 
 L'agent déclare un **dernier message** (« Last Will ») au broker : si la connexion
 se coupe sans prévenir, le broker publie « site hors ligne » (`agent.status` avec
@@ -78,19 +82,36 @@ Quand internet est coupé :
 - La file est bornée : 20 000 messages, 10 Mo ou 7 jours par défaut. Si elle est
   pleine, on supprime d'abord les messages les moins importants : les événements
   d'alarme et d'alerte ne sont jamais supprimés avant les autres. Les suppressions
-  sont comptées dans `agent.status` (`dropped`).
+  (file pleine, message trop vieux, refus du broker) sont comptées dans
+  `agent.status` (`dropped`). Ce compte survit aux redémarrages.
+- **Refus du broker du cloud** : un message refusé pour de bon (accusé de réception
+  avec un code d'échec : non autorisé, invalide…) est supprimé. Renvoyé, il bloquerait
+  toute la file derrière lui. Le journal donne son type, jamais son contenu. Un refus
+  passager (quota dépassé) est réessayé. Une alerte pour l'application refusée ainsi
+  échoue tout de suite : la centrale passe au GSM.
 - **Sur la carte SD**, chaque message de la file est un petit fichier, dans le
   dossier `agent_queue` du répertoire d'état. Ajouter, numéroter ou envoyer un
-  message n'écrit que son fichier, jamais toute la file. Vider 20 000 messages après
-  une coupure écrit ainsi environ 15 Mo, au lieu de plus de 100 Go. Le reste de
-  l'état de l'agent est petit et tient dans un seul fichier. Après une coupure de
-  courant, l'agent remet les deux d'accord au démarrage. Une file gardée par une
-  version précédente est reprise sans perte.
+  message n'écrit que son fichier, jamais toute la file. Le dernier numéro donné au
+  cloud a son propre fichier de quelques octets (`agent_uplink.json`). Le reste de
+  l'état (`agent.json`, jusqu'à 60 Ko avec les `id` déjà reçus du cloud) n'est pas
+  réécrit pour chaque message. Vider 20 000 messages après une coupure écrit ainsi
+  environ 7 Mo de données, au lieu de 1,2 Go (mesuré par
+  `TestDrainingTheQueueWritesItemsNotTheQueue` : 330 Ko pour 1000 messages). Après une
+  coupure de courant, l'agent remet les fichiers d'accord au démarrage. Une file et un
+  numéro gardés par une version précédente sont repris sans perte.
 - **Numérotation pour le cloud** : chaque programme numérote ses propres messages, et
   beaucoup restent sur le site. L'agent numérote donc de nouveau ce qui part au cloud,
   à la première tentative d'envoi : là-bas, `seq` est continu par site, et un trou
   veut dire un message manqué. Un état ou un heartbeat remplacé avant confirmation
-  garde le numéro de celui qu'il remplace.
+  garde le numéro de celui qu'il remplace. Le numéro est écrit sur disque avant
+  l'envoi : il n'est jamais redonné, même après une coupure de courant.
+- **États redonnés par le broker de la centrale** : à chaque connexion de l'agent, le
+  broker local redonne les messages retenus. Un état déjà parti (même `id`) ne repart
+  pas : il prendrait un nouveau numéro, que le cloud jetterait comme doublon, et le
+  trou laissé ne se refermerait jamais. L'agent garde donc, par topic retenu, l'`id`
+  du dernier état parti. Un état changé pendant un arrêt de l'agent a un autre `id` et
+  part. L'agent ne lit pas ses propres topics (`agent/status`, `agent/replayed`) sur
+  la centrale.
 - **Rejeu** : le cloud demande `agent.replay` (`from`, `to`, 1000 au plus, topic
   `agent/cmd`). L'agent renvoie ce qu'il a encore, après le reste, sans `retain`, avec
   le même `id` et le même `seq`, et répond `agent.replayed` (`resent`, `missing`,
@@ -102,9 +123,9 @@ Quand internet est coupé :
 
 Quand le moteur demande une alerte par application ou WhatsApp :
 
-1. L'agent l'envoie au cloud en priorité, sans la mettre derrière une longue file. Si
-   internet est déjà coupé, il ne la met pas en file : il répond tout de suite
-   `failed` avec `no_uplink`.
+1. L'agent l'envoie au cloud avant tout le reste de la file, même devant une longue
+   file d'événements d'alarme. Si internet est déjà coupé, il ne la met pas en file :
+   il répond tout de suite `failed` avec `no_uplink`.
 2. Le cloud confirme qu'il la prend en charge. Si l'agent n'a pas cette
    confirmation en **10 secondes**, il publie `alert.result` avec `failed` et la
    raison `no_uplink`. Le moteur passe alors au GSM, comme prévu dans
@@ -178,7 +199,8 @@ photos. Le mode économe protège un client dont le forfait est à sa charge.
 la même valeur que dans `video.json`.
 
 - **Ce qui est espacé.** Le heartbeat et `agent.status` partent au cloud toutes les
-  5 minutes au lieu de chaque minute, ce qui divise leur part par cinq.
+  5 minutes au lieu de chaque minute, ce qui divise leur part par cinq. Les 5 minutes
+  comptent depuis l'entrée du message dans la file, pas depuis la réponse du cloud.
 - **Ce qui part comme avant.** Tout le reste : alarmes, alertes, états, santé.
 - **Ce qui part tout de suite quand même.** Un changement de liaison (connexion
   rétablie, repli en WebSocket). Le cloud efface ainsi au plus vite le « hors ligne »
@@ -239,8 +261,9 @@ alors directement aux canaux GSM.
 
 ## Ce qui est codé
 
-- Le cœur (`internal/agent`) : la file à priorités, ses bornes et sa sauvegarde, les
-  contrôles de ce qui descend du cloud, le délai de confirmation des alertes. Il ne
+- Le cœur (`internal/agent`) : la file à priorités, ses bornes et sa sauvegarde, la
+  numérotation et le rejeu, les photos, les contrôles de ce qui descend du cloud, le
+  délai de confirmation des alertes. Il ne
   fait aucune entrée-sortie et ne lit pas l'horloge ; il ne connaît que le contrat.
 - La couche application (`internal/agentapp`) : l'envoi au cloud un message à la fois
   avec reprise, la republication sur la centrale, `agent.status` chaque minute.

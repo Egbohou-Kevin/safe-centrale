@@ -2,17 +2,25 @@ package mqtt
 
 import (
 	"context"
+	"errors"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/eclipse/paho.golang/packets"
 )
 
-// startFakeBroker plays a broker that refuses the subscriptions in refuse (reason
-// 0x87, not authorized), as the cloud's access list would. Mosquitto cannot do it: it
-// grants every subscription and filters on delivery.
-func startFakeBroker(t *testing.T, refuse map[string]bool) string {
+// fakeRules say how the fake broker answers. Mosquitto cannot play these: it grants
+// every subscription, filters on delivery, and acknowledges every message.
+type fakeRules struct {
+	refuse  map[string]bool // subscriptions refused (0x87, not authorized), as the cloud's access list would
+	puback  map[string]byte // the reason code of the acknowledgement, by topic (0 if absent)
+	silence atomic.Int32    // how many subscriptions, the first ones, get no answer
+}
+
+// startFakeBroker plays a broker that follows rules.
+func startFakeBroker(t *testing.T, rules *fakeRules) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -25,13 +33,13 @@ func startFakeBroker(t *testing.T, refuse map[string]bool) string {
 			if err != nil {
 				return
 			}
-			go serveFake(conn, refuse)
+			go serveFake(conn, rules)
 		}
 	}()
 	return "mqtt://" + l.Addr().String()
 }
 
-func serveFake(conn net.Conn, refuse map[string]bool) {
+func serveFake(conn net.Conn, rules *fakeRules) {
 	defer conn.Close()
 	for {
 		in, err := packets.ReadPacket(conn)
@@ -43,17 +51,15 @@ func serveFake(conn net.Conn, refuse map[string]bool) {
 		case packets.CONNECT:
 			out = packets.NewControlPacket(packets.CONNACK)
 		case packets.SUBSCRIBE:
-			sub := in.Content.(*packets.Subscribe)
-			out = packets.NewControlPacket(packets.SUBACK)
-			ack := out.Content.(*packets.Suback)
-			ack.PacketID = sub.PacketID
-			for _, s := range sub.Subscriptions {
-				reason := s.QoS
-				if refuse[s.Topic] {
-					reason = 0x87
-				}
-				ack.Reasons = append(ack.Reasons, reason)
+			if rules.silence.Add(-1) >= 0 {
+				continue
 			}
+			out = suback(in.Content.(*packets.Subscribe), rules.refuse)
+		case packets.PUBLISH:
+			pub := in.Content.(*packets.Publish)
+			out = packets.NewControlPacket(packets.PUBACK)
+			ack := out.Content.(*packets.Puback)
+			ack.PacketID, ack.ReasonCode = pub.PacketID, rules.puback[pub.Topic]
 		case packets.PINGREQ:
 			out = packets.NewControlPacket(packets.PINGRESP)
 		case packets.DISCONNECT:
@@ -67,11 +73,25 @@ func serveFake(conn net.Conn, refuse map[string]bool) {
 	}
 }
 
+func suback(sub *packets.Subscribe, refuse map[string]bool) *packets.ControlPacket {
+	out := packets.NewControlPacket(packets.SUBACK)
+	ack := out.Content.(*packets.Suback)
+	ack.PacketID = sub.PacketID
+	for _, s := range sub.Subscriptions {
+		reason := s.QoS
+		if refuse[s.Topic] {
+			reason = 0x87
+		}
+		ack.Reasons = append(ack.Reasons, reason)
+	}
+	return out
+}
+
 func TestARefusedSubscriptionDoesNotKeepTheLinkDown(t *testing.T) {
 	// The broker refuses one filter: the others work, so the link is up. Before, the
 	// client took the partial refusal for a failure and never said so: the agent kept
 	// the cloud for unreachable and sent it nothing.
-	url := startFakeBroker(t, map[string]bool{"safehome/s1/forbidden": true})
+	url := startFakeBroker(t, &fakeRules{refuse: map[string]bool{"safehome/s1/forbidden": true}})
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	l := newLinks()
@@ -97,4 +117,52 @@ func TestARefusedSubscriptionDoesNotKeepTheLinkDown(t *testing.T) {
 		t.Fatal("OnSubscribed was never called")
 	}
 	c.Close(ctx)
+}
+
+func TestASubscriptionLeftUnansweredIsAskedAgain(t *testing.T) {
+	// The broker does not answer the first subscription in time. The connection is
+	// alive: before, the client gave up until the next connection, and the agent kept
+	// the cloud for unreachable while it was there.
+	defer func(wait time.Duration) { subscribeWait = wait }(subscribeWait)
+	subscribeWait = 200 * time.Millisecond
+	rules := &fakeRules{}
+	rules.silence.Store(1)
+	url := startFakeBroker(t, rules)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	l := newLinks()
+	c, err := Dial(ctx, Options{
+		BrokerURL: url, ClientID: uniqueID("late"), OnLinkChange: l.change,
+		Subscriptions: []Subscription{{Filter: "safehome/s1/alarm/cmd", QoS: 1}},
+		OnMessage:     func(Message) {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := l.next(t); s != "up mqtt" {
+		t.Fatalf("link %q, want up", s)
+	}
+	if rules.silence.Load() >= 0 {
+		t.Fatal("subscribed only once")
+	}
+	c.Close(ctx)
+}
+
+func TestABrokerRefusalIsTold(t *testing.T) {
+	url := startFakeBroker(t, &fakeRules{puback: map[string]byte{"s/forbidden": 0x87, "s/quota": 0x97}})
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	c := dial(t, ctx, url, uniqueID("pub"), nil, nil)
+	defer c.Close(ctx)
+	if err := c.Publish(ctx, Message{Topic: "s/fine", Payload: []byte("{}"), QoS: 1}); err != nil {
+		t.Fatal(err)
+	}
+	err := c.Publish(ctx, Message{Topic: "s/forbidden", Payload: []byte("{}"), QoS: 1})
+	if !errors.Is(err, ErrRefused) {
+		t.Fatalf("not authorized: %v, want ErrRefused", err)
+	}
+	err = c.Publish(ctx, Message{Topic: "s/quota", Payload: []byte("{}"), QoS: 1})
+	if err == nil || errors.Is(err, ErrRefused) || errors.Is(err, ErrDown) {
+		t.Fatalf("quota exceeded: %v, want an error worth another try", err)
+	}
 }

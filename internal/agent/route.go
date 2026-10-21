@@ -15,6 +15,9 @@ type upRoute struct {
 	prio   Priority
 	retain bool // a retained topic: also retained on the cloud's broker, only the latest counts
 	device bool // a device event: only some capabilities go up
+	// own: only the agent publishes there, and hands its messages over itself (Own).
+	// The hub's broker only gives them back, retained, at each new connection.
+	own bool
 }
 
 // upCapabilities are the device events worth the cloud's attention. Never keypad: it
@@ -38,7 +41,7 @@ var upRoutes = map[string]upRoute{
 	"alert/ack":        {types: []string{contract.TypeAlertAck}, prio: PriorityAlarm},
 	"system/health":    {types: []string{contract.TypeHealth}, prio: PriorityState, retain: true},
 	"system/heartbeat": {types: []string{contract.TypeHeartbeat}, prio: PriorityState},
-	"agent/status":     {types: []string{contract.TypeAgentStatus}, prio: PriorityState, retain: true},
+	"agent/status":     {types: []string{contract.TypeAgentStatus}, prio: PriorityState, retain: true, own: true},
 	"device/+/event":   {types: []string{contract.TypeDeviceEvent}, prio: PriorityNormal, device: true},
 	"video/session":    {types: []string{contract.TypeVideoSession}, prio: PriorityNormal},
 	"video/status":     {types: []string{contract.TypeVideoStatus}, prio: PriorityState, retain: true},
@@ -46,16 +49,18 @@ var upRoutes = map[string]upRoute{
 	"photo/taken":      {types: []string{contract.TypePhotoTaken}, prio: PriorityNormal},
 	"photo/sent":       {types: []string{contract.TypePhotoSent}, prio: PriorityNormal},
 	"maint/session":    {types: []string{contract.TypeMaintSession}, prio: PriorityNormal},
-	"agent/replayed":   {types: []string{contract.TypeAgentReplayed}, prio: PriorityNormal},
+	"agent/replayed":   {types: []string{contract.TypeAgentReplayed}, prio: PriorityNormal, own: true},
 	// The owner sees in the app that someone opened the installation mode.
 	"install/mode": {types: []string{contract.TypeInstallMode}, prio: PriorityNormal, retain: true},
 }
 
-// UpFilters lists the topics the agent reads on the hub's broker.
+// UpFilters lists the topics the agent reads on the hub's broker: not its own.
 func UpFilters(site string) []string {
 	var out []string
-	for key := range upRoutes {
-		out = append(out, contract.Topic(site, key))
+	for key, route := range upRoutes {
+		if !route.own {
+			out = append(out, contract.Topic(site, key))
+		}
 	}
 	slices.Sort(out)
 	return out

@@ -11,6 +11,11 @@ import (
 	"safehome/internal/outbox"
 )
 
+// ErrRefused is wrapped by the error of the cloud's publisher when its broker refused
+// a message for good (not authorized, invalid): the same message would get the same
+// answer.
+var ErrRefused = errors.New("agentapp: refused by the cloud's broker")
+
 // dispatch carries out what the core decided. It runs on the loop's goroutine.
 func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action) error {
 	for _, act := range actions {
@@ -43,10 +48,10 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action)
 			a.publishOwn(now, contract.AgentReplayedTopic(a.cfg.Site), contract.TypeAgentReplayed, v.Report, false)
 		case agent.Upload, agent.RemovePhoto, agent.PhotoReport:
 			a.dispatchPhoto(now, act)
-		case agent.QueueSave, agent.QueueDrop:
+		case agent.QueueSave, agent.QueueDrop, agent.UplinkSave:
 			// Before the snapshot is saved: see internal/agent/queue.go. An item not
 			// saved still goes from memory; it would be lost to a crash.
-			if err := a.storeQueue(act); err != nil {
+			if err := a.save(act); err != nil {
 				a.log.Error("the queue for the cloud could not be saved", "err", err)
 			}
 		}
@@ -147,6 +152,12 @@ func (a *App) sender(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		if errors.Is(err, ErrRefused) {
+			env, _ := contract.ParseEnvelope(it.Payload)
+			a.log.Error("the cloud's broker refused a message for good: dropped", "type", env.Type, "topic", it.Topic, "err", err)
+			a.submit(func(now time.Time) agent.Input { return agent.Rejected{Now: now, ID: it.ID} })
+			continue
+		}
 		if !errors.Is(err, outbox.ErrUnavailable) {
 			a.log.Warn("the cloud did not take a message, trying again", "topic", it.Topic, "err", err)
 		}
@@ -158,9 +169,13 @@ func (a *App) sender(ctx context.Context) {
 }
 
 // next asks the core, on its loop, for the item to send now: none while the link is
-// down. An item numbered at this first attempt is saved before Do returns.
-func (a *App) next(ctx context.Context) (it agent.Item, ok bool, err error) {
-	err = a.loop.Do(ctx, func(time.Time) []agent.Action {
+// down. An item numbered at this first attempt is saved before Do returns. The answer
+// is read only if Do waited for it: at a stop, Do may return while the loop still
+// writes it.
+func (a *App) next(ctx context.Context) (agent.Item, bool, error) {
+	var it agent.Item
+	var ok bool
+	err := a.loop.Do(ctx, func(time.Time) []agent.Action {
 		if !a.core.Up() {
 			return nil
 		}
@@ -168,7 +183,10 @@ func (a *App) next(ctx context.Context) (it agent.Item, ok bool, err error) {
 		it, save, ok = a.core.Next()
 		return save
 	})
-	return it, ok, err
+	if err != nil {
+		return agent.Item{}, false, err
+	}
+	return it, ok, nil
 }
 
 // wait waits d on the agent's clock, or less if the link changes. New messages do

@@ -112,7 +112,7 @@ d'image est sautée pour le reste de la série, avec la cause dans le journal.
 | `video.request` | `video/cmd` | cloud → site | Ouvrir une session : `session`, `camera`, `reason` (`alarm`, `demand`), `user`, `incident`, `max_s` (absent ou 0 : sans limite), `push_url`, `token`, `exp` |
 | `video.stop` | `video/cmd` | cloud → site | Arrêter une session : `session` |
 | `video.session` | `video/session` | site → cloud | Étapes : `starting`, `live`, `ended`, `failed`, avec `reason`, `duration_s`, `bytes` |
-| `video.status` | `video/status` (retenu) | site → cloud | Caméras joignables, sessions en cours, type de liaison (`uplink`), données du mois, plafond et durée maximale réglés par le client |
+| `video.status` | `video/status` (retenu) | site → cloud | Caméras joignables, sessions en cours, type de liaison (`uplink`), données du mois, plafond et durée maximale réglés par le client. Publié au démarrage et à chaque changement, jamais répété à l'identique : il partirait au cloud, peut-être en 4G |
 
 Raisons de fin ou d'échec : `stopped` (arrêt demandé), `timeout` (`max_s` atteint),
 `quota`, `busy`, `unknown_camera`, `camera_unreachable`, `relay_unreachable`,

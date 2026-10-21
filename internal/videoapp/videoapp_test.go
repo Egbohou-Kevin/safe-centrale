@@ -84,6 +84,18 @@ func (b *fakeBroker) status() contract.VideoStatusData {
 	return d
 }
 
+func (b *fakeBroker) count(typ string) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for _, e := range b.msgs {
+		if e.Type == typ {
+			n++
+		}
+	}
+	return n
+}
+
 func (b *fakeBroker) has(session string, status string, reason string) bool {
 	for _, s := range b.sessions() {
 		if s.Session == session && s.Status == status && s.Reason == reason {
@@ -91,6 +103,39 @@ func (b *fakeBroker) has(session string, status string, reason string) bool {
 		}
 	}
 	return false
+}
+
+// fakeClock moves when told.
+type fakeClock struct {
+	mu     sync.Mutex
+	now    time.Time
+	timers map[chan time.Time]time.Time
+}
+
+func (c *fakeClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
+
+func (c *fakeClock) Timer(d time.Duration) (<-chan time.Time, func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	fired := make(chan time.Time, 1)
+	if d <= 0 {
+		fired <- c.now
+		return fired, func() {}
+	}
+	c.timers[fired] = c.now.Add(d)
+	return fired, func() { c.mu.Lock(); delete(c.timers, fired); c.mu.Unlock() }
+}
+
+func (c *fakeClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+	for fired, when := range c.timers {
+		if !when.After(c.now) {
+			fired <- c.now
+			delete(c.timers, fired)
+		}
+	}
 }
 
 type fakeStream struct {
@@ -237,6 +282,11 @@ type harness struct {
 
 func start(t *testing.T, edit ...func(*Config)) *harness {
 	t.Helper()
+	return startOn(t, driver.SystemClock(), edit...)
+}
+
+func startOn(t *testing.T, clock driver.Clock, edit ...func(*Config)) *harness {
+	t.Helper()
 	v := video.DefaultConfig([]video.Camera{{ID: "cam_caisse", Name: "Caisse"}, {ID: "cam_cour", Name: "Cour"}})
 	v.StartTimeout, v.StallAfter = 2*time.Second, 2*time.Second
 	cfg := DefaultConfig(site, v)
@@ -251,7 +301,7 @@ func start(t *testing.T, edit ...func(*Config)) *harness {
 		done: make(chan struct{}),
 	}
 	app, err := New(cfg, Deps{
-		Clock: driver.SystemClock(), Store: &memStore{docs: map[string][]byte{}}, Publisher: h.broker,
+		Clock: clock, Store: &memStore{docs: map[string][]byte{}}, Publisher: h.broker,
 		Streamer: h.stream, Camera: h.camera, Photos: h.photos, NewID: h.ids.New, Logger: slog.New(slog.NewTextHandler(h.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	})
 	if err != nil {
@@ -407,6 +457,35 @@ func TestCamerasAreProbed(t *testing.T) {
 	})
 	if st := h.broker.status(); st.Cameras[1].Reachable || st.Uplink != contract.UplinkFixed || st.QuotaMB != 0 {
 		t.Fatalf("%+v", st)
+	}
+}
+
+// video.status is retained and goes to the cloud, on mobile data maybe: sent again
+// unchanged every minute, it cost some 20 MB a month for nothing.
+func TestTheStatusGoesOutOnChangeOnly(t *testing.T) {
+	clock := &fakeClock{now: time.Date(2026, 10, 20, 21, 0, 0, 0, time.UTC), timers: map[chan time.Time]time.Time{}}
+	h := startOn(t, clock)
+	reachable := func(want bool) func() bool {
+		return func() bool { st := h.broker.status(); return len(st.Cameras) == 2 && st.Cameras[1].Reachable == want }
+	}
+	h.waitFor("the first probe", reachable(true))
+	before := h.broker.count(contract.TypeVideoStatus)
+	for range 12 { // two probes, the same answers
+		clock.Advance(time.Minute)
+		h.app.Alive(context.Background())
+	}
+	time.Sleep(20 * time.Millisecond) // the probes' answers
+	h.app.Alive(context.Background())
+	if n := h.broker.count(contract.TypeVideoStatus); n != before {
+		t.Fatalf("%d statuses published without a change", n-before)
+	}
+	h.stream.mu.Lock()
+	h.stream.down["cam_cour"] = true
+	h.stream.mu.Unlock()
+	clock.Advance(5 * time.Minute)
+	h.waitFor("the camera unreachable", reachable(false))
+	if n := h.broker.count(contract.TypeVideoStatus); n != before+1 {
+		t.Fatalf("%d statuses for one change", n-before)
 	}
 }
 

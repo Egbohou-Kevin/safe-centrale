@@ -61,14 +61,14 @@ func (c *fakeClock) Advance(d time.Duration) {
 type memStore struct {
 	mu      sync.Mutex
 	docs    map[string][]byte
-	written []int // the size of each save
+	written map[string][]int // the size of each save, by name
 }
 
 func (s *memStore) Save(name string, data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.docs[name] = append([]byte(nil), data...)
-	s.written = append(s.written, len(data))
+	s.written[name] = append(s.written[name], len(data))
 	return nil
 }
 
@@ -118,7 +118,7 @@ type disk struct {
 }
 
 func newDisk() *disk {
-	return &disk{store: &memStore{docs: map[string][]byte{}}, queue: &memQueue{items: map[string][]byte{}}}
+	return &disk{store: &memStore{docs: map[string][]byte{}, written: map[string][]int{}}, queue: &memQueue{items: map[string][]byte{}}}
 }
 
 type published struct {
@@ -128,11 +128,13 @@ type published struct {
 	env    contract.Envelope
 }
 
-// fakeBroker records what is published; while down it answers ErrUnavailable.
+// fakeBroker records what is published; while down it answers ErrUnavailable. It
+// refuses for good the messages of type refuse.
 type fakeBroker struct {
-	mu   sync.Mutex
-	msgs []published
-	down bool
+	mu     sync.Mutex
+	msgs   []published
+	down   bool
+	refuse string
 }
 
 func (b *fakeBroker) Publish(_ context.Context, topic string, payload []byte, _ byte, retain bool) error {
@@ -142,6 +144,9 @@ func (b *fakeBroker) Publish(_ context.Context, topic string, payload []byte, _ 
 		return outbox.ErrUnavailable
 	}
 	env, _ := contract.ParseEnvelope(payload)
+	if env.Type == b.refuse {
+		return fmt.Errorf("%w: not authorized", ErrRefused)
+	}
 	b.msgs = append(b.msgs, published{topic: topic, retain: retain, raw: append([]byte(nil), payload...), env: env})
 	return nil
 }

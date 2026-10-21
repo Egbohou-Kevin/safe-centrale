@@ -13,8 +13,8 @@ const EconomyEvery = 5 * time.Minute
 
 // sentMark is what the cloud last got of a repeated message (heartbeat, agent.status).
 type sentMark struct {
-	at   time.Time
-	mark string // for agent.status, the link and transport: a change goes at once
+	at   time.Time // when it entered the queue
+	mark string    // for agent.status, the link and transport: a change goes at once
 }
 
 // repeated tells whether a message is one of those repeated every minute, which
@@ -53,9 +53,11 @@ func (r *Relay) thinned(now time.Time, env contract.Envelope, key string) bool {
 	return ok && now.Sub(last.at) < r.cfg.Economy && markOf(env.Type, env.Data) == last.mark
 }
 
-// noteSent remembers when the cloud got a repeated message. In memory only: after a
-// restart, the first one goes at once.
-func (r *Relay) noteSent(now time.Time, it Item) {
+// noteSent remembers that the cloud got a repeated message, as of when it entered
+// the queue: the moment of the acknowledgement would add the network's delay to each
+// period (6 minutes rather than 5). In memory only: after a restart, the first one
+// goes at once.
+func (r *Relay) noteSent(it Item) {
 	if r.cfg.Economy <= 0 || it.Key == "" {
 		return
 	}
@@ -63,5 +65,5 @@ func (r *Relay) noteSent(now time.Time, it Item) {
 	if json.Unmarshal(it.Payload, &env) != nil || !repeated(env.Type) {
 		return
 	}
-	r.got[it.Key] = sentMark{at: now, mark: markOf(env.Type, env.Data)}
+	r.got[it.Key] = sentMark{at: it.At, mark: markOf(env.Type, env.Data)}
 }

@@ -15,11 +15,12 @@ const site = "tg-lom-0001"
 var t0 = time.Date(2026, 10, 20, 21, 0, 0, 0, time.UTC)
 
 type harness struct {
-	t    *testing.T
-	r    *Relay
-	now  time.Time
-	ids  *contract.IDGenerator
-	disk map[string]Item // the queue's store, as the application keeps it from the actions
+	t      *testing.T
+	r      *Relay
+	now    time.Time
+	ids    *contract.IDGenerator
+	disk   map[string]Item // the queue's store, as the application keeps it from the actions
+	uplink uint64          // the counter's document, likewise
 }
 
 func newHarness(t *testing.T, edit ...func(*Config)) *harness {
@@ -54,7 +55,7 @@ func (h *harness) next() (Item, bool) {
 
 func (h *harness) keep(acts []Action) {
 	h.t.Helper()
-	apply(h.disk, acts)
+	h.apply(h.disk, acts)
 	if len(h.disk) != len(h.r.queue) {
 		h.t.Fatalf("%d items on disk, %d in the queue", len(h.disk), len(h.r.queue))
 	}
@@ -65,7 +66,7 @@ func (h *harness) keep(acts []Action) {
 	}
 }
 
-func apply(disk map[string]Item, acts []Action) {
+func (h *harness) apply(disk map[string]Item, acts []Action) {
 	for _, a := range acts {
 		switch v := a.(type) {
 		case QueueSave:
@@ -74,6 +75,8 @@ func apply(disk map[string]Item, acts []Action) {
 			for _, id := range v.IDs {
 				delete(disk, id)
 			}
+		case UplinkSave:
+			h.uplink = v.Last
 		}
 	}
 }
@@ -96,7 +99,7 @@ func (h *harness) restored(snap Snapshot, disk map[string]Item) *Relay {
 	for _, it := range disk {
 		stored = append(stored, roundTrip(h.t, it))
 	}
-	apply(disk, r.RestoreQueue(stored))
+	h.apply(disk, r.RestoreQueue(stored, h.uplink))
 	return r
 }
 

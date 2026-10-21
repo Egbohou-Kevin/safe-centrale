@@ -100,19 +100,21 @@ type pendingAlert struct {
 }
 
 // Snapshot is the relay's state, saved after every change. The queue for the cloud
-// is saved apart, item by item (see queue.go).
+// is saved apart, item by item, and the numbering on its own (see queue.go).
 type Snapshot struct {
-	// Queue is only read: the queue as an older version saved it here. Restore takes
-	// it, and RestoreQueue moves it to the queue's store.
+	// Queue and Uplink are only read: the queue and the last number as an older
+	// version saved them here. Restore takes them, and RestoreQueue moves them to
+	// their own documents.
 	Queue     []Item                  `json:"queue,omitempty"`
+	Uplink    uint64                  `json:"uplink,omitempty"`
 	Pending   map[string]pendingAlert `json:"pending"`   // alert.request id -> its state
 	Incidents map[string]time.Time    `json:"incidents"` // incidents seen going up -> last seen
 	Seen      []string                `json:"seen"`      // ids of the last messages from the cloud
-	Dropped   int                     `json:"dropped"`   // items dropped since the queue started
+	Dropped   int                     `json:"dropped"`   // items that left the queue without reaching the cloud
 	Tokens    float64                 `json:"tokens"`    // the cloud's allowance of messages
 	TokensAt  time.Time               `json:"tokens_at"`
-	Photos    map[string]photo        `json:"photos,omitempty"` // photo id -> its upload
-	Uplink    uint64                  `json:"uplink,omitempty"` // the last number given to a message for the cloud
+	Photos    map[string]photo        `json:"photos,omitempty"`   // photo id -> its upload
+	Retained  map[string]string       `json:"retained,omitempty"` // retained topic -> id of the hub's last state queued (see up.go)
 }
 
 // Relay is the agent's core.
@@ -121,6 +123,7 @@ type Relay struct {
 	s         Snapshot
 	queue     []Item // saved item by item (see queue.go)
 	order     uint64 // the last Order given
+	uplink    uint64 // the last number given to a message for the cloud, saved on its own
 	up        bool
 	transport string
 	sending   string // the photo being uploaded: one at a time
@@ -151,6 +154,7 @@ func (r *Relay) Snapshot() Snapshot {
 	s.Pending = maps.Clone(s.Pending)
 	s.Incidents = maps.Clone(s.Incidents)
 	s.Photos = maps.Clone(s.Photos)
+	s.Retained = maps.Clone(s.Retained)
 	return s
 }
 
@@ -166,15 +170,20 @@ func (r *Relay) Restore(s Snapshot) {
 	if s.Photos == nil {
 		s.Photos = map[string]photo{}
 	}
+	if s.Retained == nil {
+		s.Retained = map[string]string{}
+	}
 	if s.TokensAt.IsZero() {
 		s.Tokens = float64(r.cfg.DownBurst)
 	}
-	// A queue saved in the snapshot keeps its order; RestoreQueue saves it apart.
+	// A queue saved in the snapshot keeps its order; RestoreQueue saves it apart,
+	// with the counter.
 	r.queue, s.Queue = s.Queue, nil
 	for i := range r.queue {
 		r.queue[i].Order = uint64(i + 1)
 	}
 	r.order = uint64(len(r.queue))
+	r.uplink, s.Uplink = s.Uplink, 0
 	r.s = s
 	r.up, r.transport, r.sending = false, "", ""
 	r.journal, r.journalBytes, r.replay = nil, 0, nil
@@ -228,13 +237,15 @@ func (r *Relay) Handle(in Input) []Action {
 	out := r.expire(in.at())
 	switch v := in.(type) {
 	case Local:
-		out = append(out, r.local(v.Now, v.Topic, v.Payload)...)
+		out = append(out, r.local(v.Now, v.Topic, v.Payload, false)...)
 	case Own:
-		out = append(out, r.local(v.Now, v.Topic, v.Payload)...)
+		out = append(out, r.local(v.Now, v.Topic, v.Payload, true)...)
 	case Cloud:
 		out = append(out, r.cloud(v)...)
 	case Sent:
-		out = append(out, r.sent(v.Now, v.ID)...)
+		out = append(out, r.sent(v.ID)...)
+	case Rejected:
+		out = append(out, r.rejected(v.ID)...)
 	case Link:
 		out = append(out, r.link(v)...)
 	case Uploaded:
@@ -298,11 +309,7 @@ func (r *Relay) expire(now time.Time) []Action {
 			delete(r.s.Incidents, inc)
 		}
 	}
-	old, drop := r.removeIf(func(it Item) bool { return !now.Before(it.At.Add(r.cfg.QueueAge)) })
-	if len(old) > 0 {
-		r.s.Dropped += len(old)
-		out = append(out, drop...)
-		out = append(out, Dropped{Count: len(old), Reason: "too old"})
-	}
+	old, _ := r.removeIf(func(it Item) bool { return !now.Before(it.At.Add(r.cfg.QueueAge)) })
+	out = append(out, r.dropped(old, "too old")...)
 	return append(out, r.expirePhotos(now)...)
 }

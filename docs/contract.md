@@ -369,7 +369,7 @@ Le détail et les raisons des choix sont dans `video.md`.
 | `video.request` | `video/cmd` | `session`, `camera`, `reason` (`alarm`, `demand`), `user`, `incident`, `max_s` (absent ou 0 : sans limite), `push_url` (rtmps), `token`, `exp` |
 | `video.stop` | `video/cmd` | `session` |
 | `video.session` | `video/session` | `session`, `camera`, `status` (`starting`, `live`, `ended`, `failed`), `reason`, `duration_s`, `bytes` |
-| `video.status` | `video/status` (retenu) | `cameras` (`id`, `name`, `reachable`), `active`, `uplink` (`fixed`, `mobile`), `used_mb_month`, `quota_mb`, `max_s` |
+| `video.status` | `video/status` (retenu, au démarrage et à chaque changement) | `cameras` (`id`, `name`, `reachable`), `active`, `uplink` (`fixed`, `mobile`), `used_mb_month`, `quota_mb`, `max_s` |
 
 ```json
 {
@@ -571,8 +571,8 @@ le cloud, à chaque changement et de nouveau chaque minute même sans changement
   port 8883) ou `wss` (MQTT dans WebSocket, port 443), absent quand la liaison est
   coupée.
 - `queued` : messages qui attendent le cloud ; `oldest_s` : âge du plus ancien, en
-  secondes ; `dropped` : messages supprimés depuis le démarrage parce que la file était
-  pleine.
+  secondes ; `dropped` : messages supprimés sans atteindre le cloud (file pleine,
+  message trop vieux, refus du broker du cloud). Le compte survit aux redémarrages.
 - `economy` : présent et à `true` quand le client paie les données mobiles (liaison 4G).
   Le cloud ne reçoit alors le heartbeat et cet état que toutes les 5 minutes, au lieu
   de chaque minute. Il ne déclare donc le site muet qu'après 15 minutes sans nouvelles,

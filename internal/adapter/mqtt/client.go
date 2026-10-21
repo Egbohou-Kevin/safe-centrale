@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,6 +27,11 @@ import (
 // caller decides whether to retry: for an alarm event, the answer is usually yes.
 var ErrDown = errors.New("mqtt: broker unreachable")
 
+// ErrRefused is wrapped by the error of Publish when the broker refused the message
+// for good (not authorized, topic or payload invalid...): the same message would get
+// the same answer. A refusal that may pass later (quota exceeded) is another error.
+var ErrRefused = errors.New("mqtt: broker refused the message")
+
 const (
 	keepAliveSeconds = 30
 	// The broker keeps the session (subscriptions and queued messages) for a day
@@ -34,9 +40,14 @@ const (
 	maxBackoff           = 30 * time.Second
 )
 
+// subscribeWait bounds the wait for the broker's answer to a subscription, as the
+// library does (a variable for the tests).
+var subscribeWait = 10 * time.Second
+
 // Client is a connection to the broker.
 type Client struct {
 	cm *autopaho.ConnectionManager
+	s  *session
 }
 
 // Dial starts a connection that lives until ctx is cancelled. It returns at once;
@@ -47,7 +58,8 @@ func Dial(ctx context.Context, o Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := newSession(o, urls).config()
+	s := newSession(ctx, o, urls)
+	cfg, err := s.config()
 	if err != nil {
 		return nil, err
 	}
@@ -55,24 +67,26 @@ func Dial(ctx context.Context, o Options) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mqtt: %w", err)
 	}
-	return &Client{cm: cm}, nil
+	return &Client{cm: cm, s: s}, nil
 }
 
 // Await blocks until the client is connected, or ctx is done.
 func (c *Client) Await(ctx context.Context) error { return c.cm.AwaitConnection(ctx) }
 
 // Publish sends a message and waits for the broker's acknowledgement (QoS 1 and 2).
-// It returns ErrDown if the broker cannot be reached right now.
+// It returns ErrDown if the broker cannot be reached right now, and an error wrapping
+// ErrRefused if the broker refused the message for good.
 func (c *Client) Publish(ctx context.Context, m Message) error {
 	resp, err := c.cm.Publish(ctx, publishPacket(m))
-	if err != nil {
-		if errors.Is(err, autopaho.ConnectionDownError) {
-			return ErrDown
-		}
+	switch {
+	case resp != nil && refused(resp.ReasonCode):
+		return fmt.Errorf("%w: %s (reason %#x)", ErrRefused, m.Topic, resp.ReasonCode)
+	case resp != nil && failed(resp.ReasonCode):
+		return fmt.Errorf("mqtt: broker did not take %s for now (reason %#x)", m.Topic, resp.ReasonCode)
+	case errors.Is(err, autopaho.ConnectionDownError):
+		return ErrDown
+	case err != nil:
 		return fmt.Errorf("mqtt: publish to %s: %w", m.Topic, err)
-	}
-	if resp != nil && failed(resp.ReasonCode) {
-		return fmt.Errorf("mqtt: broker refused %s (reason %d)", m.Topic, resp.ReasonCode)
 	}
 	return nil
 }
@@ -80,6 +94,9 @@ func (c *Client) Publish(ctx context.Context, m Message) error {
 // Close disconnects cleanly and waits for the connection to be released.
 func (c *Client) Close(ctx context.Context) error {
 	err := c.cm.Disconnect(ctx)
+	c.s.mu.Lock()
+	c.s.endConnection()
+	c.s.mu.Unlock()
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return fmt.Errorf("mqtt: %w", err)
 	}
@@ -93,11 +110,17 @@ type session struct {
 	o      Options
 	urls   []*url.URL
 	log    *slog.Logger
+	life   context.Context         // the client's
 	trying atomic.Pointer[url.URL] // the URL of the current connection attempt
+
+	// mu orders what is told of the link: an "up" never follows the "down" of its
+	// connection.
+	mu      sync.Mutex
+	endConn context.CancelFunc // ends the work of the current connection; nil while down
 }
 
-func newSession(o Options, urls []*url.URL) *session {
-	s := &session{o: o, urls: urls, log: o.Logger}
+func newSession(life context.Context, o Options, urls []*url.URL) *session {
+	s := &session{o: o, urls: urls, log: o.Logger, life: life}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
 	}
@@ -153,14 +176,38 @@ func (s *session) connectPacket(cp *paho.Connect, u *url.URL) (*paho.Connect, er
 	return cp, nil
 }
 
-// connectionUp subscribes, then says the link is up.
+// connectionUp subscribes, then says the link is up, away from the library's
+// goroutine, which it must not hold up.
 func (s *session) connectionUp(cm *autopaho.ConnectionManager, _ *paho.Connack) {
 	s.log.Info("mqtt connected", "broker", s.trying.Load().Redacted())
-	if len(s.o.Subscriptions) > 0 && !s.subscribe(cm) {
-		return
+	conn, end := context.WithCancel(s.life)
+	s.mu.Lock()
+	s.endConn = end
+	s.mu.Unlock()
+	go s.subscribeThenAnnounce(conn, cm, s.trying.Load().Scheme)
+}
+
+// subscribeThenAnnounce subscribes, then says the link is up. A broker that does not
+// answer in time may have subscribed all the same, or its answer was lost: it is asked
+// again, after a growing wait, until it answers or the connection drops. Until then
+// the link is not up: nothing could come from the broker.
+func (s *session) subscribeThenAnnounce(conn context.Context, cm *autopaho.ConnectionManager, scheme string) {
+	for attempt := 1; len(s.o.Subscriptions) > 0 && !s.subscribe(conn, cm); attempt++ {
+		wait := time.NewTimer(backoff(attempt))
+		select {
+		case <-conn.Done():
+			wait.Stop()
+			return
+		case <-wait.C:
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if conn.Err() != nil {
+		return // the connection dropped meanwhile, and "down" was told
 	}
 	if s.o.OnLinkChange != nil {
-		s.o.OnLinkChange(true, s.trying.Load().Scheme)
+		s.o.OnLinkChange(true, scheme)
 	}
 	if s.o.OnSubscribed != nil {
 		s.o.OnSubscribed()
@@ -168,13 +215,15 @@ func (s *session) connectionUp(cm *autopaho.ConnectionManager, _ *paho.Connack) 
 }
 
 // subscribe asks for the subscriptions and reports whether the broker answered. A
-// filter it refuses is logged; the others work. The library bounds the wait for the
-// answer (10 s).
-func (s *session) subscribe(cm *autopaho.ConnectionManager) bool {
-	ack, err := cm.Subscribe(context.Background(), subscribePacket(s.o.Subscriptions))
+// filter it refuses is logged; the others work.
+func (s *session) subscribe(conn context.Context, cm *autopaho.ConnectionManager) bool {
+	ctx, cancel := context.WithTimeout(conn, subscribeWait)
+	defer cancel()
+	ack, err := cm.Subscribe(ctx, subscribePacket(s.o.Subscriptions))
 	if ack == nil {
-		// No answer: the connection is breaking, the next one subscribes again.
-		s.log.Error("mqtt subscribe failed: no message will be received", "err", err)
+		if conn.Err() == nil {
+			s.log.Error("mqtt subscribe failed, trying again: no message is received meanwhile", "err", err)
+		}
 		return false
 	}
 	for i, reason := range ack.Reasons {
@@ -187,10 +236,22 @@ func (s *session) subscribe(cm *autopaho.ConnectionManager) bool {
 
 func (s *session) connectionDown() bool {
 	s.log.Warn("mqtt connection lost, reconnecting")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.endConnection()
 	if s.o.OnLinkChange != nil {
 		s.o.OnLinkChange(false, "")
 	}
 	return true // keep reconnecting
+}
+
+// endConnection stops the work of the current connection (its subscription). The
+// caller holds mu.
+func (s *session) endConnection() {
+	if s.endConn != nil {
+		s.endConn()
+		s.endConn = nil
+	}
 }
 
 func (s *session) received(pr paho.PublishReceived) (bool, error) {
@@ -250,3 +311,15 @@ func fromPaho(p *paho.Publish) Message {
 
 // failed reports whether an MQTT 5 reason code is an error (0x80 and above).
 func failed(reason byte) bool { return reason >= 0x80 }
+
+// The failures that may pass if the message is sent again later.
+const (
+	packetIDInUse = 0x91
+	quotaExceeded = 0x97 // a limit of the broker: it refuses every message until it is lifted
+)
+
+// refused reports whether a reason code of an acknowledgement refuses the message for
+// good.
+func refused(reason byte) bool {
+	return failed(reason) && reason != packetIDInUse && reason != quotaExceeded
+}

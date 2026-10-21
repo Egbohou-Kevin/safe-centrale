@@ -11,12 +11,15 @@ import (
 // From the hub to the cloud: what goes up, in which order, and what the queue drops
 // when it is full.
 
-// local takes a message of the hub's broker and queues it for the cloud if it goes
-// there.
-func (r *Relay) local(now time.Time, topic string, payload []byte) []Action {
+// local takes a message of the hub's broker, or of the agent itself (own), and
+// queues it for the cloud if it goes there.
+func (r *Relay) local(now time.Time, topic string, payload []byte, own bool) []Action {
 	route, env, ok := r.goesUp(topic, payload)
-	if !ok || slices.ContainsFunc(r.queue, func(it Item) bool { return it.ID == env.ID }) {
-		return nil // not for the cloud, or the same message again (QoS 1)
+	if !ok || (route.own && !own) || slices.ContainsFunc(r.queue, func(it Item) bool { return it.ID == env.ID }) {
+		return nil // not for the cloud, given back by the broker, or the same message again (QoS 1)
+	}
+	if route.retain && !own && !r.newState(topic, env.ID) {
+		return nil
 	}
 	if inc := incidentOf(env); inc != "" {
 		r.s.Incidents[inc] = now
@@ -42,6 +45,20 @@ func (r *Relay) local(now time.Time, topic string, payload []byte) []Action {
 		out = append(out, r.photoTaken(now, env)...)
 	}
 	return out
+}
+
+// newState tells whether a retained message of the hub was not queued for the cloud
+// yet, and remembers it. The hub's broker gives the retained messages again at each
+// new connection of the agent: sent again, an old state would take a new number,
+// which the cloud would drop as a duplicate of its id, and the hole it leaves would
+// never close. After a restart of the agent, a state that changed meanwhile has a new
+// id, and goes.
+func (r *Relay) newState(topic, id string) bool {
+	if r.s.Retained[topic] == id {
+		return false
+	}
+	r.s.Retained[topic] = id
+	return true
 }
 
 // goesUp reads a message of the hub and tells whether the contract sends it to the
@@ -130,12 +147,23 @@ func (r *Relay) bound() []Action {
 			out = append(out, FailAlert{Ref: it.ID})
 		}
 	}
+	return append(out, r.dropped(gone, "queue full")...)
+}
+
+// dropped counts the items that left the queue without reaching the cloud, and
+// returns the actions that say so. A retained state among them goes again if the
+// hub's broker gives it back.
+func (r *Relay) dropped(gone []Item, reason string) []Action {
 	if len(gone) == 0 {
-		return out
+		return nil
 	}
 	r.s.Dropped += len(gone)
-	out = append(out, dropOf(gone)...)
-	return append(out, Dropped{Count: len(gone), Reason: "queue full"})
+	for _, it := range gone {
+		if r.s.Retained[it.Topic] == it.ID {
+			delete(r.s.Retained, it.Topic)
+		}
+	}
+	return append(dropOf(gone), Dropped{Count: len(gone), Reason: reason})
 }
 
 // victim is the index of the item to drop: the oldest of the lowest priority.

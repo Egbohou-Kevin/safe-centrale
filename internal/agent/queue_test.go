@@ -26,7 +26,8 @@ func TestDrainingTheQueueSavesOneItemAtATime(t *testing.T) {
 		if !ok {
 			break
 		}
-		if s := of[QueueSave](acts); len(acts) != 1 || len(s) != 1 || s[0].Item.ID != it.ID || s[0].Item.Seq != it.Seq {
+		s, u := of[QueueSave](acts), of[UplinkSave](acts)
+		if len(acts) != 2 || len(s) != 1 || s[0].Item.ID != it.ID || s[0].Item.Seq != it.Seq || len(u) != 1 || u[0].Last != it.Seq {
 			t.Fatalf("numbering %s: %+v", it.ID, acts)
 		}
 		h.keep(acts)
@@ -38,9 +39,9 @@ func TestDrainingTheQueueSavesOneItemAtATime(t *testing.T) {
 	if len(h.disk) != 0 {
 		t.Fatalf("%d items left on disk", len(h.disk))
 	}
-	// The snapshot only learnt the last number.
-	if after, _ := json.Marshal(h.r.Snapshot()); len(after) > len(before)+len(`,"uplink":50`) {
-		t.Fatalf("the snapshot grew from %d to %d bytes", len(before), len(after))
+	// The numbers went to their own document: the snapshot did not move.
+	if after, _ := json.Marshal(h.r.Snapshot()); string(after) != string(before) || h.uplink != 50 {
+		t.Fatalf("the snapshot went from %s to %s, the counter is %d", before, after, h.uplink)
 	}
 }
 
@@ -112,6 +113,25 @@ func TestRestoreReconcilesWhatACrashLeftOnDisk(t *testing.T) {
 			t.Fatalf("queue %+v, disk %v", h.r.queue, h.disk)
 		}
 	})
+	t.Run("a number saved with its item but not on its own is saved at the restart", func(t *testing.T) {
+		h := newHarness(t)
+		h.local(topic("alarm", "event"), contract.TypeAlarmArmed, armed)
+		h.linkUp()
+		it, acts, _ := h.r.Next()
+		h.apply(h.disk, acts[:1]) // QueueSave; the crash came before UplinkSave
+		h.restart()
+		if h.uplink != 1 {
+			t.Fatalf("counter %d after the restart", h.uplink)
+		}
+		h.linkUp()
+		h.send()
+		h.restart() // the item is gone: the counter alone knows seq 1
+		h.local(topic("alarm", "event"), contract.TypeAlarmArmed, armed)
+		h.linkUp()
+		if sent := h.send(); len(sent) != 1 || sent[0].ID == it.ID || seqOf(t, sent[0]) != 2 {
+			t.Fatalf("%+v", sent)
+		}
+	})
 	t.Run("a number of the snapshot is never given again", func(t *testing.T) {
 		h := newHarness(t)
 		h.local(topic("alarm", "event"), contract.TypeAlarmArmed, armed)
@@ -155,13 +175,14 @@ func TestAQueueSavedInTheSnapshotMovesToItsStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.r.Restore(snap)
-	acts := h.r.RestoreQueue(nil)
-	if s := of[QueueSave](acts); len(acts) != 2 || len(s) != 2 || s[0].Item.ID != ids[0] || s[1].Item.ID != ids[1] {
+	acts := h.r.RestoreQueue(nil, 0)
+	s, u := of[QueueSave](acts), of[UplinkSave](acts)
+	if len(acts) != 3 || len(s) != 2 || s[0].Item.ID != ids[0] || s[1].Item.ID != ids[1] || len(u) != 1 || u[0].Last != 7 {
 		t.Fatalf("%+v", acts)
 	}
 	h.keep(acts)
-	if saved, _ := json.Marshal(h.r.Snapshot()); strings.Contains(string(saved), `"queue"`) {
-		t.Fatalf("the queue stays in the snapshot: %s", saved)
+	if saved, _ := json.Marshal(h.r.Snapshot()); strings.Contains(string(saved), `"queue"`) || strings.Contains(string(saved), `"uplink"`) {
+		t.Fatalf("the queue or the counter stay in the snapshot: %s", saved)
 	}
 
 	// A crash before the snapshot without the queue was saved: the items are on disk

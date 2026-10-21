@@ -55,6 +55,24 @@ func TestOnMobileDataTheHeartbeatGoesEveryFiveMinutes(t *testing.T) {
 	}
 }
 
+func TestOnMobileDataASlowAcknowledgementDoesNotStretchTheFiveMinutes(t *testing.T) {
+	h := newHarness(t, economy)
+	h.linkUp()
+	var got []int
+	for m := range 12 {
+		h.now = t0.Add(time.Duration(m) * time.Minute)
+		h.heartbeat(m)
+		if it, ok := h.next(); ok {
+			got = append(got, m)
+			h.now = h.now.Add(2 * time.Second) // the cloud's broker takes its time
+			h.handle(Sent{Now: h.now, ID: it.ID})
+		}
+	}
+	if want := []int{0, 5, 10}; !equal(got, want) {
+		t.Fatalf("the cloud got heartbeats at minutes %v, want %v", got, want)
+	}
+}
+
 func TestOnMobileDataTheCloudGetsTheLatestHeartbeat(t *testing.T) {
 	h := newHarness(t, economy)
 	h.linkUp()

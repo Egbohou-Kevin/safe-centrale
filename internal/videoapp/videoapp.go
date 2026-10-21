@@ -77,7 +77,6 @@ type Config struct {
 	RetryMin      time.Duration
 	RetryMax      time.Duration
 	DedupeSize    int
-	StatusEvery   time.Duration // video.status goes out again even when nothing changed
 	ProgressEvery time.Duration // how often a stream's bytes are read
 	StartWait     time.Duration // for the camera to answer when a stream starts
 	ProbeWait     time.Duration // for a camera to answer a probe
@@ -88,7 +87,7 @@ type Config struct {
 func DefaultConfig(site string, v video.Config) Config {
 	return Config{
 		Site: site, Video: v, OutboxSize: 200, RetryMin: 200 * time.Millisecond, RetryMax: 5 * time.Second,
-		DedupeSize: 256, StatusEvery: time.Minute, ProgressEvery: 2 * time.Second,
+		DedupeSize: 256, ProgressEvery: 2 * time.Second,
 		StartWait: 15 * time.Second, ProbeWait: 3 * time.Second, PhotoWait: 10 * time.Second,
 	}
 }
@@ -99,8 +98,8 @@ func (c Config) Validate() error {
 		return fmt.Errorf("videoapp: invalid site %q", c.Site)
 	}
 	if c.OutboxSize < 1 || c.RetryMin <= 0 || c.RetryMax < c.RetryMin || c.DedupeSize < 1 ||
-		c.StatusEvery <= 0 || c.ProgressEvery <= 0 || c.StartWait <= 0 || c.ProbeWait <= 0 || c.PhotoWait <= 0 {
-		return errors.New("videoapp: OutboxSize, RetryMin, RetryMax, DedupeSize, StatusEvery, ProgressEvery, StartWait, ProbeWait and PhotoWait must be set")
+		c.ProgressEvery <= 0 || c.StartWait <= 0 || c.ProbeWait <= 0 || c.PhotoWait <= 0 {
+		return errors.New("videoapp: OutboxSize, RetryMin, RetryMax, DedupeSize, ProgressEvery, StartWait, ProbeWait and PhotoWait must be set")
 	}
 	return c.Video.Validate()
 }
@@ -155,7 +154,7 @@ type App struct {
 	work     sync.WaitGroup
 
 	last contract.VideoStatusData // the last status published, owned by the loop
-	sent bool
+	sent bool                     // last is set
 
 	life context.Context
 	stop context.CancelFunc
@@ -229,35 +228,19 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	start(func(c context.Context) { a.loop.Run(c) })
 	start(a.out.Run)
-	a.repeatStatus(runCtx)
-	start(a.statusRepeater)
+	// The status at start; then on change only. It is retained: nobody needs it again
+	// unchanged, and the agent sends it to the cloud, on mobile data paid by the client
+	// maybe.
+	a.loop.Do(runCtx, func(now time.Time) []video.Action {
+		a.publishStatus(now)
+		return nil
+	})
 	<-runCtx.Done()
 	cancel()
 	wg.Wait()
 	a.work.Wait() // every stream stopped
 	a.out.Flush(3 * time.Second)
 	return nil
-}
-
-func (a *App) statusRepeater(ctx context.Context) {
-	for {
-		fired, stop := a.deps.Clock.Timer(a.cfg.StatusEvery)
-		select {
-		case <-ctx.Done():
-			stop()
-			return
-		case <-fired:
-			a.repeatStatus(ctx)
-		}
-	}
-}
-
-func (a *App) repeatStatus(ctx context.Context) {
-	a.loop.Do(ctx, func(now time.Time) []video.Action {
-		a.sent = false
-		a.publishStatus(now)
-		return nil
-	})
 }
 
 // dispatch runs on the loop's goroutine: it starts and stops streams in their own
@@ -287,8 +270,8 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []video.Action)
 	return nil
 }
 
-// publishStatus publishes video.status, retained, when it changed (or when sent is
-// cleared, to repeat it). It runs on the loop's goroutine.
+// publishStatus publishes video.status, retained, when it changed. It runs on the
+// loop's goroutine.
 func (a *App) publishStatus(now time.Time) {
 	st := videowire.Status(a.core.State())
 	if a.sent && reflect.DeepEqual(st, a.last) {

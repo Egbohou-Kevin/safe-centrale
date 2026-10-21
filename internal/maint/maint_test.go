@@ -159,3 +159,18 @@ func TestASessionSurvivesARestart(t *testing.T) {
 		t.Fatal("nothing saved")
 	}
 }
+
+// An order may reach the service before its Boot: the tunnel it started is not
+// started twice.
+func TestBootAfterAnOrderStartsNothingMore(t *testing.T) {
+	v := newCore(t)
+	open(v, t0, "m1", time.Hour)
+	if acts := v.Handle(Boot{Now: t0}); acts != nil {
+		t.Fatalf("%+v: the tunnel is started already", acts)
+	}
+	v.Handle(Up{Now: t0, Session: "m1"})
+	v.Handle(Down{Now: t0.Add(time.Minute), Session: "m1"})
+	if acts := v.Handle(Boot{Now: t0.Add(time.Minute)}); acts != nil {
+		t.Fatalf("%+v: the tunnel is started again after RetryAfter, not now", acts)
+	}
+}
