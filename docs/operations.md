@@ -214,8 +214,9 @@ Sur la sortie d'erreur, au format texte (`log_level` : `debug`, `info`, `warn`,
   redémarre pendant que la centrale attend son moment calme, elle prend la nouvelle
   version un peu avant la centrale.
 - Les demandes d'alerte par application et WhatsApp partent vers le cloud par l'agent
-  de liaison, mais le cloud qui les envoie n'existe pas encore : sans cloud, l'agent
-  répond `no_uplink` et l'escalade passe au GSM.
+  de liaison. Le cloud envoie WhatsApp une fois le compte Meta ouvert (avant, il répond
+  `failed`) ; l'application n'existe pas encore (`no_app`). Sans cloud joignable,
+  l'agent répond `no_uplink`. Dans tous ces cas, l'escalade passe au GSM.
 
 ## La passerelle GSM (`safehome-gsm`)
 

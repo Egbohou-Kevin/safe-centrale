@@ -274,8 +274,8 @@ et le signale dans l'événement.
   batterie.
 - **Batterie de la centrale basse** : alertes à 40 % puis à 10 %, car le site
   risque de s'éteindre.
-- Ces deux points ne marchent pas encore : rien ne publie la capacité `mains` (voir
-  `escalation.md`, « Coupures de courant »).
+- La source de ces deux points est le module batterie de la centrale (Geekworm X728,
+  `safehome-power`, voir `alimentation.md`), qui publie la capacité `mains` et la charge.
 - **Modem ou adaptateur en panne** : défaut signalé dans `system.health`. Le
   moteur continue.
 
@@ -416,8 +416,9 @@ les appareils muets et les piles faibles à l'événement `alarm.arming` et à l
 
 Pas encore codé :
 
-- Les canaux application et WhatsApp côté cloud. La centrale les demande déjà, et
-  l'agent de liaison les transmet.
+- Le canal application côté cloud : l'application n'existe pas encore. Le canal
+  WhatsApp, lui, est codé dans le cloud (dépôt `safeHome-cloud`), éteint tant que le
+  compte Meta n'existe pas : le cloud répond alors `failed` et l'escalade passe au GSM.
 
 Les liens de `system.health` viennent chacun de leur programme : le GSM et les lignes
 de la passerelle (`gsm.status`), le Zigbee de l'adaptateur (`zigbee.status`, voir

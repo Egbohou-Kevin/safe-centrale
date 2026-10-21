@@ -97,9 +97,9 @@ moyen utilisé.
 | `tamper` | sabotage | Premier contact (responsable ou propriétaire) tout de suite |
 | `auth_failed` | codes faux répétés | Premier contact (responsable ou propriétaire) tout de suite |
 | `arming_bypassed` | armement automatique avec une zone ouverte, ou fin d'un délai de sortie (ou `arm_now`) avec une zone `instant` restée ouverte (zone contournée) | Premier contact (responsable ou propriétaire) tout de suite |
-| `mains_lost` | coupure du secteur | Aucune alerte en soi, voir « Coupures de courant » (pas encore de source) |
-| `battery_low_hub` | batterie de la centrale à 40 % (urgence `high`), puis à 10 % (`critical`), seulement pendant une coupure | Premier contact (responsable ou propriétaire), une alerte à chaque seuil (ne part pas encore : voir « Coupures de courant ») |
-| `mains_restored` | retour du courant, seulement si une alerte de batterie est partie (champ `percent` : niveau actuel) | Internet de préférence, urgence basse (ne part pas encore) |
+| `mains_lost` | coupure du secteur | Aucune alerte en soi, voir « Coupures de courant » |
+| `battery_low_hub` | batterie de la centrale à 40 % (urgence `high`), puis à 10 % (`critical`), seulement pendant une coupure | Premier contact (responsable ou propriétaire), une alerte à chaque seuil (voir « Coupures de courant ») |
+| `mains_restored` | retour du courant, seulement si une alerte de batterie est partie (champ `percent` : niveau actuel) | Internet de préférence, urgence basse |
 | `device_offline`, `battery_low` | appareil muet, pile faible | Résumé quotidien au propriétaire, tous les jours tant que le défaut dure (liste dans `devices`) |
 | `gsm_degraded` | secours SMS inutilisable depuis 10 minutes ; une passerelle GSM muette compte comme en panne après 3 minutes, l'alerte part donc 13 minutes après son dernier message | Propriétaire, par internet seulement |
 | `zigbee_down` | capteurs injoignables depuis 3 minutes (Zigbee2MQTT ou sa clé arrêtés) ; un adaptateur muet compte comme en panne après 3 minutes, l'alerte part donc après 6 minutes : l'alarme est aveugle | Premier contact (responsable ou propriétaire) tout de suite, doublé par SMS et appel ; « 1 » pour acquitter |
@@ -306,9 +306,11 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
   en retard sont rejoués dans l'ordre, à leur heure.
 
 La passerelle GSM (`safehome-gsm`) exécute les demandes `sms` et `call`, connaît les
-numéros des contacts et publie `alert.ack` pour une réponse « 1 ». Pas encore fait : les
-canaux application et WhatsApp (agent de liaison et cloud), et le changement des
-plans depuis le cloud (les contacts, eux, arrivent par `config.set`).
+numéros des contacts et publie `alert.ack` pour une réponse « 1 ». Les canaux
+application et WhatsApp partent par l'agent de liaison vers le cloud (dépôt
+`safeHome-cloud`), qui envoie WhatsApp ; l'application n'existe pas encore. Pas encore
+fait : le changement des plans depuis le cloud (les contacts, eux, arrivent par
+`config.set`, que le cloud envoie dès qu'ils changent).
 
 ## Questions ouvertes
 

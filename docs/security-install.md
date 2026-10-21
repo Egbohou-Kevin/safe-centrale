@@ -1,6 +1,7 @@
 # Sécurité et installation d'un site
 
-Statut : v1, codée ; pas encore essayée sur le kit.
+Statut : v1, codée ; essayée sur le kit virtuel (`kit-virtuel.md`), pas encore sur un
+vrai Raspberry Pi.
 
 Ce document décrit comment une centrale reçoit son identité, comment elle est
 installée chez un client, comment le code d'accès arrive sur le site, et ce qui se
@@ -145,7 +146,8 @@ d'alarme.
 
 Statut : codée (`internal/consoleapp`, sa page `internal/consoleapp/web`, le Wi-Fi
 `internal/adapter/hotspot`, `cmd/safehome-console`). Testée avec un faux `nmcli` et
-une vraie page HTTP. **Pas encore essayée sur le kit**. Décidée avec Kevin le
+une vraie page HTTP, puis sur le kit virtuel : un « téléphone » rejoint le Wi-Fi de la
+console et ouvre sa page (`kit-virtuel.md`, étape 9). Décidée avec Kevin le
 20 octobre 2026.
 
 L'installateur appaire, nomme les zones, choisit les sirènes et teste les appareils
@@ -257,9 +259,9 @@ zones de `hub.json` et le dit dans son journal.
 
 ### Pas encore fait
 
-- Vérifier sur le kit que NetworkManager et `dnsmasq-base` (le mode « partagé »)
-  sont bien là sur Raspberry Pi OS Lite. Vérifier aussi la règle polkit et la portée
-  du réseau.
+- Le kit virtuel tourne sur Debian 13, où NetworkManager et `dnsmasq-base` (le mode
+  « partagé »), la règle polkit et le réseau de la console marchent. Reste à le
+  vérifier sur Raspberry Pi OS Lite, avec la vraie puce Wi-Fi et sa portée.
 
 ## Sauvegarde et remplacement
 

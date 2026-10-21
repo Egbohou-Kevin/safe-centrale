@@ -54,7 +54,9 @@ Cloud ──maint.open──► Agent ──► safehome-maint ──maint.sessi
   ```
 
   Une centrale volée ne permet donc ni d'ouvrir un shell sur le bastion, ni d'écouter
-  sur le port d'un autre site. On retire sa ligne, et c'est fini.
+  sur le port d'un autre site. On retire sa ligne, et c'est fini. Vérifié sur le kit
+  virtuel (`kit-virtuel.md`, étape 10) : la demande `-R localhost:22001:localhost:22`
+  passe, un shell et le port d'un autre site sont refusés.
 - **Une session à la fois, une heure au plus**, refusée si l'ordre arrive après son
   `exp`. Le tunnel meurt avec le service (systemd et le noyau tuent `ssh`).
 - **Coupure possible par l'installateur** : `"enabled": false` dans `maint.json` ; la
@@ -135,5 +137,3 @@ ssh -J kevin@bastion.safehome.example -p 22001 admin@localhost
 - Le bastion lui-même, et l'écran du cloud (demander, voir, fermer).
 - Montrer la session au propriétaire dans l'application, et lui permettre de la
   fermer (le cloud enverra `maint.close`).
-- Vérifier sur le kit que `permitlisten="localhost:22001"` accepte bien la demande
-  `-R localhost:22001:localhost:22`.
