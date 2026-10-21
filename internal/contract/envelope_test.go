@@ -154,6 +154,23 @@ func TestEnvelopeIgnoresUnknownFields(t *testing.T) {
 	}
 }
 
+func TestValidDataChecksWhatChecksItself(t *testing.T) {
+	bad := newTestEnvelope(t, map[string]any{"device_id": "d", "capability": "contact"}) // no value
+	if _, err := DecodeData[DeviceEventData](bad); err != nil {
+		t.Fatalf("it decodes: %v", err)
+	}
+	if _, err := ValidData[DeviceEventData](bad); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("want the data's own check, got %v", err)
+	}
+	if _, err := ValidData[AlertAckData](bad); err != nil {
+		t.Fatalf("a type without checks only decodes: %v", err)
+	}
+	broken := newTestEnvelope(t, map[string]any{"device_id": 3})
+	if _, err := ValidData[DeviceEventData](broken); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("data that does not decode: %v", err)
+	}
+}
+
 func TestEnvelopeRejects(t *testing.T) {
 	good := newTestEnvelope(t, map[string]any{})
 	cases := map[string]func(*Envelope){

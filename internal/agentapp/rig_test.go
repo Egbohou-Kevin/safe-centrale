@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/inbox"
 	"safehome/internal/outbox"
 )
 
@@ -285,13 +286,13 @@ func (r *rig) msg(typ string, data any) []byte {
 
 func (r *rig) fromHub(topic, typ string, data any) []byte {
 	b := r.msg(typ, data)
-	r.app.HandleLocal(Message{Topic: topic, Payload: b})
+	r.app.HandleLocal(inbox.Message{Topic: topic, Payload: b})
 	return b
 }
 
 func (r *rig) fromCloud(topic, typ string, data any) []byte {
 	b := r.msg(typ, data)
-	r.app.HandleCloud(Message{Topic: topic, Payload: b})
+	r.app.HandleCloud(inbox.Message{Topic: topic, Payload: b})
 	return b
 }
 

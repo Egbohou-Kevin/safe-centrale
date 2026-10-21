@@ -100,7 +100,7 @@ func newBox(t *testing.T, b *broker, max int) (*Outbox, *memStore) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(b, seq, "tg-lom-0001", max, time.Millisecond, 4*time.Millisecond, nil), store
+	return New(b, seq, "tg-lom-0001", Settings{Size: max, RetryMin: time.Millisecond, RetryMax: 4 * time.Millisecond}, nil), store
 }
 
 func run(t *testing.T, o *Outbox) func() {
@@ -230,14 +230,14 @@ func TestFlushSendsWhatIsLeft(t *testing.T) {
 	o, _ := newBox(t, b, 10)
 	o.Put(item("a", false))
 	o.Put(item("b", false))
-	o.Flush(time.Second)
+	o.Flush()
 	if len(b.got()) != 2 {
 		t.Fatalf("%+v", b.got())
 	}
 	// A broker that is away stops the flush at once.
 	b.script = []error{ErrUnavailable}
 	o.Put(item("c", false))
-	o.Flush(time.Second)
+	o.Flush()
 	if o.Depth() != 1 {
 		t.Fatal("the message stays queued")
 	}
@@ -296,30 +296,48 @@ func TestTheCounterWritesOncePerBlock(t *testing.T) {
 	}
 }
 
-func TestRecentIDsForgetsTheOldest(t *testing.T) {
-	r := NewRecentIDs(2)
-	if !r.FirstTime("a") || r.FirstTime("a") || !r.FirstTime("b") || !r.FirstTime("c") {
-		t.Fatal("first sightings")
-	}
-	if !r.FirstTime("a") {
-		t.Fatal("a was forgotten when c arrived")
-	}
-}
-
-func TestRecentIDsOfSizeZeroDoesNotPanic(t *testing.T) {
-	r := NewRecentIDs(0)
-	if !r.FirstTime("a") || r.FirstTime("a") {
-		t.Fatal("it still remembers the last id")
-	}
-}
-
-func TestSleep(t *testing.T) {
-	if !Sleep(context.Background(), time.Millisecond) {
+func TestSleepStopsWithItsContext(t *testing.T) {
+	if !sleep(context.Background(), time.Millisecond) {
 		t.Fatal("a full wait")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if Sleep(ctx, time.Hour) {
+	if sleep(ctx, time.Hour) {
 		t.Fatal("a cancelled wait")
+	}
+}
+
+func TestSettingsValidation(t *testing.T) {
+	if err := DefaultSettings(10).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for name, s := range map[string]Settings{
+		"no size":        {Size: 0, RetryMin: time.Second, RetryMax: time.Second},
+		"no retry":       {Size: 1, RetryMin: 0, RetryMax: time.Second},
+		"retry inverted": {Size: 1, RetryMin: time.Second, RetryMax: time.Millisecond},
+	} {
+		if s.Validate() == nil {
+			t.Errorf("%s: want an error", name)
+		}
+	}
+}
+
+func TestOpenNumbersWithTheCounterSavedUnderItsKey(t *testing.T) {
+	store := &memStore{docs: map[string][]byte{"app_seq": []byte(`{"seq":41}`)}}
+	b := &broker{}
+	o, err := Open(store, b, "app_seq", "tg-lom-0001", DefaultSettings(10), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := run(t, o)
+	defer stop()
+	o.Put(item("a", false))
+	waitFor(t, "the message", func() bool { return len(b.got()) == 1 })
+	if seq := b.got()[0].env.Seq; seq != 42 {
+		t.Fatalf("seq %d, want 42", seq)
+	}
+	store.Save("broken", []byte(`{`))
+	if _, err := Open(store, b, "broken", "tg-lom-0001", DefaultSettings(10), nil); err == nil {
+		t.Fatal("a damaged counter must stop the start")
 	}
 }

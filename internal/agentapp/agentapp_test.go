@@ -13,6 +13,7 @@ import (
 
 	"safehome/internal/agent"
 	"safehome/internal/contract"
+	"safehome/internal/inbox"
 	"safehome/internal/schematest"
 )
 
@@ -306,8 +307,8 @@ func TestOversizedMessagesAreLeftAside(t *testing.T) {
 	r := newRig(t, nil)
 	r.app.LinkChanged(true, "mqtts")
 	huge := bytes.Repeat([]byte("x"), maxPayload+1)
-	r.app.HandleLocal(Message{Topic: topic("alarm", "event"), Payload: huge})
-	r.app.HandleCloud(Message{Topic: topic("alarm", "cmd"), Payload: huge})
+	r.app.HandleLocal(inbox.Message{Topic: topic("alarm", "event"), Payload: huge})
+	r.app.HandleCloud(inbox.Message{Topic: topic("alarm", "cmd"), Payload: huge})
 	time.Sleep(50 * time.Millisecond)
 	for _, m := range append(r.cloud.all(), r.local.all()...) {
 		if len(m.raw) > maxPayload {

@@ -104,22 +104,12 @@ func (a *App) publishOwn(now time.Time, topic, typ string, data any, retain bool
 	}
 }
 
-// statusRepeater sends the status again every StatusEvery, through the core's loop:
-// a loop that hangs stops the repetition, and the hub notices.
-func (a *App) statusRepeater(ctx context.Context) {
-	for {
-		fired, stop := a.deps.Clock.Timer(a.cfg.StatusEvery)
-		select {
-		case <-ctx.Done():
-			stop()
-			return
-		case <-fired:
-			a.loop.Do(ctx, func(now time.Time) []agent.Action {
-				a.publishStatus(now, a.core.Status(now))
-				return nil
-			})
-		}
-	}
+// repeatStatus publishes agent.status, through the core's loop.
+func (a *App) repeatStatus(ctx context.Context) {
+	a.loop.Do(ctx, func(now time.Time) []agent.Action {
+		a.publishStatus(now, a.core.Status(now))
+		return nil
+	})
 }
 
 // sender sends the queue to the cloud, one message at a time, alarms first. A message

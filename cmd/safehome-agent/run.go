@@ -98,14 +98,14 @@ func daemon(cfg agentconfig.Result, app *agentapp.App, local, cloud *service.Pub
 		return mqtt.Message{Topic: topic, Payload: payload, QoS: 1, Retain: true}
 	}
 	hub := mqtt.Options{
-		BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: subscriptions(app.LocalSubscriptions()), Logger: log,
-		OnMessage: func(m mqtt.Message) { app.HandleLocal(agentapp.Message{Topic: m.Topic, Payload: m.Payload}) },
+		BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: service.Subscriptions(app.LocalSubscriptions()), Logger: log,
+		OnMessage: service.Deliver(app.HandleLocal),
 	}
 	toCloud := mqtt.Options{
 		BrokerURL: cfg.Cloud.URLs[0], FallbackURLs: cfg.Cloud.URLs[1:], CAFile: cfg.Cloud.CAFile,
 		ClientID: cfg.Cloud.ClientID, Username: cfg.Cloud.Username, Password: cfg.Cloud.Password,
-		Subscriptions: subscriptions(app.CloudSubscriptions()), Will: will, Spread: true, Logger: log.With("broker", "cloud"),
-		OnMessage:    func(m mqtt.Message) { app.HandleCloud(agentapp.Message{Topic: m.Topic, Payload: m.Payload}) },
+		Subscriptions: service.Subscriptions(app.CloudSubscriptions()), Will: will, Spread: true, Logger: log.With("broker", "cloud"),
+		OnMessage:    service.Deliver(app.HandleCloud),
 		OnLinkChange: app.LinkChanged,
 	}
 	return service.Daemon{
@@ -118,14 +118,4 @@ func daemon(cfg agentconfig.Result, app *agentapp.App, local, cloud *service.Pub
 			}
 		},
 	}
-}
-
-// subscriptions turns the application's subscriptions into the client's: the
-// agent's carry NoLocal, so as not to receive back what it republishes.
-func subscriptions(in []agentapp.Subscription) []mqtt.Subscription {
-	out := make([]mqtt.Subscription, len(in))
-	for i, s := range in {
-		out[i] = mqtt.Subscription(s)
-	}
-	return out
 }

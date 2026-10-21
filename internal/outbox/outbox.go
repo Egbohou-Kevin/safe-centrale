@@ -1,9 +1,7 @@
 // Package outbox sends the messages of an application to the broker, in order, without
 // ever making the application wait: messages are queued in memory and a goroutine
-// publishes them, retrying while the broker is away. It also holds the two other
-// pieces every component of the site needs around the contract: the message counter
-// (seq) that survives restarts, and the memory of recent message ids that makes an
-// at-least-once delivery handled once.
+// publishes them, retrying while the broker is away. It also holds the message
+// counter (seq) that survives restarts. The way in is package inbox.
 //
 // It knows the contract (it builds the envelopes) and the driver's Store port, and
 // nothing of any domain.
@@ -18,6 +16,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/driver"
 )
 
 // ErrUnavailable is what a Publisher returns when the broker cannot be reached right
@@ -74,15 +73,45 @@ type Outbox struct {
 
 const maxRefusals = 3 // a message the broker keeps refusing is dropped after this many tries
 
-// New builds an outbox. max is the most messages kept while the broker is away;
-// retryMin and retryMax bound the wait between attempts.
-func New(pub Publisher, seq *Sequencer, site string, max int, retryMin, retryMax time.Duration, log *slog.Logger) *Outbox {
+// Settings is how an application's outbox behaves; each application's Config holds
+// one.
+type Settings struct {
+	Size     int           // the most messages kept while the broker is away
+	RetryMin time.Duration // the first wait before sending again
+	RetryMax time.Duration // the longest
+}
+
+// DefaultSettings keeps size messages, and retries after 200 ms, then up to 5 s.
+func DefaultSettings(size int) Settings {
+	return Settings{Size: size, RetryMin: 200 * time.Millisecond, RetryMax: 5 * time.Second}
+}
+
+// Validate checks the settings.
+func (s Settings) Validate() error {
+	if s.Size < 1 || s.RetryMin <= 0 || s.RetryMax < s.RetryMin {
+		return errors.New("outbox: Size and RetryMin must be positive, RetryMax at least RetryMin")
+	}
+	return nil
+}
+
+// Open builds the outbox of an application, with its message counter saved in store
+// under key.
+func Open(store driver.Store, pub Publisher, key, site string, s Settings, log *slog.Logger) (*Outbox, error) {
+	seq, err := NewSequencer(store, key, log)
+	if err != nil {
+		return nil, err
+	}
+	return New(pub, seq, site, s, log), nil
+}
+
+// New builds an outbox that numbers its messages with seq; Open is the usual way.
+func New(pub Publisher, seq *Sequencer, site string, s Settings, log *slog.Logger) *Outbox {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
 	return &Outbox{
 		pub: pub, seq: seq, site: site, log: log,
-		max: max, retryMin: retryMin, retryMax: retryMax, attemptTimeout: 5 * time.Second,
+		max: s.Size, retryMin: s.RetryMin, retryMax: s.RetryMax, attemptTimeout: 5 * time.Second,
 		wake: make(chan struct{}, 1),
 	}
 }
@@ -191,7 +220,7 @@ func (o *Outbox) Run(ctx context.Context) {
 			return
 		case errors.Is(err, ErrUnavailable):
 			o.log.Warn("broker unavailable, will retry", "queued", o.Depth(), "retry_in", delay)
-			if !Sleep(ctx, delay) {
+			if !sleep(ctx, delay) {
 				return
 			}
 			delay = min(delay*2, o.retryMax)
@@ -202,7 +231,7 @@ func (o *Outbox) Run(ctx context.Context) {
 				o.pop(it)
 				continue
 			}
-			if !Sleep(ctx, o.retryMin) {
+			if !sleep(ctx, o.retryMin) {
 				return
 			}
 		}
@@ -219,10 +248,14 @@ func (o *Outbox) attempt(ctx context.Context, it *Item) error {
 	return err
 }
 
-// Flush makes one last attempt to send what is left, within the given time. It is
-// used at shutdown, so the last state reaches the broker.
-func (o *Outbox) Flush(grace time.Duration) {
-	ctx, cancel := context.WithTimeout(context.Background(), grace)
+// flushGrace bounds the last attempt to send what is left, at shutdown.
+const flushGrace = 3 * time.Second
+
+// Flush makes one last attempt to send what is left, for a few seconds at most. It is
+// called at shutdown, once nothing puts messages any more, so the last state reaches
+// the broker.
+func (o *Outbox) Flush() {
+	ctx, cancel := context.WithTimeout(context.Background(), flushGrace)
 	defer cancel()
 	for {
 		it := o.head()
@@ -240,9 +273,9 @@ func (o *Outbox) Flush(grace time.Duration) {
 	}
 }
 
-// Sleep waits d, or less if ctx is done first; it reports whether the whole wait
+// sleep waits d, or less if ctx is done first; it reports whether the whole wait
 // elapsed.
-func Sleep(ctx context.Context, d time.Duration) bool {
+func sleep(ctx context.Context, d time.Duration) bool {
 	t := time.NewTimer(d)
 	defer t.Stop()
 	select {

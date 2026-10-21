@@ -7,6 +7,7 @@ import (
 	"safehome/internal/contract"
 	"safehome/internal/engine"
 	engwire "safehome/internal/engine/wire"
+	"safehome/internal/inbox"
 )
 
 // The Zigbee adapter answers each siren command (command.ack). A siren.on that did not
@@ -65,7 +66,7 @@ func (h *Hub) sendSiren(now time.Time, sirenID string, a engine.Action) {
 }
 
 // sirenAckMessage handles a siren's answer to a command. Only a failure matters.
-func (h *Hub) sirenAckMessage(sirenID string, m Message) {
+func (h *Hub) sirenAckMessage(sirenID string, m inbox.Message) {
 	if !slices.Contains(h.cfg.SirenIDs, sirenID) {
 		return
 	}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/inbox"
 )
 
 // Source names the installer's tools in the envelopes they send.
@@ -27,19 +28,6 @@ var (
 // Publisher sends one message to the broker. The program gives the MQTT client.
 type Publisher interface {
 	Publish(ctx context.Context, topic string, payload []byte, qos byte, retain bool) error
-}
-
-// Message is a message received from the broker.
-type Message struct {
-	Topic   string
-	Payload []byte
-	Retain  bool
-}
-
-// Subscription is a topic filter the session needs.
-type Subscription struct {
-	Filter string
-	QoS    byte
 }
 
 // Deps is what the program gives the session.
@@ -62,7 +50,7 @@ type Session struct {
 	site    string
 	d       Deps
 	timing  Timing
-	in      chan Message
+	in      chan inbox.Message
 	dropped atomic.Int64
 
 	registry *contract.RegistrySnapshotData // the last snapshot seen, nil before
@@ -83,12 +71,12 @@ func NewSession(site string, d Deps, t Timing) (*Session, error) {
 	if t.Grace <= 0 {
 		t.Grace = 5 * time.Second
 	}
-	return &Session{site: site, d: d, timing: t, in: make(chan Message, 1024)}, nil
+	return &Session{site: site, d: d, timing: t, in: make(chan inbox.Message, 1024)}, nil
 }
 
 // Subscriptions lists what the program must subscribe to before calling the session.
-func (s *Session) Subscriptions() []Subscription {
-	return []Subscription{
+func (s *Session) Subscriptions() []inbox.Subscription {
+	return []inbox.Subscription{
 		{Filter: contract.RegistryDevicesTopic(s.site), QoS: 1},
 		{Filter: contract.RegistryEventTopic(s.site), QoS: 1},
 		{Filter: contract.ZigbeeStatusTopic(s.site), QoS: 1},
@@ -99,7 +87,7 @@ func (s *Session) Subscriptions() []Subscription {
 // Deliver hands a received message to the session. It never blocks (the MQTT client
 // calls it from its own goroutine); when the session is far behind, the message is
 // dropped and counted.
-func (s *Session) Deliver(m Message) {
+func (s *Session) Deliver(m inbox.Message) {
 	select {
 	case s.in <- m:
 	default:

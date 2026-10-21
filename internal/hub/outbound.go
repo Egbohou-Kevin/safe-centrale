@@ -203,21 +203,8 @@ func (h *Hub) followUplink(now time.Time, s health.LinkState) {
 	h.escalate(escalation.Uplink{Now: now, Up: s == health.LinkOK})
 }
 
-// heartbeats publishes a sign of life every HeartbeatEvery.
-func (h *Hub) heartbeats(ctx context.Context) {
-	for {
-		fired, stop := h.deps.Clock.Timer(h.cfg.HeartbeatEvery)
-		select {
-		case <-ctx.Done():
-			stop()
-			return
-		case <-fired:
-			h.publishHeartbeat()
-		}
-	}
-}
-
-func (h *Hub) publishHeartbeat() {
+// publishHeartbeat publishes a sign of life (every HeartbeatEvery).
+func (h *Hub) publishHeartbeat(context.Context) {
 	now := h.deps.Clock.Now()
 	mode, _ := h.mode.Load().(string)
 	data := contract.HeartbeatData{

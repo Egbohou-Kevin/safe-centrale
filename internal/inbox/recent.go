@@ -1,4 +1,4 @@
-package outbox
+package inbox
 
 import "sync"
 

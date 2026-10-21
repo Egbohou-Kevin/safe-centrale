@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"errors"
 	"time"
 
 	"safehome/internal/contract"
@@ -8,6 +9,7 @@ import (
 	engwire "safehome/internal/engine/wire"
 	"safehome/internal/health"
 	healthwire "safehome/internal/health/wire"
+	"safehome/internal/inbox"
 )
 
 const maxPayload = 64 * 1024
@@ -16,7 +18,7 @@ const maxPayload = 64 * 1024
 // MQTT client's own goroutine and returns quickly: it decodes, checks, and hands
 // the work to the domain loops. A message that is not ours, or is damaged, is
 // dropped with a log line that never contains the payload (it may hold a code).
-func (h *Hub) HandleMessage(m Message) {
+func (h *Hub) HandleMessage(m inbox.Message) {
 	if len(m.Payload) > maxPayload {
 		h.log.Warn("ignoring an oversized message", "topic", m.Topic, "bytes", len(m.Payload))
 		return
@@ -39,7 +41,7 @@ func (h *Hub) HandleMessage(m Message) {
 
 // serviceMessage routes a message on a topic of the site's services, named by the
 // last two parts of its topic.
-func (h *Hub) serviceMessage(topic string, m Message) {
+func (h *Hub) serviceMessage(topic string, m inbox.Message) {
 	switch topic {
 	case "alarm/cmd":
 		h.alarmMessage(m)
@@ -60,39 +62,17 @@ func (h *Hub) serviceMessage(topic string, m Message) {
 	}
 }
 
-// envelope parses and checks the envelope of a message, and drops a duplicate.
-func (h *Hub) envelope(m Message, wantType string) (contract.Envelope, bool) {
-	env, err := contract.ParseEnvelope(m.Payload)
+// decode reads a message of type typ through the inbox's gate, and drops a
+// duplicate. A message refused is logged as what it should have been, never with its
+// payload.
+func decode[T any](h *Hub, m inbox.Message, typ, what string) (contract.Envelope, T, bool) {
+	env, d, err := inbox.Open[T](m, h.cfg.Site, typ)
 	if err != nil {
-		h.log.Warn("ignoring an invalid message", "topic", m.Topic, "err", err)
-		return contract.Envelope{}, false
-	}
-	if env.Site != h.cfg.Site {
-		h.log.Warn("ignoring a message for another site", "topic", m.Topic, "site", env.Site)
-		return contract.Envelope{}, false
-	}
-	if env.Type != wantType {
-		h.log.Warn("ignoring a message of the wrong type for its topic", "topic", m.Topic, "type", env.Type)
-		return contract.Envelope{}, false
+		h.log.Warn("ignoring an invalid "+what, "topic", m.Topic, "err", err)
+		return env, d, false
 	}
 	if !h.seen.FirstTime(env.ID) {
 		h.log.Debug("ignoring a duplicate", "topic", m.Topic, "id", env.ID)
-		return contract.Envelope{}, false
-	}
-	return env, true
-}
-
-// decode reads a message of type typ: its envelope, then its data. A message whose
-// data does not decode is dropped with a log line that calls it what.
-func decode[T any](h *Hub, m Message, typ, what string) (contract.Envelope, T, bool) {
-	var d T
-	env, ok := h.envelope(m, typ)
-	if !ok {
-		return env, d, false
-	}
-	d, err := contract.DecodeData[T](env)
-	if err != nil {
-		h.log.Warn("ignoring an invalid "+what, "err", err)
 		return env, d, false
 	}
 	return env, d, true
@@ -109,7 +89,7 @@ func (h *Hub) submitFailed(err error) {
 
 // deviceMessage handles an event, or the retained state of a capability when
 // capability is set (the last part of its topic).
-func (h *Hub) deviceMessage(deviceID, capability string, m Message) {
+func (h *Hub) deviceMessage(deviceID, capability string, m inbox.Message) {
 	isState := capability != ""
 	typ := contract.TypeDeviceEvent
 	if isState {
@@ -117,10 +97,6 @@ func (h *Hub) deviceMessage(deviceID, capability string, m Message) {
 	}
 	env, d, ok := decode[contract.DeviceEventData](h, m, typ, "device message")
 	if !ok {
-		return
-	}
-	if err := d.Validate(); err != nil {
-		h.log.Warn("ignoring an invalid device message", "device", deviceID, "err", err)
 		return
 	}
 	if d.DeviceID != deviceID || (isState && d.Capability != capability) {
@@ -189,8 +165,8 @@ func (h *Hub) feedHealth(d contract.DeviceEventData) {
 // registryMessage takes a device removed from the site: the engine and the monitor
 // forget it, so that it holds no door open and stays in no fault list. The other
 // events of the registry (a device added or refused) are the installer's business.
-func (h *Hub) registryMessage(m Message) {
-	if env, err := contract.ParseEnvelope(m.Payload); err == nil && env.Type != contract.TypeRegistryDeviceRemoved {
+func (h *Hub) registryMessage(m inbox.Message) {
+	if _, err := inbox.Envelope(m, h.cfg.Site, contract.TypeRegistryDeviceRemoved); errors.Is(err, inbox.ErrWrongType) {
 		return
 	}
 	_, d, ok := decode[contract.RegistryDeviceRemovedData](h, m, contract.TypeRegistryDeviceRemoved, "device removal")
@@ -213,7 +189,7 @@ func (h *Hub) registryMessage(m Message) {
 // monitor learns whether the SMS backup still works. The gateway repeats its status:
 // the monitor notices when it stops (see health.GSM), and the gsm link follows the
 // monitor.
-func (h *Hub) gsmStatusMessage(m Message) {
+func (h *Hub) gsmStatusMessage(m inbox.Message) {
 	env, d, ok := decode[contract.GSMStatusData](h, m, contract.TypeGSMStatus, "GSM status")
 	if !ok {
 		return
@@ -225,7 +201,7 @@ func (h *Hub) gsmStatusMessage(m Message) {
 
 // zigbeeStatusMessage takes the Zigbee adapter's status: the monitor learns whether
 // the sensors can be heard, and notices when the adapter stops repeating it.
-func (h *Hub) zigbeeStatusMessage(m Message) {
+func (h *Hub) zigbeeStatusMessage(m inbox.Message) {
 	env, d, ok := decode[contract.ZigbeeStatusData](h, m, contract.TypeZigbeeStatus, "Zigbee status")
 	if !ok {
 		return
@@ -237,7 +213,7 @@ func (h *Hub) zigbeeStatusMessage(m Message) {
 // agentStatusMessage takes the link agent's status: the monitor learns whether the
 // cloud can be reached, and notices when the agent stops repeating it. The internet
 // link of system.health follows, and so does the escalation (see publishHealth).
-func (h *Hub) agentStatusMessage(m Message) {
+func (h *Hub) agentStatusMessage(m inbox.Message) {
 	env, d, ok := decode[contract.AgentStatusData](h, m, contract.TypeAgentStatus, "agent status")
 	if !ok {
 		return

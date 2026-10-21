@@ -11,6 +11,7 @@ import (
 	"safehome/internal/driver"
 	"safehome/internal/gateway"
 	"safehome/internal/gsmconfig"
+	"safehome/internal/inbox"
 	"safehome/internal/service"
 	"safehome/internal/siteconfig"
 )
@@ -95,14 +96,14 @@ func runGateway(ctx context.Context, cfg gsmconfig.Result, stderr io.Writer) int
 		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
 			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Logger: log,
 			Subscriptions: append(service.Subscriptions(g.Subscriptions()), mqtt.Subscription{Filter: applied, QoS: 1}),
-			OnMessage: func(m mqtt.Message) {
+			OnMessage: service.Deliver(func(m inbox.Message) {
 				if m.Topic != applied {
-					g.HandleMessage(gateway.Message{Topic: m.Topic, Payload: m.Payload})
+					g.HandleMessage(m)
 				} else if v, ok := siteconfig.Changed(cfg.StateDir, cfg.Gateway.Site, cfg.SiteVersion, m.Payload); ok {
 					log.Info("restarting to load the configuration from the cloud", "site_config", v)
 					restart.Ask()
 				}
-			},
+			}),
 		}}},
 	}.Run(ctx)
 }

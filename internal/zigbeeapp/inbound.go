@@ -1,12 +1,11 @@
 package zigbeeapp
 
 import (
-	"fmt"
-	"slices"
 	"strings"
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/inbox"
 	"safehome/internal/zigbee"
 	"safehome/internal/zigbee/wire"
 	"safehome/internal/zigbee/z2m"
@@ -14,7 +13,7 @@ import (
 
 // HandleMessage takes a message from the broker. It returns at once: the work is
 // queued on the core's loop.
-func (a *App) HandleMessage(m Message) {
+func (a *App) HandleMessage(m inbox.Message) {
 	if len(m.Payload) > maxPayload {
 		a.log.Warn("ignoring an oversized message", "topic", m.Topic, "bytes", len(m.Payload))
 		return
@@ -38,7 +37,7 @@ func (a *App) HandleMessage(m Message) {
 // fromBridge reads a message from Zigbee2MQTT. It is parsed here first, to log what
 // cannot be read without queuing it, then again on the loop with the time of the
 // moment.
-func (a *App) fromBridge(m Message) {
+func (a *App) fromBridge(m inbox.Message) {
 	if req, reason, failed := z2m.ResponseError(a.cfg.Base, m.Topic, m.Payload); failed {
 		a.log.Error("Zigbee2MQTT refused a request", "request", req, "error", reason)
 		return
@@ -55,52 +54,39 @@ func (a *App) fromBridge(m Message) {
 	})
 }
 
-// envelope parses and checks the envelope of an order, and drops a duplicate.
-func (a *App) envelope(m Message, types ...string) (contract.Envelope, bool) {
-	env, err := contract.ParseEnvelope(m.Payload)
-	if err != nil || env.Site != a.cfg.Site {
-		a.log.Warn("ignoring an invalid order", "topic", m.Topic, "err", err)
-		return contract.Envelope{}, false
-	}
-	if !slices.Contains(types, env.Type) {
-		a.log.Warn("ignoring a message of the wrong type for its topic", "topic", m.Topic, "type", env.Type)
-		return contract.Envelope{}, false
-	}
-	return env, a.seen.FirstTime(env.ID)
-}
-
-// decodeOrder reads the data of an order and checks it against the contract.
-func decodeOrder[T interface{ Validate() error }](env contract.Envelope) (T, error) {
-	d, err := contract.DecodeData[T](env)
+// order reads an order through the inbox's gate, and drops a duplicate.
+func order[T any](a *App, m inbox.Message, typ, what string) (contract.Envelope, T, bool) {
+	env, d, err := inbox.Open[T](m, a.cfg.Site, typ)
 	if err != nil {
-		return d, err
+		a.log.Warn("ignoring an invalid "+what, "topic", m.Topic, "err", err)
+		return env, d, false
 	}
-	return d, d.Validate()
+	return env, d, a.seen.FirstTime(env.ID)
 }
 
-func (a *App) deviceCommand(deviceID string, m Message) {
-	env, ok := a.envelope(m, contract.TypeCommand)
+func (a *App) deviceCommand(deviceID string, m inbox.Message) {
+	env, d, ok := order[contract.DeviceCommandData](a, m, contract.TypeCommand, "device command")
 	if !ok {
 		return
 	}
-	d, err := decodeOrder[contract.DeviceCommandData](env)
-	if err == nil && d.DeviceID != deviceID {
-		err = fmt.Errorf("topic for %s, command for %s", deviceID, d.DeviceID)
-	}
-	if err != nil {
-		a.log.Warn("ignoring an invalid device command", "topic", m.Topic, "err", err)
+	if d.DeviceID != deviceID {
+		a.log.Warn("ignoring a device command whose topic and content disagree", "topic", m.Topic, "device", d.DeviceID)
 		return
 	}
 	a.submit(func(now time.Time) zigbee.Input { return wire.Command(d, env.ID, now) })
 }
 
-func (a *App) registryOrder(m Message) {
-	env, ok := a.envelope(m, contract.TypeRegistryPair, contract.TypeRegistryRemove)
-	if !ok {
+func (a *App) registryOrder(m inbox.Message) {
+	env, err := inbox.Envelope(m, a.cfg.Site, contract.TypeRegistryPair, contract.TypeRegistryRemove)
+	if err != nil {
+		a.log.Warn("ignoring an invalid registry order", "topic", m.Topic, "err", err)
+		return
+	}
+	if !a.seen.FirstTime(env.ID) {
 		return
 	}
 	if env.Type == contract.TypeRegistryPair {
-		d, err := decodeOrder[contract.RegistryPairData](env)
+		d, err := contract.ValidData[contract.RegistryPairData](env)
 		if err != nil {
 			a.log.Warn("ignoring an invalid pairing order", "err", err)
 			return
@@ -109,7 +95,7 @@ func (a *App) registryOrder(m Message) {
 		a.submit(func(now time.Time) zigbee.Input { return wire.Pair(d, env.ID, now) })
 		return
 	}
-	d, err := decodeOrder[contract.RegistryRemoveData](env)
+	d, err := contract.ValidData[contract.RegistryRemoveData](env)
 	if err != nil {
 		a.log.Warn("ignoring an invalid removal order", "err", err)
 		return

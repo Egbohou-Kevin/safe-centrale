@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"safehome/internal/adapter/mqtt"
+	"safehome/internal/inbox"
 	"safehome/internal/outbox"
 )
 
@@ -35,19 +36,16 @@ func (p *Publisher) Publish(ctx context.Context, topic string, payload []byte, q
 	return err
 }
 
-// subscription is the shape of every application's Subscription type: each
-// application declares its own, with these two fields.
-type subscription = struct {
-	Filter string
-	QoS    byte
-}
-
 // Subscriptions turns an application's subscriptions into the client's.
-func Subscriptions[S ~subscription](in []S) []mqtt.Subscription {
+func Subscriptions(in []inbox.Subscription) []mqtt.Subscription {
 	out := make([]mqtt.Subscription, len(in))
 	for i, s := range in {
-		plain := subscription(s)
-		out[i] = mqtt.Subscription{Filter: plain.Filter, QoS: plain.QoS}
+		out[i] = mqtt.Subscription(s)
 	}
 	return out
+}
+
+// Deliver turns an application's message handler into the client's.
+func Deliver(handle func(inbox.Message)) func(mqtt.Message) {
+	return func(m mqtt.Message) { handle(inbox.Message{Topic: m.Topic, Payload: m.Payload, Retain: m.Retain}) }
 }

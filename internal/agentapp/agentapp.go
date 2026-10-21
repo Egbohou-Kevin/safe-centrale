@@ -20,6 +20,7 @@ import (
 	"safehome/internal/agent"
 	"safehome/internal/contract"
 	"safehome/internal/driver"
+	"safehome/internal/inbox"
 	"safehome/internal/outbox"
 )
 
@@ -31,17 +32,17 @@ type Config struct {
 	// hub takes an agent that stopped repeating it for dead, and the internet for
 	// down.
 	StatusEvery time.Duration
-	OutboxSize  int
-	RetryMin    time.Duration // between two attempts to send to the cloud, at first
-	RetryMax    time.Duration // and at most
-	SendTimeout time.Duration // for the cloud's broker to acknowledge one message
-	PhotoWait   time.Duration // for one photo's upload
+	Outbox      outbox.Settings // for the hub's broker
+	RetryMin    time.Duration   // between two attempts to send to the cloud, at first
+	RetryMax    time.Duration   // and at most
+	SendTimeout time.Duration   // for the cloud's broker to acknowledge one message
+	PhotoWait   time.Duration   // for one photo's upload
 }
 
 // DefaultConfig returns the defaults.
 func DefaultConfig(site string) Config {
 	return Config{
-		Site: site, Relay: agent.DefaultConfig(site), StatusEvery: time.Minute, OutboxSize: 1000,
+		Site: site, Relay: agent.DefaultConfig(site), StatusEvery: time.Minute, Outbox: outbox.DefaultSettings(1000),
 		RetryMin: time.Second, RetryMax: 30 * time.Second, SendTimeout: 10 * time.Second, PhotoWait: time.Minute,
 	}
 }
@@ -51,8 +52,11 @@ func (c Config) Validate() error {
 	if c.Relay.Site != c.Site {
 		return fmt.Errorf("agentapp: the relay's site %q differs from %q", c.Relay.Site, c.Site)
 	}
-	if c.StatusEvery <= 0 || c.OutboxSize < 1 || c.RetryMin <= 0 || c.RetryMax < c.RetryMin || c.SendTimeout <= 0 || c.PhotoWait <= 0 {
-		return errors.New("agentapp: StatusEvery, OutboxSize, RetryMin, RetryMax, SendTimeout and PhotoWait must be set")
+	if c.StatusEvery <= 0 || c.RetryMin <= 0 || c.RetryMax < c.RetryMin || c.SendTimeout <= 0 || c.PhotoWait <= 0 {
+		return errors.New("agentapp: StatusEvery, RetryMin, RetryMax, SendTimeout and PhotoWait must be set")
+	}
+	if err := c.Outbox.Validate(); err != nil {
+		return fmt.Errorf("agentapp: %w", err)
 	}
 	return c.Relay.Validate()
 }
@@ -71,20 +75,6 @@ type Deps struct {
 	NewID    func() string
 	// Logger: never given a message's content, which may hold a video token.
 	Logger *slog.Logger
-}
-
-// Message is a message received from one of the brokers.
-type Message struct {
-	Topic   string
-	Payload []byte
-}
-
-// Subscription is a topic filter the agent listens to. NoLocal is always wanted:
-// the agent republishes between two brokers and must not hear itself.
-type Subscription struct {
-	Filter  string
-	QoS     byte
-	NoLocal bool
 }
 
 const (
@@ -138,7 +128,9 @@ func New(cfg Config, deps Deps) (*App, error) {
 	}
 	a := &App{cfg: cfg, deps: deps, log: log, core: core, seq: seq, kick: make(chan struct{}, 1), relink: make(chan struct{}, 1)}
 	a.life, a.stop = context.WithCancel(context.Background())
-	a.out = outbox.New(deps.Local, seq, cfg.Site, cfg.OutboxSize, 200*time.Millisecond, 5*time.Second, log)
+	// The agent builds its own messages, to hand them to the core as well: it shares
+	// the outbox's counter (see publishOwn).
+	a.out = outbox.New(deps.Local, seq, cfg.Site, cfg.Outbox, log)
 	a.loop, err = driver.New(driver.Options[agent.Input, agent.Action, agent.Snapshot]{
 		Name: keyAgent, Clock: deps.Clock, Store: deps.Store, Logger: log,
 		Core: driver.Core[agent.Input, agent.Action, agent.Snapshot]{
@@ -158,17 +150,21 @@ func New(cfg Config, deps Deps) (*App, error) {
 }
 
 // LocalSubscriptions lists what the agent reads on the hub's broker.
-func (a *App) LocalSubscriptions() []Subscription { return subscriptions(agent.UpFilters(a.cfg.Site)) }
+func (a *App) LocalSubscriptions() []inbox.Subscription {
+	return subscriptions(agent.UpFilters(a.cfg.Site))
+}
 
 // CloudSubscriptions lists what the agent reads on the cloud's broker.
-func (a *App) CloudSubscriptions() []Subscription {
+func (a *App) CloudSubscriptions() []inbox.Subscription {
 	return subscriptions(agent.DownFilters(a.cfg.Site))
 }
 
-func subscriptions(filters []string) []Subscription {
-	out := make([]Subscription, len(filters))
+// subscriptions always want NoLocal: the agent republishes between two brokers and
+// must not hear itself.
+func subscriptions(filters []string) []inbox.Subscription {
+	out := make([]inbox.Subscription, len(filters))
 	for i, f := range filters {
-		out[i] = Subscription{Filter: f, QoS: 1, NoLocal: true}
+		out[i] = inbox.Subscription{Filter: f, QoS: 1, NoLocal: true}
 	}
 	return out
 }
@@ -184,26 +180,28 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.New("agentapp: Run called twice")
 	}
 	defer a.stop()
-	var workers sync.WaitGroup
-	workers.Go(func() { a.loop.Run(ctx) })
-	workers.Go(func() { a.out.Run(ctx) })
-	// The status at start: the link is down until the cloud's broker answers.
-	a.loop.Do(ctx, func(now time.Time) []agent.Action {
-		a.publishStatus(now, a.core.Status(now))
-		return nil
-	})
-	workers.Go(func() { a.statusRepeater(ctx) })
-	workers.Go(func() { a.sender(ctx) })
+	var wg sync.WaitGroup
+	for _, run := range []func(context.Context){
+		func(c context.Context) { a.loop.Run(c) },
+		a.out.Run,
+		// The status again every StatusEvery, through the core's loop: a loop that
+		// hangs stops the repetition, and the hub notices.
+		func(c context.Context) { driver.Every(c, a.deps.Clock, a.cfg.StatusEvery, a.repeatStatus) },
+		a.sender,
+	} {
+		wg.Go(func() { run(ctx) })
+	}
+	a.repeatStatus(ctx) // the status at start: the link is down until the cloud's broker answers
 	<-ctx.Done()
 	a.stop() // an upload under way gives up; it is tried again at the next start
-	workers.Wait()
+	wg.Wait()
 	a.uploads.Wait()
-	a.out.Flush(3 * time.Second)
+	a.out.Flush()
 	return nil
 }
 
 // HandleLocal takes a message from the hub's broker. It returns at once.
-func (a *App) HandleLocal(m Message) {
+func (a *App) HandleLocal(m inbox.Message) {
 	if len(m.Payload) > maxPayload {
 		a.log.Warn("not sending an oversized message to the cloud", "topic", m.Topic, "bytes", len(m.Payload))
 		return
@@ -212,7 +210,7 @@ func (a *App) HandleLocal(m Message) {
 }
 
 // HandleCloud takes a message from the cloud's broker. It returns at once.
-func (a *App) HandleCloud(m Message) {
+func (a *App) HandleCloud(m inbox.Message) {
 	if len(m.Payload) > maxPayload {
 		a.log.Warn("refusing an oversized message from the cloud", "topic", m.Topic, "bytes", len(m.Payload))
 		return

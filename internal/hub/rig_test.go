@@ -16,6 +16,8 @@ import (
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
 	"safehome/internal/health"
+	"safehome/internal/inbox"
+	"safehome/internal/outbox"
 	"safehome/internal/schematest"
 )
 
@@ -139,7 +141,7 @@ func (b *fakeBroker) Publish(ctx context.Context, topic string, payload []byte, 
 	b.attempts++
 	if b.failures > 0 {
 		b.failures--
-		return ErrUnavailable
+		return outbox.ErrUnavailable
 	}
 	if b.refuse != nil && b.refuse(topic) {
 		return errors.New("refused")
@@ -228,7 +230,7 @@ func testConfig() Config {
 	})
 	c.BootWindow = 0
 	c.LinkWait = 0
-	c.RetryMin, c.RetryMax = time.Millisecond, 5*time.Millisecond
+	c.Outbox.RetryMin, c.Outbox.RetryMax = time.Millisecond, 5*time.Millisecond
 	c.Versions = map[string]string{"engine": "0.1.0"}
 	return c
 }
@@ -255,8 +257,13 @@ func newRig(t *testing.T, store *memStore, mutate ...func(*Config)) *rig {
 	return r
 }
 
+// start runs the hub and waits for its boot, letting the boot window pass on the
+// fake clock (the rig has no LinkWait: the window starts at once).
 func (r *rig) start() {
 	r.startWithoutWaiting()
+	if w := r.hub.cfg.BootWindow; w > 0 {
+		r.passTimer(w)
+	}
 	r.waitFor("boot", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) >= 1 })
 }
 
@@ -285,6 +292,15 @@ func (r *rig) waitFor(what string, cond func() bool) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+}
+
+// passTimer waits until a timer of d from now is set on the fake clock, then lets d
+// pass.
+func (r *rig) passTimer(d time.Duration) {
+	r.t.Helper()
+	when := r.clock.Now().Add(d)
+	r.waitFor(fmt.Sprintf("a timer of %v", d), func() bool { return r.clock.pending(when) })
+	r.clock.Advance(d)
 }
 
 // settle waits until the domains have processed what was queued and the outbox is empty.
@@ -321,7 +337,7 @@ func (r *rig) sendAt(ts time.Time, topic, typ string, data any) string {
 		r.t.Fatal(err)
 	}
 	b, _ := json.Marshal(env)
-	r.hub.HandleMessage(Message{Topic: topic, Payload: b})
+	r.hub.HandleMessage(inbox.Message{Topic: topic, Payload: b})
 	return id
 }
 

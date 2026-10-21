@@ -98,3 +98,16 @@ func DecodeData[T any](e Envelope) (T, error) {
 	}
 	return v, nil
 }
+
+// ValidData is DecodeData followed by the data's own checks, for a type that has
+// them (a Validate method): what a receiver does before it trusts a message.
+func ValidData[T any](e Envelope) (T, error) {
+	v, err := DecodeData[T](e)
+	if err != nil {
+		return v, err
+	}
+	if c, ok := any(&v).(interface{ Validate() error }); ok {
+		return v, c.Validate()
+	}
+	return v, nil
+}

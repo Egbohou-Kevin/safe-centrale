@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/inbox"
 	"safehome/internal/schematest"
 )
 
@@ -67,14 +68,14 @@ func (a *fakeAdapter) deliver(topic, typ string, data any, retain bool) {
 
 var msgSeq uint64
 
-func msg(topic, siteID, typ string, data any, retain bool) Message {
+func msg(topic, siteID, typ string, data any, retain bool) inbox.Message {
 	msgSeq++
 	env, err := contract.NewEnvelope(siteID, contract.AdapterZigbee, msgSeq, contract.NewIDGenerator().New(), t0, typ, data)
 	if err != nil {
 		panic(err)
 	}
 	b, _ := json.Marshal(env)
-	return Message{Topic: topic, Payload: b, Retain: retain}
+	return inbox.Message{Topic: topic, Payload: b, Retain: retain}
 }
 
 func newTestSession(t *testing.T, respond func(a *fakeAdapter, m sent)) (*Session, *fakeAdapter) {
@@ -138,7 +139,7 @@ func TestNewSessionNeedsASiteAndItsDependencies(t *testing.T) {
 
 func TestSnapshotReadsTheRetainedRegistryAndStatus(t *testing.T) {
 	s, a := newTestSession(t, nil)
-	s.Deliver(Message{Topic: "safehome/tg-lom-0001/registry/devices", Payload: []byte("not json")})
+	s.Deliver(inbox.Message{Topic: "safehome/tg-lom-0001/registry/devices", Payload: []byte("not json")})
 	s.Deliver(msg(contract.RegistryDevicesTopic("tg-lom-0002"), "tg-lom-0002", contract.TypeRegistrySnapshot,
 		contract.RegistrySnapshotData{Devices: []contract.RegistryDevice{siren}}, true)) // another site
 	a.deliver(contract.RegistryDevicesTopic(site), contract.TypeRegistrySnapshot, contract.RegistrySnapshotData{Devices: []contract.RegistryDevice{door}}, true)
@@ -271,7 +272,7 @@ func TestWatchReportsDeviceEventsWithoutCodes(t *testing.T) {
 func TestDeliverNeverBlocks(t *testing.T) {
 	s, _ := newTestSession(t, nil)
 	for range cap(s.in) + 10 {
-		s.Deliver(Message{Topic: "x"})
+		s.Deliver(inbox.Message{Topic: "x"})
 	}
 	if s.Dropped() != 10 {
 		t.Fatalf("dropped %d, want 10", s.Dropped())

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/inbox"
 	"safehome/internal/schematest"
 	"safehome/internal/zigbee"
 )
@@ -203,7 +204,7 @@ func newRig(t *testing.T, store *memStore, mutate ...func(*Config)) *rig {
 		logs: &syncBuffer{}, ids: contract.NewIDGenerator(), devIDs: make(chan string, 10),
 	}
 	cfg := DefaultConfig(site, zigbee.DefaultConfig(profiles()))
-	cfg.RetryMin, cfg.RetryMax = time.Millisecond, 5*time.Millisecond
+	cfg.Outbox.RetryMin, cfg.Outbox.RetryMax = time.Millisecond, 5*time.Millisecond
 	for _, m := range mutate {
 		m(&cfg)
 	}
@@ -261,7 +262,7 @@ func (r *rig) settle() {
 
 // z2m delivers a Zigbee2MQTT message.
 func (r *rig) z2m(topic, payload string, retain bool) {
-	r.app.HandleMessage(Message{Topic: "zigbee2mqtt/" + topic, Payload: []byte(payload), Retain: retain})
+	r.app.HandleMessage(inbox.Message{Topic: "zigbee2mqtt/" + topic, Payload: []byte(payload), Retain: retain})
 }
 
 // order sends a contract message and returns its id.
@@ -273,7 +274,7 @@ func (r *rig) order(topic, typ string, data any) string {
 		r.t.Fatal(err)
 	}
 	b, _ := json.Marshal(env)
-	r.app.HandleMessage(Message{Topic: topic, Payload: b})
+	r.app.HandleMessage(inbox.Message{Topic: topic, Payload: b})
 	return id
 }
 

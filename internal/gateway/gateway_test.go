@@ -13,6 +13,7 @@ import (
 
 	"safehome/internal/contract"
 	"safehome/internal/gsm"
+	"safehome/internal/inbox"
 )
 
 func TestTheStatusIsRepeatedEvenWhenNothingChanged(t *testing.T) {
@@ -88,14 +89,14 @@ func TestRequestsForOtherChannelsAndDuplicatesAreIgnored(t *testing.T) {
 		Incident: "inc1", Kind: contract.AlertIntrusion, Urgency: "high", Contact: "u_owner", Channel: contract.ChannelSMS,
 	})
 	b, _ := json.Marshal(env)
-	r.gw.HandleMessage(Message{Topic: contract.AlertRequestTopic(site), Payload: b})
+	r.gw.HandleMessage(inbox.Message{Topic: contract.AlertRequestTopic(site), Payload: b})
 	// And things that are not alert requests at all.
-	r.gw.HandleMessage(Message{Topic: contract.AlertRequestTopic(site), Payload: []byte("{")})
-	r.gw.HandleMessage(Message{Topic: contract.AlertAckTopic(site), Payload: b})
-	r.gw.HandleMessage(Message{Topic: contract.AlertRequestTopic(site), Payload: bytes.Repeat([]byte("x"), maxPayload+1)})
+	r.gw.HandleMessage(inbox.Message{Topic: contract.AlertRequestTopic(site), Payload: []byte("{")})
+	r.gw.HandleMessage(inbox.Message{Topic: contract.AlertAckTopic(site), Payload: b})
+	r.gw.HandleMessage(inbox.Message{Topic: contract.AlertRequestTopic(site), Payload: bytes.Repeat([]byte("x"), maxPayload+1)})
 	other, _ := contract.NewEnvelope("tg-lom-0002", "escalation", 1, r.ids.New(), t0, contract.TypeAlertRequest, contract.AlertRequestData{Contact: "u_owner", Channel: contract.ChannelSMS})
 	b, _ = json.Marshal(other)
-	r.gw.HandleMessage(Message{Topic: contract.AlertRequestTopic(site), Payload: b})
+	r.gw.HandleMessage(inbox.Message{Topic: contract.AlertRequestTopic(site), Payload: b})
 	r.gw.loop.Do(context.Background(), func(time.Time) []gsm.Action { return nil })
 	time.Sleep(20 * time.Millisecond)
 	if sent, _, _, _ := r.modem.count(); sent != 1 {
@@ -199,7 +200,7 @@ func TestConfigurationAndDependenciesAreChecked(t *testing.T) {
 		t.Error("no status repetition")
 	}
 	bad = good
-	bad.OutboxSize = 0
+	bad.Outbox.Size = 0
 	if _, err := New(bad, deps); err == nil {
 		t.Error("no outbox")
 	}
@@ -219,7 +220,7 @@ func TestConfigurationAndDependenciesAreChecked(t *testing.T) {
 		t.Error("no clock")
 	}
 	g, _ := New(good, deps)
-	want := []Subscription{
+	want := []inbox.Subscription{
 		{Filter: contract.AlertRequestTopic(site), QoS: 1},
 		{Filter: contract.AlarmEventTopic(site), QoS: 1},
 		{Filter: contract.AlertAckTopic(site), QoS: 1},

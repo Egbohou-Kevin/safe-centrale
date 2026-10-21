@@ -23,6 +23,7 @@ import (
 
 	"safehome/internal/contract"
 	"safehome/internal/driver"
+	"safehome/internal/inbox"
 	"safehome/internal/install"
 )
 
@@ -42,6 +43,17 @@ type Config struct {
 // DefaultConfig returns the defaults.
 func DefaultConfig(site string) Config {
 	return Config{Site: site, PairFor: 2 * time.Minute, MaxEvents: 50, Wait: 30 * time.Second}
+}
+
+// Validate checks the configuration.
+func (c Config) Validate() error {
+	if !contract.ValidSite(c.Site) {
+		return fmt.Errorf("consoleapp: invalid site %q", c.Site)
+	}
+	if c.PairFor <= 0 || c.MaxEvents < 1 || c.Wait <= 0 {
+		return errors.New("consoleapp: PairFor, MaxEvents and Wait must be positive")
+	}
+	return nil
 }
 
 // Hotspot is the hub's own Wi-Fi network.
@@ -84,13 +96,6 @@ type Deps struct {
 	// network, which exists only once the hotspot is up.
 	Serve  func(ctx context.Context) error
 	Logger *slog.Logger
-}
-
-// Message is a message received from the broker.
-type Message struct {
-	Topic   string
-	Payload []byte
-	Retain  bool
 }
 
 // The console's refusals, for the page to explain.
@@ -145,11 +150,8 @@ type App struct {
 
 // New builds the console.
 func New(cfg Config, deps Deps) (*App, error) {
-	if !contract.ValidSite(cfg.Site) {
-		return nil, fmt.Errorf("consoleapp: invalid site %q", cfg.Site)
-	}
-	if cfg.PairFor <= 0 || cfg.MaxEvents < 1 || cfg.Wait <= 0 {
-		return nil, errors.New("consoleapp: PairFor, MaxEvents and Wait must be positive")
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	if deps.Clock == nil || deps.Publisher == nil || deps.NewID == nil || deps.Hotspot == nil || deps.Sites == nil || deps.Codes == nil || deps.Serve == nil {
 		return nil, errors.New("consoleapp: Clock, Publisher, NewID, Hotspot, Sites, Codes and Serve are required")
@@ -170,27 +172,20 @@ func New(cfg Config, deps Deps) (*App, error) {
 	}, nil
 }
 
-// Subscription is a topic filter the console listens to.
-type Subscription = install.Subscription
-
 // Subscriptions lists what the program must subscribe to.
-func (a *App) Subscriptions() []Subscription {
-	return append(a.sess.Subscriptions(), Subscription{Filter: contract.InstallModeTopic(a.cfg.Site), QoS: 1})
+func (a *App) Subscriptions() []inbox.Subscription {
+	return append(a.sess.Subscriptions(), inbox.Subscription{Filter: contract.InstallModeTopic(a.cfg.Site), QoS: 1})
 }
 
 // HandleMessage takes a message from the broker. It never blocks.
-func (a *App) HandleMessage(m Message) {
+func (a *App) HandleMessage(m inbox.Message) {
 	if m.Topic != contract.InstallModeTopic(a.cfg.Site) {
-		a.sess.Deliver(install.Message{Topic: m.Topic, Payload: m.Payload, Retain: m.Retain})
+		a.sess.Deliver(m)
 		return
 	}
-	env, err := contract.ParseEnvelope(m.Payload)
-	if err != nil || env.Site != a.cfg.Site || env.Type != contract.TypeInstallMode {
-		return
-	}
-	d, err := contract.DecodeData[contract.InstallModeData](env)
-	if err != nil || d.Validate() != nil {
-		a.log.Warn("ignoring an invalid installation mode")
+	_, d, err := inbox.Open[contract.InstallModeData](m, a.cfg.Site, contract.TypeInstallMode)
+	if err != nil {
+		a.log.Warn("ignoring an invalid installation mode", "err", err)
 		return
 	}
 	select {

@@ -13,6 +13,7 @@ import (
 	"safehome/internal/adapter/photodir"
 	"safehome/internal/contract"
 	"safehome/internal/driver"
+	"safehome/internal/inbox"
 	"safehome/internal/service"
 	"safehome/internal/siteconfig"
 	"safehome/internal/videoapp"
@@ -160,14 +161,14 @@ func daemon(cfg videoconfig.Result, app *videoapp.App, pub *service.Publisher, l
 		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
 			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Logger: log,
 			Subscriptions: append(service.Subscriptions(app.Subscriptions()), mqtt.Subscription{Filter: applied, QoS: 1}),
-			OnMessage: func(m mqtt.Message) {
+			OnMessage: service.Deliver(func(m inbox.Message) {
 				if m.Topic != applied {
-					app.HandleMessage(videoapp.Message{Topic: m.Topic, Payload: m.Payload})
+					app.HandleMessage(m)
 				} else if v, ok := siteconfig.Changed(cfg.StateDir, cfg.App.Site, cfg.SiteVersion, m.Payload); ok {
 					log.Info("restarting to load the configuration from the cloud", "site_config", v)
 					restart.Ask()
 				}
-			},
+			}),
 		}}},
 	}
 }

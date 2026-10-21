@@ -753,3 +753,44 @@ func TestAliveSaysWhetherTheLoopStillAnswers(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestEveryRepeatsUntilItsContextEnds(t *testing.T) {
+	clock := newFakeClock()
+	ctx, cancel := context.WithCancel(context.Background())
+	runs := make(chan time.Time, 10)
+	done := make(chan struct{})
+	go func() {
+		Every(ctx, clock, time.Minute, func(context.Context) { runs <- clock.Now() })
+		close(done)
+	}()
+	for i := 1; i <= 2; i++ {
+		waitForTimer(t, clock)
+		clock.Advance(time.Minute)
+		if at := <-runs; !at.Equal(t0.Add(time.Duration(i) * time.Minute)) {
+			t.Fatalf("run %d at %v", i, at)
+		}
+	}
+	cancel()
+	<-done
+	if len(runs) != 0 {
+		t.Fatal("no run after the end")
+	}
+}
+
+// waitForTimer waits until a timer is set on the clock.
+func waitForTimer(t *testing.T, c *fakeClock) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c.mu.Lock()
+		n := len(c.timers)
+		c.mu.Unlock()
+		if n > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no timer set")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}

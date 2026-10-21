@@ -120,7 +120,7 @@ func runService(ctx context.Context, cfg maintconfig.Result, stderr io.Writer) i
 		Name: name, Log: log, Loops: []func(context.Context) error{app.Run}, Alive: app.Alive,
 		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
 			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: service.Subscriptions(app.Subscriptions()), Logger: log,
-			OnMessage: func(m mqtt.Message) { app.HandleMessage(maintapp.Message{Topic: m.Topic, Payload: m.Payload}) },
+			OnMessage: service.Deliver(app.HandleMessage),
 		}}},
 	}.Run(ctx)
 }

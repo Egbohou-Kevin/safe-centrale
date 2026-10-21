@@ -1,51 +1,39 @@
 package gateway
 
 import (
+	"errors"
 	"slices"
 	"time"
 
 	"safehome/internal/contract"
 	"safehome/internal/gsm"
 	gsmwire "safehome/internal/gsm/wire"
+	"safehome/internal/inbox"
 )
 
 // HandleMessage takes a message from the broker. It returns quickly. Payloads are
 // never logged: they hold phone texts.
-func (g *Gateway) HandleMessage(m Message) {
+func (g *Gateway) HandleMessage(m inbox.Message) {
 	if len(m.Payload) > maxPayload {
 		return
 	}
-	site := g.cfg.Site
-	var handle func(contract.Envelope)
 	switch m.Topic {
-	case contract.AlertRequestTopic(site):
-		handle = g.alertRequest
-	case contract.AlarmEventTopic(site):
-		handle = g.alarmEvent
-	case contract.AlertAckTopic(site):
-		handle = g.alertAck
-	default:
-		return
+	case contract.AlertRequestTopic(g.cfg.Site):
+		g.alertRequest(m)
+	case contract.AlarmEventTopic(g.cfg.Site):
+		g.alarmEvent(m)
+	case contract.AlertAckTopic(g.cfg.Site):
+		g.alertAck(m)
 	}
-	env, err := contract.ParseEnvelope(m.Payload)
-	if err != nil || env.Site != site {
-		g.log.Warn("ignoring an invalid message", "topic", m.Topic, "err", err)
-		return
-	}
-	handle(env)
 }
 
-func (g *Gateway) alertRequest(env contract.Envelope) {
-	if env.Type != contract.TypeAlertRequest {
-		g.log.Warn("ignoring a message that is not an alert request", "type", env.Type)
+func (g *Gateway) alertRequest(m inbox.Message) {
+	env, d, err := inbox.Open[contract.AlertRequestData](m, g.cfg.Site, contract.TypeAlertRequest)
+	if err != nil {
+		g.log.Warn("ignoring an invalid alert request", "id", env.ID, "err", err)
 		return
 	}
 	if !g.seen.FirstTime(env.ID) {
-		return
-	}
-	d, err := contract.DecodeData[contract.AlertRequestData](env)
-	if err != nil {
-		g.log.Warn("ignoring an alert request with a damaged payload", "id", env.ID)
 		return
 	}
 	// Its age counts from its own time: the broker may have held it while the
@@ -58,14 +46,15 @@ func (g *Gateway) alertRequest(env contract.Envelope) {
 }
 
 // alarmEvent ends the incident of an alarm a user stopped. The other alarm events
-// are not the gateway's business.
-func (g *Gateway) alarmEvent(env contract.Envelope) {
-	if env.Type != contract.TypeAlarmCleared {
+// are not the gateway's business. Ending an incident twice changes nothing: no
+// duplicate to drop.
+func (g *Gateway) alarmEvent(m inbox.Message) {
+	env, d, err := inbox.Open[contract.ClearedData](m, g.cfg.Site, contract.TypeAlarmCleared)
+	if errors.Is(err, inbox.ErrWrongType) {
 		return
 	}
-	d, err := contract.DecodeData[contract.ClearedData](env)
 	if err != nil {
-		g.log.Warn("ignoring an alarm.cleared with a damaged payload", "id", env.ID)
+		g.log.Warn("ignoring an invalid alarm.cleared", "id", env.ID, "err", err)
 		return
 	}
 	if c, ok := gsmwire.Cleared(d); ok {
@@ -75,13 +64,10 @@ func (g *Gateway) alarmEvent(env contract.Envelope) {
 
 // alertAck ends an incident a contact acknowledged, by SMS (this gateway's own
 // acknowledgements come back this way) or in the app.
-func (g *Gateway) alertAck(env contract.Envelope) {
-	if env.Type != contract.TypeAlertAck {
-		return
-	}
-	d, err := contract.DecodeData[contract.AlertAckData](env)
+func (g *Gateway) alertAck(m inbox.Message) {
+	env, d, err := inbox.Open[contract.AlertAckData](m, g.cfg.Site, contract.TypeAlertAck)
 	if err != nil {
-		g.log.Warn("ignoring an alert.ack with a damaged payload", "id", env.ID)
+		g.log.Warn("ignoring an invalid alert.ack", "id", env.ID, "err", err)
 		return
 	}
 	if !g.knows(d.Contact) {

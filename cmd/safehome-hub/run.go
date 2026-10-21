@@ -16,6 +16,7 @@ import (
 	"safehome/internal/driver"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
+	"safehome/internal/inbox"
 	"safehome/internal/service"
 	"safehome/internal/siteconfig"
 )
@@ -201,19 +202,19 @@ func daemon(cfg hubconfig.Result, h *hub.Hub, conf *configapp.App, pub *service.
 		Name: name, Log: log, Alive: h.Alive, Restart: restart,
 		Loops: []func(context.Context) error{
 			h.Run,
-			func(ctx context.Context) error { conf.Run(ctx); return nil },
+			conf.Run,
 			func(ctx context.Context) error { reloadCodes(ctx, h, hup, log); return nil },
 		},
 		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
 			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: subs, Logger: log,
 			OnSubscribed: h.LinkUp,
-			OnMessage: func(m mqtt.Message) {
+			OnMessage: service.Deliver(func(m inbox.Message) {
 				if confTopics[m.Topic] { // exact topics, no wildcard
-					conf.HandleMessage(configapp.Message{Topic: m.Topic, Payload: m.Payload})
+					conf.HandleMessage(m)
 					return
 				}
-				h.HandleMessage(hub.Message{Topic: m.Topic, Payload: m.Payload, Retain: m.Retain})
-			},
+				h.HandleMessage(m)
+			}),
 		}}},
 	}
 }

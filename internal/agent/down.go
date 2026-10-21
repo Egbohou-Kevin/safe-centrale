@@ -91,11 +91,8 @@ func (r *Relay) check(now time.Time, env contract.Envelope) string {
 }
 
 // valid decodes data that checks its own shape. It returns why it is refused, or "".
-func valid[T interface{ Validate() error }](env contract.Envelope) (T, string) {
-	d, err := contract.DecodeData[T](env)
-	if err == nil {
-		err = d.Validate()
-	}
+func valid[T any](env contract.Envelope) (T, string) {
+	d, err := contract.ValidData[T](env)
 	if err != nil {
 		return d, err.Error()
 	}

@@ -34,11 +34,9 @@ type Config struct {
 	LinkWait        time.Duration
 	SirenCommandTTL time.Duration // a siren command not carried out within this is void
 
-	DedupeSize int           // message ids remembered
-	OutboxSize int           // messages kept while the broker is away
-	RetryMin   time.Duration // first wait before sending again
-	RetryMax   time.Duration // longest wait
-	AuthQueue  int           // code checks that may wait
+	DedupeSize int // message ids remembered
+	Outbox     outbox.Settings
+	AuthQueue  int // code checks that may wait
 
 	Versions map[string]string // component -> version, for the heartbeat
 }
@@ -50,8 +48,7 @@ func DefaultConfig(site, hubDeviceID string, sirenIDs ...string) Config {
 		Engine: engine.DefaultConfig(), Health: health.DefaultConfig(), Access: access.DefaultConfig(),
 		Escalation:     escalation.DefaultConfig(site, nil),
 		HeartbeatEvery: time.Minute, BootWindow: 2 * time.Second, LinkWait: 30 * time.Second, SirenCommandTTL: 30 * time.Second,
-		DedupeSize: 2048, OutboxSize: 2000, RetryMin: 200 * time.Millisecond, RetryMax: 5 * time.Second,
-		AuthQueue: 16,
+		DedupeSize: 2048, Outbox: outbox.DefaultSettings(2000), AuthQueue: 16,
 	}
 }
 
@@ -83,14 +80,17 @@ func (c Config) validate() error {
 		return errors.New("hub: HubDeviceID is required")
 	case len(c.SirenIDs) == 0:
 		return ErrNoSiren
-	case c.HeartbeatEvery <= 0 || c.SirenCommandTTL <= 0 || c.RetryMin <= 0 || c.RetryMax < c.RetryMin:
+	case c.HeartbeatEvery <= 0 || c.SirenCommandTTL <= 0:
 		return errors.New("hub: durations must be positive")
 	case c.BootWindow < 0:
 		return errors.New("hub: BootWindow must not be negative")
 	case c.LinkWait < 0:
 		return errors.New("hub: LinkWait must not be negative")
-	case c.DedupeSize < 1 || c.OutboxSize < 1 || c.AuthQueue < 1:
-		return errors.New("hub: DedupeSize, OutboxSize and AuthQueue must be at least 1")
+	case c.DedupeSize < 1 || c.AuthQueue < 1:
+		return errors.New("hub: DedupeSize and AuthQueue must be at least 1")
+	}
+	if err := c.Outbox.Validate(); err != nil {
+		return fmt.Errorf("hub: %w", err)
 	}
 	if err := c.Escalation.Validate(); err != nil {
 		return fmt.Errorf("hub: %w", err)
@@ -110,18 +110,11 @@ func (c Config) healthConfig() health.Config {
 	return hc
 }
 
-// Publisher is the port the hub needs from the MQTT adapter (see package outbox).
-type Publisher = outbox.Publisher
-
-// ErrUnavailable is what a Publisher returns when the broker cannot be reached right
-// now: the message is kept and sent again.
-var ErrUnavailable = outbox.ErrUnavailable
-
 // Deps are the ports the hub needs.
 type Deps struct {
 	Clock     driver.Clock
 	Store     driver.Store
-	Publisher Publisher
+	Publisher outbox.Publisher
 	NewID     func() string // message and incident identifiers (ULIDs)
 	Logger    *slog.Logger
 	// ClockSynced says whether the system clock is synchronised, for the heartbeat;
@@ -139,17 +132,4 @@ func (d Deps) validate() error {
 		return errors.New("hub: Clock, Store, Publisher and NewID are required")
 	}
 	return nil
-}
-
-// Message is a message received from the broker.
-type Message struct {
-	Topic   string
-	Payload []byte
-	Retain  bool
-}
-
-// Subscription is a topic filter the hub wants to listen to.
-type Subscription struct {
-	Filter string
-	QoS    byte
 }

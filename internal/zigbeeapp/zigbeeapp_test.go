@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/inbox"
 	"safehome/internal/zigbee"
 )
 
@@ -198,10 +199,11 @@ func TestInvalidMessagesChangeNothing(t *testing.T) {
 	r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryPair, map[string]any{"duration_s": -5}) // invalid pairing
 	r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryRemove, map[string]any{})               // invalid removal
 	r.order(contract.RegistryCmdTopic(site), contract.TypeCommand, cmd)                                   // wrong type
-	r.app.HandleMessage(Message{Topic: contract.DeviceCmdTopic(site, "dev_siren"), Payload: []byte("{")}) // not an envelope
-	r.app.HandleMessage(Message{Topic: contract.DeviceCmdTopic("tg-lom-0002", "dev_siren"), Payload: []byte("{}")})
-	r.app.HandleMessage(Message{Topic: "safehome/" + site + "/alarm/cmd", Payload: []byte("{}")})
-	r.app.HandleMessage(Message{Topic: "zigbee2mqtt/dev_siren", Payload: bytes.Repeat([]byte("x"), maxPayload+1)})
+	// Not an envelope:
+	r.app.HandleMessage(inbox.Message{Topic: contract.DeviceCmdTopic(site, "dev_siren"), Payload: []byte("{")})
+	r.app.HandleMessage(inbox.Message{Topic: contract.DeviceCmdTopic("tg-lom-0002", "dev_siren"), Payload: []byte("{}")})
+	r.app.HandleMessage(inbox.Message{Topic: "safehome/" + site + "/alarm/cmd", Payload: []byte("{}")})
+	r.app.HandleMessage(inbox.Message{Topic: "zigbee2mqtt/dev_siren", Payload: bytes.Repeat([]byte("x"), maxPayload+1)})
 	r.z2m("dev_siren", `[1]`, false)
 	r.z2m("bridge/response/device/rename", `{"status":"error","error":"no such device"}`, false)
 	r.settle()
@@ -214,8 +216,8 @@ func TestInvalidMessagesChangeNothing(t *testing.T) {
 	// The same order twice is carried out once.
 	env, _ := contract.NewEnvelope(site, "test", 1, r.ids.New(), r.clock.Now(), contract.TypeCommand, cmd)
 	b, _ := json.Marshal(env)
-	r.app.HandleMessage(Message{Topic: contract.DeviceCmdTopic(site, "dev_siren"), Payload: b})
-	r.app.HandleMessage(Message{Topic: contract.DeviceCmdTopic(site, "dev_siren"), Payload: b})
+	r.app.HandleMessage(inbox.Message{Topic: contract.DeviceCmdTopic(site, "dev_siren"), Payload: b})
+	r.app.HandleMessage(inbox.Message{Topic: contract.DeviceCmdTopic(site, "dev_siren"), Payload: b})
 	r.settle()
 	if len(r.rawOn("0x02/set")) != 1 {
 		t.Fatal("a duplicate is dropped")
@@ -260,7 +262,7 @@ func TestConfigurationAndDependenciesAreChecked(t *testing.T) {
 		"slash":         func(c *Config) { c.Base = "z2m/" },
 		"contract root": func(c *Config) { c.Base = "safehome" },
 		"contract site": func(c *Config) { c.Base = "safehome/" + site },
-		"outbox":        func(c *Config) { c.OutboxSize = 0 },
+		"outbox":        func(c *Config) { c.Outbox.Size = 0 },
 		"status every":  func(c *Config) { c.StatusEvery = 0 },
 		"core":          func(c *Config) { c.Zigbee.Attempts = 0 },
 	} {

@@ -24,6 +24,7 @@ import (
 
 	"safehome/internal/contract"
 	"safehome/internal/driver"
+	"safehome/internal/inbox"
 	"safehome/internal/outbox"
 )
 
@@ -37,15 +38,27 @@ type Config struct {
 	Refused        int
 	RefusedBecause string
 
-	OutboxSize int
-	RetryMin   time.Duration
-	RetryMax   time.Duration
+	Outbox     outbox.Settings
 	DedupeSize int
 }
 
 // DefaultConfig returns the defaults.
 func DefaultConfig(site string, running int) Config {
-	return Config{Site: site, Running: running, OutboxSize: 50, RetryMin: 200 * time.Millisecond, RetryMax: 5 * time.Second, DedupeSize: 64}
+	return Config{Site: site, Running: running, Outbox: outbox.DefaultSettings(50), DedupeSize: 64}
+}
+
+// Validate checks the configuration.
+func (c Config) Validate() error {
+	if !contract.ValidSite(c.Site) {
+		return fmt.Errorf("configapp: invalid site %q", c.Site)
+	}
+	if c.DedupeSize < 1 {
+		return errors.New("configapp: DedupeSize must be set")
+	}
+	if err := c.Outbox.Validate(); err != nil {
+		return fmt.Errorf("configapp: %w", err)
+	}
+	return nil
 }
 
 // Deps are the ports the application needs.
@@ -68,18 +81,6 @@ type Deps struct {
 	Logger *slog.Logger
 }
 
-// Message is a message received from the broker.
-type Message struct {
-	Topic   string
-	Payload []byte
-}
-
-// Subscription is a topic filter the application listens to.
-type Subscription struct {
-	Filter string
-	QoS    byte
-}
-
 const (
 	src        = "config"
 	keySeq     = "config_seq"
@@ -92,7 +93,7 @@ type App struct {
 	deps Deps
 	log  *slog.Logger
 	out  *outbox.Outbox
-	seen *outbox.RecentIDs
+	seen *inbox.RecentIDs
 
 	mu         sync.Mutex
 	saved      int    // the version kept, waiting for a quiet moment (0: none)
@@ -103,11 +104,8 @@ type App struct {
 
 // New builds the application.
 func New(cfg Config, deps Deps) (*App, error) {
-	if !contract.ValidSite(cfg.Site) {
-		return nil, fmt.Errorf("configapp: invalid site %q", cfg.Site)
-	}
-	if cfg.OutboxSize < 1 || cfg.RetryMin <= 0 || cfg.RetryMax < cfg.RetryMin || cfg.DedupeSize < 1 {
-		return nil, errors.New("configapp: OutboxSize, RetryMin, RetryMax and DedupeSize must be set")
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	if deps.Clock == nil || deps.Store == nil || deps.Publisher == nil || deps.NewID == nil ||
 		deps.Check == nil || deps.Save == nil || deps.Restart == nil {
@@ -117,19 +115,17 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	seq, err := outbox.NewSequencer(deps.Store, keySeq, log)
+	out, err := outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, log)
 	if err != nil {
 		return nil, err
 	}
-	a := &App{cfg: cfg, deps: deps, log: log, seen: outbox.NewRecentIDs(cfg.DedupeSize)}
-	a.out = outbox.New(deps.Publisher, seq, cfg.Site, cfg.OutboxSize, cfg.RetryMin, cfg.RetryMax, log)
-	return a, nil
+	return &App{cfg: cfg, deps: deps, log: log, out: out, seen: inbox.NewRecentIDs(cfg.DedupeSize)}, nil
 }
 
 // Subscriptions lists what the application listens to: the configuration, and the
 // alarm's state and the installation mode, to restart at a quiet moment.
-func (a *App) Subscriptions() []Subscription {
-	return []Subscription{
+func (a *App) Subscriptions() []inbox.Subscription {
+	return []inbox.Subscription{
 		{Filter: contract.ConfigSetTopic(a.cfg.Site), QoS: 1},
 		{Filter: contract.AlarmStateTopic(a.cfg.Site), QoS: 1},
 		{Filter: contract.InstallModeTopic(a.cfg.Site), QoS: 1},
@@ -138,7 +134,7 @@ func (a *App) Subscriptions() []Subscription {
 
 // Run serves the application until ctx is cancelled. At start it says which
 // configuration the hub runs with, or which one it could not load.
-func (a *App) Run(ctx context.Context) {
+func (a *App) Run(ctx context.Context) error {
 	now := a.deps.Clock.Now()
 	switch {
 	case a.cfg.Refused > 0:
@@ -150,31 +146,31 @@ func (a *App) Run(ctx context.Context) {
 		a.answer(now, a.cfg.Running, "")
 	}
 	a.out.Run(ctx)
-	a.out.Flush(3 * time.Second)
+	a.out.Flush()
+	return nil
 }
 
 // HandleMessage takes a message from the broker. It returns quickly.
-func (a *App) HandleMessage(m Message) {
+func (a *App) HandleMessage(m inbox.Message) {
 	if len(m.Payload) > maxPayload {
 		return
 	}
 	switch m.Topic {
 	case contract.AlarmStateTopic(a.cfg.Site):
-		a.alarmState(m.Payload)
+		a.alarmState(m)
 	case contract.InstallModeTopic(a.cfg.Site):
-		a.installMode(m.Payload)
+		a.installMode(m)
 	case contract.ConfigSetTopic(a.cfg.Site):
-		a.configSet(m.Payload)
+		a.configSet(m)
 	}
 }
 
-func (a *App) alarmState(payload []byte) {
-	env, err := contract.ParseEnvelope(payload)
-	if err != nil || env.Site != a.cfg.Site || env.Type != contract.TypeAlarmState {
-		return
-	}
-	d, err := contract.DecodeData[contract.AlarmStateData](env)
+// alarmState follows the alarm's state. A retained state comes again at each
+// connection: no duplicate to drop.
+func (a *App) alarmState(m inbox.Message) {
+	_, d, err := inbox.Open[contract.AlarmStateData](m, a.cfg.Site, contract.TypeAlarmState)
 	if err != nil {
+		a.log.Warn("ignoring an invalid alarm state", "err", err)
 		return
 	}
 	a.mu.Lock()
@@ -186,13 +182,10 @@ func (a *App) alarmState(payload []byte) {
 // installMode follows the installation mode. The hub publishes it on the same outbox
 // as the alarm's state, in order: a mode closed by an arming arrives after the
 // arming's state, so the exit delay is known before the mode's end.
-func (a *App) installMode(payload []byte) {
-	env, err := contract.ParseEnvelope(payload)
-	if err != nil || env.Site != a.cfg.Site || env.Type != contract.TypeInstallMode {
-		return
-	}
-	d, err := contract.DecodeData[contract.InstallModeData](env)
-	if err != nil || d.Validate() != nil {
+func (a *App) installMode(m inbox.Message) {
+	_, d, err := inbox.Open[contract.InstallModeData](m, a.cfg.Site, contract.TypeInstallMode)
+	if err != nil {
+		a.log.Warn("ignoring an invalid installation mode", "err", err)
 		return
 	}
 	a.mu.Lock()
@@ -201,10 +194,12 @@ func (a *App) installMode(payload []byte) {
 	a.restartIfQuiet()
 }
 
-func (a *App) configSet(payload []byte) {
+// configSet takes a configuration. Its data is checked only after its version: the
+// cloud is told why a configuration is refused, and an old one is refused as old.
+func (a *App) configSet(m inbox.Message) {
 	now := a.deps.Clock.Now()
-	env, err := contract.ParseEnvelope(payload)
-	if err != nil || env.Site != a.cfg.Site || env.Type != contract.TypeConfigSet {
+	env, err := inbox.Envelope(m, a.cfg.Site, contract.TypeConfigSet)
+	if err != nil {
 		a.log.Warn("ignoring an invalid configuration message", "err", err)
 		return
 	}

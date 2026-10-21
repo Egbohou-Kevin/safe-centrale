@@ -13,6 +13,7 @@ import (
 	"safehome/internal/contract"
 	"safehome/internal/driver"
 	"safehome/internal/engine"
+	"safehome/internal/inbox"
 )
 
 // --- boot and restart ---------------------------------------------------------------
@@ -50,22 +51,29 @@ func TestBootLearnsTheDevicesFromRetainedStates(t *testing.T) {
 func TestBootWaitsForTheLinkBeforeItsWindowStarts(t *testing.T) {
 	r := newRig(t, nil, func(c *Config) { c.BootWindow = 20 * time.Millisecond; c.LinkWait = 10 * time.Second })
 	r.startWithoutWaiting()
-	time.Sleep(150 * time.Millisecond) // far longer than the window
-	if len(r.broker.on(contract.AlarmStateTopic(site))) != 0 {
+	r.waitFor("the wait for the link", func() bool { return r.clock.pending(t0.Add(10 * time.Second)) })
+	r.clock.Advance(time.Second) // far longer than the window
+	r.settle()
+	if len(r.broker.on(contract.AlarmStateTopic(site))) != 0 || r.clock.pending(t0.Add(time.Second+20*time.Millisecond)) {
 		t.Fatal("the hub booted before the link was up")
 	}
 	// The retained state arrives only now, after the window would have ended.
 	r.send(contract.DeviceStateTopic(site, devBack, contract.CapContact), contract.TypeDeviceState, event(devBack, contract.CapContact, "open"))
 	r.hub.LinkUp()
 	r.hub.LinkUp() // harmless twice
-	r.settle()
+	r.passTimer(20 * time.Millisecond)
 	r.waitFor("the first state", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) > 0 })
 }
 
 func TestBootGivesUpWaitingForTheLink(t *testing.T) {
 	r := newRig(t, nil, func(c *Config) { c.BootWindow = 10 * time.Millisecond; c.LinkWait = 80 * time.Millisecond })
 	r.startWithoutWaiting()
+	r.passTimer(80 * time.Millisecond)
+	r.passTimer(10 * time.Millisecond)
 	r.waitFor("the boot without a link", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) > 0 })
+	if !strings.Contains(r.logs.String(), "the broker link did not come up in time") {
+		t.Fatalf("the late link is said:\n%s", r.logs.String())
+	}
 }
 
 func TestStatesAfterBootAreIgnored(t *testing.T) {
@@ -163,11 +171,11 @@ func TestConfigValidation(t *testing.T) {
 		"empty siren id":  func(c *Config) { c.SirenIDs = []string{""} },
 		"no heartbeat":    func(c *Config) { c.HeartbeatEvery = 0 },
 		"no siren ttl":    func(c *Config) { c.SirenCommandTTL = 0 },
-		"retry inverted":  func(c *Config) { c.RetryMax = c.RetryMin / 2 },
+		"retry inverted":  func(c *Config) { c.Outbox.RetryMax = c.Outbox.RetryMin / 2 },
 		"negative window": func(c *Config) { c.BootWindow = -1 },
 		"negative wait":   func(c *Config) { c.LinkWait = -1 },
 		"no dedupe":       func(c *Config) { c.DedupeSize = 0 },
-		"no outbox":       func(c *Config) { c.OutboxSize = 0 },
+		"no outbox":       func(c *Config) { c.Outbox.Size = 0 },
 		"no auth queue":   func(c *Config) { c.AuthQueue = 0 },
 	}
 	for name, mutate := range bad {
@@ -212,7 +220,7 @@ func TestRunTwiceFailsAndShutdownFlushes(t *testing.T) {
 		t.Fatal("the last events must leave before shutdown")
 	}
 	// After shutdown the hub gives up quietly.
-	r.hub.HandleMessage(Message{Topic: contract.AlarmCmdTopic(site), Payload: mustEnv(t, r, contract.TypeAlarmCommand,
+	r.hub.HandleMessage(inbox.Message{Topic: contract.AlarmCmdTopic(site), Payload: mustEnv(t, r, contract.TypeAlarmCommand,
 		contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp})})
 }
 

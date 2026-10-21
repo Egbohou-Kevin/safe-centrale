@@ -66,28 +66,39 @@ func TestOutboxKnowsOnlyTheContractAndTheStorePort(t *testing.T) {
 	layer{local: internal("contract", "driver")}.check(t, "outbox")
 }
 
+// The inbox is the way in of every application layer, the console and the
+// installer's tools included: it checks messages against the contract and knows
+// nothing else. It does no I/O and never reads the clock.
+func TestInboxKnowsOnlyTheContract(t *testing.T) {
+	layer{
+		local:   internal("contract"),
+		noStd:   []string{"os", "os/exec", "io/fs", "net", "net/http", "syscall"},
+		noClock: true,
+	}.check(t, "inbox")
+}
+
 // The agent's core moves contract messages: it knows the contract and nothing else,
-// does no I/O and never reads the clock. Its application layer adds the driver and
-// the outbox, and no adapter.
+// does no I/O and never reads the clock. Its application layer adds the driver, the
+// inbox and the outbox, and no adapter.
 func TestTheAgentCoreKnowsOnlyTheContract(t *testing.T) {
 	layer{local: internal("contract"), noClock: true}.check(t, "agent")
-	layer{local: internal("agent", "contract", "driver", "outbox")}.check(t, "agentapp")
+	layer{local: internal("agent", "contract", "driver", "inbox", "outbox")}.check(t, "agentapp")
 }
 
 // The video service's application layer drives the streams through its own
-// Streamer port: it knows the video core, its translation, the contract, the driver
-// and the outbox, and no adapter (go2rtc is wired by cmd/safehome-video).
+// Streamer port: it knows the video core, its translation, the contract, the driver,
+// the inbox and the outbox, and no adapter (go2rtc is wired by cmd/safehome-video).
 func TestVideoAppKnowsNoAdapter(t *testing.T) {
-	layer{local: internal("video", "video/wire", "contract", "driver", "outbox")}.check(t, "videoapp")
+	layer{local: internal("video", "video/wire", "contract", "driver", "inbox", "outbox")}.check(t, "videoapp")
 }
 
 // Remote maintenance's application layer opens the tunnel through its own Tunneler
-// port: it knows the maintenance core, its translation, the contract, the driver and
-// the outbox, and no adapter (ssh is wired by cmd/safehome-maint). It never reads the
-// clock: the session's end is the core's.
+// port: it knows the maintenance core, its translation, the contract, the driver,
+// the inbox and the outbox, and no adapter (ssh is wired by cmd/safehome-maint). It
+// never reads the clock: the session's end is the core's.
 func TestMaintAppKnowsNoAdapter(t *testing.T) {
 	layer{
-		local:   internal("maint", "maint/wire", "contract", "driver", "outbox"),
+		local:   internal("maint", "maint/wire", "contract", "driver", "inbox", "outbox"),
 		noStd:   []string{"os", "os/exec", "net", "syscall"},
 		noClock: true,
 	}.check(t, "maintapp")
@@ -99,7 +110,7 @@ func TestMaintAppKnowsNoAdapter(t *testing.T) {
 // contract, and writes through the configuration files' helpers.
 func TestTheCloudConfigurationKnowsNoAdapter(t *testing.T) {
 	layer{
-		local:   internal("contract", "driver", "outbox"),
+		local:   internal("contract", "driver", "inbox", "outbox"),
 		noStd:   []string{"os", "os/exec", "io/fs", "syscall"},
 		noClock: true,
 	}.check(t, "configapp")
@@ -130,7 +141,7 @@ func TestConfigFileServesOnlyTheConfigurationPackages(t *testing.T) {
 // The command-line tool and the web console both sit on it. It reads no clock
 // either: the program gives it one.
 func TestInstallKnowsOnlyTheContractAndTheZoneKinds(t *testing.T) {
-	layer{local: internal("contract", "engine"), noClock: true}.check(t, "install")
+	layer{local: internal("contract", "engine", "inbox"), noClock: true}.check(t, "install")
 }
 
 // The local console's application drives the network, the page and the hub's files
@@ -139,7 +150,7 @@ func TestInstallKnowsOnlyTheContractAndTheZoneKinds(t *testing.T) {
 // serves HTTP without touching the system.
 func TestTheConsoleKnowsNoAdapter(t *testing.T) {
 	layer{
-		local:   internal("contract", "driver", "install"),
+		local:   internal("contract", "driver", "inbox", "install"),
 		noStd:   []string{"os", "os/exec", "io/fs", "net", "net/http", "syscall"},
 		noClock: true,
 	}.check(t, "consoleapp")
@@ -192,11 +203,11 @@ func TestOnlyTheCompositionRootImportsAdapters(t *testing.T) {
 
 // internal/service is the part of the composition root every program shares: the
 // command line, the pid file, the MQTT clients and the life cycle under systemd. It
-// knows those adapters and the outbox's error, nothing of the domains, the
-// applications or the configuration files; and only cmd/ imports it.
+// knows those adapters, the inbox's message and the outbox's error, nothing of the
+// domains, the applications or the configuration files; and only cmd/ imports it.
 func TestServiceIsSharedAssemblyForThePrograms(t *testing.T) {
 	layer{
-		local: internal("adapter/filestore", "adapter/mqtt", "adapter/pidfile", "adapter/sdnotify", "outbox"),
+		local: internal("adapter/filestore", "adapter/mqtt", "adapter/pidfile", "adapter/sdnotify", "inbox", "outbox"),
 		why:   ": the service package only assembles adapters for cmd/",
 	}.check(t, "service")
 	service := module + "/internal/service"

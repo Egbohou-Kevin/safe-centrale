@@ -19,10 +19,9 @@ type mode struct {
 
 // Run serves the console until ctx is cancelled. Its loop never waits for the
 // network, which nmcli may take long to start or stop: it keeps answering Alive.
-func (a *App) Run(ctx context.Context) {
+func (a *App) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() { defer wg.Done(); a.worker(ctx) }()
+	wg.Go(func() { a.worker(ctx) })
 	defer wg.Wait()
 
 	var current, last *mode // the open mode (nil when closed), and the latest one
@@ -39,7 +38,7 @@ func (a *App) Run(ctx context.Context) {
 		}
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case reply := <-a.ping:
 			close(reply)
 		case <-deadline:

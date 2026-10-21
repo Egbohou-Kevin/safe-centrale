@@ -9,6 +9,7 @@ import (
 	"safehome/internal/escalation"
 	escwire "safehome/internal/escalation/wire"
 	"safehome/internal/health"
+	"safehome/internal/inbox"
 )
 
 // The hub is where the domains meet: an alert decided by the engine or the monitor
@@ -122,7 +123,7 @@ func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []esc
 
 // alertResultMessage handles a channel's report about a message. A result for a
 // request the escalation does not know (an old incident) changes nothing.
-func (h *Hub) alertResultMessage(m Message) {
+func (h *Hub) alertResultMessage(m inbox.Message) {
 	_, d, ok := decode[contract.AlertResultData](h, m, contract.TypeAlertResult, "alert result")
 	if !ok {
 		return
@@ -138,7 +139,7 @@ func (h *Hub) alertResultMessage(m Message) {
 }
 
 // alertAckMessage handles a contact's acknowledgement.
-func (h *Hub) alertAckMessage(m Message) {
+func (h *Hub) alertAckMessage(m inbox.Message) {
 	_, d, ok := decode[contract.AlertAckData](h, m, contract.TypeAlertAck, "alert acknowledgement")
 	if !ok {
 		return

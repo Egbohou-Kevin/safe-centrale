@@ -25,6 +25,7 @@ import (
 	"safehome/internal/driver"
 	"safehome/internal/gsm"
 	gsmwire "safehome/internal/gsm/wire"
+	"safehome/internal/inbox"
 	"safehome/internal/outbox"
 )
 
@@ -33,9 +34,7 @@ type Config struct {
 	Site       string
 	GSM        gsm.Config
 	DedupeSize int
-	OutboxSize int
-	RetryMin   time.Duration
-	RetryMax   time.Duration
+	Outbox     outbox.Settings
 	// StatusEvery is how often the status goes out even when nothing changed: the
 	// hub takes a gateway that stopped repeating it for dead (see health.GSM).
 	StatusEvery time.Duration
@@ -48,9 +47,7 @@ type Config struct {
 // DefaultConfig returns the defaults.
 func DefaultConfig(site string, g gsm.Config) Config {
 	return Config{
-		Site: site, GSM: g, DedupeSize: 1024, OutboxSize: 500,
-		RetryMin: 200 * time.Millisecond, RetryMax: 5 * time.Second,
-		StatusEvery: time.Minute,
+		Site: site, GSM: g, DedupeSize: 1024, Outbox: outbox.DefaultSettings(500), StatusEvery: time.Minute,
 	}
 }
 
@@ -59,8 +56,11 @@ func (c Config) Validate() error {
 	if !contract.ValidSite(c.Site) {
 		return fmt.Errorf("gateway: invalid site %q", c.Site)
 	}
-	if c.DedupeSize < 1 || c.OutboxSize < 1 || c.RetryMin <= 0 || c.RetryMax < c.RetryMin || c.StatusEvery <= 0 {
-		return errors.New("gateway: DedupeSize, OutboxSize, RetryMin, RetryMax and StatusEvery must be set")
+	if c.DedupeSize < 1 || c.StatusEvery <= 0 {
+		return errors.New("gateway: DedupeSize and StatusEvery must be set")
+	}
+	if err := c.Outbox.Validate(); err != nil {
+		return fmt.Errorf("gateway: %w", err)
 	}
 	return c.GSM.Validate()
 }
@@ -73,18 +73,6 @@ type Deps struct {
 	NewID     func() string
 	Logger    *slog.Logger
 	Lines     map[string]Modem // one per configured line
-}
-
-// Message is a message received from the broker.
-type Message struct {
-	Topic   string
-	Payload []byte
-}
-
-// Subscription is a topic filter the gateway listens to.
-type Subscription struct {
-	Filter string
-	QoS    byte
 }
 
 const (
@@ -104,7 +92,7 @@ type Gateway struct {
 	core *gsm.Gateway
 	loop *driver.Loop[gsm.Input, gsm.Action, gsm.Snapshot]
 	out  *outbox.Outbox
-	seen *outbox.RecentIDs
+	seen *inbox.RecentIDs
 
 	workers map[string]chan func(context.Context)
 	last    contract.GSMStatusData // the last status published, owned by the loop
@@ -132,7 +120,7 @@ func New(cfg Config, deps Deps) (*Gateway, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	g := &Gateway{cfg: cfg, deps: deps, log: log, seen: outbox.NewRecentIDs(cfg.DedupeSize), workers: map[string]chan func(context.Context){}}
+	g := &Gateway{cfg: cfg, deps: deps, log: log, seen: inbox.NewRecentIDs(cfg.DedupeSize), workers: map[string]chan func(context.Context){}}
 	for _, l := range cfg.GSM.Lines {
 		g.workers[l.ID] = make(chan func(context.Context), lineQueue)
 	}
@@ -141,11 +129,9 @@ func New(cfg Config, deps Deps) (*Gateway, error) {
 	if g.core, err = gsm.New(cfg.GSM); err != nil {
 		return nil, err
 	}
-	seq, err := outbox.NewSequencer(deps.Store, keySeq, log)
-	if err != nil {
+	if g.out, err = outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, log); err != nil {
 		return nil, err
 	}
-	g.out = outbox.New(deps.Publisher, seq, cfg.Site, cfg.OutboxSize, cfg.RetryMin, cfg.RetryMax, log)
 	g.loop, err = driver.New(driver.Options[gsm.Input, gsm.Action, gsm.Snapshot]{
 		Name: keyGSM, Clock: deps.Clock, Store: deps.Store, Logger: log,
 		Core: driver.Core[gsm.Input, gsm.Action, gsm.Snapshot]{
@@ -165,9 +151,9 @@ func New(cfg Config, deps Deps) (*Gateway, error) {
 // Subscriptions lists what the gateway listens to: the alert requests, and what
 // says an incident is over (an alarm disarmed, an acknowledgement), so that its
 // messages still waiting do not go.
-func (g *Gateway) Subscriptions() []Subscription {
+func (g *Gateway) Subscriptions() []inbox.Subscription {
 	site := g.cfg.Site
-	return []Subscription{
+	return []inbox.Subscription{
 		{Filter: contract.AlertRequestTopic(site), QoS: 1},
 		{Filter: contract.AlarmEventTopic(site), QoS: 1},
 		{Filter: contract.AlertAckTopic(site), QoS: 1},
@@ -185,44 +171,28 @@ func (g *Gateway) Run(ctx context.Context) error {
 		return errors.New("gateway: Run called twice")
 	}
 	defer g.stop()
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	var wg sync.WaitGroup
-	start := func(f func(context.Context)) {
-		wg.Add(1)
-		go func() { defer wg.Done(); f(runCtx) }()
+	runs := []func(context.Context){
+		func(c context.Context) { g.loop.Run(c) },
+		g.out.Run,
+		// The status again every StatusEvery, through the domain's loop: a loop that
+		// hangs stops the repetition, and the hub notices.
+		func(c context.Context) { driver.Every(c, g.deps.Clock, g.cfg.StatusEvery, g.repeatStatus) },
 	}
-	start(func(c context.Context) { g.loop.Run(c) })
-	start(g.out.Run)
 	for _, id := range slices.Sorted(maps.Keys(g.workers)) {
 		ch := g.workers[id]
-		start(func(c context.Context) { worker(c, ch) })
+		runs = append(runs, func(c context.Context) { worker(c, ch) })
 	}
-	// The first status, even if nothing changed since the last run.
-	g.repeatStatus(runCtx)
-	start(g.statusRepeater)
-	<-runCtx.Done()
-	cancel()
+	var wg sync.WaitGroup
+	for _, run := range runs {
+		wg.Go(func() { run(ctx) })
+	}
+	g.repeatStatus(ctx) // the first, even if nothing changed since the last run
 	wg.Wait()
-	g.out.Flush(3 * time.Second)
+	g.out.Flush()
 	return nil
 }
 
-// statusRepeater sends the status again every StatusEvery. It goes through the
-// domain's loop, so a loop that hangs stops the repetition and the hub notices.
-func (g *Gateway) statusRepeater(ctx context.Context) {
-	for {
-		fired, stop := g.deps.Clock.Timer(g.cfg.StatusEvery)
-		select {
-		case <-ctx.Done():
-			stop()
-			return
-		case <-fired:
-			g.repeatStatus(ctx)
-		}
-	}
-}
-
+// repeatStatus publishes the status, even unchanged.
 func (g *Gateway) repeatStatus(ctx context.Context) {
 	g.loop.Do(ctx, func(now time.Time) []gsm.Action {
 		g.sent = false

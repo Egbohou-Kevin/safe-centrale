@@ -19,6 +19,7 @@ import (
 
 	"safehome/internal/contract"
 	"safehome/internal/driver"
+	"safehome/internal/inbox"
 	"safehome/internal/maint"
 	maintwire "safehome/internal/maint/wire"
 	"safehome/internal/outbox"
@@ -41,15 +42,13 @@ type Tunnel interface {
 type Config struct {
 	Site       string
 	Maint      maint.Config
-	OutboxSize int
-	RetryMin   time.Duration
-	RetryMax   time.Duration
+	Outbox     outbox.Settings
 	DedupeSize int
 }
 
 // DefaultConfig returns the defaults.
 func DefaultConfig(site string, m maint.Config) Config {
-	return Config{Site: site, Maint: m, OutboxSize: 50, RetryMin: 200 * time.Millisecond, RetryMax: 5 * time.Second, DedupeSize: 64}
+	return Config{Site: site, Maint: m, Outbox: outbox.DefaultSettings(50), DedupeSize: 64}
 }
 
 // Validate checks the configuration.
@@ -57,8 +56,11 @@ func (c Config) Validate() error {
 	if !contract.ValidSite(c.Site) {
 		return fmt.Errorf("maintapp: invalid site %q", c.Site)
 	}
-	if c.OutboxSize < 1 || c.RetryMin <= 0 || c.RetryMax < c.RetryMin || c.DedupeSize < 1 {
-		return errors.New("maintapp: OutboxSize, RetryMin, RetryMax and DedupeSize must be set")
+	if c.DedupeSize < 1 {
+		return errors.New("maintapp: DedupeSize must be set")
+	}
+	if err := c.Outbox.Validate(); err != nil {
+		return fmt.Errorf("maintapp: %w", err)
 	}
 	return c.Maint.Validate()
 }
@@ -71,18 +73,6 @@ type Deps struct {
 	Tunneler  Tunneler
 	NewID     func() string
 	Logger    *slog.Logger
-}
-
-// Message is a message received from the broker.
-type Message struct {
-	Topic   string
-	Payload []byte
-}
-
-// Subscription is a topic filter the service listens to.
-type Subscription struct {
-	Filter string
-	QoS    byte
 }
 
 const (
@@ -101,7 +91,7 @@ type App struct {
 	core *maint.Service
 	loop *driver.Loop[maint.Input, maint.Action, maint.Snapshot]
 	out  *outbox.Outbox
-	seen *outbox.RecentIDs
+	seen *inbox.RecentIDs
 
 	// base is the tunnels' parent, set by Run before the loop starts; cancel stops
 	// the tunnel under way. Both belong to the loop's goroutine.
@@ -126,17 +116,15 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	a := &App{cfg: cfg, deps: deps, log: log, seen: outbox.NewRecentIDs(cfg.DedupeSize)}
+	a := &App{cfg: cfg, deps: deps, log: log, seen: inbox.NewRecentIDs(cfg.DedupeSize)}
 	a.life, a.stop = context.WithCancel(context.Background())
 	var err error
 	if a.core, err = maint.New(cfg.Maint); err != nil {
 		return nil, err
 	}
-	seq, err := outbox.NewSequencer(deps.Store, keySeq, log)
-	if err != nil {
+	if a.out, err = outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, log); err != nil {
 		return nil, err
 	}
-	a.out = outbox.New(deps.Publisher, seq, cfg.Site, cfg.OutboxSize, cfg.RetryMin, cfg.RetryMax, log)
 	a.loop, err = driver.New(driver.Options[maint.Input, maint.Action, maint.Snapshot]{
 		Name: keyMaint, Clock: deps.Clock, Store: deps.Store, Logger: log,
 		Core: driver.Core[maint.Input, maint.Action, maint.Snapshot]{
@@ -152,8 +140,8 @@ func New(cfg Config, deps Deps) (*App, error) {
 }
 
 // Subscriptions lists what the service listens to.
-func (a *App) Subscriptions() []Subscription {
-	return []Subscription{{Filter: contract.MaintCmdTopic(a.cfg.Site), QoS: 1}}
+func (a *App) Subscriptions() []inbox.Subscription {
+	return []inbox.Subscription{{Filter: contract.MaintCmdTopic(a.cfg.Site), QoS: 1}}
 }
 
 // Alive returns once the core's loop has taken what was queued for it (the
@@ -167,38 +155,35 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.New("maintapp: Run called twice")
 	}
 	defer a.stop()
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	a.base = runCtx
+	a.base = ctx
 	var wg sync.WaitGroup
-	start := func(f func(context.Context)) {
-		wg.Add(1)
-		go func() { defer wg.Done(); f(runCtx) }()
+	for _, run := range []func(context.Context){func(c context.Context) { a.loop.Run(c) }, a.out.Run} {
+		wg.Go(func() { run(ctx) })
 	}
-	start(func(c context.Context) { a.loop.Run(c) })
-	start(a.out.Run)
 	// An order received before this point is taken first; Boot leaves its session alone.
-	a.loop.Do(runCtx, func(now time.Time) []maint.Action { return a.core.Handle(maint.Boot{Now: now}) })
-	<-runCtx.Done()
-	cancel()
+	a.loop.Do(ctx, func(now time.Time) []maint.Action { return a.core.Handle(maint.Boot{Now: now}) })
 	wg.Wait()
 	a.tunnels.Wait()
-	a.out.Flush(3 * time.Second)
+	a.out.Flush()
 	return nil
 }
 
 // HandleMessage takes a message from the broker. It returns quickly.
-func (a *App) HandleMessage(m Message) {
+func (a *App) HandleMessage(m inbox.Message) {
 	if len(m.Payload) > maxPayload || m.Topic != contract.MaintCmdTopic(a.cfg.Site) {
 		return
 	}
-	env, err := contract.ParseEnvelope(m.Payload)
-	if err != nil || env.Site != a.cfg.Site || !a.seen.FirstTime(env.ID) {
+	env, err := inbox.Envelope(m, a.cfg.Site, contract.TypeMaintOpen, contract.TypeMaintClose)
+	if err != nil {
+		a.log.Warn("ignoring an invalid maintenance order", "err", err)
+		return
+	}
+	if !a.seen.FirstTime(env.ID) {
 		return
 	}
 	switch env.Type {
 	case contract.TypeMaintOpen:
-		d, err := decodeOrder[contract.MaintOpenData](env)
+		d, err := contract.ValidData[contract.MaintOpenData](env)
 		if err != nil {
 			a.log.Warn("ignoring an invalid maintenance order", "id", env.ID, "err", err)
 			return
@@ -206,22 +191,13 @@ func (a *App) HandleMessage(m Message) {
 		a.log.Info("remote maintenance asked", "session", d.Session, "user", d.User, "reason", d.Reason, "duration_s", d.DurationS)
 		a.submit(func(now time.Time) maint.Input { return maintwire.Open(d, now) })
 	case contract.TypeMaintClose:
-		d, err := decodeOrder[contract.MaintCloseData](env)
+		d, err := contract.ValidData[contract.MaintCloseData](env)
 		if err != nil {
 			a.log.Warn("ignoring an invalid maintenance order", "id", env.ID, "err", err)
 			return
 		}
 		a.submit(func(now time.Time) maint.Input { return maintwire.Close(d, now) })
 	}
-}
-
-// decodeOrder decodes an order's data and checks it.
-func decodeOrder[T interface{ Validate() error }](env contract.Envelope) (T, error) {
-	d, err := contract.DecodeData[T](env)
-	if err == nil {
-		err = d.Validate()
-	}
-	return d, err
 }
 
 func (a *App) submit(build func(time.Time) maint.Input) {

@@ -14,6 +14,7 @@ import (
 
 	"safehome/internal/contract"
 	"safehome/internal/driver"
+	"safehome/internal/inbox"
 	"safehome/internal/schematest"
 	"safehome/internal/video"
 )
@@ -290,7 +291,7 @@ func startOn(t *testing.T, clock driver.Clock, edit ...func(*Config)) *harness {
 	v := video.DefaultConfig([]video.Camera{{ID: "cam_caisse", Name: "Caisse"}, {ID: "cam_cour", Name: "Cour"}})
 	v.StartTimeout, v.StallAfter = 2*time.Second, 2*time.Second
 	cfg := DefaultConfig(site, v)
-	cfg.ProgressEvery, cfg.RetryMin, cfg.RetryMax = 10*time.Millisecond, 10*time.Millisecond, 50*time.Millisecond
+	cfg.ProgressEvery, cfg.Outbox.RetryMin, cfg.Outbox.RetryMax = 10*time.Millisecond, 10*time.Millisecond, 50*time.Millisecond
 	for _, e := range edit {
 		e(&cfg)
 	}
@@ -331,7 +332,7 @@ func (h *harness) send(typ string, data any) {
 		h.t.Fatal(err)
 	}
 	b, _ := json.Marshal(env)
-	h.app.HandleMessage(Message{Topic: contract.VideoCmdTopic(site), Payload: b})
+	h.app.HandleMessage(inbox.Message{Topic: contract.VideoCmdTopic(site), Payload: b})
 }
 
 func (h *harness) request(session, camera string) {
@@ -502,15 +503,15 @@ func TestBadOrdersAreIgnored(t *testing.T) {
 	h.send(contract.TypeAlarmCommand, contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp})
 	env, _ := contract.NewEnvelope("tg-lom-9999", "cloud", 1, h.ids.New(), time.Now(), contract.TypeVideoRequest, ok("s2"))
 	b, _ := json.Marshal(env)
-	h.app.HandleMessage(Message{Topic: contract.VideoCmdTopic(site), Payload: b})
-	h.app.HandleMessage(Message{Topic: contract.VideoCmdTopic(site), Payload: []byte("{")})
-	h.app.HandleMessage(Message{Topic: contract.AlarmCmdTopic(site), Payload: b})
+	h.app.HandleMessage(inbox.Message{Topic: contract.VideoCmdTopic(site), Payload: b})
+	h.app.HandleMessage(inbox.Message{Topic: contract.VideoCmdTopic(site), Payload: []byte("{")})
+	h.app.HandleMessage(inbox.Message{Topic: contract.AlarmCmdTopic(site), Payload: b})
 
 	// A duplicate is ignored too.
 	env, _ = contract.NewEnvelope(site, "cloud", 1, h.ids.New(), time.Now(), contract.TypeVideoRequest, ok("s3"))
 	b, _ = json.Marshal(env)
-	h.app.HandleMessage(Message{Topic: contract.VideoCmdTopic(site), Payload: b})
-	h.app.HandleMessage(Message{Topic: contract.VideoCmdTopic(site), Payload: b})
+	h.app.HandleMessage(inbox.Message{Topic: contract.VideoCmdTopic(site), Payload: b})
+	h.app.HandleMessage(inbox.Message{Topic: contract.VideoCmdTopic(site), Payload: b})
 	h.waitFor("s3 starting", func() bool { return h.broker.has("s3", contract.VideoStarting, "") })
 	time.Sleep(50 * time.Millisecond)
 	h.stream.mu.Lock()
@@ -549,8 +550,8 @@ func (h *harness) alarm(incident string) {
 	env, _ := contract.NewEnvelope(site, "engine", 1, h.ids.New(), time.Now(), contract.TypeAlarmTriggered,
 		contract.TriggeredData{Incident: incident, DeviceID: "dev_door", Capability: contract.CapContact, Zone: "entrance"})
 	b, _ := json.Marshal(env)
-	h.app.HandleMessage(Message{Topic: contract.AlarmEventTopic(site), Payload: b})
-	h.app.HandleMessage(Message{Topic: contract.AlarmEventTopic(site), Payload: b}) // QoS 1: again
+	h.app.HandleMessage(inbox.Message{Topic: contract.AlarmEventTopic(site), Payload: b})
+	h.app.HandleMessage(inbox.Message{Topic: contract.AlarmEventTopic(site), Payload: b}) // QoS 1: again
 }
 
 func (b *fakeBroker) photos() []contract.PhotoTakenData {
@@ -633,8 +634,8 @@ func TestPhotosThatCannotBeTakenOrKept(t *testing.T) {
 	// Other alarm events, and garbage, take no photo.
 	env, _ := contract.NewEnvelope(site, "engine", 1, h.ids.New(), time.Now(), contract.TypeAlarmArmed, contract.ArmedData{})
 	b, _ := json.Marshal(env)
-	h.app.HandleMessage(Message{Topic: contract.AlarmEventTopic(site), Payload: b})
-	h.app.HandleMessage(Message{Topic: contract.AlarmEventTopic(site), Payload: []byte("{")})
+	h.app.HandleMessage(inbox.Message{Topic: contract.AlarmEventTopic(site), Payload: b})
+	h.app.HandleMessage(inbox.Message{Topic: contract.AlarmEventTopic(site), Payload: []byte("{")})
 	if _, o, _ := h.camera.count(); o != 1 {
 		t.Fatalf("%d opened", o)
 	}

@@ -9,6 +9,7 @@ import (
 	"safehome/internal/contract"
 	"safehome/internal/driver"
 	"safehome/internal/engine"
+	"safehome/internal/inbox"
 )
 
 // The installation mode (docs/security-install.md): the installer opens it on site by
@@ -163,8 +164,8 @@ func (h *Hub) publishInstall(now time.Time, reason string) {
 }
 
 // installMessage takes an order of the local console: install.close.
-func (h *Hub) installMessage(m Message) {
-	if _, ok := h.envelope(m, contract.TypeInstallClose); !ok {
+func (h *Hub) installMessage(m inbox.Message) {
+	if _, _, ok := decode[contract.InstallCloseData](h, m, contract.TypeInstallClose, "end of installation"); !ok {
 		return
 	}
 	err := h.engLoop.Post(h.life, func(now time.Time) []engine.Action {

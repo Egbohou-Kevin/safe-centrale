@@ -26,7 +26,7 @@ func (c *command) online(ctx context.Context, fn func(context.Context, *install.
 	client, err := mqtt.Dial(connCtx, mqtt.Options{
 		BrokerURL: c.cfg.BrokerURL, ClientID: clientID(c.cfg.Hub.Site), Ephemeral: true,
 		Subscriptions: service.Subscriptions(s.Subscriptions()),
-		OnMessage:     func(m mqtt.Message) { s.Deliver(install.Message{Topic: m.Topic, Payload: m.Payload, Retain: m.Retain}) },
+		OnMessage:     service.Deliver(s.Deliver),
 	})
 	if err != nil {
 		return err

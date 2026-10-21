@@ -13,6 +13,7 @@ import (
 
 	"safehome/internal/contract"
 	"safehome/internal/driver"
+	"safehome/internal/inbox"
 	"safehome/internal/schematest"
 )
 
@@ -100,7 +101,7 @@ type rig struct {
 func start(t *testing.T, cfg Config) *rig {
 	t.Helper()
 	r := &rig{t: t, broker: &broker{}, logs: &syncBuffer{}, ids: contract.NewIDGenerator()}
-	cfg.RetryMin, cfg.RetryMax = 5*time.Millisecond, 20*time.Millisecond
+	cfg.Outbox.RetryMin, cfg.Outbox.RetryMax = 5*time.Millisecond, 20*time.Millisecond
 	app, err := New(cfg, Deps{
 		Clock: driver.SystemClock(), Store: &memStore{docs: map[string][]byte{}}, Publisher: r.broker, NewID: r.ids.New,
 		Check: func(contract.ConfigSetData) error { r.mu.Lock(); defer r.mu.Unlock(); return r.checkErr },
@@ -135,7 +136,7 @@ func (r *rig) send(topic, typ string, data any) {
 		r.t.Fatal(err)
 	}
 	b, _ := json.Marshal(env)
-	r.app.HandleMessage(Message{Topic: topic, Payload: b})
+	r.app.HandleMessage(inbox.Message{Topic: topic, Payload: b})
 }
 
 func (r *rig) config(d contract.ConfigSetData) {
@@ -349,8 +350,8 @@ func TestRefusals(t *testing.T) {
 	// Ignored: another site, another type, a duplicate, garbage.
 	env, _ := contract.NewEnvelope("tg-lom-9999", "cloud", 1, r.ids.New(), time.Now(), contract.TypeConfigSet, phoneConfig(9))
 	b, _ := json.Marshal(env)
-	r.app.HandleMessage(Message{Topic: contract.ConfigSetTopic(site), Payload: b})
-	r.app.HandleMessage(Message{Topic: contract.ConfigSetTopic(site), Payload: []byte("{")})
+	r.app.HandleMessage(inbox.Message{Topic: contract.ConfigSetTopic(site), Payload: b})
+	r.app.HandleMessage(inbox.Message{Topic: contract.ConfigSetTopic(site), Payload: []byte("{")})
 	time.Sleep(50 * time.Millisecond)
 	if _, n := r.broker.last(); n != 7 {
 		t.Fatalf("%d answers", n)
@@ -380,6 +381,19 @@ func TestNothingToSayWithoutConfiguration(t *testing.T) {
 func TestNewChecks(t *testing.T) {
 	if _, err := New(Config{Site: "X"}, Deps{}); err == nil {
 		t.Fatal("bad site")
+	}
+	if err := DefaultConfig(site, 0).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*Config){
+		"no dedupe": func(c *Config) { c.DedupeSize = 0 },
+		"no outbox": func(c *Config) { c.Outbox.Size = 0 },
+	} {
+		c := DefaultConfig(site, 0)
+		mutate(&c)
+		if c.Validate() == nil {
+			t.Errorf("%s: want an error", name)
+		}
 	}
 	if _, err := New(DefaultConfig(site, 0), Deps{}); err == nil {
 		t.Fatal("missing ports")

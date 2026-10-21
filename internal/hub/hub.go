@@ -4,8 +4,8 @@
 //
 // It is the only place that knows several domains at once. The domains know none
 // of it: they receive plain inputs and return plain actions. Everything outside is
-// a port declared here (Publisher, driver.Clock, driver.Store) and wired in the
-// composition root (cmd/safehome-hub), so the hub is tested with fakes.
+// a port (outbox.Publisher, driver.Clock, driver.Store) wired in the composition
+// root (cmd/safehome-hub), so the hub is tested with fakes.
 //
 // Inputs go in through HandleMessage. Each domain runs in its own loop (see
 // package driver) so nothing ever touches an engine from two goroutines. Outputs
@@ -30,6 +30,7 @@ import (
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
 	"safehome/internal/health"
+	"safehome/internal/inbox"
 	"safehome/internal/outbox"
 )
 
@@ -62,7 +63,7 @@ type Hub struct {
 	escLoop *driver.Loop[escalation.Input, escalation.Action, escalation.Snapshot]
 
 	out  *outbox.Outbox
-	seen *outbox.RecentIDs
+	seen *inbox.RecentIDs
 
 	bootID  string
 	started time.Time
@@ -112,7 +113,7 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 	now := deps.Clock.Now()
 	h := &Hub{
 		cfg: cfg, deps: deps, log: log,
-		seen:       outbox.NewRecentIDs(cfg.DedupeSize),
+		seen:       inbox.NewRecentIDs(cfg.DedupeSize),
 		bootID:     deps.NewID(),
 		started:    now,
 		booting:    true,
@@ -147,12 +148,8 @@ func (h *Hub) openSaved() (err error) {
 	if h.installer, err = OpenInstallerCode(h.cfg.Access, h.deps.Store); err != nil {
 		return err
 	}
-	seq, err := outbox.NewSequencer(h.deps.Store, keySeq, h.log)
-	if err != nil {
-		return err
-	}
-	h.out = outbox.New(h.deps.Publisher, seq, h.cfg.Site, h.cfg.OutboxSize, h.cfg.RetryMin, h.cfg.RetryMax, h.log)
-	return nil
+	h.out, err = outbox.Open(h.deps.Store, h.deps.Publisher, keySeq, h.cfg.Site, h.cfg.Outbox, h.log)
+	return err
 }
 
 // buildEngine builds the alarm engine and its loop, which puts its saved state back.
@@ -235,9 +232,9 @@ func (h *Hub) Alive(ctx context.Context) error {
 }
 
 // Subscriptions lists what the hub must listen to on the broker.
-func (h *Hub) Subscriptions() []Subscription {
+func (h *Hub) Subscriptions() []inbox.Subscription {
 	site := h.cfg.Site
-	subs := []Subscription{
+	subs := []inbox.Subscription{
 		{Filter: contract.Topic(site, "device", "+", "event"), QoS: 1},
 		{Filter: contract.Topic(site, "device", "+", "state", "+"), QoS: 1},
 		{Filter: contract.AlarmCmdTopic(site), QoS: 1},
@@ -250,7 +247,7 @@ func (h *Hub) Subscriptions() []Subscription {
 		{Filter: contract.RegistryEventTopic(site), QoS: 1},
 	}
 	for _, id := range h.cfg.SirenIDs {
-		subs = append(subs, Subscription{Filter: contract.DeviceAckTopic(site, id), QoS: 1})
+		subs = append(subs, inbox.Subscription{Filter: contract.DeviceAckTopic(site, id), QoS: 1})
 	}
 	return subs
 }
@@ -273,7 +270,7 @@ func (h *Hub) Run(ctx context.Context) error {
 		func(c context.Context) { h.escLoop.Run(c) },
 		h.out.Run,
 		h.authWorker,
-		h.heartbeats,
+		func(c context.Context) { driver.Every(c, h.deps.Clock, h.cfg.HeartbeatEvery, h.publishHeartbeat) },
 	} {
 		wg.Go(func() { run(h.life) })
 	}
@@ -283,7 +280,7 @@ func (h *Hub) Run(ctx context.Context) error {
 	}
 	h.stop()
 	wg.Wait()
-	h.out.Flush(3 * time.Second)
+	h.out.Flush()
 	return nil
 }
 
@@ -318,18 +315,24 @@ func (h *Hub) bootWindow(ctx context.Context) error {
 		return nil
 	}
 	if h.cfg.LinkWait > 0 {
+		gaveUp, stop := h.deps.Clock.Timer(h.cfg.LinkWait)
+		defer stop()
 		select {
 		case <-h.linkUp:
-		case <-time.After(h.cfg.LinkWait):
+		case <-gaveUp:
 			h.log.Warn("the broker link did not come up in time, listening for device states anyway")
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
-	if !outbox.Sleep(ctx, h.cfg.BootWindow) {
+	over, stop := h.deps.Clock.Timer(h.cfg.BootWindow)
+	defer stop()
+	select {
+	case <-over:
+		return nil
+	case <-ctx.Done():
 		return ctx.Err()
 	}
-	return nil
 }
 
 // endBootWindow stops collecting retained states and returns what they say to the

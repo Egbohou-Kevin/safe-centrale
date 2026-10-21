@@ -127,8 +127,8 @@ func (a *App) publishStatus(now time.Time) {
 	a.enqueue(contract.ZigbeeStatusTopic(a.cfg.Site), contract.TypeZigbeeStatus, st, true, now)
 }
 
-// repeatStatus publishes zigbee.status even if it did not change.
-func (a *App) repeatStatus(now time.Time) {
+// publishStatusAgain publishes zigbee.status even if it did not change.
+func (a *App) publishStatusAgain(now time.Time) {
 	a.sent = false
 	a.publishStatus(now)
 }

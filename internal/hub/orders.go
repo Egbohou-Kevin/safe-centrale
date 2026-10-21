@@ -7,6 +7,7 @@ import (
 	"safehome/internal/contract"
 	"safehome/internal/engine"
 	engwire "safehome/internal/engine/wire"
+	"safehome/internal/inbox"
 )
 
 var keypadCommands = map[string]string{
@@ -67,13 +68,9 @@ func (h *Hub) keypad(env contract.Envelope, d contract.DeviceEventData) {
 	}})
 }
 
-func (h *Hub) alarmMessage(m Message) {
+func (h *Hub) alarmMessage(m inbox.Message) {
 	env, d, ok := decode[contract.AlarmCommandData](h, m, contract.TypeAlarmCommand, "order")
 	if !ok {
-		return
-	}
-	if err := d.Validate(); err != nil {
-		h.log.Warn("ignoring an invalid order", "err", err)
 		return
 	}
 	h.command(order{ref: env.ID, written: env.TS.Time, cmd: d})

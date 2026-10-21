@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"safehome/internal/adapter/mqtt"
+	"safehome/internal/inbox"
 	"safehome/internal/outbox"
 )
 
@@ -38,15 +39,19 @@ func TestPublisherIsUnavailableUntilItsBrokerAnswers(t *testing.T) {
 	}
 }
 
-func TestSubscriptionsKeepFilterAndQoS(t *testing.T) {
-	type appSubscription struct {
-		Filter string
-		QoS    byte
-	}
-	got := Subscriptions([]appSubscription{{"a/+", 1}, {"b", 0}})
-	want := []mqtt.Subscription{{Filter: "a/+", QoS: 1}, {Filter: "b", QoS: 0}}
+func TestSubscriptionsKeepFilterQoSAndNoLocal(t *testing.T) {
+	got := Subscriptions([]inbox.Subscription{{Filter: "a/+", QoS: 1, NoLocal: true}, {Filter: "b"}})
+	want := []mqtt.Subscription{{Filter: "a/+", QoS: 1, NoLocal: true}, {Filter: "b", QoS: 0}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestDeliverHandsTheMessageOver(t *testing.T) {
+	var got inbox.Message
+	Deliver(func(m inbox.Message) { got = m })(mqtt.Message{Topic: "t", Payload: []byte("x"), QoS: 1, Retain: true})
+	if got.Topic != "t" || string(got.Payload) != "x" || !got.Retain {
+		t.Fatalf("%+v", got)
 	}
 }
 

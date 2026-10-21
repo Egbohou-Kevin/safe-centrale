@@ -10,6 +10,7 @@ import (
 
 	"safehome/internal/contract"
 	"safehome/internal/engine"
+	"safehome/internal/inbox"
 )
 
 // --- tests -------------------------------------------------------------------------
@@ -247,7 +248,7 @@ func TestADuplicateMessageIsHandledOnce(t *testing.T) {
 		contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp})
 	b, _ := json.Marshal(env)
 	for i := 0; i < 3; i++ { // QoS 1 may deliver more than once
-		r.hub.HandleMessage(Message{Topic: contract.AlarmCmdTopic(site), Payload: b})
+		r.hub.HandleMessage(inbox.Message{Topic: contract.AlarmCmdTopic(site), Payload: b})
 	}
 	r.settle()
 	if n := len(r.broker.on(contract.AlarmAckTopic(site))); n != 1 {
@@ -269,7 +270,7 @@ func TestGarbageIsIgnoredAndNeverLogged(t *testing.T) {
 	}()
 	otherSite := bytes.Replace(good, []byte(site), []byte("tg-lom-0002"), 1)
 	wrongType := bytes.Replace(good, []byte(`"type":"alarm.command"`), []byte(`"type":"device.event"`), 1)
-	for name, m := range map[string]Message{
+	for name, m := range map[string]inbox.Message{
 		"not json":              {Topic: contract.AlarmCmdTopic(site), Payload: []byte(`not json 9999`)},
 		"empty":                 {Topic: contract.AlarmCmdTopic(site), Payload: nil},
 		"another site":          {Topic: contract.AlarmCmdTopic(site), Payload: otherSite},

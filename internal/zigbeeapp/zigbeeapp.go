@@ -15,11 +15,13 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"safehome/internal/contract"
 	"safehome/internal/driver"
+	"safehome/internal/inbox"
 	"safehome/internal/outbox"
 	"safehome/internal/zigbee"
 	"safehome/internal/zigbee/z2m"
@@ -31,9 +33,7 @@ type Config struct {
 	Base       string // Zigbee2MQTT's base topic
 	Zigbee     zigbee.Config
 	DedupeSize int
-	OutboxSize int
-	RetryMin   time.Duration
-	RetryMax   time.Duration
+	Outbox     outbox.Settings
 	// StatusEvery is how often zigbee.status goes out even when nothing changed: the
 	// hub takes an adapter that stopped repeating it for dead.
 	StatusEvery time.Duration
@@ -42,8 +42,8 @@ type Config struct {
 // DefaultConfig returns the defaults.
 func DefaultConfig(site string, z zigbee.Config) Config {
 	return Config{
-		Site: site, Base: z2m.DefaultBase, Zigbee: z, DedupeSize: 1024, OutboxSize: 1000,
-		RetryMin: 200 * time.Millisecond, RetryMax: 5 * time.Second, StatusEvery: time.Minute,
+		Site: site, Base: z2m.DefaultBase, Zigbee: z, DedupeSize: 1024, Outbox: outbox.DefaultSettings(1000),
+		StatusEvery: time.Minute,
 	}
 }
 
@@ -55,8 +55,11 @@ func (c Config) Validate() error {
 	if c.Base == "" || strings.ContainsAny(c.Base, "#+") || strings.HasSuffix(c.Base, "/") || overlapsContract(c.Base) {
 		return fmt.Errorf("zigbeeapp: invalid base topic %q", c.Base)
 	}
-	if c.DedupeSize < 1 || c.OutboxSize < 1 || c.RetryMin <= 0 || c.RetryMax < c.RetryMin || c.StatusEvery <= 0 {
-		return errors.New("zigbeeapp: DedupeSize, OutboxSize, RetryMin, RetryMax and StatusEvery must be set")
+	if c.DedupeSize < 1 || c.StatusEvery <= 0 {
+		return errors.New("zigbeeapp: DedupeSize and StatusEvery must be set")
+	}
+	if err := c.Outbox.Validate(); err != nil {
+		return fmt.Errorf("zigbeeapp: %w", err)
 	}
 	return c.Zigbee.Validate()
 }
@@ -78,19 +81,6 @@ type Deps struct {
 	Logger      *slog.Logger
 }
 
-// Message is a message received from the broker.
-type Message struct {
-	Topic   string
-	Payload []byte
-	Retain  bool
-}
-
-// Subscription is a topic filter the adapter listens to.
-type Subscription struct {
-	Filter string
-	QoS    byte
-}
-
 const (
 	src        = contract.AdapterZigbee
 	keyZigbee  = "zigbee"
@@ -107,7 +97,7 @@ type App struct {
 	core *zigbee.Network
 	loop *driver.Loop[zigbee.Input, zigbee.Action, zigbee.Snapshot]
 	out  *outbox.Outbox
-	seen *outbox.RecentIDs
+	seen *inbox.RecentIDs
 
 	last contract.ZigbeeStatusData // the last status published, owned by the loop
 	sent bool
@@ -129,18 +119,16 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	a := &App{cfg: cfg, deps: deps, log: log, seen: outbox.NewRecentIDs(cfg.DedupeSize)}
+	a := &App{cfg: cfg, deps: deps, log: log, seen: inbox.NewRecentIDs(cfg.DedupeSize)}
 	a.life, a.stop = context.WithCancel(context.Background())
 
 	var err error
 	if a.core, err = zigbee.New(cfg.Zigbee, deps.NewDeviceID); err != nil {
 		return nil, err
 	}
-	seq, err := outbox.NewSequencer(deps.Store, keySeq, log)
-	if err != nil {
+	if a.out, err = outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, log); err != nil {
 		return nil, err
 	}
-	a.out = outbox.New(deps.Publisher, seq, cfg.Site, cfg.OutboxSize, cfg.RetryMin, cfg.RetryMax, log)
 	a.loop, err = driver.New(driver.Options[zigbee.Input, zigbee.Action, zigbee.Snapshot]{
 		Name: keyZigbee, Clock: deps.Clock, Store: deps.Store, Logger: log,
 		Core: driver.Core[zigbee.Input, zigbee.Action, zigbee.Snapshot]{
@@ -157,8 +145,8 @@ func New(cfg Config, deps Deps) (*App, error) {
 }
 
 // Subscriptions lists what the adapter listens to.
-func (a *App) Subscriptions() []Subscription {
-	return []Subscription{
+func (a *App) Subscriptions() []inbox.Subscription {
+	return []inbox.Subscription{
 		{Filter: z2m.Filter(a.cfg.Base), QoS: 1},
 		{Filter: contract.Topic(a.cfg.Site, "device", "+", "cmd"), QoS: 1},
 		{Filter: contract.RegistryCmdTopic(a.cfg.Site), QoS: 1},
@@ -176,41 +164,31 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.New("zigbeeapp: Run called twice")
 	}
 	defer a.stop()
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	done := make(chan struct{}, 3)
-	start := func(f func(context.Context)) { go func() { f(runCtx); done <- struct{}{} }() }
-	start(func(c context.Context) { a.loop.Run(c) })
-	start(a.out.Run)
+	var wg sync.WaitGroup
+	for _, run := range []func(context.Context){
+		func(c context.Context) { a.loop.Run(c) },
+		a.out.Run,
+		// The status again every StatusEvery, through the core's loop: a loop that
+		// hangs stops the repetition, and the hub notices.
+		func(c context.Context) { driver.Every(c, a.deps.Clock, a.cfg.StatusEvery, a.repeatStatus) },
+	} {
+		wg.Go(func() { run(ctx) })
+	}
 	// The registry and the status, even if nothing changed since the last run.
-	a.loop.Do(runCtx, func(now time.Time) []zigbee.Action {
+	a.loop.Do(ctx, func(now time.Time) []zigbee.Action {
 		a.publishRegistry(now, a.core.Devices())
-		a.repeatStatus(now)
+		a.publishStatusAgain(now)
 		return nil
 	})
-	start(a.statusRepeater)
-	<-runCtx.Done()
-	for range 3 {
-		<-done
-	}
-	a.out.Flush(3 * time.Second)
+	wg.Wait()
+	a.out.Flush()
 	return nil
 }
 
-// statusRepeater sends the status again every StatusEvery, through the core's loop:
-// a loop that hangs stops the repetition, and the hub notices.
-func (a *App) statusRepeater(ctx context.Context) {
-	for {
-		fired, stop := a.deps.Clock.Timer(a.cfg.StatusEvery)
-		select {
-		case <-ctx.Done():
-			stop()
-			return
-		case <-fired:
-			a.loop.Do(ctx, func(now time.Time) []zigbee.Action {
-				a.repeatStatus(now)
-				return nil
-			})
-		}
-	}
+// repeatStatus publishes zigbee.status again, through the core's loop.
+func (a *App) repeatStatus(ctx context.Context) {
+	a.loop.Do(ctx, func(now time.Time) []zigbee.Action {
+		a.publishStatusAgain(now)
+		return nil
+	})
 }

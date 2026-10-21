@@ -23,6 +23,7 @@ import (
 
 	"safehome/internal/contract"
 	"safehome/internal/driver"
+	"safehome/internal/inbox"
 	"safehome/internal/outbox"
 	"safehome/internal/video"
 	videowire "safehome/internal/video/wire"
@@ -73,9 +74,7 @@ var ErrCameraUnreachable = errors.New("videoapp: camera unreachable")
 type Config struct {
 	Site          string
 	Video         video.Config
-	OutboxSize    int
-	RetryMin      time.Duration
-	RetryMax      time.Duration
+	Outbox        outbox.Settings
 	DedupeSize    int
 	ProgressEvery time.Duration // how often a stream's bytes are read
 	StartWait     time.Duration // for the camera to answer when a stream starts
@@ -86,8 +85,7 @@ type Config struct {
 // DefaultConfig returns the defaults.
 func DefaultConfig(site string, v video.Config) Config {
 	return Config{
-		Site: site, Video: v, OutboxSize: 200, RetryMin: 200 * time.Millisecond, RetryMax: 5 * time.Second,
-		DedupeSize: 256, ProgressEvery: 2 * time.Second,
+		Site: site, Video: v, Outbox: outbox.DefaultSettings(200), DedupeSize: 256, ProgressEvery: 2 * time.Second,
 		StartWait: 15 * time.Second, ProbeWait: 3 * time.Second, PhotoWait: 10 * time.Second,
 	}
 }
@@ -97,9 +95,11 @@ func (c Config) Validate() error {
 	if !contract.ValidSite(c.Site) {
 		return fmt.Errorf("videoapp: invalid site %q", c.Site)
 	}
-	if c.OutboxSize < 1 || c.RetryMin <= 0 || c.RetryMax < c.RetryMin || c.DedupeSize < 1 ||
-		c.ProgressEvery <= 0 || c.StartWait <= 0 || c.ProbeWait <= 0 || c.PhotoWait <= 0 {
-		return errors.New("videoapp: OutboxSize, RetryMin, RetryMax, DedupeSize, ProgressEvery, StartWait, ProbeWait and PhotoWait must be set")
+	if c.DedupeSize < 1 || c.ProgressEvery <= 0 || c.StartWait <= 0 || c.ProbeWait <= 0 || c.PhotoWait <= 0 {
+		return errors.New("videoapp: DedupeSize, ProgressEvery, StartWait, ProbeWait and PhotoWait must be set")
+	}
+	if err := c.Outbox.Validate(); err != nil {
+		return fmt.Errorf("videoapp: %w", err)
 	}
 	return c.Video.Validate()
 }
@@ -115,18 +115,6 @@ type Deps struct {
 	NewID     func() string
 	// Logger: never given a request's target nor token.
 	Logger *slog.Logger
-}
-
-// Message is a message received from the broker.
-type Message struct {
-	Topic   string
-	Payload []byte
-}
-
-// Subscription is a topic filter the service listens to.
-type Subscription struct {
-	Filter string
-	QoS    byte
 }
 
 const (
@@ -145,7 +133,7 @@ type App struct {
 	core *video.Service
 	loop *driver.Loop[video.Input, video.Action, video.Snapshot]
 	out  *outbox.Outbox
-	seen *outbox.RecentIDs
+	seen *inbox.RecentIDs
 
 	// base is the parent of the work done away from the loop (streams, probes,
 	// photos), set by Run before the loop starts; work is the goroutines doing it.
@@ -174,17 +162,15 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	a := &App{cfg: cfg, deps: deps, log: log, seen: outbox.NewRecentIDs(cfg.DedupeSize), sessions: map[string]context.CancelFunc{}}
+	a := &App{cfg: cfg, deps: deps, log: log, seen: inbox.NewRecentIDs(cfg.DedupeSize), sessions: map[string]context.CancelFunc{}}
 	a.life, a.stop = context.WithCancel(context.Background())
 	var err error
 	if a.core, err = video.New(cfg.Video); err != nil {
 		return nil, err
 	}
-	seq, err := outbox.NewSequencer(deps.Store, keySeq, log)
-	if err != nil {
+	if a.out, err = outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, log); err != nil {
 		return nil, err
 	}
-	a.out = outbox.New(deps.Publisher, seq, cfg.Site, cfg.OutboxSize, cfg.RetryMin, cfg.RetryMax, log)
 	a.loop, err = driver.New(driver.Options[video.Input, video.Action, video.Snapshot]{
 		Name: keyVideo, Clock: deps.Clock, Store: deps.Store, Logger: log,
 		Core: driver.Core[video.Input, video.Action, video.Snapshot]{
@@ -202,8 +188,8 @@ func New(cfg Config, deps Deps) (*App, error) {
 
 // Subscriptions lists what the service listens to: the cloud's orders, and the
 // alarm's events, for photos.
-func (a *App) Subscriptions() []Subscription {
-	return []Subscription{{Filter: contract.VideoCmdTopic(a.cfg.Site), QoS: 1}, {Filter: contract.AlarmEventTopic(a.cfg.Site), QoS: 1}}
+func (a *App) Subscriptions() []inbox.Subscription {
+	return []inbox.Subscription{{Filter: contract.VideoCmdTopic(a.cfg.Site), QoS: 1}, {Filter: contract.AlarmEventTopic(a.cfg.Site), QoS: 1}}
 }
 
 // Alive returns once the core's loop has taken what was queued for it: it is not
@@ -218,28 +204,21 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.New("videoapp: Run called twice")
 	}
 	defer a.stop()
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	a.base = runCtx
+	a.base = ctx
 	var wg sync.WaitGroup
-	start := func(f func(context.Context)) {
-		wg.Add(1)
-		go func() { defer wg.Done(); f(runCtx) }()
+	for _, run := range []func(context.Context){func(c context.Context) { a.loop.Run(c) }, a.out.Run} {
+		wg.Go(func() { run(ctx) })
 	}
-	start(func(c context.Context) { a.loop.Run(c) })
-	start(a.out.Run)
 	// The status at start; then on change only. It is retained: nobody needs it again
 	// unchanged, and the agent sends it to the cloud, on mobile data paid by the client
 	// maybe.
-	a.loop.Do(runCtx, func(now time.Time) []video.Action {
+	a.loop.Do(ctx, func(now time.Time) []video.Action {
 		a.publishStatus(now)
 		return nil
 	})
-	<-runCtx.Done()
-	cancel()
 	wg.Wait()
 	a.work.Wait() // every stream stopped
-	a.out.Flush(3 * time.Second)
+	a.out.Flush()
 	return nil
 }
 

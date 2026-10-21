@@ -106,7 +106,7 @@ func TestARefusedMessageIsDroppedAndTheNextOnesGoOut(t *testing.T) {
 }
 
 func TestOutboxDropsTheOldestWhenFull(t *testing.T) {
-	r := newRig(t, nil, func(c *Config) { c.OutboxSize = 3 })
+	r := newRig(t, nil, func(c *Config) { c.Outbox.Size = 3 })
 	// Not started: nothing leaves, the queue fills.
 	for i := 0; i < 10; i++ {
 		r.hub.enqueue("engine", contract.AlarmEventTopic(site), contract.TypeAlarmArmed, contract.ArmedData{Origin: "keypad"}, false, t0)

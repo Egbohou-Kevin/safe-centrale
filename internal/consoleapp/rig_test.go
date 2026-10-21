@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/inbox"
 	"safehome/internal/install"
 )
 
@@ -250,7 +251,7 @@ func (r *rig) deliver(topic, typ string, data any, retain bool) {
 		return
 	}
 	b, _ := json.Marshal(env)
-	r.app.HandleMessage(Message{Topic: topic, Payload: b, Retain: retain})
+	r.app.HandleMessage(inbox.Message{Topic: topic, Payload: b, Retain: retain})
 }
 
 func (r *rig) registry() {

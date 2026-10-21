@@ -98,6 +98,7 @@ func TestTheBootDoesNotRepeatASirenOrderOfTheBootWindow(t *testing.T) {
 	second.clock.Advance(10 * time.Minute) // in cycle 2, four minutes left
 	second.startWithoutWaiting()
 	second.device(devDoor, contract.CapContact, "closed")
+	second.passTimer(300 * time.Millisecond)
 	second.waitFor("the boot", func() bool { return len(second.broker.ofType(contract.TypeInstallMode)) > 0 })
 	second.settle()
 	var on []contract.DeviceCommandData

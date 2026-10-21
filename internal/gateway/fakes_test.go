@@ -13,6 +13,7 @@ import (
 
 	"safehome/internal/contract"
 	"safehome/internal/gsm"
+	"safehome/internal/inbox"
 	"safehome/internal/schematest"
 )
 
@@ -204,7 +205,7 @@ func newRig(t *testing.T, store *memStore, mutate ...func(*Config)) *rig {
 		ids: contract.NewIDGenerator(),
 	}
 	cfg := DefaultConfig(site, gsm.DefaultConfig([]gsm.Line{{ID: "line1"}}, map[string]string{"u_owner": "90 12 34 56"}))
-	cfg.RetryMin, cfg.RetryMax = time.Millisecond, 5*time.Millisecond
+	cfg.Outbox.RetryMin, cfg.Outbox.RetryMax = time.Millisecond, 5*time.Millisecond
 	for _, m := range mutate {
 		m(&cfg)
 	}
@@ -282,7 +283,7 @@ func (r *rig) publish(topic, id string, ts time.Time, typ string, data any) {
 		r.t.Fatal(err)
 	}
 	b, _ := json.Marshal(env)
-	r.gw.HandleMessage(Message{Topic: topic, Payload: b})
+	r.gw.HandleMessage(inbox.Message{Topic: topic, Payload: b})
 }
 
 func (r *rig) results(ref string) []string {

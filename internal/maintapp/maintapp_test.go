@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/inbox"
 	"safehome/internal/maint"
 	"safehome/internal/schematest"
 )
@@ -197,7 +198,7 @@ func start(t *testing.T, store *memStore, clock *fakeClock, edit ...func(*maint.
 		e(&m)
 	}
 	cfg := DefaultConfig(site, m)
-	cfg.RetryMin, cfg.RetryMax = 5*time.Millisecond, 20*time.Millisecond
+	cfg.Outbox.RetryMin, cfg.Outbox.RetryMax = 5*time.Millisecond, 20*time.Millisecond
 	r := &rig{t: t, clock: clock, store: store, broker: &broker{}, tun: &fakeTunneler{}, logs: &syncBuffer{}, ids: contract.NewIDGenerator()}
 	app, err := New(cfg, Deps{Clock: clock, Store: store, Publisher: r.broker, Tunneler: r.tun, NewID: r.ids.New,
 		Logger: slog.New(slog.NewTextHandler(r.logs, nil))})
@@ -221,8 +222,8 @@ func (r *rig) send(typ string, data any) {
 		r.t.Fatal(err)
 	}
 	b, _ := json.Marshal(env)
-	r.app.HandleMessage(Message{Topic: contract.MaintCmdTopic(site), Payload: b})
-	r.app.HandleMessage(Message{Topic: contract.MaintCmdTopic(site), Payload: b}) // QoS 1: again
+	r.app.HandleMessage(inbox.Message{Topic: contract.MaintCmdTopic(site), Payload: b})
+	r.app.HandleMessage(inbox.Message{Topic: contract.MaintCmdTopic(site), Payload: b}) // QoS 1: again
 }
 
 func (r *rig) open(session string) {
@@ -329,8 +330,8 @@ func TestRefusedOrders(t *testing.T) {
 	r.steps("failed/disabled")
 	r.send(contract.TypeMaintOpen, contract.MaintOpenData{Session: "m2", User: "kevin", DurationS: 600}) // invalid: ignored
 	r.send(contract.TypeMaintClose, contract.MaintCloseData{})
-	r.app.HandleMessage(Message{Topic: contract.MaintCmdTopic(site), Payload: []byte("{")})
-	r.app.HandleMessage(Message{Topic: "elsewhere", Payload: []byte("{}")})
+	r.app.HandleMessage(inbox.Message{Topic: contract.MaintCmdTopic(site), Payload: []byte("{")})
+	r.app.HandleMessage(inbox.Message{Topic: "elsewhere", Payload: []byte("{}")})
 	r.settle()
 	time.Sleep(20 * time.Millisecond)
 	if s := r.broker.steps(); len(s) != 1 {
