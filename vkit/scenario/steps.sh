@@ -407,7 +407,10 @@ join_wifi() {
 	done
 	wpa_passphrase "$1" "$2" >/tmp/vkit-phone.conf
 	$PHONE wpa_supplicant -B -i wlan1 -c /tmp/vkit-phone.conf >/tmp/vkit-wifi.log 2>&1 || return 1
-	$PHONE dhcpcd -1 -4 -t 60 wlan1 >>/tmp/vkit-wifi.log 2>&1
+	# No link-local fallback: dhcpcd would take a 169.254 address when the console's DHCP is
+	# slow to answer, and say it joined; the hub cannot answer that address.
+	$PHONE dhcpcd -1 -4 --noipv4ll -t 60 wlan1 >>/tmp/vkit-wifi.log 2>&1 || return 1
+	$PHONE ip -4 -br addr show wlan1 | grep -q ' 10\.42\.0\.' || { $PHONE ip -4 -br addr >>/tmp/vkit-wifi.log; return 1; }
 }
 
 leave_wifi() {
