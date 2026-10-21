@@ -143,16 +143,25 @@ step_fire() {
 
 step_internet_cut() {
 	say "internet cut while armed"
-	systemctl stop vkit-cloud
+	internet off
 	mark
 	app_order_local alarm.arm
 	expect bus '"type":"alarm.armed"' 30 "armed from the hub's side"
 	expect bus '"type":"agent.status".*"uplink":"down"' 90 "the agent sees the link down"
 	mark
-	systemctl start vkit-cloud
+	internet on
 	expect cloud '"type":"alarm.armed"' 60 "the cloud gets what happened during the cut"
 	app_order alarm.disarm "{\"code\":\"$OWNER_CODE\"}"
 	expect bus '"type":"alarm.disarmed"' 10 "disarmed again"
+}
+
+# internet off|on cuts the agent alone from the cloud's broker, which stays up: stopping
+# the broker would also drop the scenario's listener, and what the agent sends back in
+# the second before the listener subscribes again would be lost to the checks.
+internet() {
+	local rule=(OUTPUT -p tcp --dport 8883 -m owner --uid-owner safehome -j REJECT --reject-with tcp-reset)
+	while iptables -D "${rule[@]}" 2>/dev/null; do :; done
+	[ "$1" = on ] || iptables -I "${rule[@]}"
 }
 
 # app_order_local publishes the order on the hub's broker, as the agent would: for
@@ -213,10 +222,15 @@ step_console() {
 	else
 		check_failed "a phone joins the hub's Wi-Fi ($(cat /tmp/vkit-wifi.log))"
 	fi
-	if $PHONE curl -fsS --max-time 5 http://10.42.0.1/ -o /tmp/vkit-console.html; then
+	# A phone just joined may lose its first packets (address resolution on the radio):
+	# like a browser reloading, three tries; a failure says curl's own words.
+	if $PHONE curl -fsS --max-time 5 --retry 2 --retry-all-errors --retry-delay 2 http://10.42.0.1/ \
+		-o /tmp/vkit-console.html 2>/tmp/vkit-console.err; then
 		check_passed "the console's page answers"
 	else
-		check_failed "the console's page answers"
+		check_failed "the console's page answers ($(tail -1 /tmp/vkit-console.err))"
+		{ $PHONE ip -4 -br addr; $PHONE ip route; $PHONE ip neigh; ip -4 -br addr
+			ss -ltnp 'sport = :80'; nft list ruleset 2>/dev/null | grep -n 10.42 || true; } 2>&1 | sed 's/^/        /'
 	fi
 	leave_wifi
 	mark
@@ -232,7 +246,8 @@ step_maint() {
 		"{\"session\":\"m1\",\"user\":\"kevin\",\"reason\":\"vkit\",\"duration_s\":120,\"exp\":\"$(later '1 minute')\"}"
 	expect bus '"type":"maint.session".*"status":"open"' 30 "the tunnel opens"
 	expect cloud '"type":"maint.session".*"status":"open"' 15 "the owner can see it"
-	if ssh-keyscan -T 5 -p 22001 localhost 2>/dev/null | grep -q "$(cut -d' ' -f2 /etc/ssh/ssh_host_ed25519_key.pub)"; then
+	# In the kit the hub and the bastion are one sshd, which shows the bastion's own key.
+	if ssh-keyscan -T 5 -p 22001 localhost 2>/dev/null | grep -q "$(cut -d' ' -f2 /etc/vkit/bastion_host_ed25519_key.pub)"; then
 		check_passed "the bastion's port 22001 leads to the hub's ssh"
 	else
 		check_failed "the bastion's port 22001 leads to the hub's ssh"

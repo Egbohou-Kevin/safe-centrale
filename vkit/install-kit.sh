@@ -37,7 +37,11 @@ install -m 644 "$src/vkit/camera.yaml" /etc/vkit/camera.yaml
 # The maintenance bastion is the VM's own sshd (docs/maintenance.md): an account
 # for the tunnels, without a shell, that may only listen on the loopback.
 getent passwd tunnel >/dev/null || useradd --system --create-home --shell /usr/sbin/nologin tunnel
+# A real bastion keeps its host key; the VM's own keys are drawn again at each boot by
+# cloud-init. The bastion therefore has a key of its own, made once and pinned below.
+[ -f /etc/vkit/bastion_host_ed25519_key ] || ssh-keygen -q -t ed25519 -N '' -f /etc/vkit/bastion_host_ed25519_key
 cat >/etc/ssh/sshd_config.d/vkit-bastion.conf <<'CONF'
+HostKey /etc/vkit/bastion_host_ed25519_key
 Match User tunnel
 	AllowTcpForwarding remote
 	GatewayPorts no
@@ -46,7 +50,7 @@ Match User tunnel
 CONF
 systemctl reload ssh
 # The bastion's host key, pinned by the hub (read on the bastion itself).
-echo "127.0.0.1 $(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)" >"$bundle/site/maint_known_hosts"
+echo "127.0.0.1 $(cut -d' ' -f1,2 /etc/vkit/bastion_host_ed25519_key.pub)" >"$bundle/site/maint_known_hosts"
 
 # The battery module's devices belong to the gpio and i2c groups, as on Raspberry Pi OS.
 for g in gpio i2c; do getent group "$g" >/dev/null || groupadd --system "$g"; done

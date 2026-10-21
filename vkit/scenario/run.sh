@@ -11,6 +11,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=steps.sh
 . "$here/steps.sh"
 
+trap 'internet on' EXIT # an interrupted run never leaves the site cut
+
 steps=("$@")
 [ ${#steps[@]} -gt 0 ] || steps=(reset install arm intrusion wrong_codes fire internet_cut modem crashes console maint video photo power)
 [ "${steps[0]}" = reset ] || record
