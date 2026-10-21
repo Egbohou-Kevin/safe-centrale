@@ -20,6 +20,10 @@ type Report struct {
 	// state, and never makes an event (an old "door open" replayed at start must not
 	// trip the alarm). It says nothing about the device being alive now.
 	Retained bool
+	// Heard is when Zigbee2MQTT heard the device (its last_seen), zero if it does not
+	// say. A message may reach us much later: the broker keeps them while the adapter
+	// is down.
+	Heard time.Time
 }
 
 // Bridge says whether Zigbee2MQTT and its radio stick are up.

@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"context"
 	"time"
 
 	"safehome/internal/contract"
@@ -205,114 +204,6 @@ func (h *Hub) registryMessage(m Message) {
 	err := h.engLoop.Submit(h.life, func(now time.Time) engine.Input { return engwire.Forget(d, now) })
 	h.submitFailed(err)
 	err = h.monLoop.Submit(h.life, func(now time.Time) health.Input { return health.Forget{Now: now, DeviceID: d.DeviceID} })
-	h.submitFailed(err)
-}
-
-// --- orders ------------------------------------------------------------------------
-
-var keypadCommands = map[string]string{
-	contract.ValArm:      contract.CmdArm,
-	contract.ValArmNow:   contract.CmdArmNow,
-	contract.ValDisarm:   contract.CmdDisarm,
-	contract.ValSilence:  contract.CmdSilence,
-	contract.ValPostpone: contract.CmdPostpone,
-}
-
-// orderMaxAge is how long an order without an expiry of its own stays good after it
-// was written. The broker keeps the hub's session for a day: a key pressed while the
-// hub was down must not run when it comes back, hours later.
-const orderMaxAge = time.Minute
-
-// expiryOf is the expiry of an order written at ts that has none of its own. A time
-// ahead of the hub's clock counts as now.
-func (h *Hub) expiryOf(ts time.Time) *contract.Timestamp {
-	if now := h.deps.Clock.Now(); ts.After(now) {
-		ts = now
-	}
-	return contract.TSPtr(ts.Add(orderMaxAge))
-}
-
-// keypad turns a key sequence from a keypad into an order to the engine.
-func (h *Hub) keypad(env contract.Envelope, d contract.DeviceEventData) {
-	name, ok := keypadCommands[d.StringValue()]
-	if !ok {
-		return
-	}
-	h.command(env.ID, contract.AlarmCommandData{
-		Command: name, Origin: contract.OriginKeypad,
-		Args: contract.CommandArgs{Code: d.Code},
-		Exp:  h.expiryOf(env.TS.Time),
-	})
-}
-
-func (h *Hub) alarmMessage(m Message) {
-	env, d, ok := decode[contract.AlarmCommandData](h, m, contract.TypeAlarmCommand, "order")
-	if !ok {
-		return
-	}
-	if err := d.Validate(); err != nil {
-		h.log.Warn("ignoring an invalid order", "err", err)
-		return
-	}
-	if d.Exp == nil {
-		d.Exp = h.expiryOf(env.TS.Time)
-	}
-	h.command(env.ID, d)
-}
-
-// authJob is an order whose code is waiting to be checked.
-type authJob struct {
-	ref string
-	cmd contract.AlarmCommandData
-}
-
-// command routes an order to the engine. An order that needs a code has it checked
-// first, on a worker of its own: the check is deliberately slow and must not hold
-// up the siren's schedule or the broker's goroutine. An expired order goes straight
-// to the engine, which answers so: its code is not checked, nor counted.
-func (h *Hub) command(ref string, d contract.AlarmCommandData) {
-	expired := d.Exp != nil && h.deps.Clock.Now().After(d.Exp.Time)
-	if expired || !contract.NeedsCode(d.Command) {
-		d.Args.Code = ""
-		h.submitCommand(ref, d, engine.Auth{})
-		return
-	}
-	if d.Args.Code == "" {
-		h.submitCommand(ref, d, engine.Auth{}) // no code checked: the engine counts a wrong one
-		return
-	}
-	select {
-	case h.auth <- authJob{ref: ref, cmd: d}:
-	default:
-		// A flood of code checks: refuse without spending the CPU, and count it as
-		// what it is, a wrong code.
-		h.log.Warn("too many code checks waiting, refusing this order")
-		d.Args.Code = ""
-		h.submitCommand(ref, d, engine.Auth{Checked: true})
-	}
-}
-
-func (h *Hub) authWorker(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case j := <-h.auth:
-			user, ok := h.codes.Verify(j.cmd.Args.Code)
-			if !ok && h.installerCode(j.cmd) {
-				h.openInstall(j.ref, j.cmd)
-				continue
-			}
-			j.cmd.Args.Code = "" // the code has done its work
-			h.submitCommand(j.ref, j.cmd, engine.Auth{Checked: true, OK: ok, User: user})
-		}
-	}
-}
-
-func (h *Hub) submitCommand(ref string, d contract.AlarmCommandData, auth engine.Auth) {
-	err := h.engLoop.Submit(h.life, func(now time.Time) engine.Input {
-		return engwire.Command(d, ref, now, auth)
-	})
 	h.submitFailed(err)
 }
 

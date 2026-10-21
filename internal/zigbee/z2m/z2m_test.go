@@ -3,6 +3,7 @@ package z2m
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"reflect"
 	"testing"
@@ -171,5 +172,24 @@ func TestActionsBecomeRequests(t *testing.T) {
 	}
 	if _, _, err := Build(DefaultBase, zigbee.Send{IEEE: "0x02", Payload: map[string]any{"x": math.NaN()}}); err == nil {
 		t.Fatal("a payload that cannot be encoded")
+	}
+}
+
+// last_seen (advanced.last_seen) says when Zigbee2MQTT heard the device, in either of
+// its formats; a message may reach us long after.
+func TestLastSeenSaysWhenTheDeviceWasHeard(t *testing.T) {
+	heard := now.Add(-2 * time.Hour)
+	for payload, want := range map[string]time.Time{
+		`{"action":"disarm","last_seen":"` + heard.Format(time.RFC3339Nano) + `"}`:                          heard,
+		`{"action":"disarm","last_seen":"` + heard.In(time.FixedZone("", 3600)).Format(time.RFC3339) + `"}`: heard,
+		`{"action":"disarm","last_seen":` + fmt.Sprint(heard.UnixMilli()) + `}`:                             heard,
+		`{"action":"disarm"}`:                       {},
+		`{"action":"disarm","last_seen":"later"}`:   {},
+		`{"action":"disarm","last_seen":"disable"}`: {},
+	} {
+		in, _ := parse(t, "zigbee2mqtt/dev_kp", payload, false)
+		if got := in.(zigbee.Report).Heard; !got.Equal(want) {
+			t.Errorf("%s: heard %v, want %v", payload, got, want)
+		}
 	}
 }

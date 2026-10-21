@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"slices"
 	"time"
 
 	"safehome/internal/contract"
@@ -83,9 +84,23 @@ func (g *Gateway) alertAck(env contract.Envelope) {
 		g.log.Warn("ignoring an alert.ack with a damaged payload", "id", env.ID)
 		return
 	}
+	if !g.knows(d.Contact) {
+		// The escalation ignores it too, and goes on: the SMS backup must go on with it.
+		g.log.Warn("ignoring an alert.ack from someone who is not a contact of the site", "contact", d.Contact)
+		return
+	}
 	if c, ok := gsmwire.Acked(d); ok {
 		g.cancel(c)
 	}
+}
+
+// knows tells whether id is a contact of the site.
+func (g *Gateway) knows(id string) bool {
+	if g.cfg.Contacts != nil {
+		return slices.Contains(g.cfg.Contacts, id)
+	}
+	_, ok := g.cfg.GSM.Contacts[id]
+	return ok
 }
 
 func (g *Gateway) cancel(c gsm.Cancel) {

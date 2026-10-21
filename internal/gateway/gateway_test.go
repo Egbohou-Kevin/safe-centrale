@@ -292,3 +292,25 @@ func TestAnAcknowledgementDropsTheWaitingMessages(t *testing.T) {
 		contract.AlertAckData{Incident: "inc1", Contact: "u_owner", Via: contract.ChannelApp})
 	noSMSAfterRetry(r)
 }
+
+// The escalation ignores an acknowledgement from someone who is not a contact, and
+// goes on: the gateway must not mute the SMS backup for it.
+func TestAnAcknowledgementFromAStrangerDropsNothing(t *testing.T) {
+	r := newRig(t, nil)
+	failingRequest(r)
+	r.publish(contract.AlertAckTopic(site), r.ids.New(), t0, contract.TypeAlertAck,
+		contract.AlertAckData{Incident: "inc1", Contact: "u_stranger", Via: contract.ChannelApp})
+	r.gw.loop.Do(context.Background(), func(time.Time) []gsm.Action { return nil })
+	if r.status().Queued != 1 {
+		t.Fatal("the message must still wait")
+	}
+}
+
+// A contact reached by the app only has no number, but is a contact all the same.
+func TestAnAcknowledgementFromAContactWithoutANumberDropsTheMessages(t *testing.T) {
+	r := newRig(t, nil, func(c *Config) { c.Contacts = []string{"u_owner", "u_deputy"} })
+	failingRequest(r)
+	r.publish(contract.AlertAckTopic(site), r.ids.New(), t0, contract.TypeAlertAck,
+		contract.AlertAckData{Incident: "inc1", Contact: "u_deputy", Via: contract.ChannelApp})
+	noSMSAfterRetry(r)
+}

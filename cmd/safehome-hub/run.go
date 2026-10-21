@@ -104,14 +104,20 @@ func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr
 	ids := contract.NewIDGenerator()
 	pub := &service.Publisher{}
 	restart := service.NewRestart()
-	h, err := newHub(cfg, hub.Deps{Store: store, Publisher: pub, NewID: ids.New, Logger: log})
+	h, err := newHub(cfg, configPath, hub.Deps{Store: store, Publisher: pub, NewID: ids.New, Logger: log})
 	if err != nil {
 		log.Error("cannot start the hub", "err", err)
 		return 1
 	}
 	log.Info("starting", "site", cfg.Hub.Site, "broker", cfg.BrokerURL, "version", version)
 	conf, err := newConfigApp(cfg, configPath, configapp.Deps{Store: store, Publisher: pub, NewID: ids.New, Logger: log,
-		Restart: restart.Ask})
+		Restart: restart.Ask}, func() {
+		// The contacts may have changed and the hub may not restart yet (the
+		// installation mode): their codes follow now.
+		if err := h.ReloadCodes(); err != nil {
+			log.Error("reloading the access codes failed, the previous ones stay in use", "err", err)
+		}
+	})
 	if err != nil {
 		log.Error("cannot start the configuration from the cloud", "err", err)
 		return 1
@@ -119,10 +125,23 @@ func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr
 	return daemon(cfg, h, conf, pub, restart, hup, log).Run(ctx)
 }
 
-// newHub builds the hub on what the program gives it (deps), with the real clock.
-func newHub(cfg hubconfig.Result, deps hub.Deps) (*hub.Hub, error) {
+// newHub builds the hub on what the program gives it (deps), with the real clock. The
+// codes it takes are those of the contacts saved now, read like the console does: the
+// configuration from the cloud may have changed them since the start.
+func newHub(cfg hubconfig.Result, configPath string, deps hub.Deps) (*hub.Hub, error) {
 	deps.Clock = driver.SystemClock()
 	deps.ClockSynced = sysclock.Synced
+	deps.Contacts = func() ([]string, error) {
+		current, err := hubconfig.Load(configPath)
+		if err != nil {
+			return nil, err
+		}
+		var ids []string
+		for _, c := range current.Hub.Escalation.Contacts {
+			ids = append(ids, c.ID)
+		}
+		return ids, nil
+	}
 	return hub.New(cfg.Hub, deps)
 }
 
@@ -141,7 +160,8 @@ func devicesChanged(cfg hubconfig.Result) func() bool {
 // newConfigApp builds the application of the configuration set from the cloud:
 // checked against the hub's file, kept in the state folder, applied by restarting
 // (systemd starts the hub again). It restarts the hub for new zones or sirens too.
-func newConfigApp(cfg hubconfig.Result, configPath string, deps configapp.Deps) (*configapp.App, error) {
+// saved runs after each configuration kept.
+func newConfigApp(cfg hubconfig.Result, configPath string, deps configapp.Deps, saved func()) (*configapp.App, error) {
 	ccfg := configapp.DefaultConfig(cfg.Hub.Site, cfg.SiteVersion)
 	if cfg.SiteErr != nil {
 		ccfg.Running = 0
@@ -156,7 +176,13 @@ func newConfigApp(cfg hubconfig.Result, configPath string, deps configapp.Deps) 
 		_, err := hubconfig.WithSiteConfig(configPath, d)
 		return err
 	}
-	deps.Save = func(d contract.ConfigSetData) error { return siteconfig.Write(cfg.StateDir, d) }
+	deps.Save = func(d contract.ConfigSetData) error {
+		if err := siteconfig.Write(cfg.StateDir, d); err != nil {
+			return err
+		}
+		saved()
+		return nil
+	}
 	deps.DevicesChanged = devicesChanged(cfg)
 	return configapp.New(ccfg, deps)
 }

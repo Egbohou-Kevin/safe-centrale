@@ -171,6 +171,21 @@ func TestAKeypadCodeIsPublishedButNeverLogged(t *testing.T) {
 	r.validateAll()
 }
 
+// Zigbee2MQTT publishes at QoS 1 to the adapter's lasting session: keys pressed while
+// the adapter was down arrive when it comes back. Their event keeps the time the key
+// was heard (last_seen), so the hub lets an old one expire.
+func TestAKeyPressedWhileTheAdapterWasDownKeepsItsTime(t *testing.T) {
+	r := newRig(t, nil)
+	r.pair("dev_kp", "0x03", "KP-1")
+	heard := r.clock.Now().Add(-2 * time.Hour)
+	r.z2m("dev_kp", `{"action":"disarm","action_code":"482915","last_seen":"`+heard.Format(time.RFC3339)+`"}`, false)
+	r.waitFor("the keypad event", func() bool { return len(r.broker.on(contract.DeviceEventTopic(site, "dev_kp"))) == 1 })
+	if ts := r.broker.on(contract.DeviceEventTopic(site, "dev_kp"))[0].env.TS.Time; !ts.Equal(heard) {
+		t.Fatalf("event written at %v, the key was heard at %v", ts, heard)
+	}
+	r.validateAll()
+}
+
 func TestInvalidMessagesChangeNothing(t *testing.T) {
 	r := newRig(t, nil)
 	r.pair("dev_siren", "0x02", "HS2WD-E")

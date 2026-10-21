@@ -10,20 +10,16 @@ func (e *Engine) signal(sig Signal) []Action {
 	zone, known := e.cfg.Zones[sig.DeviceID]
 	if sig.Sensor == SensorTamper {
 		if !sig.Active {
+			delete(e.s.Tampered, sig.DeviceID)
 			return nil
 		}
+		e.s.Tampered[sig.DeviceID] = true
 		return e.tamper(sig.Now, Cause{DeviceID: sig.DeviceID, Sensor: sig.Sensor, Zone: zone.Name})
 	}
 	if !known || !Accepts(zone.Kind, sig.Sensor) {
 		return nil
 	}
-	if sig.Sensor == SensorContact {
-		if sig.Active {
-			e.s.Open[sig.DeviceID] = true
-		} else {
-			delete(e.s.Open, sig.DeviceID)
-		}
-	}
+	e.trackContact(sig)
 	if !sig.Active {
 		return nil
 	}
@@ -48,6 +44,19 @@ func (e *Engine) signal(sig Signal) []Action {
 	return nil
 }
 
+// trackContact records whether a door or window is open, for the contacts of a zone
+// that reacts to them; other signals change nothing.
+func (e *Engine) trackContact(sig Signal) {
+	if sig.Sensor != SensorContact || !Accepts(e.cfg.Zones[sig.DeviceID].Kind, SensorContact) {
+		return
+	}
+	if sig.Active {
+		e.s.Open[sig.DeviceID] = true
+	} else {
+		delete(e.s.Open, sig.DeviceID)
+	}
+}
+
 // tamper applies the rule of the 24h_tamper zones: an alert without siren while
 // disarmed, an alarm otherwise. A tamper never changes the disarmed mode, so it never
 // ends the installation mode either.
@@ -63,6 +72,7 @@ func (e *Engine) tamper(at time.Time, cause Cause) []Action {
 func (e *Engine) forget(id string) {
 	delete(e.s.Open, id)
 	delete(e.s.Bypassed, id)
+	delete(e.s.Tampered, id)
 }
 
 // armedZone applies the rules of the zones that only watch while the system is

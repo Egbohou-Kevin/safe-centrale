@@ -53,3 +53,26 @@ func TestAnOldAppOrderWithoutExpiryIsNotCarriedOut(t *testing.T) {
 	r.mustBe(engine.ModeArming)
 	r.validateAll()
 }
+
+// The engine's loop never lets time go back; the hub's clock may step back (a
+// correction). A fresh order, stamped by the corrected clock, must not be taken for
+// an old one: a normal entry would otherwise end in a full alarm.
+func TestAFreshOrderAfterTheClockSteppedBackIsCarriedOut(t *testing.T) {
+	r := newRig(t, nil)
+	r.start()
+	r.clock.Advance(10 * time.Minute)
+	r.settle() // the engine's loop has seen the later time
+	r.clock.Advance(-5 * time.Minute)
+	r.keypad(contract.ValArm, "")
+	r.waitAcks(1)
+	if a := lastAck(t, r); a.Status != contract.AckDone {
+		t.Fatalf("%+v: a key just pressed must count", a)
+	}
+	r.mustBe(engine.ModeArming)
+	// An old press is still old, on the same clock.
+	r.keypadAt(r.clock.Now().Add(-2*time.Minute), contract.ValArmNow, "")
+	r.waitAcks(2)
+	if a := lastAck(t, r); a.Status != contract.AckExpired {
+		t.Fatalf("%+v", a)
+	}
+}

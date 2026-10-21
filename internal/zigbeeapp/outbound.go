@@ -35,7 +35,13 @@ func (a *App) dispatchOne(now time.Time, act zigbee.Action) error {
 			a.log.Error("a value refused by the contract: check the profile", "device", v.DeviceID, "err", err)
 			return nil
 		}
-		a.publishDevice(now, out)
+		// A change is dated from when it happened: a key pressed while the adapter was
+		// down keeps its age, and the hub lets it expire.
+		ts := now
+		if !v.Since.IsZero() && v.Since.Before(now) {
+			ts = v.Since
+		}
+		a.publishDevice(ts, out)
 	case zigbee.Presence:
 		a.log.Info("device presence", "device", v.DeviceID, "online", v.Online)
 		a.publishDevice(now, wire.Presence(v))

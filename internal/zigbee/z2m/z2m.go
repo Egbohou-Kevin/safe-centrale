@@ -62,7 +62,25 @@ func Parse(base, topic string, payload []byte, retained bool, now time.Time) (in
 	if err := json.Unmarshal(payload, &fields); err != nil || fields == nil {
 		return nil, false, fmt.Errorf("%w: the message of a device is not a JSON object", ErrInvalid)
 	}
-	return zigbee.Report{Now: now, Name: rest, Fields: fields, Retained: retained}, true, nil
+	return zigbee.Report{Now: now, Name: rest, Fields: fields, Retained: retained, Heard: lastSeen(fields)}, true, nil
+}
+
+// lastSeen reads when Zigbee2MQTT heard the device: the last_seen field it adds to
+// every message of a device with advanced.last_seen set (deploy/zigbee2mqtt), an ISO
+// 8601 time or milliseconds since the epoch. Zero when the field is absent or
+// unreadable.
+func lastSeen(fields map[string]any) time.Time {
+	switch v := fields["last_seen"].(type) {
+	case string:
+		if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			return t
+		}
+	case float64:
+		if v > 0 {
+			return time.UnixMilli(int64(v))
+		}
+	}
+	return time.Time{}
 }
 
 // parseState reads bridge/state: "online" or {"state": "online"} depending on the

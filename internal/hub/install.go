@@ -9,7 +9,6 @@ import (
 	"safehome/internal/contract"
 	"safehome/internal/driver"
 	"safehome/internal/engine"
-	engwire "safehome/internal/engine/wire"
 )
 
 // The installation mode (docs/security-install.md): the installer opens it on site by
@@ -54,18 +53,18 @@ func (h *Hub) installerCode(cmd contract.AlarmCommandData) bool {
 
 // openInstall opens the mode, if the alarm is disarmed and the keypad not locked.
 // Otherwise the code counts as a wrong one: it is nobody's, and must not help guess.
-func (h *Hub) openInstall(ref string, cmd contract.AlarmCommandData) {
-	cmd.Args.Code = ""
+func (h *Hub) openInstall(o order) {
+	o.cmd.Args.Code = ""
 	err := h.engLoop.Post(h.life, func(now time.Time) []engine.Action {
 		st := h.eng.State(now)
 		if st.Mode != engine.ModeDisarmed || !st.LockedUntil.IsZero() {
 			h.log.Warn("installer code refused: the alarm is not disarmed, or the keypad is locked", "alarm", st.Mode)
-			return h.eng.Handle(engwire.Command(cmd, ref, now, engine.Auth{Checked: true}))
+			return h.eng.Handle(h.engineCommand(o, now, engine.Auth{Checked: true}))
 		}
 		h.startInstall(now)
 		h.log.Warn("installation mode opened at the keypad", "until", h.inst.until.Format(time.RFC3339))
 		h.enqueue(srcEngine, contract.AlarmAckTopic(h.cfg.Site), contract.TypeAlarmAck, contract.AlarmAckData{
-			Ref: ref, Status: contract.AckDone, Detail: map[string]any{"install": contract.InstallOpen},
+			Ref: o.ref, Status: contract.AckDone, Detail: map[string]any{"install": contract.InstallOpen},
 		}, false, now)
 		h.publishInstall(now, "")
 		return nil

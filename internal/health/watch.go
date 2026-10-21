@@ -29,12 +29,26 @@ type Watch struct {
 	// outage.
 	DownSince time.Time `json:"down_since"`
 	Alerted   bool      `json:"alerted"`
+	// LegacySeen is Seen as the snapshots of older versions saved it, without Known.
+	// It is read once, at Restore (see migrate), and never saved again.
+	LegacySeen time.Time `json:"seen,omitzero"`
 
 	assumed bool // Seen was set by resume, not by a state: any state replaces it
 }
 
 // forget drops what is not saved, as a load from disk does.
 func (w *Watch) forget() { w.Seen, w.assumed = time.Time{}, false }
+
+// migrate reads a Watch saved by an older version, which saved when the component
+// last spoke and not whether it ever did: one it had heard, or found silent or down,
+// is known, so that its silence counts after the restart and an outage not told yet
+// is told.
+func (w *Watch) migrate() {
+	if !w.LegacySeen.IsZero() || w.Silent || !w.DownSince.IsZero() {
+		w.Known = true
+	}
+	w.LegacySeen = time.Time{}
+}
 
 // resume gives a known component whose last state was not saved a Seen: the
 // restart, so that its silence counts from there. One that was silent stays so:

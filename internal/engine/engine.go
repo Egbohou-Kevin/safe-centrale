@@ -26,8 +26,9 @@ type Engine struct {
 	newID func() string
 	s     Snapshot
 	// awaitingBoot is set by Restore and cleared by Boot: until then the engine asks
-	// for no tick, so that the deadlines missed while the hub was off are replayed by
-	// Boot, which resumes the siren once.
+	// for no tick and replays no deadline, so that the deadlines missed while the hub
+	// was off are replayed by Boot, once it knows the devices' current states, and the
+	// siren resumes once.
 	awaitingBoot bool
 }
 
@@ -56,6 +57,11 @@ func (e *Engine) Restore(s Snapshot) {
 	}
 	if s.Open == nil {
 		s.Open = map[string]bool{}
+	}
+	if s.Tampered == nil {
+		// A snapshot from before tampers were remembered: Boot treats every tamper
+		// still active as new, as the older versions did, once.
+		s.Tampered = map[string]bool{}
 	}
 	e.s = s
 	e.awaitingBoot = true
@@ -94,9 +100,13 @@ func (e *Engine) State(now time.Time) State {
 }
 
 // Handle processes an input and returns the actions to carry out. Deadlines that
-// have passed are processed first, in order, then the input itself.
+// have passed are processed first, in order, then the input itself. Between Restore
+// and Boot the deadlines wait: Boot replays them once the devices' states are known.
 func (e *Engine) Handle(in Input) []Action {
-	out := e.tick(in.at())
+	var out []Action
+	if !e.awaitingBoot {
+		out = e.tick(in.at())
+	}
 	switch v := in.(type) {
 	case Signal:
 		out = append(out, e.signal(v)...)
@@ -110,12 +120,18 @@ func (e *Engine) Handle(in Input) []Action {
 
 // Boot resumes operation after a restart, once Restore has been called. current
 // is the last known state of the devices (the retained state on the broker).
-// Devices already in alarm trip the engine like an ordinary signal.
+//
+// The contacts' states are learned first, without acting on them, so that the
+// deadlines missed while the hub was off are replayed against the doors as they are
+// now: a door closed during the outage does not start the entry delay at the end of
+// the exit delay. Then the devices still in alarm trip the engine like an ordinary
+// signal, except a tamper already reported before the restart.
 //
 // Momentary sensors (motion) must therefore publish their return to rest, or a
 // stale "active" state would trigger an alarm on restart.
 func (e *Engine) Boot(now time.Time, current []Signal) []Action {
 	e.awaitingBoot = false
+	alarms := e.learn(current)
 	out := e.tick(now)
 	if e.s.Mode == ModeDisarmed && e.s.Schedule == nil {
 		e.planSchedule(now) // a snapshot from before the schedule existed, or a new configuration
@@ -125,11 +141,34 @@ func (e *Engine) Boot(now time.Time, current []Signal) []Action {
 		// again, for what is left of the cycle.
 		out = append(out, SirenOn{Duration: e.s.Deadline.Sub(now)})
 	}
-	for _, sig := range current {
+	for _, sig := range alarms {
 		sig.Now = now
 		out = append(out, e.signal(sig)...)
 	}
 	return out
+}
+
+// learn records the devices' states given at Boot: which contacts are open, which
+// tampers have ended. It returns the signals still to act on: every active one but
+// the tampers already reported before the restart.
+func (e *Engine) learn(current []Signal) []Signal {
+	var alarms []Signal
+	for _, sig := range current {
+		if sig.Sensor == SensorTamper {
+			if !sig.Active {
+				delete(e.s.Tampered, sig.DeviceID)
+				continue
+			}
+			if e.s.Tampered[sig.DeviceID] {
+				continue
+			}
+		}
+		e.trackContact(sig)
+		if sig.Active {
+			alarms = append(alarms, sig)
+		}
+	}
+	return alarms
 }
 
 // tick processes the deadlines that have passed, each at its own time even if the

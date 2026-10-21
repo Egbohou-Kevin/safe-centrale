@@ -181,3 +181,128 @@ func TestSnapshotJSONRoundTrip(t *testing.T) {
 		t.Fatalf("JSON round trip:\n got %+v\nwant %+v", got, want)
 	}
 }
+
+// A door opened during the exit delay and closed while the hub was off: the exit
+// delay replayed at Boot must see it closed, or it would start the entry delay
+// (entry door) or bypass the zone all night (perimeter).
+func TestRestartAfterTheExitDelayUsesTheDoorsAsTheyAreNow(t *testing.T) {
+	for _, dev := range []string{door, back} {
+		t.Run(dev, func(t *testing.T) {
+			h := newHarness(t)
+			h.arm()
+			h.open(dev) // during the exit delay: nothing happens yet
+			h.e = restart(t, h)
+			h.now = h.now.Add(10 * time.Minute)
+			as := h.e.Boot(h.now, []Signal{{DeviceID: dev, Sensor: SensorContact, Active: false}})
+			h.mustBe(ModeArmed)
+			onlyEvent[Armed](t, as)
+			if len(alerts(as)) != 0 || h.e.Snapshot().Bypassed[dev] || h.e.Snapshot().Open[dev] {
+				t.Fatalf("a closed door must leave the zone armed: %v %+v", as, h.e.Snapshot())
+			}
+			h.open(dev)
+			if m := h.e.Mode(); m != ModeEntryDelay && m != ModeTriggered {
+				t.Fatalf("the zone must still be watched, mode %q", m)
+			}
+		})
+	}
+}
+
+// The same doors still open at Boot are dealt with as at the end of any exit delay.
+func TestRestartAfterTheExitDelayWithDoorsStillOpen(t *testing.T) {
+	h := newHarness(t)
+	h.arm()
+	h.open(back)
+	h.e = restart(t, h)
+	h.now = h.now.Add(10 * time.Minute)
+	as := h.e.Boot(h.now, []Signal{{DeviceID: back, Sensor: SensorContact, Active: true}})
+	h.mustBe(ModeArmed)
+	if al := alerts(as); len(al) != 1 || al[0].Kind != AlertArmingBypassed || !h.e.Snapshot().Bypassed[back] {
+		t.Fatalf("a window still open is bypassed and reported once: %v", as)
+	}
+
+	h = newHarness(t)
+	h.arm()
+	h.open(door)
+	h.e = restart(t, h)
+	h.now = h.now.Add(10 * time.Minute)
+	as = h.e.Boot(h.now, []Signal{{DeviceID: door, Sensor: SensorContact, Active: true}})
+	h.mustBe(ModeTriggered)
+	if al := alerts(as); len(al) != 1 || al[0].Kind != AlertIntrusion || count[SirenOn](as) != 1 {
+		t.Fatalf("an entry door open since the exit delay ends in one alarm: %v", as)
+	}
+}
+
+// Between Restore and Boot (the boot window) the engine replays no deadline: an input
+// in that window is applied to the saved state, and the deadlines wait for Boot.
+func TestNoDeadlineIsReplayedBeforeBoot(t *testing.T) {
+	h := newHarness(t)
+	h.arm()
+	h.open(door)
+	h.e = restart(t, h)
+	h.now = h.now.Add(10 * time.Minute)
+	noActions(t, h.close(door)) // arrives during the boot window
+	h.mustBe(ModeArming)
+	as := h.e.Boot(h.now, nil)
+	h.mustBe(ModeArmed)
+	onlyEvent[Armed](t, as)
+}
+
+// A tamper reported before the restart and still active is not reported again: a
+// restart while armed must not sound the siren for it. One that appeared while the
+// hub was off is new.
+func TestBootReportsOnlyNewTampers(t *testing.T) {
+	const keypad = "dev_keypad" // in no zone
+	h := newHarness(t)
+	h.signal(keypad, SensorTamper, true) // reported while disarmed
+	h.armed()
+	h.e = restart(t, h)
+	tampered := []Signal{
+		{DeviceID: keypad, Sensor: SensorTamper, Active: true},
+		{DeviceID: smoke, Sensor: SensorTamper, Active: true}, // new
+	}
+	as := h.e.Boot(h.now, tampered)
+	al := alerts(as)
+	if len(al) != 1 || al[0].Kind != AlertTamper || al[0].Cause.DeviceID != smoke {
+		t.Fatalf("only the new tamper is reported: %v", as)
+	}
+	h.cmd(CmdDisarm, goodCode("u_1"))
+
+	// Both are now known: a second restart reports nothing.
+	h.e = restart(t, h)
+	noActions(t, h.e.Boot(h.now, tampered))
+
+	// A tamper that ended while the hub was off is forgotten: the next one is new.
+	h.e = restart(t, h)
+	h.e.Boot(h.now, []Signal{{DeviceID: keypad, Sensor: SensorTamper, Active: false}})
+	h.e = restart(t, h)
+	if al := alerts(h.e.Boot(h.now, tampered[:1])); len(al) != 1 {
+		t.Fatalf("a tamper back after it ended is new: %v", al)
+	}
+}
+
+// A snapshot from before tampers were remembered has no "tampered": the tampers
+// still active at Boot count as new, as they did, but only at that first Boot.
+func TestBootWithASnapshotWithoutTampers(t *testing.T) {
+	h := newHarness(t)
+	b, err := json.Marshal(h.e.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy map[string]any
+	if err := json.Unmarshal(b, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	delete(legacy, "tampered")
+	b, _ = json.Marshal(legacy)
+	var snap Snapshot
+	if err := json.Unmarshal(b, &snap); err != nil {
+		t.Fatal(err)
+	}
+	h.e.Restore(snap)
+	tampered := []Signal{{DeviceID: tamper, Sensor: SensorTamper, Active: true}}
+	if al := alerts(h.e.Boot(h.now, tampered)); len(al) != 1 {
+		t.Fatalf("the first Boot after the upgrade reports the active tamper: %v", al)
+	}
+	h.e = restart(t, h)
+	noActions(t, h.e.Boot(h.now, tampered))
+}

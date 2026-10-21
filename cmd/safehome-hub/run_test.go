@@ -802,8 +802,19 @@ func TestTheInstallationModeAppliesNewZonesByRestarting(t *testing.T) {
 	// a restart now would close the mode under the installer's feet.
 	l.publish(contract.ConfigSetTopic(site), contract.TypeConfigSet, contract.ConfigSetData{Version: 3, Contacts: []contract.ConfigContact{
 		{ID: "u_owner", Name: "Ama", Role: "owner", Channels: []string{"app", "sms"}, Phone: "+22890000001"},
+		{ID: "u_night", Name: "Kofi", Role: "guard", Channels: []string{"sms"}, Phone: "+22870000002"},
 	}}, false)
 	l.waitFor("the configuration kept", func() bool { _, ok, _ := siteconfig.Read(state); return ok })
+	// The contact it adds gets a code on the console: the running hub takes it at once.
+	if code, _, errb := cli(t, "730264\n", "codes", "-config", cfg, "set", "u_night"); code != 0 {
+		t.Fatalf("%d %q", code, errb)
+	}
+	l.waitFor("the reload", func() bool { return strings.Count(l.logs.String(), "access codes reloaded") >= 2 })
+	l.event("dev_keypad", contract.CapKeypad, "disarm", "730264")
+	l.waitCount(contract.TypeAlarmAck, 2)
+	if n := len(l.seen(contract.TypeAlarmAuthFailed)); n != 0 {
+		t.Fatalf("the code of a contact added during the installation mode was refused\nlogs:\n%s", l.logs.String())
+	}
 	select {
 	case <-l.done:
 		t.Fatalf("the hub restarted during the installation mode\nlogs:\n%s", l.logs.String())
@@ -831,8 +842,8 @@ func TestTheInstallationModeAppliesNewZonesByRestarting(t *testing.T) {
 	if code, out, _ := cli(t, "", "check", "-config", cfg); code != 0 || !strings.Contains(out, "set by the installer's tools") {
 		t.Fatalf("%d %q", code, out)
 	}
-	if strings.Contains(l.logs.String(), "259031") {
-		t.Fatal("the installer code shows in the logs")
+	if strings.Contains(l.logs.String(), "259031") || strings.Contains(l.logs.String(), "730264") {
+		t.Fatal("a code shows in the logs")
 	}
 	l.validateEverything()
 }

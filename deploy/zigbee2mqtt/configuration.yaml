@@ -15,6 +15,11 @@ advanced:
   log_level: warning
   log_output:
     - console              # to the journal, kept in memory
+  # Every device message says when the device was heard: a key pressed while
+  # safehome-zigbee was down reaches the hub with its real age and expires
+  # (docs/adapter-zigbee.md, "QoS"), instead of disarming the shop when the adapter
+  # comes back.
+  last_seen: ISO_8601
 # The devices' messages go out at QoS 1: safehome-zigbee keeps a persistent session,
 # so the broker queues them while the adapter restarts instead of dropping them (a
 # door that opened meanwhile). They are not retained: the adapter saves the states

@@ -50,6 +50,7 @@ type Hub struct {
 
 	codes     *access.Registry
 	installer *access.Registry // the installer code, apart from the people's
+	reloading sync.Mutex       // one ReloadCodes at a time, so the last one read wins
 	inst      installMode      // owned by the engine's loop
 	siren     sirenOrder       // owned by the engine's loop
 
@@ -85,7 +86,7 @@ type Hub struct {
 	linkOnce   sync.Once
 	bootStates map[string]contract.DeviceEventData
 
-	auth chan authJob
+	auth chan order
 
 	// life ends with Run: the loops run on it, and work handed to them after it ended
 	// is given up quietly.
@@ -117,7 +118,7 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 		booting:    true,
 		linkUp:     make(chan struct{}),
 		bootStates: map[string]contract.DeviceEventData{},
-		auth:       make(chan authJob, cfg.AuthQueue),
+		auth:       make(chan order, cfg.AuthQueue),
 	}
 	h.life, h.stop = context.WithCancel(context.Background())
 	h.mode.Store(string(engine.ModeDisarmed))

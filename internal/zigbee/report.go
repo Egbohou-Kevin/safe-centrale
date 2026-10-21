@@ -49,9 +49,15 @@ func (n *Network) readFields(id string, p Profile, r Report) []Action {
 
 // momentary announces an action (a button, a keypad): an event every time, no state.
 // The code typed comes with every key; the wire subpackage keeps it only for the keys
-// the contract lets carry one.
+// the contract lets carry one. The action dates from when Zigbee2MQTT heard it, not
+// from when it reached us: a key pressed while the adapter was down must look as old
+// as it is, so that the hub lets it expire (never later than now, though).
 func momentary(id, capability, v string, rule Rule, r Report) Changed {
-	ch := Changed{DeviceID: id, Capability: capability, Value: v, Since: r.Now, Notify: true}
+	since := r.Now
+	if !r.Heard.IsZero() && r.Heard.Before(r.Now) {
+		since = r.Heard
+	}
+	ch := Changed{DeviceID: id, Capability: capability, Value: v, Since: since, Notify: true}
 	if rule.CodeFrom != "" {
 		ch.Code = text(r.Fields[rule.CodeFrom])
 	}

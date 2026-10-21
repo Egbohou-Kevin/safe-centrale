@@ -48,6 +48,10 @@ type Snapshot struct {
 	EntryCause *Cause          `json:"entry_cause"` // what started the entry delay
 	Incident   *Incident       `json:"incident"`
 
+	// Devices whose tamper is active and was reported, so that a restart does not
+	// report it again. Absent from the snapshots of older versions.
+	Tampered map[string]bool `json:"tampered"`
+
 	// Memory of the last alarm, kept after the system goes back to armed.
 	LastTrigger   *Cause    `json:"last_trigger,omitempty"`
 	LastTriggerAt time.Time `json:"last_trigger_at,omitzero"`
@@ -61,6 +65,7 @@ type Snapshot struct {
 func (s Snapshot) clone() Snapshot {
 	s.Bypassed = maps.Clone(s.Bypassed)
 	s.Open = maps.Clone(s.Open)
+	s.Tampered = maps.Clone(s.Tampered)
 	s.EntryCause = clonePtr(s.EntryCause)
 	s.Incident = clonePtr(s.Incident)
 	s.LastTrigger = clonePtr(s.LastTrigger)
@@ -78,7 +83,7 @@ func clonePtr[T any](p *T) *T {
 }
 
 func newSnapshot(now time.Time) Snapshot {
-	return Snapshot{Mode: ModeDisarmed, Since: now, Bypassed: map[string]bool{}, Open: map[string]bool{}}
+	return Snapshot{Mode: ModeDisarmed, Since: now, Bypassed: map[string]bool{}, Open: map[string]bool{}, Tampered: map[string]bool{}}
 }
 
 // State is the public summary of the engine, meant to be published.

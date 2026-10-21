@@ -39,6 +39,10 @@ type Config struct {
 	// StatusEvery is how often the status goes out even when nothing changed: the
 	// hub takes a gateway that stopped repeating it for dead (see health.GSM).
 	StatusEvery time.Duration
+	// Contacts lists every contact of the site, whatever their channels: as for the
+	// escalation, an alert.ack from anyone else ends nothing. Nil means the contacts
+	// with a number (GSM.Contacts).
+	Contacts []string
 }
 
 // DefaultConfig returns the defaults.

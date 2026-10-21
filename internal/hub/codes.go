@@ -8,7 +8,6 @@ import (
 
 	"safehome/internal/access"
 	"safehome/internal/driver"
-	"safehome/internal/escalation"
 )
 
 // OpenCodes opens the access codes saved in store, for the installer's tools (the
@@ -67,8 +66,9 @@ func (h *Hub) openPeopleCodes() (*access.Registry, error) {
 // person removed from the contacts (by the cloud's configuration) must no longer
 // disarm, nor take one of the places. The code itself is never logged.
 func (h *Hub) contactsOnly(records []access.Record) []access.Record {
+	contacts := h.contactIDs()
 	return slices.DeleteFunc(records, func(r access.Record) bool {
-		if slices.ContainsFunc(h.cfg.Escalation.Contacts, func(c escalation.Contact) bool { return c.ID == r.User }) {
+		if slices.Contains(contacts, r.User) {
 			return false
 		}
 		h.log.Warn("access code left aside: its user is not a contact of the site (remove it from the console, or: safehome-hub codes remove)", "user", r.User)
@@ -76,10 +76,30 @@ func (h *Hub) contactsOnly(records []access.Record) []access.Record {
 	})
 }
 
-// ReloadCodes reads the saved codes again. The installer's tools write them from
-// another process, and the composition root calls this when told to (SIGHUP). A
-// damaged file leaves the codes in use untouched and is reported.
+// contactIDs returns the site's contacts as saved now, or, when they cannot be read,
+// those the hub started with.
+func (h *Hub) contactIDs() []string {
+	if h.deps.Contacts != nil {
+		ids, err := h.deps.Contacts()
+		if err == nil {
+			return ids
+		}
+		h.log.Error("reading the site's contacts failed, the codes follow those of the start", "err", err)
+	}
+	ids := make([]string, 0, len(h.cfg.Escalation.Contacts))
+	for _, c := range h.cfg.Escalation.Contacts {
+		ids = append(ids, c.ID)
+	}
+	return ids
+}
+
+// ReloadCodes reads the saved codes again, and the contacts they belong to. The
+// installer's tools write the codes from another process, and the composition root
+// calls this when told to (SIGHUP), and when a new configuration of the site is saved.
+// A damaged file leaves the codes in use untouched and is reported.
 func (h *Hub) ReloadCodes() error {
+	h.reloading.Lock()
+	defer h.reloading.Unlock()
 	records, err := loadCodes(h.deps.Store, keyAccess)
 	if err != nil {
 		return err
