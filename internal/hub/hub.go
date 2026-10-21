@@ -42,9 +42,6 @@ const (
 	keySeq        = "seq"
 )
 
-// deliveriesKept is how many alert requests the hub remembers, to match their results.
-const deliveriesKept = 2048
-
 // Hub is the application of the hub.
 type Hub struct {
 	cfg  Config
@@ -54,6 +51,7 @@ type Hub struct {
 	codes     *access.Registry
 	installer *access.Registry // the installer code, apart from the people's
 	inst      installMode      // owned by the engine's loop
+	siren     sirenOrder       // owned by the engine's loop
 
 	eng     *engine.Engine
 	engLoop *driver.Loop[engine.Input, engine.Action, engine.Snapshot]
@@ -61,8 +59,6 @@ type Hub struct {
 	monLoop *driver.Loop[health.Input, health.Action, health.Snapshot]
 	esc     *escalation.Escalation
 	escLoop *driver.Loop[escalation.Input, escalation.Action, escalation.Snapshot]
-	// deliveries tells which escalation message an alert request carries.
-	deliveries *deliveryIndex
 
 	out  *outbox.Outbox
 	seen *outbox.RecentIDs
@@ -74,9 +70,10 @@ type Hub struct {
 
 	gsm atomic.Pointer[contract.GSMHealth] // the GSM gateway's lines, once it spoke
 
-	// uplink is the last internet state given to the escalation; owned by the
-	// monitor's loop.
-	uplink health.LinkState
+	// uplink is the last internet state given to the escalation, and lastHealth the
+	// last system.health published; both owned by the monitor's loop.
+	uplink     health.LinkState
+	lastHealth []byte
 
 	// faults is the monitor's latest summary, for the engine's loop: an arming that
 	// starts names the silent devices and the weak batteries.
@@ -115,7 +112,6 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 	h := &Hub{
 		cfg: cfg, deps: deps, log: log,
 		seen:       outbox.NewRecentIDs(cfg.DedupeSize),
-		deliveries: newDeliveryIndex(deliveriesKept),
 		bootID:     deps.NewID(),
 		started:    now,
 		booting:    true,
@@ -240,7 +236,7 @@ func (h *Hub) Alive(ctx context.Context) error {
 // Subscriptions lists what the hub must listen to on the broker.
 func (h *Hub) Subscriptions() []Subscription {
 	site := h.cfg.Site
-	return []Subscription{
+	subs := []Subscription{
 		{Filter: contract.Topic(site, "device", "+", "event"), QoS: 1},
 		{Filter: contract.Topic(site, "device", "+", "state", "+"), QoS: 1},
 		{Filter: contract.AlarmCmdTopic(site), QoS: 1},
@@ -250,7 +246,12 @@ func (h *Hub) Subscriptions() []Subscription {
 		{Filter: contract.ZigbeeStatusTopic(site), QoS: 1},
 		{Filter: contract.AgentStatusTopic(site), QoS: 1},
 		{Filter: contract.InstallCmdTopic(site), QoS: 1},
+		{Filter: contract.RegistryEventTopic(site), QoS: 1},
 	}
+	for _, id := range h.cfg.SirenIDs {
+		subs = append(subs, Subscription{Filter: contract.DeviceAckTopic(site, id), QoS: 1})
+	}
+	return subs
 }
 
 // Run serves the hub until ctx is cancelled. It must be called once. Messages may

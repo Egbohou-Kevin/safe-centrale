@@ -90,6 +90,21 @@ func TestKeypadCodeValidation(t *testing.T) {
 	}
 }
 
+func TestOnlyDisarmAndSilenceTakeACode(t *testing.T) {
+	for _, c := range []struct {
+		capability, value string
+		want              bool
+	}{
+		{CapKeypad, ValDisarm, true}, {CapKeypad, ValSilence, true},
+		{CapKeypad, ValArm, false}, {CapKeypad, ValArmNow, false}, {CapKeypad, ValPostpone, false},
+		{CapContact, ValDisarm, false}, {CapContact, ValOpen, false},
+	} {
+		if got := CodeAllowed(c.capability, c.value); got != c.want {
+			t.Errorf("CodeAllowed(%s, %s) = %v", c.capability, c.value, got)
+		}
+	}
+}
+
 // A keypad code must appear neither in a printout nor in a log.
 func TestDeviceEventNeverLeaksCode(t *testing.T) {
 	const secret = "482915"

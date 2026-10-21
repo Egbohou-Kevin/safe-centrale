@@ -307,9 +307,16 @@ func (r *rig) settle() {
 // send gives the hub a message as the broker would.
 func (r *rig) send(topic, typ string, data any) string {
 	r.t.Helper()
+	return r.sendAt(r.clock.Now(), topic, typ, data)
+}
+
+// sendAt is send with a message written at ts: one the broker held, or from a
+// clock that disagrees.
+func (r *rig) sendAt(ts time.Time, topic, typ string, data any) string {
+	r.t.Helper()
 	r.seq++
 	id := r.ids.New()
-	env, err := contract.NewEnvelope(site, "test", uint64(r.seq), id, r.clock.Now(), typ, data)
+	env, err := contract.NewEnvelope(site, "test", uint64(r.seq), id, ts, typ, data)
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -333,9 +340,15 @@ func event(id, capability, value string) contract.DeviceEventData {
 
 func (r *rig) keypad(value, code string) {
 	r.t.Helper()
+	r.keypadAt(r.clock.Now(), value, code)
+}
+
+// keypadAt is a key press written at ts.
+func (r *rig) keypadAt(ts time.Time, value, code string) {
+	r.t.Helper()
 	d := event(devKeypad, contract.CapKeypad, value)
 	d.Code = code
-	r.send(contract.DeviceEventTopic(site, devKeypad), contract.TypeDeviceEvent, d)
+	r.sendAt(ts, contract.DeviceEventTopic(site, devKeypad), contract.TypeDeviceEvent, d)
 }
 
 func (r *rig) order(cmd string, args contract.CommandArgs, origin, user string) string {

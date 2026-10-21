@@ -23,14 +23,16 @@ type Device struct {
 // Changed builds the messages of a capability change. A value the contract does not
 // allow (a mistake in a profile, a keypad code that is not digits) is an error: the
 // message is not sent. The error never contains the code. A code goes only with the
-// keys that take one (takesCode).
+// keys that take one (contract.CodeAllowed): any other key keeps its action and loses
+// the code, since a keypad may send the code typed before "arm" (the Develco
+// KEPZB-110 does).
 func Changed(c zigbee.Changed) (Device, error) {
 	value, err := encode(c.Value, c.Numeric)
 	if err != nil {
 		return Device{}, err
 	}
 	ev := contract.DeviceEventData{DeviceID: c.DeviceID, Capability: c.Capability, Value: value}
-	if takesCode(c.Capability, c.Value) {
+	if contract.CodeAllowed(c.Capability, c.Value) {
 		ev.Code = c.Code
 	}
 	if err := ev.Validate(); err != nil {
@@ -47,13 +49,6 @@ func Changed(c zigbee.Changed) (Device, error) {
 		out.State = &st
 	}
 	return out, nil
-}
-
-// takesCode tells whether the contract lets a code go with this value: only a keypad
-// disarm or silence. Any other key keeps its action and loses the code, since a
-// keypad may send the code typed before "arm" (the Develco KEPZB-110 does).
-func takesCode(capability, value string) bool {
-	return capability == contract.CapKeypad && (value == contract.ValDisarm || value == contract.ValSilence)
 }
 
 // Presence builds the availability event and state of a device.

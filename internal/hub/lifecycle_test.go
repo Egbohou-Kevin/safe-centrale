@@ -242,15 +242,17 @@ func TestFloodOfCodeChecksDoesNotStallTheEngine(t *testing.T) {
 func TestSubscriptions(t *testing.T) {
 	r := newRig(t, nil)
 	want := map[string]bool{
-		"safehome/" + site + "/device/+/event":   true,
-		"safehome/" + site + "/device/+/state/+": true,
-		"safehome/" + site + "/alarm/cmd":        true,
-		"safehome/" + site + "/alert/result":     true,
-		"safehome/" + site + "/alert/ack":        true,
-		"safehome/" + site + "/gsm/status":       true,
-		"safehome/" + site + "/zigbee/status":    true,
-		"safehome/" + site + "/agent/status":     true,
-		"safehome/" + site + "/install/cmd":      true,
+		"safehome/" + site + "/device/+/event":       true,
+		"safehome/" + site + "/device/+/state/+":     true,
+		"safehome/" + site + "/device/dev_siren/ack": true,
+		"safehome/" + site + "/alarm/cmd":            true,
+		"safehome/" + site + "/alert/result":         true,
+		"safehome/" + site + "/alert/ack":            true,
+		"safehome/" + site + "/gsm/status":           true,
+		"safehome/" + site + "/zigbee/status":        true,
+		"safehome/" + site + "/agent/status":         true,
+		"safehome/" + site + "/install/cmd":          true,
+		"safehome/" + site + "/registry/event":       true,
 	}
 	for _, s := range r.hub.Subscriptions() {
 		if !want[s.Filter] || s.QoS != 1 {

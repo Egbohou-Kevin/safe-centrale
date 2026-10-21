@@ -29,6 +29,8 @@ func (h *Hub) HandleMessage(m Message) {
 	switch {
 	case len(parts) == 3 && parts[0] == "device" && parts[2] == "event":
 		h.deviceMessage(parts[1], "", m)
+	case len(parts) == 3 && parts[0] == "device" && parts[2] == "ack":
+		h.sirenAckMessage(parts[1], m)
 	case len(parts) == 4 && parts[0] == "device" && parts[2] == "state":
 		h.deviceMessage(parts[1], parts[3], m)
 	case len(parts) == 2:
@@ -54,6 +56,8 @@ func (h *Hub) serviceMessage(topic string, m Message) {
 		h.agentStatusMessage(m)
 	case "install/cmd":
 		h.installMessage(m)
+	case "registry/event":
+		h.registryMessage(m)
 	}
 }
 
@@ -128,7 +132,7 @@ func (h *Hub) deviceMessage(deviceID, capability string, m Message) {
 		h.deviceState(d)
 		return
 	}
-	h.deviceEvent(env.ID, d)
+	h.deviceEvent(env, d)
 }
 
 // deviceState handles a retained state. They matter once, at start: they tell the
@@ -148,9 +152,9 @@ func (h *Hub) deviceState(d contract.DeviceEventData) {
 	}
 }
 
-func (h *Hub) deviceEvent(ref string, d contract.DeviceEventData) {
+func (h *Hub) deviceEvent(env contract.Envelope, d contract.DeviceEventData) {
 	if d.Capability == contract.CapKeypad {
-		h.keypad(ref, d)
+		h.keypad(env, d)
 		return
 	}
 	if d.Capability == contract.CapMains {
@@ -183,6 +187,27 @@ func (h *Hub) feedHealth(d contract.DeviceEventData) {
 	h.submitFailed(err)
 }
 
+// registryMessage takes a device removed from the site: the engine and the monitor
+// forget it, so that it holds no door open and stays in no fault list. The other
+// events of the registry (a device added or refused) are the installer's business.
+func (h *Hub) registryMessage(m Message) {
+	if env, err := contract.ParseEnvelope(m.Payload); err == nil && env.Type != contract.TypeRegistryDeviceRemoved {
+		return
+	}
+	_, d, ok := decode[contract.RegistryDeviceRemovedData](h, m, contract.TypeRegistryDeviceRemoved, "device removal")
+	if !ok {
+		return
+	}
+	if d.DeviceID == "" {
+		h.log.Warn("ignoring a device removal without a device")
+		return
+	}
+	err := h.engLoop.Submit(h.life, func(now time.Time) engine.Input { return engwire.Forget(d, now) })
+	h.submitFailed(err)
+	err = h.monLoop.Submit(h.life, func(now time.Time) health.Input { return health.Forget{Now: now, DeviceID: d.DeviceID} })
+	h.submitFailed(err)
+}
+
 // --- orders ------------------------------------------------------------------------
 
 var keypadCommands = map[string]string{
@@ -193,15 +218,30 @@ var keypadCommands = map[string]string{
 	contract.ValPostpone: contract.CmdPostpone,
 }
 
+// orderMaxAge is how long an order without an expiry of its own stays good after it
+// was written. The broker keeps the hub's session for a day: a key pressed while the
+// hub was down must not run when it comes back, hours later.
+const orderMaxAge = time.Minute
+
+// expiryOf is the expiry of an order written at ts that has none of its own. A time
+// ahead of the hub's clock counts as now.
+func (h *Hub) expiryOf(ts time.Time) *contract.Timestamp {
+	if now := h.deps.Clock.Now(); ts.After(now) {
+		ts = now
+	}
+	return contract.TSPtr(ts.Add(orderMaxAge))
+}
+
 // keypad turns a key sequence from a keypad into an order to the engine.
-func (h *Hub) keypad(ref string, d contract.DeviceEventData) {
+func (h *Hub) keypad(env contract.Envelope, d contract.DeviceEventData) {
 	name, ok := keypadCommands[d.StringValue()]
 	if !ok {
 		return
 	}
-	h.command(ref, contract.AlarmCommandData{
+	h.command(env.ID, contract.AlarmCommandData{
 		Command: name, Origin: contract.OriginKeypad,
 		Args: contract.CommandArgs{Code: d.Code},
+		Exp:  h.expiryOf(env.TS.Time),
 	})
 }
 
@@ -214,6 +254,9 @@ func (h *Hub) alarmMessage(m Message) {
 		h.log.Warn("ignoring an invalid order", "err", err)
 		return
 	}
+	if d.Exp == nil {
+		d.Exp = h.expiryOf(env.TS.Time)
+	}
 	h.command(env.ID, d)
 }
 
@@ -225,9 +268,11 @@ type authJob struct {
 
 // command routes an order to the engine. An order that needs a code has it checked
 // first, on a worker of its own: the check is deliberately slow and must not hold
-// up the siren's schedule or the broker's goroutine.
+// up the siren's schedule or the broker's goroutine. An expired order goes straight
+// to the engine, which answers so: its code is not checked, nor counted.
 func (h *Hub) command(ref string, d contract.AlarmCommandData) {
-	if !contract.NeedsCode(d.Command) {
+	expired := d.Exp != nil && h.deps.Clock.Now().After(d.Exp.Time)
+	if expired || !contract.NeedsCode(d.Command) {
 		d.Args.Code = ""
 		h.submitCommand(ref, d, engine.Auth{})
 		return
@@ -311,7 +356,7 @@ func (h *Hub) agentStatusMessage(m Message) {
 }
 
 // statusToMonitor hands the monitor a service's status, then publishes system.health
-// even if the monitor's state did not move: the GSM lines may have changed.
+// if it changed, even when the monitor's state did not move: the GSM lines may have.
 func (h *Hub) statusToMonitor(build func(now time.Time) health.Input) {
 	err := h.monLoop.Post(h.life, func(now time.Time) []health.Action {
 		actions := h.mon.Handle(build(now))

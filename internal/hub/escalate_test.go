@@ -224,6 +224,26 @@ func TestTheEscalationGoesOnAfterARestart(t *testing.T) {
 	})
 }
 
+func TestAResultOfARequestSentBeforeARestartStillCounts(t *testing.T) {
+	first := newRig(t, nil, withContacts)
+	first.start()
+	trigger(first)
+	id := requestIDs(t, first)["u_owner/app"]
+	first.stop()
+
+	// The hub restarts at once; the cloud's answer to the app message comes after.
+	second := newRig(t, first.store, withContacts)
+	second.clock.Advance(2 * time.Minute) // the time of the alert
+	second.start()
+	second.send(contract.AlertResultTopic(site), contract.TypeAlertResult, contract.AlertResultData{Ref: id, Status: contract.ResultSent})
+	second.settle()
+	second.clock.Advance(10 * time.Second)
+	second.settle()
+	if got := requested(t, second); len(got) != 0 {
+		t.Fatalf("%v: the cloud took the message, no SMS yet", got)
+	}
+}
+
 func TestEscalationConfigurationIsChecked(t *testing.T) {
 	cfg := testConfig()
 	cfg.Escalation.Contacts = []escalation.Contact{{ID: "x", Role: "king", Channels: []escalation.Channel{escalation.ChannelSMS}}}

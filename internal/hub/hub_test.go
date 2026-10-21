@@ -3,6 +3,7 @@ package hub
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -88,7 +89,9 @@ func TestAnIntrusionFromStartToFinish(t *testing.T) {
 	r.validateAll()
 }
 
-func TestTheSirenLeavesBeforeTheAlertAndTheEvents(t *testing.T) {
+// The siren leaves first, then the engine's messages in its order. The alert goes
+// through the escalation's own loop: its request follows the siren, a moment later.
+func TestTheSirenLeavesFirstThenTheEventsAndTheAlert(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u")
@@ -98,13 +101,20 @@ func TestTheSirenLeavesBeforeTheAlertAndTheEvents(t *testing.T) {
 	before := len(r.broker.all())
 	r.device(devBack, contract.CapContact, "open")
 	r.settle()
-	got := r.broker.all()[before:]
-	var order []string
-	for _, m := range got {
-		order = append(order, m.Env.Type)
+	var engineOrder []string
+	alerts := 0
+	for i, m := range r.broker.all()[before:] {
+		if m.Env.Type != contract.TypeAlertRequest {
+			engineOrder = append(engineOrder, m.Env.Type)
+			continue
+		}
+		if alerts++; i == 0 {
+			t.Fatal("the alert request left before the siren")
+		}
 	}
-	if len(order) < 3 || order[0] != contract.TypeCommand || !contains(order, contract.TypeAlertRequest) {
-		t.Fatalf("order of departure: %v: the siren must leave first", order)
+	want := []string{contract.TypeCommand, contract.TypeAlarmTriggered, contract.TypeAlarmSirenCycle, contract.TypeAlarmState}
+	if !slices.Equal(engineOrder, want) || alerts != 1 {
+		t.Fatalf("order of departure: %v and %d alert requests, want %v and one", engineOrder, alerts, want)
 	}
 }
 

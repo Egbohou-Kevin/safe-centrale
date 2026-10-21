@@ -89,20 +89,10 @@ var statuses = map[string]escalation.ResultStatus{
 	contract.ResultFailed:    escalation.ResultFailed,
 }
 
-// Result turns an alert.result into an escalation input. key is the escalation's
-// own number of the message the result is about: the caller found it from the
-// result's ref. ok is false for a status the contract does not define.
-func Result(d contract.AlertResultData, key uint64, now time.Time) (escalation.Result, bool) {
-	status, ok := statuses[d.Status]
-	if !ok {
-		return escalation.Result{}, false
-	}
-	return escalation.Result{Now: now, Key: key, Status: status}, true
-}
-
 // ResultByRef turns an alert.result into an escalation input that finds its
 // message by the request id (see escalation.Escalation.Bind), so the caller needs
-// no index of its own. ok is false for a status the contract does not define.
+// no index of its own. ok is false for a status the contract does not define, or
+// without a ref.
 func ResultByRef(d contract.AlertResultData, now time.Time) (escalation.Result, bool) {
 	status, ok := statuses[d.Status]
 	if !ok || d.Ref == "" {

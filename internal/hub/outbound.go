@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"maps"
@@ -56,29 +57,24 @@ func (h *Hub) enqueueAs(id, src, topic, typ string, data any, retain bool, ts ti
 // dispatchEngine turns what the engine decided into messages. It runs on the
 // engine loop's goroutine and only queues: the sending is done elsewhere.
 //
-// The siren leaves first, then the alert requests, then the events: if the broker
-// is slow, what matters most for people leaves first.
+// The siren leaves first, then the events and the replies: if the broker is slow,
+// what matters most for people leaves first. The alerts go to the escalation, whose
+// own loop queues the alert requests a moment later, after the siren.
 func (h *Hub) dispatchEngine(_ context.Context, now time.Time, actions []engine.Action) error {
 	out, err := engwire.Translate(actions)
 	if err != nil {
 		return err
 	}
-	site := h.cfg.Site
-	for _, s := range out.Siren {
-		for _, id := range h.cfg.SirenIDs {
-			h.enqueue(srcEngine, contract.DeviceCmdTopic(site, id), contract.TypeCommand,
-				s.Data(id, now.Add(h.cfg.SirenCommandTTL)), false, now)
-		}
-	}
+	h.orderSirens(now, actions)
 	// The engine's alerts do not leave as they are: the escalation turns each into one
 	// request per contact and channel.
 	h.escalateEngine(now, actions)
 	h.warnOfFaults(&out)
 	for _, ev := range out.Events {
-		h.enqueue(srcEngine, contract.AlarmEventTopic(site), ev.Type, ev.Data, false, now)
+		h.enqueue(srcEngine, contract.AlarmEventTopic(h.cfg.Site), ev.Type, ev.Data, false, now)
 	}
 	for _, ack := range out.Acks {
-		h.enqueue(srcEngine, contract.AlarmAckTopic(site), contract.TypeAlarmAck, ack, false, now)
+		h.enqueue(srcEngine, contract.AlarmAckTopic(h.cfg.Site), contract.TypeAlarmAck, ack, false, now)
 	}
 	return nil
 }
@@ -139,11 +135,27 @@ func (h *Hub) dispatchHealth(_ context.Context, now time.Time, actions []health.
 	return nil
 }
 
-// publishHealth publishes the retained system.health. It runs on the monitor's loop.
+// publishHealth publishes the retained system.health when what it says changed: the
+// services repeat their status every minute, and each copy would go to the cloud. It
+// runs on the monitor's loop.
 func (h *Hub) publishHealth(now time.Time) {
 	st := h.mon.Status()
 	h.faults.Store(&st)
 	h.followUplink(now, st.Internet)
+	raw, err := json.Marshal(h.healthData(st))
+	if err != nil {
+		h.log.Error("encoding system.health failed", "err", err)
+		return
+	}
+	if bytes.Equal(raw, h.lastHealth) {
+		return
+	}
+	h.lastHealth = raw
+	h.enqueue(srcHealth, contract.HealthTopic(h.cfg.Site), contract.TypeHealth, json.RawMessage(raw), true, now)
+}
+
+// healthData is system.health for the monitor's summary and the GSM lines.
+func (h *Hub) healthData(st health.Status) contract.HealthData {
 	data := contract.HealthData{Links: map[string]string{}, GSM: h.gsm.Load()}
 	for name, s := range map[string]health.LinkState{linkGSM: st.GSM, linkZigbee: st.Zigbee, linkInternet: st.Internet} {
 		if link := linkOf(s); link != "" {
@@ -160,7 +172,7 @@ func (h *Hub) publishHealth(now time.Time) {
 		b := st.HubBattery
 		data.HubBattery = &b
 	}
-	h.enqueue(srcHealth, contract.HealthTopic(h.cfg.Site), contract.TypeHealth, data, true, now)
+	return data
 }
 
 // linkOf is a link of system.health for a component the monitor watches (the GSM

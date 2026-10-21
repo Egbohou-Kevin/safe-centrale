@@ -2,7 +2,6 @@ package hub
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"safehome/internal/contract"
@@ -96,8 +95,9 @@ func (h *Hub) escalateHealth(now time.Time, actions []health.Action) {
 	}
 }
 
-// dispatchEscalation turns the escalation's decisions into alert requests, and
-// remembers which request carries which message so that its result can be matched.
+// dispatchEscalation turns the escalation's decisions into alert requests. Each
+// message is bound to the id of its request before the request is queued: the
+// escalation saves it, so a result finds its message even after a restart.
 func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []escalation.Action) error {
 	for _, a := range actions {
 		switch v := a.(type) {
@@ -107,9 +107,8 @@ func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []esc
 				h.log.Error("building an alert request failed", "err", err)
 				continue
 			}
-			// Remembered before it is queued: a quick result must find it.
 			id := h.deps.NewID()
-			h.deliveries.put(id, v.Key)
+			h.esc.Bind(v.Key, id)
 			h.enqueueAs(id, srcEscalation, contract.AlertRequestTopic(h.cfg.Site), contract.TypeAlertRequest, data, false, now)
 		case escalation.Throttled:
 			h.log.Warn("a message was held back: the contact already got the hourly maximum",
@@ -121,19 +120,15 @@ func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []esc
 	return nil
 }
 
-// alertResultMessage handles a channel's report about a message.
+// alertResultMessage handles a channel's report about a message. A result for a
+// request the escalation does not know (an old incident) changes nothing.
 func (h *Hub) alertResultMessage(m Message) {
 	_, d, ok := decode[contract.AlertResultData](h, m, contract.TypeAlertResult, "alert result")
 	if !ok {
 		return
 	}
-	key, known := h.deliveries.lookup(d.Ref)
-	if !known {
-		h.log.Debug("ignoring a result for a request this hub does not know", "ref", d.Ref)
-		return
-	}
 	err := h.escLoop.Submit(h.life, func(now time.Time) escalation.Input {
-		r, ok := escwire.Result(d, key, now)
+		r, ok := escwire.ResultByRef(d, now)
 		if !ok {
 			return escalation.Tick{Now: now} // an unknown status says nothing: just let time pass
 		}
@@ -150,35 +145,4 @@ func (h *Hub) alertAckMessage(m Message) {
 	}
 	err := h.escLoop.Submit(h.life, func(now time.Time) escalation.Input { return escwire.Ack(d, now) })
 	h.submitFailed(err)
-}
-
-// deliveryIndex remembers which escalation message each alert request carries,
-// for the last few thousand requests.
-type deliveryIndex struct {
-	mu   sync.Mutex
-	keys map[string]uint64
-	ring []string
-	next int
-}
-
-func newDeliveryIndex(size int) *deliveryIndex {
-	return &deliveryIndex{keys: make(map[string]uint64, size), ring: make([]string, size)}
-}
-
-func (d *deliveryIndex) put(id string, key uint64) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if old := d.ring[d.next]; old != "" {
-		delete(d.keys, old)
-	}
-	d.ring[d.next] = id
-	d.next = (d.next + 1) % len(d.ring)
-	d.keys[id] = key
-}
-
-func (d *deliveryIndex) lookup(id string) (uint64, bool) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	key, ok := d.keys[id]
-	return key, ok
 }

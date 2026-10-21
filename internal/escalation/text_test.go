@@ -85,3 +85,25 @@ func TestASCIIRemovesAccentsAndOddCharacters(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 }
+
+// The engine bypasses an open zone at the end of an exit delay, whoever started it:
+// the automatic arming or a person.
+func TestTheBypassTextFitsEveryArming(t *testing.T) {
+	e := newEsc(t)
+	out := raise(e, t0, KindArmingBypassed, "dev_back")
+	for _, a := range out {
+		s, ok := a.(Send)
+		if !ok {
+			continue
+		}
+		for _, part := range []string{"armee", "zone ouverte", "Porte arriere", "non protegee"} {
+			if !strings.Contains(s.Text, part) {
+				t.Errorf("%q misses %q", s.Text, part)
+			}
+		}
+		if strings.Contains(s.Text, "automatique") {
+			t.Errorf("%q: a person may have armed", s.Text)
+		}
+		checkText(t, s.Text)
+	}
+}

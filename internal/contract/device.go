@@ -68,13 +68,19 @@ func (d DeviceEventData) IntValue() (int, bool) {
 	return n, err == nil
 }
 
+// CodeAllowed reports whether a code may go with this value of a capability: only
+// with a keypad "disarm" or "silence", the keys whose order needs one.
+func CodeAllowed(capability, value string) bool {
+	return capability == CapKeypad && (value == ValDisarm || value == ValSilence)
+}
+
 // Validate checks the capability and its value.
 func (d DeviceEventData) Validate() error {
 	if d.DeviceID == "" {
 		return fmt.Errorf("%w: empty device_id", ErrInvalid)
 	}
 	if d.Code != "" {
-		if d.Capability != CapKeypad || (d.StringValue() != ValDisarm && d.StringValue() != ValSilence) {
+		if !CodeAllowed(d.Capability, d.StringValue()) {
 			return fmt.Errorf("%w: a code is only allowed with keypad disarm or silence", ErrInvalid)
 		}
 		if len(d.Code) > maxCodeLen || strings.Trim(d.Code, "0123456789") != "" {

@@ -35,7 +35,7 @@ func (e *Escalation) text(in IncidentSnap) string {
 	case KindAuthFailed:
 		msg = fmt.Sprintf("ALERTE %s: codes faux repetes a %s.%s", site, hour, ackHint)
 	case KindArmingBypassed:
-		msg = fmt.Sprintf("ALERTE %s: armement automatique a %s avec une zone ouverte%s, non protegee.%s", site, hour, where, ackHint)
+		msg = fmt.Sprintf("ALERTE %s: alarme armee a %s avec une zone ouverte%s, non protegee.%s", site, hour, where, ackHint)
 	case KindHubBatteryLow:
 		msg = fmt.Sprintf("ALERTE %s: centrale sur batterie, %d%% restant (%s).%s", site, in.Percent, hour, ackHint)
 	case KindMainsRestored:
