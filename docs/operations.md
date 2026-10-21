@@ -87,7 +87,7 @@ pour chaque type d'alerte. L'exemple les écrit tous, avec les valeurs par défa
 
 - Les types d'alerte portent les noms du contrat : `intrusion`, `fire`, `panic`,
   `tamper`, `auth_failed`, `arming_bypassed`, `battery_low_hub`, `mains_restored`,
-  `device_offline`, `battery_low`, `gsm_degraded`, `zigbee_down`.
+  `device_offline`, `battery_low`, `gsm_degraded`, `zigbee_down`, `siren_failed`.
 - Un plan écrit **remplace entièrement** le plan par défaut de ce type ; un type absent
   garde le sien.
 - Une vague (`waves`) : `after` (depuis l'alerte, 0 par défaut, jamais avant la vague

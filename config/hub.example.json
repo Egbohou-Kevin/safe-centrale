@@ -36,6 +36,7 @@
       "arming_bypassed": { "waves": [{ "to": ["first"], "double": true }] },
       "battery_low_hub": { "waves": [{ "to": ["first"], "double": true }] },
       "zigbee_down":     { "waves": [{ "to": ["first"], "double": true }] },
+      "siren_failed":    { "waves": [{ "to": ["first", "guard"], "double": true }] },
 
       "mains_restored": { "waves": [{ "to": ["first"] }], "internet_only": true, "gsm_after": "1h" },
       "device_offline": { "waves": [{ "to": ["owner"] }], "internet_only": true },

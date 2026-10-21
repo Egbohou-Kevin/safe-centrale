@@ -48,7 +48,9 @@ func priority(kind string) gsm.Priority {
 	switch kind {
 	case contract.AlertFire, contract.AlertPanic:
 		return gsm.PriorityLifeSafety
-	case contract.AlertIntrusion:
+	case contract.AlertIntrusion, contract.AlertSirenFailed:
+		// A silent siren belongs to the alarm going on: it leaves with the intrusion,
+		// not behind the daily reports, and is stale as soon as the alarm is.
 		return gsm.PriorityIntrusion
 	}
 	return gsm.PriorityOther

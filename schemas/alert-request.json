@@ -22,7 +22,8 @@
         "battery_low",
         "arming_bypassed",
         "gsm_degraded",
-        "zigbee_down"
+        "zigbee_down",
+        "siren_failed"
       ]
     },
     "urgency": {

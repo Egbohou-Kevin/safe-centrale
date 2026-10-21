@@ -79,7 +79,8 @@ client.
 
 - Chaque demande est écrite sur disque avant d'être traitée. Un redémarrage ne perd
   rien.
-- Priorités : `fire` et `panic` d'abord, puis `intrusion`, puis le reste. Une
+- Priorités : `fire` et `panic` d'abord, puis `intrusion` (et `siren_failed`, qui
+  accompagne l'alarme en cours), puis le reste. Une
   demande urgente passe devant les autres, sans interrompre une commande déjà en
   cours au modem.
 - Reprise avec délai croissant en cas d'échec, plafonnée. Une demande trop vieille

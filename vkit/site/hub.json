@@ -164,6 +164,17 @@
           }
         ]
       },
+      "siren_failed": {
+        "waves": [
+          {
+            "to": [
+              "first",
+              "guard"
+            ],
+            "double": true
+          }
+        ]
+      },
       "mains_restored": {
         "waves": [
           {

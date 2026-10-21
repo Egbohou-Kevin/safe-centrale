@@ -317,6 +317,20 @@ func TestFireTellsEveryoneAndSendsTheSMSWithTheInternet(t *testing.T) {
 	want(t, "insisting", sends(tick(e, t0.Add(time.Minute))), "owner/call/1")
 }
 
+// --- siren failed ------------------------------------------------------------------------
+
+func TestASilentSirenTellsTheFirstContactAndTheGuardOnce(t *testing.T) {
+	e := newEsc(t)
+	first := raise(e, t0, KindSirenFailed, "dev_siren1")
+	want(t, "wave 1", sends(first), "deputy/app/1", "guard/sms/1", "guard/call/1")
+	want(t, "internet not confirmed", sends(tick(e, t0.Add(10*time.Second))), "deputy/sms/1")
+	// No reminder of its own: the alarm's plan already insists.
+	end := tick(e, t0.Add(30*time.Minute))
+	if c := concluded(end); len(sends(end)) != 0 || len(c) != 1 || c[0].Outcome != OutcomeUnanswered || c[0].Kind != KindSirenFailed {
+		t.Fatalf("%+v", end)
+	}
+}
+
 func TestFireAndPanicAreNeverThrottled(t *testing.T) {
 	for _, kind := range []AlertKind{KindFire, KindPanic} {
 		e := newEsc(t, func(c *Config) { c.MaxPerHour = 1 })

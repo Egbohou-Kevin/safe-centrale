@@ -177,6 +177,10 @@ Les alertes continuent de suivre leur escalade pendant ce temps.
 Un désarmement ou une coupure de sirène avec un code valide arrête tout
 immédiatement.
 
+La centrale vérifie que chaque sirène prend l'ordre : un `siren.on` refusé est renvoyé
+quelques fois, puis les contacts reçoivent l'alerte `siren_failed` (voir
+`adapter-zigbee.md`).
+
 ## Sources d'armement et de désarmement
 
 - **Clavier** (code ou badge) : le cas principal.
@@ -318,7 +322,8 @@ compte à rebours) et `alarm.armed` quand le système est réellement armé.
 
 Le moteur lève des alertes d'un genre (`intrusion`, `fire`, `panic`, `tamper`,
 `auth_failed`, `arming_bypassed`) ; la supervision lève les siennes (appareil muet,
-pile faible, passerelles). L'escalade, dans la centrale, en fait les `alert.request` :
+pile faible, passerelles) ; la centrale lève `siren_failed` pour une sirène qui ne
+prend pas l'ordre de sonner. L'escalade, dans la centrale, en fait les `alert.request` :
 qui est prévenu, dans quel ordre et après combien de temps sans réponse est décrit
 dans le document d'escalade. Cette logique reste sur le site pour fonctionner sans
 internet.

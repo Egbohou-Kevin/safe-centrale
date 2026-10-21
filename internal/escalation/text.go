@@ -46,6 +46,8 @@ func (e *Escalation) text(in IncidentSnap) string {
 		msg = fmt.Sprintf("%s: piles faibles%s.", site, where)
 	case KindZigbeeDown:
 		msg = fmt.Sprintf("ALERTE %s: capteurs injoignables depuis %s, l'alarme ne detecte plus rien. Verifiez la centrale.%s", site, hour, ackHint)
+	case KindSirenFailed:
+		msg = fmt.Sprintf("ALERTE %s: la sirene%s ne repond pas a %s, l'alarme est silencieuse.%s", site, where, hour, ackHint)
 	case KindGSMDegraded:
 		msg = fmt.Sprintf("%s: protection degradee, SMS indisponible: verifiez la SIM.", site)
 	default:

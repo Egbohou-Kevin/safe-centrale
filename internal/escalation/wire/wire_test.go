@@ -13,12 +13,7 @@ import (
 var now = time.Date(2026, 10, 17, 21, 4, 0, 0, time.UTC)
 
 func TestEveryKindUrgencyAndChannelTranslatesToAValidRequest(t *testing.T) {
-	kinds := []escalation.AlertKind{
-		escalation.KindIntrusion, escalation.KindFire, escalation.KindPanic, escalation.KindTamper,
-		escalation.KindAuthFailed, escalation.KindArmingBypassed, escalation.KindHubBatteryLow,
-		escalation.KindMainsRestored, escalation.KindDeviceOffline, escalation.KindBatteryLow, escalation.KindGSMDegraded,
-	}
-	for _, kind := range kinds {
+	for kind := range escalation.DefaultPlans() { // every kind has a plan
 		for _, ch := range []escalation.Channel{escalation.ChannelApp, escalation.ChannelWhatsApp, escalation.ChannelSMS, escalation.ChannelCall} {
 			for _, u := range []escalation.Urgency{escalation.UrgencyCritical, escalation.UrgencyHigh, escalation.UrgencyLow} {
 				d, err := Request(escalation.Send{

@@ -88,6 +88,8 @@ type alarmSide struct {
 	loop  *driver.Loop[engine.Input, engine.Action, engine.Snapshot]
 	inst  installMode
 	siren sirenOrder
+	// sirenFailed is, for each siren reported silent, the alarm it was reported for.
+	sirenFailed map[string]string
 }
 
 // healthSide is owned by the monitor's loop.

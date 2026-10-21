@@ -49,6 +49,7 @@ relie les deux : c'est le langage commun du projet.
 | SMS de test | `TestNumber`, `TestEvery` | SMS hebdomadaire vers un numéro de contrôle |
 | protection dégradée | `gsm_degraded` | Le secours GSM ne marche plus : le propriétaire est prévenu |
 | capteurs injoignables | `zigbee_down` | Le réseau Zigbee ne marche plus : l'alarme est aveugle |
+| sirène muette | `siren_failed` | Une sirène refuse de sonner pendant une alarme |
 | profil d'appareil | `Profile` | Comment lire et commander un modèle d'appareil (fichier JSON) |
 | appairage | `pairing`, `registry.pair` | Ouvrir le réseau Zigbee à un nouvel appareil |
 | registre | `registry` | Liste des appareils connus de l'adaptateur |

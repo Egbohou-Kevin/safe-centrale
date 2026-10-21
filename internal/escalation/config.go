@@ -145,6 +145,9 @@ func DefaultPlans() map[AlertKind]Plan {
 		KindGSMDegraded:   internetOwner,
 		// The sensors cannot be heard: the alarm is blind, the SMS still works.
 		KindZigbeeDown: oneFirst,
+		// The siren is silent during an alarm: the guard, who can go and look, is
+		// told with the first contact. The alarm's own plan goes on beside it.
+		KindSirenFailed: {Waves: []Wave{{To: []Audience{AudienceFirst, AudienceGuard}, Double: true}}},
 	}
 }
 

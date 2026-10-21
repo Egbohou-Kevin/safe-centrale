@@ -209,6 +209,9 @@ appareil est retiré, l'adaptateur efface ses états retenus (message vide).
 - `reason` est absent quand il est vide, jamais `null`.
 - Une commande périmée (`exp` dépassée) n'est pas exécutée.
 - Les commandes sont idempotentes : recevoir deux fois `siren.on` ne change rien.
+- Un `siren.on` répondu `failed` ou `expired` pendant que l'alarme sonne est renvoyé
+  par la centrale ; si la sirène refuse encore, les contacts reçoivent l'alerte
+  `siren_failed` (voir `adapter-zigbee.md`).
 
 Commandes de la v1 : `siren.on`, `siren.off`. `device.identify` (faire clignoter
 ou biper un appareil pour le repérer) est réservée : rien ne l'envoie, aucun profil ne
@@ -304,7 +307,7 @@ automatique).
 - `alert.request` : l'escalade demande à un canal d'envoyer un message à un contact
   (une demande par contact et par canal, voir `escalation.md`). Champs : `incident`,
   `kind` (`intrusion`, `fire`, `panic`, `tamper`, `auth_failed`,
-  `arming_bypassed`, `battery_low_hub`, `mains_restored`, `device_offline`, `battery_low`, `gsm_degraded`, `zigbee_down`), `urgency` (`critical`, `high`, `low`),
+  `arming_bypassed`, `battery_low_hub`, `mains_restored`, `device_offline`, `battery_low`, `gsm_degraded`, `zigbee_down`, `siren_failed`), `urgency` (`critical`, `high`, `low`),
   `wave`, `contact`, `channel` (`app`, `whatsapp`, `sms`, `call`) et `text`.
   `devices` (liste d'appareils, facultatif) est rempli quand l'alerte en concerne
   plusieurs, par exemple `arming_bypassed`, et `percent` (0 à 100) le niveau de

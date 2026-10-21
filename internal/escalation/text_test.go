@@ -107,3 +107,25 @@ func TestTheBypassTextFitsEveryArming(t *testing.T) {
 		checkText(t, s.Text)
 	}
 }
+
+func TestTheSirenTextNamesTheSirenAndSaysTheAlarmIsSilent(t *testing.T) {
+	for siren, name := range map[string]string{"dev_back": "Porte arriere", "dev_siren1": "dev_siren1"} {
+		e := newEsc(t)
+		out := raise(e, t0, KindSirenFailed, siren)
+		if len(sends(out)) == 0 {
+			t.Fatal("nothing sent")
+		}
+		for _, a := range out {
+			s, ok := a.(Send)
+			if !ok {
+				continue
+			}
+			for _, part := range []string{"ALERTE", "sirene", name, "silencieuse", "Repondre 1"} {
+				if !strings.Contains(s.Text, part) {
+					t.Errorf("%q misses %q", s.Text, part)
+				}
+			}
+			checkText(t, s.Text)
+		}
+	}
+}

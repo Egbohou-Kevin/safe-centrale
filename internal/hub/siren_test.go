@@ -46,24 +46,103 @@ func TestASirenOrderThatDidNotTakeIsSentAgainForWhatIsLeft(t *testing.T) {
 	r.validateAll()
 }
 
-func TestASirenThatNeverConfirmsIsToldAFewTimesThenReported(t *testing.T) {
-	r := newRig(t, nil)
-	r.start()
-	trigger(r)
-	for range 3 + 2 {
+// sirenAlerts lists the siren_failed alert requests published so far.
+func sirenAlerts(r *rig) []contract.AlertRequestData {
+	var out []contract.AlertRequestData
+	for _, m := range eventsOf(r, contract.TypeAlertRequest) {
+		if d := dataOf[contract.AlertRequestData](r.t, m); d.Kind == contract.AlertSirenFailed {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// lastSirenCommand is the command of the last order sent to the siren.
+func lastSirenCommand(r *rig) string {
+	orders := sirenOrders(r)
+	return dataOf[contract.DeviceCommandData](r.t, orders[len(orders)-1]).Command
+}
+
+// failEveryOrder answers each order of the current sounding failed, retries included,
+// until the hub stops sending it again.
+func failEveryOrder(r *rig) {
+	r.t.Helper()
+	for range 1 + sirenRetries + 1 {
 		orders := sirenOrders(r)
 		sirenAnswers(r, orders[len(orders)-1], contract.CmdFailed, "no_confirmation")
 		r.settle()
 	}
+}
+
+func TestASirenThatNeverConfirmsIsToldAFewTimesThenReported(t *testing.T) {
+	r := newRig(t, nil)
+	r.start()
+	trigger(r)
+	failEveryOrder(r)
 	if got := len(sirenOrders(r)); got != 1+3 {
 		t.Fatalf("siren orders: %d, want the first and %d more", got, 3)
 	}
 	if !strings.Contains(r.logs.String(), "level=ERROR") || !strings.Contains(r.logs.String(), "siren") {
-		t.Fatalf("the siren's failure must be reported:\n%s", r.logs.String())
+		t.Fatalf("the siren's failure must be logged:\n%s", r.logs.String())
+	}
+	drivertest.WaitFor(t, "the alert", func() bool { r.settle(); return len(sirenAlerts(r)) > 0 })
+	alerts := sirenAlerts(r)
+	if a := alerts[0]; len(alerts) != 1 || a.Urgency != contract.UrgencyHigh || a.Contact != "u_owner" ||
+		len(a.Devices) != 1 || a.Devices[0] != devSiren || !strings.Contains(a.Text, "sirene") {
+		t.Fatalf("%+v", alerts)
 	}
 	mode := r.mode()
 	if mode != engine.ModeTriggered {
 		t.Fatalf("mode %s", mode)
+	}
+	r.validateAll()
+}
+
+func TestASilentSirenIsReportedOncePerAlarm(t *testing.T) {
+	r := newRig(t, nil)
+	r.start()
+	trigger(r) // at t0+2m: cycle 1 until +7m, pause until +9m, cycle 2 until +14m
+	failEveryOrder(r)
+	drivertest.WaitFor(t, "the alert", func() bool { r.settle(); return len(sirenAlerts(r)) > 0 })
+	incident := sirenAlerts(r)[0].Incident
+
+	// Cycle 2: a new order, which the siren refuses as well.
+	n := len(sirenOrders(r))
+	r.clock.Advance(7 * time.Minute)
+	drivertest.WaitFor(t, "cycle 2", func() bool {
+		r.settle()
+		return len(sirenOrders(r)) > n && lastSirenCommand(r) == contract.CmdSirenOn
+	})
+	n = len(sirenOrders(r))
+	failEveryOrder(r)
+	if got := len(sirenOrders(r)); got != n+sirenRetries {
+		t.Fatalf("siren orders: %d, want %d", got, n+sirenRetries)
+	}
+	for _, a := range sirenAlerts(r) {
+		if a.Incident != incident {
+			t.Fatalf("a second siren alert in the same alarm: %+v", a)
+		}
+	}
+}
+
+func TestASirenThatTakesARetryIsNotReported(t *testing.T) {
+	r := newRig(t, nil)
+	r.start()
+	trigger(r)
+	for range sirenRetries {
+		orders := sirenOrders(r)
+		sirenAnswers(r, orders[len(orders)-1], contract.CmdFailed, "no_confirmation")
+		r.settle()
+	}
+	// The last retry works.
+	orders := sirenOrders(r)
+	if len(orders) != 1+sirenRetries {
+		t.Fatalf("siren orders: %d", len(orders))
+	}
+	sirenAnswers(r, orders[len(orders)-1], contract.CmdDone, "")
+	r.settle()
+	if got := sirenAlerts(r); len(got) != 0 || strings.Contains(r.logs.String(), "does not take") {
+		t.Fatalf("a siren that sounds is not reported: %+v", got)
 	}
 }
 

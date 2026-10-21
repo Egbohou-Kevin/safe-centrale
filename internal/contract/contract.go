@@ -198,6 +198,7 @@ const (
 	AlertBatteryLow     = "battery_low"
 	AlertGSMDegraded    = "gsm_degraded"
 	AlertZigbeeDown     = "zigbee_down"
+	AlertSirenFailed    = "siren_failed"
 )
 
 // Alert urgency.

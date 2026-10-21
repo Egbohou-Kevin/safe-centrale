@@ -54,11 +54,13 @@ const (
 	KindBatteryLow     AlertKind = "battery_low"
 	KindGSMDegraded    AlertKind = "gsm_degraded"
 	KindZigbeeDown     AlertKind = "zigbee_down"
+	KindSirenFailed    AlertKind = "siren_failed"
 )
 
 var allKinds = []AlertKind{
 	KindIntrusion, KindFire, KindPanic, KindTamper, KindAuthFailed, KindArmingBypassed,
 	KindHubBatteryLow, KindMainsRestored, KindDeviceOffline, KindBatteryLow, KindGSMDegraded, KindZigbeeDown,
+	KindSirenFailed,
 }
 
 // Urgency ranks how fast someone must react to an alert.

@@ -7,13 +7,16 @@ import (
 	"safehome/internal/contract"
 	"safehome/internal/engine"
 	engwire "safehome/internal/engine/wire"
+	"safehome/internal/escalation"
 	"safehome/internal/inbox"
 )
 
 // The Zigbee adapter answers each siren command (command.ack). A siren.on that did not
 // take, because the adapter saw it after its exp (it was down or stuck) or the siren
 // never confirmed it, would leave the siren silent for the whole cycle: the hub sends
-// it again for what is left of the sounding, a few times at most per order.
+// it again for what is left of the sounding, a few times at most per order. A siren
+// that still does not take it is reported to the contacts (siren_failed): the shop is
+// silent during an alarm.
 
 // sirenRetries is how many times one siren is sent the same order again.
 const sirenRetries = 3
@@ -82,7 +85,9 @@ func (h *Hub) sirenAckMessage(sirenID string, m inbox.Message) {
 }
 
 // retrySiren sends again a siren.on of the current order that did not take, for what
-// is left of the sounding. It runs on the engine's loop.
+// is left of the sounding. It runs on the engine's loop. A failure at the very end of
+// the sounding is not retried and does not count: the next cycle tells the siren
+// again, with its own retries.
 func (h *Hub) retrySiren(now time.Time, sirenID string, ack contract.CommandAckData) {
 	if h.alarm.siren.sent[ack.Ref] != sirenID {
 		return // an older order, or not one of ours
@@ -95,10 +100,36 @@ func (h *Hub) retrySiren(now time.Time, sirenID string, ack contract.CommandAckD
 	if h.alarm.siren.retries[sirenID] >= sirenRetries {
 		h.log.Error("the siren does not take the order to sound", "siren", sirenID,
 			"status", ack.Status, "reason", ack.Reason, "attempts", 1+sirenRetries)
+		h.reportSilentSiren(now, sirenID)
 		return
 	}
 	h.alarm.siren.retries[sirenID]++
 	h.log.Warn("the siren did not take the order to sound, sending it again", "siren", sirenID,
 		"status", ack.Status, "reason", ack.Reason, "left", left.Round(time.Second))
 	h.sendSiren(now, sirenID, engine.SirenOn{Duration: left})
+}
+
+// reportSilentSiren tells the contacts that a siren does not sound, once per siren
+// and per alarm: failing again in the next cycles tells them nothing new. It runs on
+// the engine's loop.
+//
+// The alert is an incident of its own, like a tamper, not a part of the alarm's: an
+// acknowledgement of the intrusion must not end it, and the GSM gateway drops the
+// messages of an incident already acknowledged.
+func (h *Hub) reportSilentSiren(now time.Time, sirenID string) {
+	alarm := ""
+	if inc := h.alarm.eng.Snapshot().Incident; inc != nil {
+		alarm = inc.ID
+	}
+	if reported, ok := h.alarm.sirenFailed[sirenID]; ok && reported == alarm {
+		return
+	}
+	if h.alarm.sirenFailed == nil {
+		h.alarm.sirenFailed = map[string]string{}
+	}
+	h.alarm.sirenFailed[sirenID] = alarm
+	h.escalate(escalation.Raise{
+		Now: now, Incident: h.deps.NewID(), Kind: escalation.KindSirenFailed,
+		Urgency: escalation.UrgencyHigh, Devices: []string{sirenID},
+	})
 }
