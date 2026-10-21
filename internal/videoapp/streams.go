@@ -8,8 +8,8 @@ import (
 	"safehome/internal/video"
 )
 
-// stopping reports whether Run is not serving, or not any more: nothing new starts.
-func (a *App) stopping() bool { return a.base == nil || a.base.Err() != nil }
+// stopping reports whether Run is over: nothing new starts.
+func (a *App) stopping() bool { return a.life.Err() != nil }
 
 // away runs f in its own goroutine, which Run waits for at the end. Called on the
 // loop's goroutine, so that it never waits for a camera.
@@ -26,7 +26,7 @@ func (a *App) startStream(s video.Start) {
 	if a.stopping() {
 		return // the session will not start, and nothing is pushed
 	}
-	ctx, cancel := context.WithCancel(a.base)
+	ctx, cancel := context.WithCancel(a.life)
 	a.sessions[s.Session] = cancel
 	a.away(func() {
 		defer cancel()
@@ -98,10 +98,10 @@ func (a *App) checkCameras() {
 	}
 	a.away(func() {
 		for _, c := range a.cfg.Video.Cameras {
-			ctx, cancel := context.WithTimeout(a.base, a.cfg.ProbeWait)
+			ctx, cancel := context.WithTimeout(a.life, a.cfg.ProbeWait)
 			err := a.deps.Streamer.Probe(ctx, c.ID)
 			cancel()
-			if a.base.Err() != nil {
+			if a.life.Err() != nil {
 				return
 			}
 			if err != nil {

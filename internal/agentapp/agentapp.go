@@ -100,6 +100,8 @@ type App struct {
 
 	uploads sync.WaitGroup // the photos being sent
 
+	// life ends with Run: the loop, the sender and the uploads run on it, and work
+	// handed to the loop after it ended is given up quietly.
 	life context.Context
 	stop context.CancelFunc
 	ran  atomic.Bool
@@ -130,7 +132,7 @@ func New(cfg Config, deps Deps) (*App, error) {
 	a.life, a.stop = context.WithCancel(context.Background())
 	// The agent builds its own messages, to hand them to the core as well: it shares
 	// the outbox's counter (see publishOwn).
-	a.out = outbox.New(deps.Local, seq, cfg.Site, cfg.Outbox, log)
+	a.out = outbox.New(deps.Local, seq, cfg.Site, cfg.Outbox, deps.NewID, log)
 	a.loop, err = driver.New(driver.Options[agent.Input, agent.Action, agent.Snapshot]{
 		Name: keyAgent, Clock: deps.Clock, Store: deps.Store, Logger: log,
 		Core: driver.Core[agent.Input, agent.Action, agent.Snapshot]{
@@ -180,6 +182,10 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.New("agentapp: Run called twice")
 	}
 	defer a.stop()
+	defer context.AfterFunc(ctx, a.stop)()
+	// Everything runs on life, which ends with ctx: a loop only stops once life is
+	// over, so a message handed to it meanwhile is known to be given up, and an upload
+	// under way gives up too (it is tried again at the next start).
 	var wg sync.WaitGroup
 	for _, run := range []func(context.Context){
 		func(c context.Context) { a.loop.Run(c) },
@@ -189,11 +195,9 @@ func (a *App) Run(ctx context.Context) error {
 		func(c context.Context) { driver.Every(c, a.deps.Clock, a.cfg.StatusEvery, a.repeatStatus) },
 		a.sender,
 	} {
-		wg.Go(func() { run(ctx) })
+		wg.Go(func() { run(a.life) })
 	}
-	a.repeatStatus(ctx) // the status at start: the link is down until the cloud's broker answers
-	<-ctx.Done()
-	a.stop() // an upload under way gives up; it is tried again at the next start
+	a.repeatStatus(a.life) // the status at start: the link is down until the cloud's broker answers
 	wg.Wait()
 	a.uploads.Wait()
 	a.out.Flush()
@@ -238,8 +242,7 @@ func (a *App) Will() (topic string, payload []byte) {
 }
 
 func (a *App) submit(build func(now time.Time) agent.Input) {
-	err := a.loop.Submit(a.life, build)
-	if err != nil && !errors.Is(err, driver.ErrStopped) && !errors.Is(err, context.Canceled) {
-		a.log.Error("the agent's loop refused an input", "err", err)
+	if err := a.loop.Submit(a.life, build); err != nil && a.life.Err() == nil {
+		a.log.Error("handing an input to the agent failed", "err", err)
 	}
 }

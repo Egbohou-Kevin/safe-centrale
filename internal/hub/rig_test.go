@@ -3,10 +3,8 @@ package hub
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,7 +15,7 @@ import (
 	"safehome/internal/escalation"
 	"safehome/internal/health"
 	"safehome/internal/inbox"
-	"safehome/internal/outbox"
+	"safehome/internal/outbox/outboxtest"
 	"safehome/internal/schematest"
 )
 
@@ -36,74 +34,8 @@ var t0 = time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)
 
 // --- fakes ----------------------------------------------------------------------
 
-type published struct {
-	Topic   string
-	Payload []byte
-	QoS     byte
-	Retain  bool
-	Env     contract.Envelope
-}
-
-type fakeBroker struct {
-	mu       sync.Mutex
-	msgs     []published
-	failures int // the next n publishes fail as "unavailable"
-	refuse   func(topic string) bool
-	attempts int
-	hold     chan struct{} // set: every publish waits for it to close
-}
-
-func (b *fakeBroker) Publish(ctx context.Context, topic string, payload []byte, qos byte, retain bool) error {
-	b.mu.Lock()
-	hold := b.hold
-	b.mu.Unlock()
-	if hold != nil {
-		select {
-		case <-hold:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.attempts++
-	if b.failures > 0 {
-		b.failures--
-		return outbox.ErrUnavailable
-	}
-	if b.refuse != nil && b.refuse(topic) {
-		return errors.New("refused")
-	}
-	env, _ := contract.ParseEnvelope(payload)
-	b.msgs = append(b.msgs, published{topic, append([]byte(nil), payload...), qos, retain, env})
-	return nil
-}
-
-func (b *fakeBroker) all() []published {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return append([]published(nil), b.msgs...)
-}
-
-func (b *fakeBroker) on(topic string) []published {
-	var out []published
-	for _, m := range b.all() {
-		if m.Topic == topic {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
-func (b *fakeBroker) ofType(typ string) []published {
-	var out []published
-	for _, m := range b.all() {
-		if m.Env.Type == typ {
-			out = append(out, m)
-		}
-	}
-	return out
-}
+// published is a message the hub published.
+type published = outboxtest.Message
 
 // --- rig -------------------------------------------------------------------------
 
@@ -112,7 +44,7 @@ type rig struct {
 	hub    *Hub
 	clock  *drivertest.FakeClock
 	store  *drivertest.MemStore
-	broker *fakeBroker
+	broker *outboxtest.Broker
 	logs   *drivertest.SyncBuffer
 	ids    *contract.IDGenerator
 	cancel context.CancelFunc
@@ -153,7 +85,7 @@ func testConfig() Config {
 
 func newRig(t *testing.T, store *drivertest.MemStore, mutate ...func(*Config)) *rig {
 	t.Helper()
-	r := &rig{t: t, clock: drivertest.NewFakeClock(t0), store: store, broker: &fakeBroker{}, logs: drivertest.Logs(t)}
+	r := &rig{t: t, clock: drivertest.NewFakeClock(t0), store: store, broker: &outboxtest.Broker{}, logs: drivertest.Logs(t)}
 	if store == nil {
 		r.store = drivertest.NewMemStore()
 	}
@@ -180,7 +112,7 @@ func (r *rig) start() {
 	if w := r.hub.cfg.BootWindow; w > 0 {
 		r.clock.PassTimer(r.t, w)
 	}
-	drivertest.WaitFor(r.t, "boot", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) >= 1 })
+	drivertest.WaitFor(r.t, "boot", func() bool { return len(r.broker.On(contract.AlarmStateTopic(site))) >= 1 })
 }
 
 func (r *rig) startWithoutWaiting() {
@@ -304,7 +236,7 @@ func (r *rig) mustBe(m engine.Mode) {
 // waitAcks waits until n acknowledgements have been published.
 func (r *rig) waitAcks(n int) {
 	r.t.Helper()
-	drivertest.WaitFor(r.t, fmt.Sprintf("%d acks", n), func() bool { return len(r.broker.ofType(contract.TypeAlarmAck)) >= n })
+	drivertest.WaitFor(r.t, fmt.Sprintf("%d acks", n), func() bool { return len(r.broker.OfType(contract.TypeAlarmAck)) >= n })
 }
 
 // validateAll checks every published message against its JSON Schema.
@@ -321,7 +253,7 @@ func (r *rig) validateAll() {
 		contract.TypeHeartbeat: "system-heartbeat.json", contract.TypeHealth: "system-health.json",
 		contract.TypeInstallMode: "install-mode.json",
 	}
-	for _, m := range r.broker.all() {
+	for _, m := range r.broker.All() {
 		file, ok := files[m.Env.Type]
 		if !ok {
 			r.t.Errorf("no schema for published type %q", m.Env.Type)
@@ -336,7 +268,7 @@ func (r *rig) validateAll() {
 	}
 }
 
-func eventsOf(r *rig, typ string) []published { return r.broker.ofType(typ) }
+func eventsOf(r *rig, typ string) []published { return r.broker.OfType(typ) }
 
 func dataOf[T any](t *testing.T, p published) T {
 	t.Helper()

@@ -112,6 +112,23 @@ func TestRestoreReconcilesWhatACrashLeftOnDisk(t *testing.T) {
 			t.Fatalf("queue %+v, disk %v", h.r.queue, h.disk)
 		}
 	})
+	t.Run("a retained state saved before its snapshot goes once", func(t *testing.T) {
+		h := newHarness(t)
+		snap := h.r.Snapshot()
+		state, _ := h.msg(contract.TypeHealth, health)
+		hubGives := func() { h.handle(Local{Now: h.now, Topic: topic("system", "health"), Payload: state}) }
+		hubGives()
+		h.r = h.restored(snap, h.disk) // the crash came before the snapshot was saved
+		hubGives()                     // the hub's broker gives the retained state again
+		h.linkUp()
+		if sent := h.send(); len(sent) != 1 {
+			t.Fatalf("%+v", sent)
+		}
+		hubGives() // and again at the next connection
+		if again := h.send(); len(again) != 0 {
+			t.Fatalf("an old state went again, with a new number: %+v", again)
+		}
+	})
 	t.Run("a number saved with its item but not on its own is saved at the restart", func(t *testing.T) {
 		h := newHarness(t)
 		h.local(topic("alarm", "event"), contract.TypeAlarmArmed, armed)

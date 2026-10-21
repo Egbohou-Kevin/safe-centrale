@@ -14,6 +14,7 @@ import (
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/gsm"
 	"safehome/internal/inbox"
+	"safehome/internal/outbox/outboxtest"
 	"safehome/internal/schematest"
 )
 
@@ -22,41 +23,6 @@ const site = "tg-lom-0001"
 var t0 = time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)
 
 // --- fakes ---------------------------------------------------------------------------
-
-type published struct {
-	topic  string
-	retain bool
-	raw    []byte
-	env    contract.Envelope
-}
-
-type fakeBroker struct {
-	mu   sync.Mutex
-	msgs []published
-}
-
-func (b *fakeBroker) Publish(_ context.Context, topic string, payload []byte, _ byte, retain bool) error {
-	env, err := contract.ParseEnvelope(payload)
-	if err != nil {
-		return err
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.msgs = append(b.msgs, published{topic: topic, retain: retain, raw: payload, env: env})
-	return nil
-}
-
-func (b *fakeBroker) ofType(typ string) []published {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	var out []published
-	for _, m := range b.msgs {
-		if m.env.Type == typ {
-			out = append(out, m)
-		}
-	}
-	return out
-}
 
 type sms struct{ number, text string }
 
@@ -118,7 +84,7 @@ type rig struct {
 	gw     *Gateway
 	clock  *drivertest.FakeClock
 	store  *drivertest.MemStore
-	broker *fakeBroker
+	broker *outboxtest.Broker
 	modem  *fakeModem
 	logs   *drivertest.SyncBuffer
 	ids    *contract.IDGenerator
@@ -132,7 +98,7 @@ func newRig(t *testing.T, store *drivertest.MemStore, mutate ...func(*Config)) *
 		store = drivertest.NewMemStore()
 	}
 	r := &rig{
-		t: t, clock: drivertest.NewFakeClock(t0), store: store, broker: &fakeBroker{},
+		t: t, clock: drivertest.NewFakeClock(t0), store: store, broker: &outboxtest.Broker{},
 		modem: &fakeModem{info: LineInfo{Registered: true, Signal: 71, Operator: "TOGOCOM"}}, logs: drivertest.Logs(t),
 		ids: contract.NewIDGenerator(),
 	}
@@ -189,11 +155,11 @@ func (r *rig) settle() {
 }
 
 func (r *rig) status() contract.GSMStatusData {
-	all := r.broker.ofType(contract.TypeGSMStatus)
+	all := r.broker.OfType(contract.TypeGSMStatus)
 	if len(all) == 0 {
 		return contract.GSMStatusData{}
 	}
-	d, _ := contract.DecodeData[contract.GSMStatusData](all[len(all)-1].env)
+	d, _ := contract.DecodeData[contract.GSMStatusData](all[len(all)-1].Env)
 	return d
 }
 
@@ -226,8 +192,8 @@ func (r *rig) publish(topic, id string, ts time.Time, typ string, data any) {
 
 func (r *rig) results(ref string) []string {
 	var out []string
-	for _, m := range r.broker.ofType(contract.TypeAlertResult) {
-		d, _ := contract.DecodeData[contract.AlertResultData](m.env)
+	for _, m := range r.broker.OfType(contract.TypeAlertResult) {
+		d, _ := contract.DecodeData[contract.AlertResultData](m.Env)
 		if d.Ref == ref {
 			out = append(out, d.Status+"/"+d.Reason)
 		}
@@ -240,18 +206,15 @@ func (r *rig) validateAll() {
 	files := map[string]string{
 		contract.TypeAlertResult: "alert-result.json", contract.TypeAlertAck: "alert-ack.json", contract.TypeGSMStatus: "gsm-status.json",
 	}
-	r.broker.mu.Lock()
-	msgs := append([]published(nil), r.broker.msgs...)
-	r.broker.mu.Unlock()
-	for _, m := range msgs {
-		if err := schematest.Check(files[m.env.Type], m.env.Data); err != nil {
-			r.t.Errorf("%s: %v", m.env.Type, err)
+	for _, m := range r.broker.All() {
+		if err := schematest.Check(files[m.Env.Type], m.Env.Data); err != nil {
+			r.t.Errorf("%s: %v", m.Env.Type, err)
 		}
-		if err := schematest.Check("envelope.json", m.raw); err != nil {
+		if err := schematest.Check("envelope.json", m.Payload); err != nil {
 			r.t.Errorf("envelope: %v", err)
 		}
-		if m.env.Src != "gsm" {
-			r.t.Errorf("src %q", m.env.Src)
+		if m.Env.Src != "gsm" {
+			r.t.Errorf("src %q", m.Env.Src)
 		}
 	}
 	// No text and no phone number in the logs.

@@ -164,7 +164,7 @@ func (h *Hub) openSaved() (err error) {
 	if h.installer, err = openInstallerCode(h.cfg.Access, h.deps.Store); err != nil {
 		return err
 	}
-	h.out, err = outbox.Open(h.deps.Store, h.deps.Publisher, keySeq, h.cfg.Site, h.cfg.Outbox, h.log)
+	h.out, err = outbox.Open(h.deps.Store, h.deps.Publisher, keySeq, h.cfg.Site, h.cfg.Outbox, h.deps.NewID, h.log)
 	return err
 }
 

@@ -101,7 +101,8 @@ func start(t *testing.T, cfg Config) *rig {
 	return r
 }
 
-func (r *rig) send(topic, typ string, data any) {
+// send hands the application a message, and returns it.
+func (r *rig) send(topic, typ string, data any) []byte {
 	r.t.Helper()
 	env, err := contract.NewEnvelope(site, "cloud", 1, r.ids.New(), r.clock.Now(), typ, data)
 	if err != nil {
@@ -109,6 +110,7 @@ func (r *rig) send(topic, typ string, data any) {
 	}
 	b, _ := json.Marshal(env)
 	r.app.HandleMessage(inbox.Message{Topic: topic, Payload: b})
+	return b
 }
 
 func (r *rig) config(d contract.ConfigSetData) {
@@ -314,7 +316,7 @@ func TestRefusals(t *testing.T) {
 	if d := r.waitAnswer(6); d.Status != contract.ConfigRejected || d.Reason != "the hub could not keep it" {
 		t.Fatalf("%+v", d)
 	}
-	r.send(contract.ConfigSetTopic(site), contract.TypeConfigSet, map[string]any{"version": "seven"})
+	damaged := r.send(contract.ConfigSetTopic(site), contract.TypeConfigSet, map[string]any{"version": "seven"})
 	if d := r.waitAnswer(7); d.Status != contract.ConfigRejected {
 		t.Fatalf("%+v", d)
 	}
@@ -326,6 +328,7 @@ func TestRefusals(t *testing.T) {
 	b, _ := json.Marshal(env)
 	r.app.HandleMessage(inbox.Message{Topic: contract.ConfigSetTopic(site), Payload: b})
 	r.app.HandleMessage(inbox.Message{Topic: contract.ConfigSetTopic(site), Payload: []byte("{")})
+	r.app.HandleMessage(inbox.Message{Topic: contract.ConfigSetTopic(site), Payload: damaged}) // QoS 1: again
 	r.sent()
 	if _, n := r.broker.last(); n != 7 {
 		t.Fatalf("%d answers", n)

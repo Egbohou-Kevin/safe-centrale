@@ -14,6 +14,7 @@ import (
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/inbox"
 	"safehome/internal/maint"
+	"safehome/internal/outbox/outboxtest"
 	"safehome/internal/schematest"
 )
 
@@ -23,12 +24,11 @@ var t0 = time.Date(2026, 10, 20, 21, 0, 0, 0, time.UTC)
 
 // --- fakes ---------------------------------------------------------------------
 
-type broker struct {
-	mu   sync.Mutex
-	msgs []contract.MaintSessionData
-}
+// broker is the shared fake broker that refuses anything but a valid maint.session,
+// not retained.
+type broker struct{ outboxtest.Broker }
 
-func (b *broker) Publish(_ context.Context, topic string, payload []byte, _ byte, retain bool) error {
+func (b *broker) Publish(ctx context.Context, topic string, payload []byte, qos byte, retain bool) error {
 	env, err := contract.ParseEnvelope(payload)
 	if err != nil || topic != contract.MaintSessionTopic(site) || env.Type != contract.TypeMaintSession || retain {
 		return errors.New("unexpected " + topic)
@@ -36,18 +36,21 @@ func (b *broker) Publish(_ context.Context, topic string, payload []byte, _ byte
 	if err := schematest.Check("maint-session.json", env.Data); err != nil {
 		return err
 	}
-	d, _ := contract.DecodeData[contract.MaintSessionData](env)
-	b.mu.Lock()
-	b.msgs = append(b.msgs, d)
-	b.mu.Unlock()
-	return nil
+	return b.Broker.Publish(ctx, topic, payload, qos, retain)
+}
+
+func (b *broker) sessions() []contract.MaintSessionData {
+	var out []contract.MaintSessionData
+	for _, m := range b.All() {
+		d, _ := contract.DecodeData[contract.MaintSessionData](m.Env)
+		out = append(out, d)
+	}
+	return out
 }
 
 func (b *broker) steps() []string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
 	var out []string
-	for _, d := range b.msgs {
+	for _, d := range b.sessions() {
 		out = append(out, strings.TrimSuffix(d.Status+"/"+d.Reason, "/"))
 	}
 	return out
@@ -114,7 +117,9 @@ type rig struct {
 	tun    *fakeTunneler
 	logs   *drivertest.SyncBuffer
 	ids    *contract.IDGenerator
-	stop   func()
+	cancel context.CancelFunc // stops the service; done is closed once it stopped
+	done   chan struct{}
+	stop   func() // stops the service and waits for its end
 }
 
 func start(t *testing.T, store *drivertest.MemStore, clock *drivertest.FakeClock, edit ...func(*maint.Config)) *rig {
@@ -144,10 +149,9 @@ func start(t *testing.T, store *drivertest.MemStore, clock *drivertest.FakeClock
 	}
 	r.app = app
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { app.Run(ctx); close(done) }()
-	var once sync.Once
-	r.stop = func() { once.Do(func() { cancel(); <-done }) }
+	r.cancel, r.done = cancel, make(chan struct{})
+	go func() { app.Run(ctx); close(r.done) }()
+	r.stop = func() { cancel(); <-r.done }
 	t.Cleanup(r.stop)
 	return r
 }
@@ -293,7 +297,25 @@ func TestASessionGoesOnAfterARestart(t *testing.T) {
 	drivertest.WaitFor(t, "the tunnel again", func() bool { return r2.tun.count() == 1 })
 	clock.Advance(time.Hour)
 	r2.steps("closed/timeout")
-	if s := r2.broker.msgs[0]; s.DurationS != 3600 || s.User != "kevin" {
+	if s := r2.broker.sessions()[0]; s.DurationS != 3600 || s.User != "kevin" {
 		t.Fatalf("%+v", s)
+	}
+}
+
+// A message that arrives while the service stops (here during its last flush, which
+// the broker holds) is given up without an error.
+func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
+	r := start(t, nil, nil)
+	release := r.broker.Hold()
+	// Something left for the last flush.
+	r.app.out.Send(src, contract.MaintSessionTopic(site), contract.TypeMaintSession,
+		contract.MaintSessionData{Session: "s0", Status: contract.MaintClosed, Reason: contract.MaintTimeout}, false, t0)
+	r.cancel()
+	drivertest.WaitFor(t, "the loop to stop", func() bool { return r.app.Alive(context.Background()) != nil })
+	r.open("s2")
+	release()
+	<-r.done
+	if strings.Contains(r.logs.String(), "level=ERROR") {
+		t.Fatal("an error was logged for a message given up at shutdown")
 	}
 }

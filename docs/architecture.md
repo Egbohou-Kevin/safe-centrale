@@ -100,7 +100,9 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   seulement des fonctions (`Core`). Le temps, le stockage et la sortie sont des ports :
   les tests la font tourner avec une horloge simulée. Le temps ne recule jamais pour le
   domaine, même si l'horloge système est corrigée en arrière. `driver.Every` répète un
-  travail (un statut, le battement de cœur) sur la même horloge.
+  travail (un statut, le battement de cœur) sur la même horloge. La fausse horloge des
+  tests (`drivertest`) fait comme la vraie : ses minuteries suivent une horloge
+  monotone, que `Set` ne bouge pas.
 - **La couche application** (`internal/hub`) relie tout cela pour la centrale : elle
   reçoit les messages MQTT, les traduit (`wire`), les remet aux domaines par leurs
   boucles, et publie ce qui en sort. Elle publie par le port de la file d'envoi
@@ -114,7 +116,11 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   application (`internal/gateway`, qui déclare le port `Modem`), son adaptateur
   (`internal/adapter/atmodem`). La file d'envoi MQTT (`internal/outbox`) est partagée
   par toutes les couches application des programmes de la centrale ; elle connaît le
-  contrat et le pilote, et aucun domaine. La porte d'entrée (`internal/inbox`) aussi :
+  contrat et le pilote, et aucun domaine. `Send` encode un message tout de suite et le
+  met en file, avec un identifiant tiré de la fonction donnée à `Open` ; un message
+  qu'on ne peut pas encoder est écrit au journal et laissé de côté. Les tests des
+  couches application partagent son faux broker (`outboxtest.Broker`). La porte
+  d'entrée (`internal/inbox`) aussi :
   le message reçu, les abonnements, la vérification d'un message contre le contrat
   (`Open`), les identifiants déjà vus. Elle ne connaît que le contrat.
 - **L'adaptateur Zigbee** aussi : son domaine (`internal/zigbee`), sa couche
@@ -145,7 +151,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 - **La console locale** : sa couche application (`internal/consoleapp`) suit le mode
   installation et déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`). `Sites` est
   `install.Sites` ; `Codes` a `People` (les contacts, et à part les codes d'anciens
-  contacts), `Set` et `Remove`. Sa page
+  contacts), `Set` (qui refuse qui n'est pas un contact) et `Remove`. Sa page
   (`internal/consoleapp/web`) ne connaît qu'elle. Le Wi-Fi est l'adaptateur
   `internal/adapter/hotspot` (`nmcli`).
 - **La maintenance à distance** a la forme de la vidéo : son domaine (`internal/maint`,
@@ -162,6 +168,11 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   `internal/hub` n'y a aucune part. Le fichier qui garde cette
   configuration dans le dossier d'état est `internal/siteconfig`, qui ne connaît que le
   contrat ; la centrale, la passerelle GSM et la vidéo le lisent au démarrage.
+- **L'arrêt** a la même forme dans toutes les couches application qui ont une boucle
+  (centrale, passerelle, Zigbee, agent, vidéo, maintenance). Tout tourne sur un
+  contexte `life`, annulé dès que le contexte de `Run` se termine. Puis `Run` attend
+  la fin de ses goroutines et fait un dernier envoi de la file (`Flush`, 3 s au plus).
+  Un message qui arrive pendant ce temps est abandonné sans erreur au journal.
 - **Les lectures de configuration** (`internal/hubconfig`, `internal/gsmconfig`, etc.)
   partagent `internal/configfile` : JSON strict, niveau de journal, durées, secrets,
   écriture atomique. L'en-tête commun des fichiers (`site`, `broker_url`, `client_id`,
@@ -191,7 +202,8 @@ Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent 
   entrées-sorties ; si `internal/zigbee/z2m` connaît autre chose que le domaine Zigbee ;
 - si le pilote ou un adaptateur importe un paquet du module ; si le pilote lit
   l'horloge ailleurs que dans `SystemClock` ;
-- si la file d'envoi connaît autre chose que le contrat et le pilote ; si la porte
+- si la file d'envoi connaît autre chose que le contrat et le pilote, ou son faux
+  broker autre chose qu'elle et le contrat ; si la porte
   d'entrée connaît autre chose que le contrat, fait des entrées-sorties ou lit
   l'horloge ;
 - si le cœur de l'agent connaît autre chose que le contrat ou lit l'horloge ; si
@@ -207,7 +219,8 @@ Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent 
   importé hors de `cmd/` ;
 - si un domaine, le contrat ou le pilote importe la couche application de la centrale ;
 - si une bibliothèque externe est importée hors de son adaptateur, ou si du code livré
-  importe un outil de test (`schematest`, `mqtttest`, `attest`, `go2rtctest`, `drivertest`).
+  importe un outil de test (`schematest`, `mqtttest`, `attest`, `go2rtctest`, `drivertest`,
+  `outboxtest`).
 
 Le vocabulaire commun entre les documents (français) et le code (anglais) est dans
 `glossaire.md`. Convention : documents en français, code et commentaires en anglais.

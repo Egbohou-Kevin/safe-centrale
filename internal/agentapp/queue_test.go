@@ -48,7 +48,7 @@ func TestDrainingTheQueueWritesItemsNotTheQueue(t *testing.T) {
 	saves, counts := s.Saves(keyAgent), s.Saves(keyUplink)
 
 	r.app.LinkChanged(true, "mqtts")
-	drivertest.WaitFor(t, "the queue to drain", func() bool { return len(r.cloud.ofType(contract.TypeAlarmArmed)) == n && r.queued() == 0 })
+	drivertest.WaitFor(t, "the queue to drain", func() bool { return len(r.cloud.OfType(contract.TypeAlarmArmed)) == n && r.queued() == 0 })
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	itemWrites, snapWrites, countWrites := q.written[puts:], s.Sizes(keyAgent)[saves:], s.Sizes(keyUplink)[counts:]

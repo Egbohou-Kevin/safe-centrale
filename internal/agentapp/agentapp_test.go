@@ -14,7 +14,7 @@ import (
 	"safehome/internal/agent"
 	"safehome/internal/contract"
 	"safehome/internal/driver/drivertest"
-	"safehome/internal/inbox"
+	"safehome/internal/outbox/outboxtest"
 	"safehome/internal/schematest"
 )
 
@@ -37,7 +37,7 @@ func TestTheStatusSaysWhetherTheClientsDataIsSpared(t *testing.T) {
 
 func TestNewNeedsItsPortsAndAGoodConfig(t *testing.T) {
 	d := newDisk()
-	good := Deps{Clock: drivertest.NewFakeClock(t0), Store: d.store, Queue: d.queue, Local: &fakeBroker{}, Cloud: &fakeBroker{}, Photos: &memPhotos{},
+	good := Deps{Clock: drivertest.NewFakeClock(t0), Store: d.store, Queue: d.queue, Local: &outboxtest.Broker{}, Cloud: &outboxtest.Broker{}, Photos: &memPhotos{},
 		Uploader: &fakeUploader{}, NewID: contract.NewIDGenerator().New}
 	if _, err := New(DefaultConfig(site), Deps{Clock: good.Clock, Store: d.store, Queue: d.queue, Local: good.Local, NewID: good.NewID}); err == nil {
 		t.Error("an agent without the cloud was built")
@@ -86,22 +86,22 @@ func TestSubscriptionsNeverHearThemselves(t *testing.T) {
 
 func TestAtStartTheLinkIsDownAndNothingIsSent(t *testing.T) {
 	r := newRig(t, nil)
-	st := r.local.ofType(contract.TypeAgentStatus)
-	if !st[0].retain || lastStatus(t, r.local).Uplink != contract.UplinkDown {
+	st := r.local.OfType(contract.TypeAgentStatus)
+	if !st[0].Retain || lastStatus(t, r.local).Uplink != contract.UplinkDown {
 		t.Fatalf("%+v", st[0])
 	}
-	if err := schematest.Check("agent-status.json", st[0].env.Data); err != nil {
+	if err := schematest.Check("agent-status.json", st[0].Env.Data); err != nil {
 		t.Fatal(err)
 	}
-	if err := schematest.Check("envelope.json", st[0].raw); err != nil {
+	if err := schematest.Check("envelope.json", st[0].Payload); err != nil {
 		t.Fatal(err)
 	}
-	if st[0].env.Src != contract.AgentLink {
-		t.Fatalf("src %q", st[0].env.Src)
+	if st[0].Env.Src != contract.AgentLink {
+		t.Fatalf("src %q", st[0].Env.Src)
 	}
 	r.fromHub(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
 	r.settle()
-	if n := len(r.cloud.all()); n != 0 {
+	if n := len(r.cloud.All()); n != 0 {
 		t.Fatalf("%d messages went to a cloud the agent is not connected to", n)
 	}
 }
@@ -114,15 +114,15 @@ func TestWhenTheLinkComesTheQueueLeavesAlarmsFirst(t *testing.T) {
 		contract.DeviceEventData{DeviceID: "dev_door", Capability: contract.CapContact, Value: json.RawMessage(`"open"`)}) // stays
 	// The loop takes its inputs in order: the three are queued before the link comes.
 	r.app.LinkChanged(true, "mqtts")
-	drivertest.WaitFor(t, "the queue to leave", func() bool { return len(r.cloud.all()) >= 3 })
-	msgs := r.cloud.all()
-	if !same(msgs[0], alarm) || msgs[0].retain {
-		t.Fatalf("first to the cloud: %s %s", msgs[0].topic, msgs[0].raw)
+	drivertest.WaitFor(t, "the queue to leave", func() bool { return len(r.cloud.All()) >= 3 })
+	msgs := r.cloud.All()
+	if !same(msgs[0], alarm) || msgs[0].Retain {
+		t.Fatalf("first to the cloud: %s %s", msgs[0].Topic, msgs[0].Payload)
 	}
 	var topics []string
 	for _, m := range msgs {
-		topics = append(topics, m.topic)
-		if m.topic == topic("device", "dev_door", "event") {
+		topics = append(topics, m.Topic)
+		if m.Topic == topic("device", "dev_door", "event") {
 			t.Fatal("a raw contact event went to the cloud")
 		}
 	}
@@ -145,17 +145,17 @@ func TestWhenTheLinkComesTheQueueLeavesAlarmsFirst(t *testing.T) {
 
 func TestAMessageTheCloudDidNotTakeIsTriedAgain(t *testing.T) {
 	r := newRig(t, nil)
-	r.cloud.setDown(true)
+	r.cloud.SetDown(true)
 	r.app.LinkChanged(true, "wss")
 	alarm := r.fromHub(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
 	r.clock.WaitTimer(t, r.clock.Now().Add(time.Second)) // refused: the sender waits before it tries again
-	if len(r.cloud.all()) != 0 {
+	if len(r.cloud.All()) != 0 {
 		t.Fatal("sent to a refusing broker")
 	}
-	r.cloud.setDown(false)
+	r.cloud.SetDown(false)
 	r.clock.Advance(time.Second) // the first retry delay
 	drivertest.WaitFor(t, "the retry", func() bool {
-		for _, m := range r.cloud.all() {
+		for _, m := range r.cloud.All() {
 			if same(m, alarm) {
 				return true
 			}
@@ -166,14 +166,17 @@ func TestAMessageTheCloudDidNotTakeIsTriedAgain(t *testing.T) {
 
 func TestAMessageTheCloudRefusesForGoodIsDropped(t *testing.T) {
 	r := newRig(t, nil)
-	r.cloud.mu.Lock()
-	r.cloud.refuse = contract.TypeAlarmArmed
-	r.cloud.mu.Unlock()
+	r.cloud.Refuse(func(m outboxtest.Message) error {
+		if m.Env.Type == contract.TypeAlarmArmed {
+			return fmt.Errorf("%w: not authorized", ErrRefused)
+		}
+		return nil
+	})
 	r.fromHub(topic("alarm", "event"), contract.TypeAlarmArmed, contract.ArmedData{})
 	r.fromHub(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
 	r.app.LinkChanged(true, "mqtts")
 	// No retry delay to wait for: the clock does not move.
-	drivertest.WaitFor(t, "the next message to leave", func() bool { return len(r.cloud.ofType(contract.TypeAlarmTriggered)) == 1 })
+	drivertest.WaitFor(t, "the next message to leave", func() bool { return len(r.cloud.OfType(contract.TypeAlarmTriggered)) == 1 })
 	drivertest.WaitFor(t, "the refused one to leave the queue", func() bool { return r.queued() == 0 })
 	r.clock.Advance(time.Minute)
 	drivertest.WaitFor(t, "the status", func() bool { return lastStatus(t, r.local).Dropped == 1 })
@@ -183,24 +186,24 @@ func TestTheCloudGetsAgainWhatItMissed(t *testing.T) {
 	r := newRig(t, nil)
 	r.app.LinkChanged(true, "mqtts")
 	alarm := r.fromHub(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
-	drivertest.WaitFor(t, "the alarm to leave", func() bool { return len(r.cloud.ofType(contract.TypeAlarmTriggered)) == 1 })
-	first := r.cloud.ofType(contract.TypeAlarmTriggered)[0]
-	if first.env.Seq == 0 {
+	drivertest.WaitFor(t, "the alarm to leave", func() bool { return len(r.cloud.OfType(contract.TypeAlarmTriggered)) == 1 })
+	first := r.cloud.OfType(contract.TypeAlarmTriggered)[0]
+	if first.Env.Seq == 0 {
 		t.Fatal("what goes to the cloud is numbered")
 	}
 
-	r.fromCloud(topic("agent", "cmd"), contract.TypeAgentReplay, contract.ReplayData{From: first.env.Seq, To: first.env.Seq + 500})
-	drivertest.WaitFor(t, "the replay", func() bool { return len(r.cloud.ofType(contract.TypeAlarmTriggered)) == 2 })
-	again := r.cloud.ofType(contract.TypeAlarmTriggered)[1]
-	if !same(again, alarm) || !bytes.Equal(again.raw, first.raw) {
-		t.Fatalf("replayed %s, first %s", again.raw, first.raw)
+	r.fromCloud(topic("agent", "cmd"), contract.TypeAgentReplay, contract.ReplayData{From: first.Env.Seq, To: first.Env.Seq + 500})
+	drivertest.WaitFor(t, "the replay", func() bool { return len(r.cloud.OfType(contract.TypeAlarmTriggered)) == 2 })
+	again := r.cloud.OfType(contract.TypeAlarmTriggered)[1]
+	if !same(again, alarm) || !bytes.Equal(again.Payload, first.Payload) {
+		t.Fatalf("replayed %s, first %s", again.Payload, first.Payload)
 	}
-	drivertest.WaitFor(t, "the report", func() bool { return len(r.cloud.ofType(contract.TypeAgentReplayed)) == 1 })
-	rep, err := contract.DecodeData[contract.ReplayedData](r.cloud.ofType(contract.TypeAgentReplayed)[0].env)
-	if err != nil || rep.Resent < 1 || len(rep.Missing) != 1 || rep.Missing[0].Last != first.env.Seq+500 {
+	drivertest.WaitFor(t, "the report", func() bool { return len(r.cloud.OfType(contract.TypeAgentReplayed)) == 1 })
+	rep, err := contract.DecodeData[contract.ReplayedData](r.cloud.OfType(contract.TypeAgentReplayed)[0].Env)
+	if err != nil || rep.Resent < 1 || len(rep.Missing) != 1 || rep.Missing[0].Last != first.Env.Seq+500 {
 		t.Fatalf("%+v %v", rep, err)
 	}
-	if len(r.local.ofType(contract.TypeAgentReplay)) != 0 {
+	if len(r.local.OfType(contract.TypeAgentReplay)) != 0 {
 		t.Fatal("the request is for the agent: the hub never sees it")
 	}
 	schematest.Validate(t, "agent-replayed.json", rep)
@@ -211,13 +214,13 @@ func TestAnAppAlertWithoutTheCloudFailsOnTheHub(t *testing.T) {
 	req := r.fromHub(topic("alert", "request"), contract.TypeAlertRequest, contract.AlertRequestData{Incident: "inc1",
 		Kind: contract.AlertIntrusion, Urgency: contract.UrgencyCritical, Wave: 1, Contact: "u_owner", Channel: contract.ChannelApp, Text: "ALARME"})
 	env, _ := contract.ParseEnvelope(req)
-	drivertest.WaitFor(t, "the failure", func() bool { return len(r.local.ofType(contract.TypeAlertResult)) == 1 })
-	res := r.local.ofType(contract.TypeAlertResult)[0]
-	d, _ := contract.DecodeData[contract.AlertResultData](res.env)
-	if d.Ref != env.ID || d.Status != contract.ResultFailed || d.Reason != contract.ReasonNoUplink || res.topic != topic("alert", "result") {
+	drivertest.WaitFor(t, "the failure", func() bool { return len(r.local.OfType(contract.TypeAlertResult)) == 1 })
+	res := r.local.OfType(contract.TypeAlertResult)[0]
+	d, _ := contract.DecodeData[contract.AlertResultData](res.Env)
+	if d.Ref != env.ID || d.Status != contract.ResultFailed || d.Reason != contract.ReasonNoUplink || res.Topic != topic("alert", "result") {
 		t.Fatalf("%+v %+v", res, d)
 	}
-	if err := schematest.Check("alert-result.json", res.env.Data); err != nil {
+	if err := schematest.Check("alert-result.json", res.Env.Data); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -228,21 +231,21 @@ func TestOrdersFromTheCloudReachTheHubUnchanged(t *testing.T) {
 	r.fromCloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, contract.AlarmCommandData{Command: contract.CmdDisarm, Origin: contract.OriginKeypad})
 	r.fromCloud(topic("device", "dev_siren1", "cmd"), contract.TypeCommand, map[string]string{"command": "siren.on"})
 	drivertest.WaitFor(t, "the order", func() bool {
-		for _, m := range r.local.all() {
-			if m.topic == topic("alarm", "cmd") {
+		for _, m := range r.local.All() {
+			if m.Topic == topic("alarm", "cmd") {
 				return true
 			}
 		}
 		return false
 	})
 	r.settle()
-	var orders []published
-	for _, m := range r.local.all() {
-		if m.topic == topic("alarm", "cmd") || strings.HasSuffix(m.topic, "/cmd") {
+	var orders []outboxtest.Message
+	for _, m := range r.local.All() {
+		if m.Topic == topic("alarm", "cmd") || strings.HasSuffix(m.Topic, "/cmd") {
 			orders = append(orders, m)
 		}
 	}
-	if len(orders) != 1 || !bytes.Equal(orders[0].raw, order) {
+	if len(orders) != 1 || !bytes.Equal(orders[0].Payload, order) {
 		t.Fatalf("%d orders reached the hub: %+v", len(orders), orders)
 	}
 }
@@ -265,7 +268,7 @@ func TestTheQueueSurvivesARestartOfTheAgent(t *testing.T) {
 	again := newRig(t, d)
 	again.app.LinkChanged(true, "mqtts")
 	drivertest.WaitFor(t, "the saved message", func() bool {
-		for _, m := range again.cloud.all() {
+		for _, m := range again.cloud.All() {
 			if same(m, alarm) {
 				return true
 			}
@@ -273,18 +276,18 @@ func TestTheQueueSurvivesARestartOfTheAgent(t *testing.T) {
 		return false
 	})
 	// The agent's own numbering goes on after the restart.
-	first := r.local.ofType(contract.TypeAgentStatus)
-	second := again.local.ofType(contract.TypeAgentStatus)
-	if second[0].env.Seq <= first[len(first)-1].env.Seq {
-		t.Fatalf("seq went from %d back to %d", first[len(first)-1].env.Seq, second[0].env.Seq)
+	first := r.local.OfType(contract.TypeAgentStatus)
+	second := again.local.OfType(contract.TypeAgentStatus)
+	if second[0].Env.Seq <= first[len(first)-1].Env.Seq {
+		t.Fatalf("seq went from %d back to %d", first[len(first)-1].Env.Seq, second[0].Env.Seq)
 	}
 }
 
 func TestTheStatusIsRepeated(t *testing.T) {
 	r := newRig(t, nil)
-	n := len(r.local.ofType(contract.TypeAgentStatus))
+	n := len(r.local.OfType(contract.TypeAgentStatus))
 	r.clock.Advance(time.Minute)
-	drivertest.WaitFor(t, "the repeated status", func() bool { return len(r.local.ofType(contract.TypeAgentStatus)) > n })
+	drivertest.WaitFor(t, "the repeated status", func() bool { return len(r.local.OfType(contract.TypeAgentStatus)) > n })
 }
 
 func TestTheWillSaysTheSiteIsOffline(t *testing.T) {
@@ -306,14 +309,26 @@ func TestTheWillSaysTheSiteIsOffline(t *testing.T) {
 func TestOversizedMessagesAreLeftAside(t *testing.T) {
 	r := newRig(t, nil)
 	r.app.LinkChanged(true, "mqtts")
-	huge := bytes.Repeat([]byte("x"), maxPayload+1)
-	r.app.HandleLocal(inbox.Message{Topic: topic("alarm", "event"), Payload: huge})
-	r.app.HandleCloud(inbox.Message{Topic: topic("alarm", "cmd"), Payload: huge})
+	pad := strings.Repeat("x", maxPayload)
+	// Valid messages the core would pass on, made too big by an extra field.
+	r.fromHub(topic("alarm", "event"), contract.TypeAlarmTriggered, map[string]any{
+		"incident": "inc1", "device_id": "dev_door", "capability": contract.CapContact, "zone": "Entree", "pad": pad,
+	})
+	r.fromCloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, map[string]any{
+		"command": contract.CmdArm, "origin": contract.OriginApp, "user": "u_owner", "pad": pad,
+	})
+	small := r.fromHub(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
+	drivertest.WaitFor(t, "the small message in the cloud", func() bool {
+		return slices.ContainsFunc(r.cloud.All(), func(m outboxtest.Message) bool { return same(m, small) })
+	})
 	r.settle()
-	for _, m := range append(r.cloud.all(), r.local.all()...) {
-		if len(m.raw) > maxPayload {
-			t.Fatal("an oversized message went through")
+	for _, m := range append(r.cloud.All(), r.local.All()...) {
+		if len(m.Payload) > maxPayload {
+			t.Fatalf("an oversized message went through to %s", m.Topic)
 		}
+	}
+	if !strings.Contains(r.logs.String(), "oversized message from the cloud") || !strings.Contains(r.logs.String(), "oversized message to the cloud") {
+		t.Fatal("both are logged")
 	}
 }
 
@@ -341,8 +356,8 @@ func (r *rig) uploadOrder(id string) {
 
 func (r *rig) sent(id string) []contract.PhotoSentData {
 	var out []contract.PhotoSentData
-	for _, p := range r.local.ofType(contract.TypePhotoSent) {
-		d, _ := contract.DecodeData[contract.PhotoSentData](p.env)
+	for _, p := range r.local.OfType(contract.TypePhotoSent) {
+		d, _ := contract.DecodeData[contract.PhotoSentData](p.Env)
 		if d.Photo == id {
 			out = append(out, d)
 		}
@@ -354,7 +369,7 @@ func TestAPhotoIsUploadedThenRemoved(t *testing.T) {
 	r := newRig(t, nil)
 	r.app.LinkChanged(true, "mqtts")
 	r.photoTaken("p1", 4000)
-	drivertest.WaitFor(t, "photo.taken in the cloud", func() bool { return len(r.cloud.ofType(contract.TypePhotoTaken)) == 1 })
+	drivertest.WaitFor(t, "photo.taken in the cloud", func() bool { return len(r.cloud.OfType(contract.TypePhotoTaken)) == 1 })
 	r.uploadOrder("p1")
 	drivertest.WaitFor(t, "the upload", func() bool { return len(r.upl.calls()) == 1 })
 	if c := r.upl.calls()[0]; c != "https://api.safehome.example/v1/photos/p1 tok-p1 4000" {
@@ -364,14 +379,14 @@ func TestAPhotoIsUploadedThenRemoved(t *testing.T) {
 	if d := r.sent("p1")[0]; d.Status != contract.PhotoSent {
 		t.Fatalf("%+v", d)
 	}
-	drivertest.WaitFor(t, "photo.sent in the cloud", func() bool { return len(r.cloud.ofType(contract.TypePhotoSent)) == 1 })
+	drivertest.WaitFor(t, "photo.sent in the cloud", func() bool { return len(r.cloud.OfType(contract.TypePhotoSent)) == 1 })
 	r.photos.mu.Lock()
 	defer r.photos.mu.Unlock()
 	if len(r.photos.files) != 0 || !slices.Equal(r.photos.removed, []string{"p1"}) {
 		t.Fatalf("%v", r.photos.removed)
 	}
-	for _, m := range r.local.all() {
-		if strings.Contains(string(m.raw), "tok-p1") {
+	for _, m := range r.local.All() {
+		if strings.Contains(string(m.Payload), "tok-p1") {
 			t.Fatal("the token reached the hub")
 		}
 	}
@@ -405,5 +420,25 @@ func TestUploadFailures(t *testing.T) {
 	drivertest.WaitFor(t, "missing", func() bool { return len(r.sent("p2")) == 1 && r.sent("p2")[0].Reason == contract.PhotoMissing })
 	if n := len(r.upl.calls()); n != 3 {
 		t.Fatalf("%d uploads", n)
+	}
+}
+
+// A message that arrives while the agent stops (here during its last flush to the
+// hub, which the hub's broker holds) is given up without an error.
+func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
+	r := newRig(t, nil)
+	r.settle()
+	release := r.local.Hold()
+	r.app.LinkChanged(true, "mqtts") // a status left for the last flush
+	drivertest.WaitFor(t, "a status to send", func() bool { return r.app.out.Depth() > 0 })
+	r.cancel()
+	drivertest.WaitFor(t, "the loop to stop", func() bool { return r.app.Alive(context.Background()) != nil })
+	r.fromHub(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
+	r.fromCloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp})
+	r.app.LinkChanged(false, "")
+	release()
+	<-r.done
+	if strings.Contains(r.logs.String(), "level=ERROR") {
+		t.Fatal("an error was logged for a message given up at shutdown")
 	}
 }

@@ -10,7 +10,6 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -98,6 +97,8 @@ type Gateway struct {
 	last    contract.GSMStatusData // the last status published, owned by the loop
 	sent    bool
 
+	// life ends with Run: the loop and the lines run on it, and work handed to them
+	// after it ended is given up quietly.
 	life context.Context
 	stop context.CancelFunc
 	ran  atomic.Bool
@@ -129,7 +130,7 @@ func New(cfg Config, deps Deps) (*Gateway, error) {
 	if g.core, err = gsm.New(cfg.GSM); err != nil {
 		return nil, err
 	}
-	if g.out, err = outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, log); err != nil {
+	if g.out, err = outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, deps.NewID, log); err != nil {
 		return nil, err
 	}
 	g.loop, err = driver.New(driver.Options[gsm.Input, gsm.Action, gsm.Snapshot]{
@@ -171,6 +172,9 @@ func (g *Gateway) Run(ctx context.Context) error {
 		return errors.New("gateway: Run called twice")
 	}
 	defer g.stop()
+	defer context.AfterFunc(ctx, g.stop)()
+	// Everything runs on life, which ends with ctx: a loop only stops once life is
+	// over, so a message handed to it meanwhile is known to be given up.
 	runs := []func(context.Context){
 		func(c context.Context) { g.loop.Run(c) },
 		g.out.Run,
@@ -184,9 +188,9 @@ func (g *Gateway) Run(ctx context.Context) error {
 	}
 	var wg sync.WaitGroup
 	for _, run := range runs {
-		wg.Go(func() { run(ctx) })
+		wg.Go(func() { run(g.life) })
 	}
-	g.repeatStatus(ctx) // the first, even if nothing changed since the last run
+	g.repeatStatus(g.life) // the first, even if nothing changed since the last run
 	wg.Wait()
 	g.out.Flush()
 	return nil
@@ -216,10 +220,10 @@ func (g *Gateway) dispatch(_ context.Context, now time.Time, actions []gsm.Actio
 			g.log.Warn("the modem does not answer, restarting it", "line", v.Line)
 			g.toLine(v.Line, func(ctx context.Context) { g.restart(ctx, v.Line) })
 		case gsm.Report:
-			g.enqueue(contract.AlertResultTopic(g.cfg.Site), contract.TypeAlertResult, gsmwire.Result(v), false, now)
+			g.out.Send(src, contract.AlertResultTopic(g.cfg.Site), contract.TypeAlertResult, gsmwire.Result(v), false, now)
 		case gsm.Acknowledge:
 			g.log.Info("a contact acknowledged by SMS", "incident", v.Incident, "contact", v.Contact)
-			g.enqueue(contract.AlertAckTopic(g.cfg.Site), contract.TypeAlertAck, gsmwire.Ack(v), false, now)
+			g.out.Send(src, contract.AlertAckTopic(g.cfg.Site), contract.TypeAlertAck, gsmwire.Ack(v), false, now)
 		case gsm.Ignored:
 			g.log.Info("an incoming SMS was ignored", "line", v.Line, "why", v.Why)
 		case gsm.Dropped:
@@ -239,14 +243,5 @@ func (g *Gateway) publishStatus(now time.Time) {
 		return
 	}
 	g.last, g.sent = st, true
-	g.enqueue(contract.GSMStatusTopic(g.cfg.Site), contract.TypeGSMStatus, st, true, now)
-}
-
-func (g *Gateway) enqueue(topic, typ string, data any, retain bool, ts time.Time) {
-	raw, err := json.Marshal(data)
-	if err != nil {
-		g.log.Error("encoding a message failed", "type", typ, "err", err)
-		return
-	}
-	g.out.Put(&outbox.Item{Topic: topic, Src: src, Type: typ, Data: raw, QoS: 1, Retain: retain, ID: g.deps.NewID(), TS: ts})
+	g.out.Send(src, contract.GSMStatusTopic(g.cfg.Site), contract.TypeGSMStatus, st, true, now)
 }

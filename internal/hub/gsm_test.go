@@ -19,7 +19,7 @@ func TestTheGSMLinesGoIntoTheHealth(t *testing.T) {
 		gsmStatus(contract.GSMLine{ID: "line1", Operator: "TOGOCOM", Responding: true, Registered: true, Signal: 70, Credit: "ok"}))
 	drivertest.WaitFor(t, "the health with the GSM", func() bool {
 		r.settle()
-		h := r.broker.on(contract.HealthTopic(site))
+		h := r.broker.On(contract.HealthTopic(site))
 		d := dataOf[contract.HealthData](t, h[len(h)-1])
 		return d.GSM != nil && len(d.GSM.Lines) == 1 && d.Links["gsm"] == "ok"
 	})
@@ -33,7 +33,7 @@ func TestTheOwnerIsToldWhenTheSMSBackupIsLost(t *testing.T) {
 		gsmStatus(contract.GSMLine{ID: "line1", Responding: true, Registered: true, Signal: 40, Credit: "empty"}))
 	drivertest.WaitFor(t, "the link down", func() bool {
 		r.settle()
-		h := r.broker.on(contract.HealthTopic(site))
+		h := r.broker.On(contract.HealthTopic(site))
 		return dataOf[contract.HealthData](t, h[len(h)-1]).Links["gsm"] == "down"
 	})
 	if len(eventsOf(r, contract.TypeAlertRequest)) != 0 {
@@ -52,11 +52,11 @@ func TestTheOwnerIsToldWhenTheSMSBackupIsLost(t *testing.T) {
 func TestAnInvalidGSMStatusIsIgnored(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
-	before := len(r.broker.on(contract.HealthTopic(site)))
+	before := len(r.broker.On(contract.HealthTopic(site)))
 	r.send(contract.GSMStatusTopic(site), contract.TypeGSMStatus, map[string]any{"lines": "nope"})
 	r.send(contract.GSMStatusTopic(site), contract.TypeHealth, gsmStatus()) // wrong type for the topic
 	r.settle()
-	if len(r.broker.on(contract.HealthTopic(site))) != before {
+	if len(r.broker.On(contract.HealthTopic(site))) != before {
 		t.Fatal("nothing must change")
 	}
 }
@@ -66,7 +66,7 @@ func TestASilentGatewayIsSeenAndReported(t *testing.T) {
 	r.start()
 	good := contract.GSMLine{ID: "line1", Responding: true, Registered: true, Signal: 70, Credit: "ok"}
 	lastLink := func() string {
-		h := r.broker.on(contract.HealthTopic(site))
+		h := r.broker.On(contract.HealthTopic(site))
 		return dataOf[contract.HealthData](t, h[len(h)-1]).Links["gsm"]
 	}
 	r.send(contract.GSMStatusTopic(site), contract.TypeGSMStatus, gsmStatus(good))
@@ -99,7 +99,7 @@ func TestTheZigbeeLinkFollowsTheAdapter(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	lastLink := func() string {
-		h := r.broker.on(contract.HealthTopic(site))
+		h := r.broker.On(contract.HealthTopic(site))
 		return dataOf[contract.HealthData](t, h[len(h)-1]).Links["zigbee"]
 	}
 	r.send(contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus,
@@ -118,10 +118,10 @@ func TestTheZigbeeLinkFollowsTheAdapter(t *testing.T) {
 		t.Fatalf("link %q: the adapter also stopped repeating its status", lastLink())
 	}
 	// An invalid status changes nothing.
-	n := len(r.broker.on(contract.HealthTopic(site)))
+	n := len(r.broker.On(contract.HealthTopic(site)))
 	r.send(contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus, map[string]any{"bridge": 3})
 	r.settle()
-	if len(r.broker.on(contract.HealthTopic(site))) != n {
+	if len(r.broker.On(contract.HealthTopic(site))) != n {
 		t.Fatal("ignored")
 	}
 	r.validateAll()

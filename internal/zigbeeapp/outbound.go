@@ -2,7 +2,6 @@ package zigbeeapp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"reflect"
 	"time"
@@ -71,7 +70,7 @@ func (a *App) publishAck(now time.Time, v zigbee.Ack) error {
 	if v.Status == zigbee.AckFailed || v.Status == zigbee.AckExpired {
 		a.log.Warn("a device command did not succeed", "device", v.DeviceID, "status", v.Status, "reason", v.Reason)
 	}
-	a.enqueue(contract.DeviceAckTopic(a.cfg.Site, v.DeviceID), contract.TypeCommandAck, ack, false, now)
+	a.out.Send(src, contract.DeviceAckTopic(a.cfg.Site, v.DeviceID), contract.TypeCommandAck, ack, false, now)
 	return nil
 }
 
@@ -81,17 +80,17 @@ func (a *App) publishRegistryNews(now time.Time, act zigbee.Action) error {
 	switch v := act.(type) {
 	case zigbee.Added:
 		a.log.Info("device added", "device", v.Device.ID, "profile", v.Device.Profile)
-		a.enqueue(contract.RegistryEventTopic(site), contract.TypeRegistryDeviceAdded, wire.Added(v), false, now)
+		a.out.Send(src, contract.RegistryEventTopic(site), contract.TypeRegistryDeviceAdded, wire.Added(v), false, now)
 	case zigbee.Rejected:
 		r, err := wire.Rejected(v)
 		if err != nil {
 			return err
 		}
 		a.log.Warn("device refused", "model", v.Model, "reason", v.Reason)
-		a.enqueue(contract.RegistryEventTopic(site), contract.TypeRegistryDeviceRejected, r, false, now)
+		a.out.Send(src, contract.RegistryEventTopic(site), contract.TypeRegistryDeviceRejected, r, false, now)
 	case zigbee.Removed:
 		a.log.Info("device removed", "device", v.Device.ID)
-		a.enqueue(contract.RegistryEventTopic(site), contract.TypeRegistryDeviceRemoved, wire.Removed(v), false, now)
+		a.out.Send(src, contract.RegistryEventTopic(site), contract.TypeRegistryDeviceRemoved, wire.Removed(v), false, now)
 		for _, c := range wire.StateCapabilities(v.Device) {
 			// An empty retained message clears the state: a removed door left
 			// "open" would otherwise block every arming.
@@ -105,15 +104,15 @@ func (a *App) publishRegistryNews(now time.Time, act zigbee.Action) error {
 
 func (a *App) publishDevice(now time.Time, d wire.Device) {
 	if d.Event != nil {
-		a.enqueue(contract.DeviceEventTopic(a.cfg.Site, d.Event.DeviceID), contract.TypeDeviceEvent, *d.Event, false, now)
+		a.out.Send(src, contract.DeviceEventTopic(a.cfg.Site, d.Event.DeviceID), contract.TypeDeviceEvent, *d.Event, false, now)
 	}
 	if d.State != nil {
-		a.enqueue(contract.DeviceStateTopic(a.cfg.Site, d.State.DeviceID, d.State.Capability), contract.TypeDeviceState, *d.State, true, now)
+		a.out.Send(src, contract.DeviceStateTopic(a.cfg.Site, d.State.DeviceID, d.State.Capability), contract.TypeDeviceState, *d.State, true, now)
 	}
 }
 
 func (a *App) publishRegistry(now time.Time, devices []zigbee.Device) {
-	a.enqueue(contract.RegistryDevicesTopic(a.cfg.Site), contract.TypeRegistrySnapshot, wire.Snapshot(devices), true, now)
+	a.out.Send(src, contract.RegistryDevicesTopic(a.cfg.Site), contract.TypeRegistrySnapshot, wire.Snapshot(devices), true, now)
 }
 
 // publishStatus publishes zigbee.status, retained, when it changed. It runs on the
@@ -124,20 +123,11 @@ func (a *App) publishStatus(now time.Time) {
 		return
 	}
 	a.last, a.sent = st, true
-	a.enqueue(contract.ZigbeeStatusTopic(a.cfg.Site), contract.TypeZigbeeStatus, st, true, now)
+	a.out.Send(src, contract.ZigbeeStatusTopic(a.cfg.Site), contract.TypeZigbeeStatus, st, true, now)
 }
 
 // publishStatusAgain publishes zigbee.status even if it did not change.
 func (a *App) publishStatusAgain(now time.Time) {
 	a.sent = false
 	a.publishStatus(now)
-}
-
-func (a *App) enqueue(topic, typ string, data any, retain bool, ts time.Time) {
-	raw, err := json.Marshal(data)
-	if err != nil {
-		a.log.Error("encoding a message failed", "type", typ, "err", err)
-		return
-	}
-	a.out.Put(&outbox.Item{Topic: topic, Src: src, Type: typ, Data: raw, QoS: 1, Retain: retain, ID: a.deps.NewID(), TS: ts})
 }

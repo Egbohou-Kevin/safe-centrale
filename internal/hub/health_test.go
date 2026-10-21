@@ -28,7 +28,7 @@ func TestHubBatteryAlertsAndHealth(t *testing.T) {
 	if a.Kind != contract.AlertBatteryLowHub || a.Urgency != contract.UrgencyHigh || a.Percent != 38 || alerts[0].Env.Src != "escalation" {
 		t.Fatalf("%+v", a)
 	}
-	h := r.broker.on(contract.HealthTopic(site))
+	h := r.broker.On(contract.HealthTopic(site))
 	last := dataOf[contract.HealthData](t, h[len(h)-1])
 	if last.Mains != contract.ValLost || last.HubBattery == nil || *last.HubBattery != 38 || !h[len(h)-1].Retain {
 		t.Fatalf("%+v", last)
@@ -75,7 +75,7 @@ func TestTheAgentStatusGivesTheInternetLink(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	internet := func() string {
-		h := r.broker.on(contract.HealthTopic(site))
+		h := r.broker.On(contract.HealthTopic(site))
 		return dataOf[contract.HealthData](t, h[len(h)-1]).Links["internet"]
 	}
 	r.settle()
@@ -100,7 +100,7 @@ func TestTheHealthIsPublishedOnlyWhenItChanges(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	r.settle()
-	published := func() int { return len(r.broker.on(contract.HealthTopic(site))) }
+	published := func() int { return len(r.broker.On(contract.HealthTopic(site))) }
 	line := contract.GSMLine{ID: "line1", Responding: true, Registered: true, Signal: 70, Credit: "ok"}
 	repeat := func() {
 		agentStatus(r, contract.UplinkUp)
@@ -111,7 +111,7 @@ func TestTheHealthIsPublishedOnlyWhenItChanges(t *testing.T) {
 	}
 	repeat()
 	n := published()
-	if d := dataOf[contract.HealthData](t, r.broker.on(contract.HealthTopic(site))[n-1]); d.Links["internet"] != "ok" ||
+	if d := dataOf[contract.HealthData](t, r.broker.On(contract.HealthTopic(site))[n-1]); d.Links["internet"] != "ok" ||
 		d.Links["gsm"] != "ok" || d.Links["zigbee"] != "ok" || d.GSM == nil {
 		t.Fatalf("%+v", d)
 	}

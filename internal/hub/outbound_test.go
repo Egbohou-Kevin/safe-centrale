@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -18,9 +19,7 @@ func TestMessagesWaitInOrderWhileTheBrokerIsDown(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	r.settle()
-	r.broker.mu.Lock()
-	r.broker.failures = 5
-	r.broker.mu.Unlock()
+	r.broker.FailNext(5)
 
 	r.keypad(contract.ValArm, "")
 	r.keypad(contract.ValArmNow, "")
@@ -28,7 +27,7 @@ func TestMessagesWaitInOrderWhileTheBrokerIsDown(t *testing.T) {
 	r.settle() // returns once the outbox has emptied, retries included
 
 	var seqs []uint64
-	for _, m := range r.broker.all() {
+	for _, m := range r.broker.All() {
 		seqs = append(seqs, m.Env.Seq)
 	}
 	for i := 1; i < len(seqs); i++ {
@@ -36,7 +35,7 @@ func TestMessagesWaitInOrderWhileTheBrokerIsDown(t *testing.T) {
 			t.Fatalf("messages out of order after the outage: %v", seqs)
 		}
 	}
-	if len(eventsOf(r, contract.TypeAlarmTriggered)) != 1 || len(r.broker.on(contract.DeviceCmdTopic(site, devSiren))) != 1 {
+	if len(eventsOf(r, contract.TypeAlarmTriggered)) != 1 || len(r.broker.On(contract.DeviceCmdTopic(site, devSiren))) != 1 {
 		t.Fatal("nothing may be lost during an outage")
 	}
 	r.validateAll()
@@ -46,9 +45,7 @@ func TestTheAlarmDoesNotWaitForTheBroker(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	r.settle()
-	r.broker.mu.Lock()
-	r.broker.failures = 1 << 30 // the broker stays down
-	r.broker.mu.Unlock()
+	r.broker.SetDown(true)
 
 	r.keypad(contract.ValArm, "")
 	r.keypad(contract.ValArmNow, "")
@@ -64,9 +61,7 @@ func TestARetainedStateIsReplacedWhileItWaits(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	r.settle()
-	r.broker.mu.Lock()
-	r.broker.failures = 1 << 30
-	r.broker.mu.Unlock()
+	r.broker.SetDown(true)
 	for i := 0; i < 5; i++ {
 		agentStatus(r, []string{contract.UplinkUp, contract.UplinkDown}[i%2])
 	}
@@ -87,15 +82,18 @@ func TestARefusedMessageIsDroppedAndTheNextOnesGoOut(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	r.settle()
-	r.broker.mu.Lock()
-	r.broker.refuse = func(topic string) bool { return topic == contract.AlarmAckTopic(site) }
-	r.broker.mu.Unlock()
+	r.broker.Refuse(func(m published) error {
+		if m.Topic == contract.AlarmAckTopic(site) {
+			return errors.New("refused")
+		}
+		return nil
+	})
 	r.keypad(contract.ValArm, "")
 	r.settle()
 	if len(eventsOf(r, contract.TypeAlarmArming)) != 1 {
 		t.Fatal("the arming event must still go out behind a refused ack")
 	}
-	if len(r.broker.on(contract.AlarmAckTopic(site))) != 0 {
+	if len(r.broker.On(contract.AlarmAckTopic(site))) != 0 {
 		t.Fatal("the refused message must not appear")
 	}
 }
@@ -104,7 +102,7 @@ func TestOutboxDropsTheOldestWhenFull(t *testing.T) {
 	r := newRig(t, nil, func(c *Config) { c.Outbox.Size = 3 })
 	// Not started: nothing leaves, the queue fills.
 	for i := 0; i < 10; i++ {
-		r.hub.enqueue("engine", contract.AlarmEventTopic(site), contract.TypeAlarmArmed, contract.ArmedData{Origin: "keypad"}, false, t0)
+		r.hub.out.Send("engine", contract.AlarmEventTopic(site), contract.TypeAlarmArmed, contract.ArmedData{Origin: "keypad"}, false, t0)
 	}
 	if d := r.hub.out.Depth(); d != 3 {
 		t.Fatalf("depth %d, want 3", d)

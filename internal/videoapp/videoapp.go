@@ -12,7 +12,6 @@ package videoapp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -135,15 +134,14 @@ type App struct {
 	out  *outbox.Outbox
 	seen *inbox.RecentIDs
 
-	// base is the parent of the work done away from the loop (streams, probes,
-	// photos), set by Run before the loop starts; work is the goroutines doing it.
-	base     context.Context
 	sessions map[string]context.CancelFunc // the streams under way; owned by the loop's goroutine
-	work     sync.WaitGroup
+	work     sync.WaitGroup                // the goroutines working away from the loop (streams, probes, photos)
 
 	last contract.VideoStatusData // the last status published, owned by the loop
 	sent bool                     // last is set
 
+	// life ends with Run: the loop and the work away from it run on it, and work
+	// handed to the loop after it ended is given up quietly.
 	life context.Context
 	stop context.CancelFunc
 	ran  atomic.Bool
@@ -168,7 +166,7 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if a.core, err = video.New(cfg.Video); err != nil {
 		return nil, err
 	}
-	if a.out, err = outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, log); err != nil {
+	if a.out, err = outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, deps.NewID, log); err != nil {
 		return nil, err
 	}
 	a.loop, err = driver.New(driver.Options[video.Input, video.Action, video.Snapshot]{
@@ -204,15 +202,17 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.New("videoapp: Run called twice")
 	}
 	defer a.stop()
-	a.base = ctx
+	defer context.AfterFunc(ctx, a.stop)()
+	// Everything runs on life, which ends with ctx: a loop only stops once life is
+	// over, so a message handed to it meanwhile is known to be given up.
 	var wg sync.WaitGroup
 	for _, run := range []func(context.Context){func(c context.Context) { a.loop.Run(c) }, a.out.Run} {
-		wg.Go(func() { run(ctx) })
+		wg.Go(func() { run(a.life) })
 	}
 	// The status at start; then on change only. It is retained: nobody needs it again
 	// unchanged, and the agent sends it to the cloud, on mobile data paid by the client
 	// maybe.
-	a.loop.Do(ctx, func(now time.Time) []video.Action {
+	a.loop.Do(a.life, func(now time.Time) []video.Action {
 		a.publishStatus(now)
 		return nil
 	})
@@ -236,7 +236,7 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []video.Action)
 			}
 		case video.Report:
 			a.log.Info("video session", "session", v.Session, "camera", v.Camera, "status", v.Status, "reason", v.Reason, "bytes", v.Bytes)
-			a.enqueue(contract.VideoSessionTopic(a.cfg.Site), contract.TypeVideoSession, videowire.Session(v), false, now)
+			a.out.Send(src, contract.VideoSessionTopic(a.cfg.Site), contract.TypeVideoSession, videowire.Session(v), false, now)
 		case video.CheckCameras:
 			a.checkCameras()
 		case video.TakePhotos:
@@ -257,14 +257,5 @@ func (a *App) publishStatus(now time.Time) {
 		return
 	}
 	a.last, a.sent = st, true
-	a.enqueue(contract.VideoStatusTopic(a.cfg.Site), contract.TypeVideoStatus, st, true, now)
-}
-
-func (a *App) enqueue(topic, typ string, data any, retain bool, ts time.Time) {
-	raw, err := json.Marshal(data)
-	if err != nil {
-		a.log.Error("encoding a message failed", "type", typ, "err", err)
-		return
-	}
-	a.out.Put(&outbox.Item{Topic: topic, Src: src, Type: typ, Data: raw, QoS: 1, Retain: retain, ID: a.deps.NewID(), TS: ts})
+	a.out.Send(src, contract.VideoStatusTopic(a.cfg.Site), contract.TypeVideoStatus, st, true, now)
 }

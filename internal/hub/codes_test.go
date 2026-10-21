@@ -33,7 +33,7 @@ func TestReloadCodesPicksUpWhatAnotherProcessSaved(t *testing.T) {
 	}
 
 	// The running hub does not know it yet...
-	acks := len(r.broker.ofType(contract.TypeAlarmAck))
+	acks := len(r.broker.OfType(contract.TypeAlarmAck))
 	r.keypad(contract.ValDisarm, "846029")
 	r.waitAcks(acks + 1)
 	r.mustBe(engine.ModeArmed)
@@ -75,7 +75,7 @@ func TestTheCodeOfSomeoneNoLongerAContactIsLeftAside(t *testing.T) {
 	r.keypad(contract.ValArm, "")
 	r.keypad(contract.ValArmNow, "")
 	r.mustBe(engine.ModeArmed)
-	acks := len(r.broker.ofType(contract.TypeAlarmAck))
+	acks := len(r.broker.OfType(contract.TypeAlarmAck))
 	r.keypad(contract.ValDisarm, "730264")
 	r.waitAcks(acks + 1)
 	r.mustBe(engine.ModeArmed)

@@ -15,6 +15,7 @@ import (
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 	"safehome/internal/inbox"
+	"safehome/internal/outbox/outboxtest"
 )
 
 // --- boot and restart ---------------------------------------------------------------
@@ -43,7 +44,7 @@ func TestBootLearnsTheDevicesFromRetainedStates(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 	// And the health knows the battery, learned from a state too.
-	h := r.broker.on(contract.HealthTopic(site))
+	h := r.broker.On(contract.HealthTopic(site))
 	if d := dataOf[contract.HealthData](t, h[len(h)-1]); d.HubBattery == nil || *d.HubBattery != 88 {
 		t.Fatalf("%+v", d)
 	}
@@ -55,7 +56,7 @@ func TestBootWaitsForTheLinkBeforeItsWindowStarts(t *testing.T) {
 	r.clock.WaitTimer(t, t0.Add(10*time.Second))
 	r.clock.Advance(time.Second) // far longer than the window
 	r.settle()
-	if len(r.broker.on(contract.AlarmStateTopic(site))) != 0 || r.clock.HasTimer(t0.Add(time.Second+20*time.Millisecond)) {
+	if len(r.broker.On(contract.AlarmStateTopic(site))) != 0 || r.clock.HasTimer(t0.Add(time.Second+20*time.Millisecond)) {
 		t.Fatal("the hub booted before the link was up")
 	}
 	// The retained state arrives only now, after the window would have ended.
@@ -63,7 +64,7 @@ func TestBootWaitsForTheLinkBeforeItsWindowStarts(t *testing.T) {
 	r.hub.LinkUp()
 	r.hub.LinkUp() // harmless twice
 	r.clock.PassTimer(t, 20*time.Millisecond)
-	drivertest.WaitFor(t, "the first state", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) > 0 })
+	drivertest.WaitFor(t, "the first state", func() bool { return len(r.broker.On(contract.AlarmStateTopic(site))) > 0 })
 }
 
 func TestBootGivesUpWaitingForTheLink(t *testing.T) {
@@ -71,7 +72,7 @@ func TestBootGivesUpWaitingForTheLink(t *testing.T) {
 	r.startWithoutWaiting()
 	r.clock.PassTimer(t, 80*time.Millisecond)
 	r.clock.PassTimer(t, 10*time.Millisecond)
-	drivertest.WaitFor(t, "the boot without a link", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) > 0 })
+	drivertest.WaitFor(t, "the boot without a link", func() bool { return len(r.broker.On(contract.AlarmStateTopic(site))) > 0 })
 	if !strings.Contains(r.logs.String(), "the broker link did not come up in time") {
 		t.Fatalf("the late link is said:\n%s", r.logs.String())
 	}
@@ -138,7 +139,7 @@ func TestSequenceNumbersOnlyGoUpAcrossRestarts(t *testing.T) {
 	first.stop()
 	var last uint64
 	prev := uint64(0)
-	for _, m := range first.broker.all() {
+	for _, m := range first.broker.All() {
 		if m.Env.Seq <= prev {
 			t.Fatalf("seq %d after %d", m.Env.Seq, prev)
 		}
@@ -152,7 +153,7 @@ func TestSequenceNumbersOnlyGoUpAcrossRestarts(t *testing.T) {
 	second := newRig(t, first.store)
 	second.start()
 	second.settle()
-	for _, m := range second.broker.all() {
+	for _, m := range second.broker.All() {
 		if m.Env.Seq <= last {
 			t.Fatalf("after a restart, seq %d goes back under %d", m.Env.Seq, last)
 		}
@@ -182,7 +183,7 @@ func TestConfigValidation(t *testing.T) {
 	for name, mutate := range bad {
 		c := testConfig()
 		mutate(&c)
-		if _, err := New(c, Deps{Clock: drivertest.NewFakeClock(t0), Store: drivertest.NewMemStore(), Publisher: &fakeBroker{}, NewID: func() string { return "x" }}); err == nil {
+		if _, err := New(c, Deps{Clock: drivertest.NewFakeClock(t0), Store: drivertest.NewMemStore(), Publisher: &outboxtest.Broker{}, NewID: func() string { return "x" }}); err == nil {
 			t.Errorf("%s: want an error", name)
 		}
 	}
@@ -201,7 +202,7 @@ func TestNewRefusesADamagedSavedState(t *testing.T) {
 		store := drivertest.NewMemStore()
 		store.Save(key, []byte(`{"broken": [`))
 		clock := drivertest.NewFakeClock(t0)
-		_, err := New(testConfig(), Deps{Clock: clock, Store: store, Publisher: &fakeBroker{}, NewID: contract.NewIDGeneratorWith(clock.Now, &entropy{}).New})
+		_, err := New(testConfig(), Deps{Clock: clock, Store: store, Publisher: &outboxtest.Broker{}, NewID: contract.NewIDGeneratorWith(clock.Now, &entropy{}).New})
 		if err == nil {
 			t.Errorf("a damaged %s must stop the start", key)
 		}
@@ -231,10 +232,7 @@ func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	r.settle()
-	hold := make(chan struct{})
-	r.broker.mu.Lock()
-	r.broker.hold = hold // the last flush waits: the hub stays in its shutdown
-	r.broker.mu.Unlock()
+	release := r.broker.Hold() // the last flush waits: the hub stays in its shutdown
 	r.keypad(contract.ValArm, "")
 	r.settle2()
 
@@ -244,7 +242,7 @@ func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 	})
 	r.keypad(contract.ValArmNow, "")
 	r.device(devBack, contract.CapBattery, "50")
-	close(hold)
+	release()
 	<-r.done
 	r.cancel = nil
 	if strings.Contains(r.logs.String(), "failed") {
@@ -339,7 +337,7 @@ func TestEachCapabilityKeepsItsOwnRetainedState(t *testing.T) {
 	// A state on the topic of another capability is refused.
 	r.send(contract.DeviceStateTopic(site, devDoor, contract.CapBattery), contract.TypeDeviceState, event(devDoor, contract.CapContact, "open"))
 	r.start()
-	drivertest.WaitFor(t, "the first state", func() bool { return len(r.broker.on(contract.AlarmStateTopic(site))) > 0 })
+	drivertest.WaitFor(t, "the first state", func() bool { return len(r.broker.On(contract.AlarmStateTopic(site))) > 0 })
 	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_owner")
 	drivertest.WaitFor(t, "the reply", func() bool { return len(eventsOf(r, contract.TypeAlarmAck)) == 1 })
 	ack := dataOf[contract.AlarmAckData](t, eventsOf(r, contract.TypeAlarmAck)[0])

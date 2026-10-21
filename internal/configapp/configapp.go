@@ -15,7 +15,6 @@ package configapp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -115,7 +114,7 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	out, err := outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, log)
+	out, err := outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, deps.NewID, log)
 	if err != nil {
 		return nil, err
 	}
@@ -273,12 +272,5 @@ func (a *App) answer(now time.Time, version int, why string) {
 	if why != "" {
 		d.Status, d.Reason = contract.ConfigRejected, why
 	}
-	raw, err := json.Marshal(d)
-	if err != nil {
-		return
-	}
-	a.out.Put(&outbox.Item{
-		Topic: contract.ConfigAppliedTopic(a.cfg.Site), Src: src, Type: contract.TypeConfigApplied,
-		Data: raw, QoS: 1, Retain: true, ID: a.deps.NewID(), TS: now,
-	})
+	a.out.Send(src, contract.ConfigAppliedTopic(a.cfg.Site), contract.TypeConfigApplied, d, true, now)
 }

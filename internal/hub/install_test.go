@@ -31,7 +31,7 @@ func (r *rig) withInstaller() {
 // installModes returns the installation modes published, in order.
 func (r *rig) installModes() []contract.InstallModeData {
 	var out []contract.InstallModeData
-	for _, p := range r.broker.on(contract.InstallModeTopic(site)) {
+	for _, p := range r.broker.On(contract.InstallModeTopic(site)) {
 		if !p.Retain {
 			r.t.Error("install.mode not retained")
 		}
@@ -100,7 +100,7 @@ func TestArmingClosesTheInstallationMode(t *testing.T) {
 	// The arming's state leaves before the mode's end: the configuration's application,
 	// which follows both, must know the exit delay has begun when the mode ends.
 	var order []string
-	for _, p := range r.broker.all() {
+	for _, p := range r.broker.All() {
 		switch {
 		case p.Topic == contract.AlarmStateTopic(site):
 			order = append(order, dataOf[contract.AlarmStateData](t, p).State)

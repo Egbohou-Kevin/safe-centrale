@@ -59,7 +59,7 @@ func (h *Hub) sendSiren(now time.Time, sirenID string, a engine.Action) {
 		return
 	}
 	data := out.Siren[0].Data(sirenID, now.Add(h.cfg.SirenCommandTTL))
-	ref := h.enqueue(srcEngine, contract.DeviceCmdTopic(h.cfg.Site, sirenID), contract.TypeCommand, data, false, now)
+	ref := h.out.Send(srcEngine, contract.DeviceCmdTopic(h.cfg.Site, sirenID), contract.TypeCommand, data, false, now)
 	if ref != "" && h.alarm.siren.on {
 		h.alarm.siren.sent[ref] = sirenID
 	}

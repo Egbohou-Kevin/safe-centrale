@@ -11,7 +11,7 @@ import (
 )
 
 // sirenOrders lists the commands sent to the siren so far.
-func sirenOrders(r *rig) []published { return r.broker.on(contract.DeviceCmdTopic(site, devSiren)) }
+func sirenOrders(r *rig) []published { return r.broker.On(contract.DeviceCmdTopic(site, devSiren)) }
 
 // sirenAnswers answers a siren command as the Zigbee adapter does.
 func sirenAnswers(r *rig, order published, status, reason string) {
@@ -100,7 +100,7 @@ func TestTheBootDoesNotRepeatASirenOrderOfTheBootWindow(t *testing.T) {
 	second.startWithoutWaiting()
 	second.device(devDoor, contract.CapContact, "closed")
 	second.clock.PassTimer(t, 300*time.Millisecond)
-	drivertest.WaitFor(t, "the boot", func() bool { return len(second.broker.ofType(contract.TypeInstallMode)) > 0 })
+	drivertest.WaitFor(t, "the boot", func() bool { return len(second.broker.OfType(contract.TypeInstallMode)) > 0 })
 	second.settle()
 	var on []contract.DeviceCommandData
 	for _, o := range sirenOrders(second) {

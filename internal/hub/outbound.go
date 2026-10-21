@@ -12,7 +12,6 @@ import (
 	engwire "safehome/internal/engine/wire"
 	"safehome/internal/escalation"
 	"safehome/internal/health"
-	"safehome/internal/outbox"
 )
 
 // Sources written in the envelope.
@@ -33,27 +32,6 @@ const (
 	linkSilent   = "silent" // the component stopped giving news (it is dead or stuck)
 )
 
-// enqueue puts a message in the outbox, at QoS 1 like every message of the hub. It
-// returns the identifier of the message, empty if it could not be built.
-func (h *Hub) enqueue(src, topic, typ string, data any, retain bool, ts time.Time) string {
-	id := h.deps.NewID()
-	if !h.enqueueAs(id, src, topic, typ, data, retain, ts) {
-		return ""
-	}
-	return id
-}
-
-// enqueueAs is enqueue with an identifier chosen by the caller.
-func (h *Hub) enqueueAs(id, src, topic, typ string, data any, retain bool, ts time.Time) bool {
-	raw, err := json.Marshal(data)
-	if err != nil {
-		h.log.Error("encoding a message failed", "type", typ, "err", err)
-		return false
-	}
-	h.out.Put(&outbox.Item{Topic: topic, Src: src, Type: typ, Data: raw, QoS: 1, Retain: retain, ID: id, TS: ts})
-	return true
-}
-
 // dispatchEngine turns what the engine decided into messages. It runs on the
 // engine loop's goroutine and only queues: the sending is done elsewhere.
 //
@@ -71,10 +49,10 @@ func (h *Hub) dispatchEngine(_ context.Context, now time.Time, actions []engine.
 	h.escalateEngine(now, actions)
 	h.warnOfFaults(&out)
 	for _, ev := range out.Events {
-		h.enqueue(srcEngine, contract.AlarmEventTopic(h.cfg.Site), ev.Type, ev.Data, false, now)
+		h.out.Send(srcEngine, contract.AlarmEventTopic(h.cfg.Site), ev.Type, ev.Data, false, now)
 	}
 	for _, ack := range out.Acks {
-		h.enqueue(srcEngine, contract.AlarmAckTopic(h.cfg.Site), contract.TypeAlarmAck, ack, false, now)
+		h.out.Send(srcEngine, contract.AlarmAckTopic(h.cfg.Site), contract.TypeAlarmAck, ack, false, now)
 	}
 	return nil
 }
@@ -126,7 +104,7 @@ func (h *Hub) publishState(now time.Time) {
 		h.log.Error("building the alarm state failed", "err", err)
 		return
 	}
-	h.enqueue(srcEngine, contract.AlarmStateTopic(h.cfg.Site), contract.TypeAlarmState, data, true, now)
+	h.out.Send(srcEngine, contract.AlarmStateTopic(h.cfg.Site), contract.TypeAlarmState, data, true, now)
 }
 
 // dispatchHealth turns the monitor's alerts into alert requests.
@@ -151,7 +129,7 @@ func (h *Hub) publishHealth(now time.Time) {
 		return
 	}
 	h.monitor.lastHealth = raw
-	h.enqueue(srcHealth, contract.HealthTopic(h.cfg.Site), contract.TypeHealth, json.RawMessage(raw), true, now)
+	h.out.Send(srcHealth, contract.HealthTopic(h.cfg.Site), contract.TypeHealth, json.RawMessage(raw), true, now)
 }
 
 // healthData is system.health for the monitor's summary and the GSM lines.
@@ -219,5 +197,5 @@ func (h *Hub) publishHeartbeat(context.Context) {
 			data.ClockOK = &synced
 		}
 	}
-	h.enqueue(srcEngine, contract.HeartbeatTopic(h.cfg.Site), contract.TypeHeartbeat, data, false, now)
+	h.out.Send(srcEngine, contract.HeartbeatTopic(h.cfg.Site), contract.TypeHeartbeat, data, false, now)
 }

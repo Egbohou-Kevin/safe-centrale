@@ -9,24 +9,79 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 
 ## Où en est le code
 
+### Le contrat
+
 | Dossier | Contenu |
 |---|---|
 | `internal/contract` | Le contrat d'événements : enveloppe, types de messages, identifiants (ULID), topics MQTT |
+| `schemas/` | Les schémas JSON du contrat, pour le cloud et le firmware |
+
+### Les domaines, avec leur traduction vers le contrat
+
+| Dossier | Contenu |
+|---|---|
 | `internal/engine` | Le moteur d'alarme (le domaine) : machine à états déterministe, sans horloge ni entrées-sorties, sans connaître le contrat. Il tient aussi la table des capteurs acceptés par chaque type de zone (`engine.Accepts`), reprise par l'installateur |
 | `internal/engine/wire` | La traduction entre le domaine et le contrat |
-| `internal/health` | La supervision (second domaine) : batterie de la centrale, piles, appareils muets, résumé quotidien. Même règles que le moteur |
+| `internal/health` | La supervision (second domaine) : batterie de la centrale, piles, appareils muets, résumé quotidien. Mêmes règles que le moteur |
+| `internal/health/wire` | La traduction entre la supervision et le contrat |
 | `internal/access` | Les codes d'accès (troisième domaine) : un code par personne, 5 au maximum, stockés hachés avec un algorithme lent, vérification qui dit à qui appartient le code |
 | `internal/escalation` | L'escalade (quatrième domaine) : qui est prévenu, par quel canal, dans quel ordre et après combien de temps ; acquittements, relances, limite par heure |
 | `internal/escalation/wire` | La traduction entre l'escalade et le contrat |
-| `internal/health/wire` | La traduction entre la supervision et le contrat |
-| `internal/adapter/mqtt` | L'adaptateur MQTT 5 (client de Mosquitto) : seul paquet qui connaît la bibliothèque MQTT |
-| `internal/adapter/filestore` | Écriture atomique de l'état sur disque (survit à une coupure de courant) ; un fichier écrit prend le propriétaire du dossier |
-| `internal/hub` | La couche application de la centrale : relie MQTT aux domaines (moteur, supervision, codes), file d'envoi avec reprise, clavier, battement de cœur. Elle publie par `outbox.Publisher` et ne connaît aucun adaptateur. `SiteCodes` donne les codes aux outils de l'installateur : un code n'ouvre qu'une chose |
 | `internal/gsm` | La passerelle GSM (cinquième domaine) : file à priorités, lignes, reprises, réponses « 1 », surveillance du modem |
 | `internal/gsm/wire` | La traduction entre la passerelle et le contrat |
+| `internal/zigbee` | L'adaptateur Zigbee (sixième domaine) : profils, changements, présence, commandes confirmées, appairage et registre |
+| `internal/zigbee/z2m` | La seule traduction depuis et vers Zigbee2MQTT |
+| `internal/zigbee/wire` | La traduction entre l'adaptateur et le contrat |
+| `internal/video` | La vidéo en direct (septième domaine) : sessions, refus, durée maximale, plafond du mois en données mobiles, test des caméras |
+| `internal/video/wire` | La traduction entre la vidéo et le contrat |
+| `internal/maint` | La maintenance à distance (huitième domaine) : une session à la fois, une heure au plus, reprise après une coupure du tunnel |
+| `internal/maint/wire` | La traduction entre la maintenance et le contrat |
+| `internal/agent` | Le cœur de l'agent de liaison : file pour le cloud à priorités et bornée, contrôle de ce qui descend du cloud, délai de prise en charge des alertes. Sans entrées-sorties ni horloge, il ne connaît que le contrat |
+
+### Les couches application
+
+| Dossier | Contenu |
+|---|---|
+| `internal/hub` | La couche application de la centrale : relie MQTT aux domaines (moteur, supervision, codes, escalade), file d'envoi avec reprise, clavier, battement de cœur. Elle publie par `outbox.Publisher` et ne connaît aucun adaptateur. `SiteCodes` donne les codes aux outils de l'installateur : un code n'ouvre qu'une chose |
 | `internal/gateway` | La couche application de la passerelle : un fil par modem, publication des résultats et de l'état des lignes |
-| `internal/outbox` | La file d'envoi MQTT partagée par toutes les couches application des programmes de la centrale : ordre, reprises, numéro de message qui survit aux redémarrages. Mêmes réglages partout (`Settings`), ouverture en un appel (`Open`) |
+| `internal/zigbeeapp` | La couche application de l'adaptateur Zigbee |
+| `internal/agentapp` | La couche application de l'agent : envoi au cloud avec reprise, republication sur la centrale, `agent.status` |
+| `internal/videoapp` | La couche application de la vidéo : démarre et arrête les flux par le port `Streamer`, compte les octets, publie `video.session` et `video.status` |
+| `internal/maintapp` | La couche application de la maintenance : ouvre et ferme le tunnel par le port `Tunneler`, publie `maint.session` |
+| `internal/install` | La couche application de l'installateur : appairage, retrait, zones et sirènes (seul à modifier le site : `Editor`, port `Sites`), vérification de la configuration contre les appareils appairés, tests en direct. L'outil en ligne de commande et la console locale s'en servent |
+| `internal/consoleapp` | La couche application de la console locale : suit le mode installation, allume le Wi-Fi de la centrale et sert la page pendant qu'il dure, fait l'appairage, les zones et les sirènes (par `internal/install`), les codes des contacts (et retire ceux d'anciens contacts) et les tests. Elle déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`) |
+| `internal/consoleapp/web` | La page de la console : formulaires HTML en français, lisibles sur un téléphone, rien de chargé d'ailleurs, seulement à l'adresse de la centrale sur son réseau |
+| `internal/configapp` | La couche application qui reçoit `config.set` dans la centrale : vérification, garde, redémarrage à un moment calme (jamais pendant le mode installation, et aussi quand les zones ou les sirènes ont changé), réponse `config.applied`. Elle ne connaît ni fichier ni processus (ports) |
+
+### La plomberie commune
+
+| Dossier | Contenu |
+|---|---|
 | `internal/inbox` | La porte d'entrée partagée par toutes les couches application : le message reçu (`Message`), les abonnements (`Subscription`), la vérification d'un message (`Open`, `Envelope`) et les derniers identifiants vus (`RecentIDs`). Il ne connaît que le contrat |
+| `internal/outbox` | La file d'envoi MQTT partagée par toutes les couches application des programmes de la centrale : ordre, reprises, numéro de message qui survit aux redémarrages. Mêmes réglages partout (`Settings`), ouverture en un appel (`Open`), un message encodé et mis en file en un appel (`Send`) |
+| `internal/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine. `Every` répète un travail sur l'horloge. |
+| `internal/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre, demande de relecture à un programme qui tourne (`Reload`). Seuls les programmes de `cmd/` s'en servent |
+| `internal/configfile` | Ce que les lectures de configuration ont en commun : l'en-tête des fichiers (`ProgramFile`, qui donne un `Program`), JSON strict, niveau de journal, durées, secrets, écriture atomique d'un fichier |
+
+### La lecture des configurations
+
+| Dossier | Contenu |
+|---|---|
+| `internal/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict), nom de son fichier de pid (`PidFile`) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) |
+| `internal/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
+| `internal/gsmconfig` | Lecture du fichier de configuration de la passerelle, avec les contacts réglés depuis le cloud |
+| `internal/zigbeeconfig` | Lecture de la configuration et des profils d'appareils (`config/profiles/`) |
+| `internal/agentconfig` | Lecture de la configuration de l'agent et du secret du cloud |
+| `internal/videoconfig` | Lecture de la configuration de la vidéo (caméras, liaison, plafond) |
+| `internal/maintconfig` | Lecture de la configuration de la maintenance |
+| `internal/consoleconfig` | Lecture de la configuration de la console et de la phrase de passe de son Wi-Fi |
+
+### Les adaptateurs
+
+| Dossier | Contenu |
+|---|---|
+| `internal/adapter/mqtt` | L'adaptateur MQTT 5 (client de Mosquitto) : seul paquet qui connaît la bibliothèque MQTT |
+| `internal/adapter/filestore` | Écriture atomique de l'état sur disque (survit à une coupure de courant) ; un fichier écrit prend le propriétaire du dossier |
 | `internal/adapter/atmodem` | L'adaptateur du modem : commandes AT sur le port série (bibliothèque standard seulement) ; `attest` est un faux modem pour les tests |
 | `internal/adapter/queuedir` | La file de l'agent pour le cloud sur disque : un petit fichier par message, écrit d'un coup, qui survit à une coupure de courant |
 | `internal/adapter/photodir` | Le dossier des photos prises à l'alarme : le service vidéo les y écrit, l'agent les lit et les efface ; borné en nombre et en taille |
@@ -34,48 +89,32 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/adapter/sdnotify` | Le dialogue avec systemd : « démarré », puis « fonctionne encore » tant que les boucles répondent (chien de garde, bibliothèque standard seulement) |
 | `internal/adapter/sysclock` | Dit si l'horloge du système est synchronisée, pour `clock_ok` du heartbeat (noyau Linux, bibliothèque standard seulement) |
 | `internal/adapter/pidfile` | Empêche un programme de tourner deux fois sur le même état |
-| `internal/gsmconfig` | Lecture du fichier de configuration de la passerelle, avec les contacts réglés depuis le cloud |
-| `cmd/safehome-gsm` | Le programme de la passerelle GSM |
-| `internal/zigbee` | L'adaptateur Zigbee (sixième domaine) : profils, changements, présence, commandes confirmées, appairage et registre |
-| `internal/zigbee/z2m` | La seule traduction depuis et vers Zigbee2MQTT |
-| `internal/zigbee/wire` | La traduction entre l'adaptateur et le contrat |
-| `internal/zigbeeapp` | La couche application de l'adaptateur Zigbee |
-| `internal/zigbeeconfig` | Lecture de la configuration et des profils d'appareils (`config/profiles/`) |
-| `cmd/safehome-zigbee` | Le programme de l'adaptateur Zigbee |
-| `internal/agent` | Le cœur de l'agent de liaison : file pour le cloud à priorités et bornée, contrôle de ce qui descend du cloud, délai de prise en charge des alertes. Sans entrées-sorties ni horloge, il ne connaît que le contrat |
-| `internal/agentapp` | La couche application de l'agent : envoi au cloud avec reprise, republication sur la centrale, `agent.status` |
-| `internal/agentconfig` | Lecture de la configuration de l'agent et du secret du cloud |
-| `cmd/safehome-agent` | Le programme de l'agent de liaison |
-| `internal/video` | La vidéo en direct (septième domaine) : sessions, refus, durée maximale, plafond du mois en données mobiles, test des caméras |
-| `internal/video/wire` | La traduction entre la vidéo et le contrat |
-| `internal/videoapp` | La couche application de la vidéo : démarre et arrête les flux par le port `Streamer`, compte les octets, publie `video.session` et `video.status` |
 | `internal/adapter/go2rtc` | L'adaptateur go2rtc : un processus par session, piloté sur un socket Unix (bibliothèque standard seulement) ; `go2rtctest` est un faux go2rtc pour les tests |
-| `internal/videoconfig` | Lecture de la configuration de la vidéo (caméras, liaison, plafond) |
-| `cmd/safehome-video` | Le programme de la vidéo en direct |
-| `internal/maint` | La maintenance à distance (huitième domaine) : une session à la fois, une heure au plus, reprise après une coupure du tunnel |
-| `internal/maint/wire` | La traduction entre la maintenance et le contrat |
-| `internal/maintapp` | La couche application de la maintenance : ouvre et ferme le tunnel par le port `Tunneler`, publie `maint.session` |
 | `internal/adapter/sshtunnel` | Le tunnel : le client OpenSSH vers le bastion (`ssh -R`), bastion épinglé, aucune configuration lue |
-| `internal/maintconfig` | Lecture de la configuration de la maintenance |
-| `cmd/safehome-maint` | Le programme de la maintenance à distance |
-| `internal/install` | La couche application de l'installateur : appairage, retrait, zones et sirènes (seul à modifier le site : `Editor`, port `Sites`), vérification de la configuration contre les appareils appairés, tests en direct. L'outil en ligne de commande et la console locale s'en servent |
-| `internal/consoleapp` | La couche application de la console locale : suit le mode installation, allume le Wi-Fi de la centrale et sert la page pendant qu'il dure, fait l'appairage, les zones et les sirènes (par `internal/install`), les codes des contacts (et retire ceux d'anciens contacts) et les tests. Elle déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`) |
-| `internal/consoleapp/web` | La page de la console : formulaires HTML en français, lisibles sur un téléphone, rien de chargé d'ailleurs, seulement à l'adresse de la centrale sur son réseau |
 | `internal/adapter/hotspot` | Le réseau Wi-Fi propre à la centrale, créé et supprimé par `nmcli` (NetworkManager), jamais démarré au boot (bibliothèque standard seulement) |
-| `internal/consoleconfig` | Lecture de la configuration de la console et de la phrase de passe de son Wi-Fi |
+
+### Les programmes
+
+| Dossier | Contenu |
+|---|---|
+| `cmd/safehome-hub` | Le programme de la centrale : sa racine de composition, qui branche le vrai client MQTT, le vrai disque et la vraie horloge sur la centrale et sur `configapp` |
+| `cmd/safehome-gsm` | Le programme de la passerelle GSM |
+| `cmd/safehome-zigbee` | Le programme de l'adaptateur Zigbee |
+| `cmd/safehome-agent` | Le programme de l'agent de liaison |
+| `cmd/safehome-video` | Le programme de la vidéo en direct |
+| `cmd/safehome-maint` | Le programme de la maintenance à distance |
 | `cmd/safehome-console` | Le programme de la console locale |
 | `cmd/safehome-install` | L'outil de l'installateur, en ligne de commande sur la centrale |
-| `internal/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
-| `internal/configapp` | La couche application qui reçoit `config.set` dans la centrale : vérification, garde, redémarrage à un moment calme (jamais pendant le mode installation, et aussi quand les zones ou les sirènes ont changé), réponse `config.applied`. Elle ne connaît ni fichier ni processus (ports) |
-| `internal/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict), nom de son fichier de pid (`PidFile`) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) |
-| `cmd/safehome-hub` | Le programme de la centrale : sa racine de composition, qui branche le vrai client MQTT, le vrai disque et la vraie horloge sur la centrale et sur `configapp` |
-| `internal/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre, demande de relecture à un programme qui tourne (`Reload`). Seuls les programmes de `cmd/` s'en servent |
-| `internal/configfile` | Ce que les lectures de configuration ont en commun : l'en-tête des fichiers (`ProgramFile`, qui donne un `Program`), JSON strict, niveau de journal, durées, secrets, écriture atomique d'un fichier |
-| `internal/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine. `Every` répète un travail sur l'horloge. `drivertest` donne aux tests une fausse horloge, un faux disque et de quoi attendre |
+| `deploy/` | Les fichiers à poser sur la centrale (services systemd, Mosquitto, Zigbee2MQTT, journaux, chien de garde). Aussi `bundle.sh`, qui fabrique le paquet d'un site, et `install.sh`, qui l'installe ou le met à jour sur la centrale. Des tests vérifient que ces fichiers sont d'accord avec les programmes et font tourner le script sur un faux système |
+
+### Les tests
+
+| Dossier | Contenu |
+|---|---|
 | `internal/archtest` | Les tests d'architecture : ils échouent si les règles de dépendance sont cassées |
 | `internal/schematest` | Validation des messages contre les schémas JSON (tests seulement) |
-| `schemas/` | Les schémas JSON du contrat, pour le cloud et le firmware |
-| `deploy/` | Les fichiers à poser sur la centrale (services systemd, Mosquitto, Zigbee2MQTT, journaux, chien de garde). Aussi `bundle.sh`, qui fabrique le paquet d'un site, et `install.sh`, qui l'installe ou le met à jour sur la centrale. Des tests vérifient que ces fichiers sont d'accord avec les programmes et font tourner le script sur un faux système |
+| `internal/driver/drivertest` | Pour les tests : une fausse horloge (ses minuteries suivent une horloge monotone, comme la vraie), un faux disque, un journal partagé et de quoi attendre |
+| `internal/outbox/outboxtest` | Pour les tests : un faux broker qui garde ce qu'on lui publie, et qu'on peut rendre absent, faire refuser ou faire attendre |
 
 Des tests vérifient que les schémas restent alignés avec les structures Go, que tout ce
 que le moteur publie est accepté par son schéma (enveloppe comprise), et que les schémas

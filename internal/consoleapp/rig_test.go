@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"sync"
@@ -98,7 +99,8 @@ type published struct {
 	env   contract.Envelope
 }
 
-// fakeCodes keeps codes in memory; it refuses "1234" as too easy.
+// fakeCodes keeps codes in memory; it refuses "1234" as too easy, and a code for
+// anyone but u_owner, the only contact.
 type fakeCodes struct {
 	mu    sync.Mutex
 	codes map[string]string
@@ -129,6 +131,9 @@ func (c *fakeCodes) Remove(user string) error {
 }
 
 func (c *fakeCodes) Set(user, code string) error {
+	if user != "u_owner" {
+		return fmt.Errorf("%w: %s", ErrNotAContact, user)
+	}
 	if code == "1234" {
 		return ErrCodeWeak
 	}

@@ -97,8 +97,9 @@ func (h *Hub) escalateHealth(now time.Time, actions []health.Action) {
 }
 
 // dispatchEscalation turns the escalation's decisions into alert requests. Each
-// message is bound to the id of its request before the request is queued: the
-// escalation saves it, so a result finds its message even after a restart.
+// message is bound to the id of its request as the request is queued, on the
+// escalation's loop: the escalation saves it with this task, so a result finds its
+// message even after a restart.
 func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []escalation.Action) error {
 	for _, a := range actions {
 		switch v := a.(type) {
@@ -108,9 +109,9 @@ func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []esc
 				h.log.Error("building an alert request failed", "err", err)
 				continue
 			}
-			id := h.deps.NewID()
-			h.escal.esc.Bind(v.Key, id)
-			h.enqueueAs(id, srcEscalation, contract.AlertRequestTopic(h.cfg.Site), contract.TypeAlertRequest, data, false, now)
+			if id := h.out.Send(srcEscalation, contract.AlertRequestTopic(h.cfg.Site), contract.TypeAlertRequest, data, false, now); id != "" {
+				h.escal.esc.Bind(v.Key, id)
+			}
 		case escalation.Throttled:
 			h.log.Warn("a message was held back: the contact already got the hourly maximum",
 				"incident", v.Incident, "contact", v.Contact, "channel", v.Channel)

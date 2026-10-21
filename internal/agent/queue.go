@@ -140,6 +140,9 @@ func (r *Relay) mostImportant() int {
 //     follow-up was lost in a crash, or the cloud already answered. The hub's
 //     escalation does not wait for it: it turns to the GSM after 10 s on its own.
 //
+// A retained state kept is remembered as queued (see newState): the crash may have
+// come before the snapshot recorded it, and the hub's broker gives it again.
+//
 // The numbering goes on after the highest number found, saved at once if it is not
 // the one read: an item numbered just before a crash.
 func (r *Relay) RestoreQueue(stored []Item, uplink uint64) []Action {
@@ -167,6 +170,9 @@ func (r *Relay) RestoreQueue(stored []Item, uplink uint64) []Action {
 		}
 		r.queue = append(r.queue, it)
 		r.order = max(r.order, it.Order)
+		if it.Retain {
+			r.s.Retained[it.Topic] = it.ID
+		}
 	}
 	return append(out, dropOf(gone)...)
 }

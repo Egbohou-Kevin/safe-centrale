@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"reflect"
 	"slices"
@@ -15,7 +16,7 @@ import (
 	"safehome/internal/contract"
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/inbox"
-	"safehome/internal/outbox"
+	"safehome/internal/outbox/outboxtest"
 )
 
 // --- fakes ---------------------------------------------------------------------
@@ -60,54 +61,6 @@ type disk struct {
 
 func newDisk() *disk {
 	return &disk{store: drivertest.NewMemStore(), queue: &memQueue{items: map[string][]byte{}}}
-}
-
-type published struct {
-	topic  string
-	retain bool
-	raw    []byte
-	env    contract.Envelope
-}
-
-// fakeBroker records what is published; while down it answers ErrUnavailable. It
-// refuses for good the messages of type refuse.
-type fakeBroker struct {
-	mu     sync.Mutex
-	msgs   []published
-	down   bool
-	refuse string
-}
-
-func (b *fakeBroker) Publish(_ context.Context, topic string, payload []byte, _ byte, retain bool) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.down {
-		return outbox.ErrUnavailable
-	}
-	env, _ := contract.ParseEnvelope(payload)
-	if env.Type == b.refuse {
-		return fmt.Errorf("%w: not authorized", ErrRefused)
-	}
-	b.msgs = append(b.msgs, published{topic: topic, retain: retain, raw: append([]byte(nil), payload...), env: env})
-	return nil
-}
-
-func (b *fakeBroker) setDown(down bool) { b.mu.Lock(); b.down = down; b.mu.Unlock() }
-
-func (b *fakeBroker) all() []published {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return append([]published(nil), b.msgs...)
-}
-
-func (b *fakeBroker) ofType(typ string) []published {
-	var out []published
-	for _, m := range b.all() {
-		if m.env.Type == typ {
-			out = append(out, m)
-		}
-	}
-	return out
 }
 
 // --- rig -----------------------------------------------------------------------
@@ -166,13 +119,16 @@ type rig struct {
 	t      *testing.T
 	clock  *drivertest.FakeClock
 	disk   *disk
-	local  *fakeBroker
-	cloud  *fakeBroker
+	local  *outboxtest.Broker
+	cloud  *outboxtest.Broker
 	photos *memPhotos
 	upl    *fakeUploader
 	app    *App
 	ids    *contract.IDGenerator
-	stop   func()
+	logs   *drivertest.SyncBuffer
+	cancel context.CancelFunc // stops the agent; done is closed once it stopped
+	done   chan struct{}
+	stop   func() // stops the agent and waits for its end
 }
 
 func newRig(t *testing.T, d *disk) *rig {
@@ -185,20 +141,20 @@ func newRigWith(t *testing.T, d *disk, cfg Config) *rig {
 	if d == nil {
 		d = newDisk()
 	}
-	r := &rig{t: t, clock: drivertest.NewFakeClock(t0), disk: d, local: &fakeBroker{}, cloud: &fakeBroker{}, ids: contract.NewIDGenerator(),
-		photos: &memPhotos{files: map[string][]byte{}}, upl: &fakeUploader{}}
+	r := &rig{t: t, clock: drivertest.NewFakeClock(t0), disk: d, local: &outboxtest.Broker{}, cloud: &outboxtest.Broker{}, ids: contract.NewIDGenerator(),
+		photos: &memPhotos{files: map[string][]byte{}}, upl: &fakeUploader{}, logs: drivertest.Logs(t)}
 	app, err := New(cfg, Deps{Clock: r.clock, Store: d.store, Queue: d.queue, Local: r.local, Cloud: r.cloud,
-		Photos: r.photos, Uploader: r.upl, NewID: r.ids.New})
+		Photos: r.photos, Uploader: r.upl, NewID: r.ids.New, Logger: slog.New(slog.NewTextHandler(r.logs, nil))})
 	if err != nil {
 		t.Fatal(err)
 	}
 	r.app = app
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { app.Run(ctx); close(done) }()
-	r.stop = func() { cancel(); <-done }
+	r.cancel, r.done = cancel, make(chan struct{})
+	go func() { app.Run(ctx); close(r.done) }()
+	r.stop = func() { cancel(); <-r.done }
 	t.Cleanup(r.stop)
-	drivertest.WaitFor(t, "the first status", func() bool { return len(r.local.ofType(contract.TypeAgentStatus)) > 0 })
+	drivertest.WaitFor(t, "the first status", func() bool { return len(r.local.OfType(contract.TypeAgentStatus)) > 0 })
 	return r
 }
 
@@ -247,13 +203,13 @@ func (r *rig) fromCloud(topic, typ string, data any) []byte {
 	return b
 }
 
-func lastStatus(t *testing.T, b *fakeBroker) contract.AgentStatusData {
+func lastStatus(t *testing.T, b *outboxtest.Broker) contract.AgentStatusData {
 	t.Helper()
-	st := b.ofType(contract.TypeAgentStatus)
+	st := b.OfType(contract.TypeAgentStatus)
 	if len(st) == 0 {
 		t.Fatal("no agent.status")
 	}
-	d, err := contract.DecodeData[contract.AgentStatusData](st[len(st)-1].env)
+	d, err := contract.DecodeData[contract.AgentStatusData](st[len(st)-1].Env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,12 +220,12 @@ func topic(parts ...string) string { return contract.Topic(site, parts...) }
 
 // same says whether m is the message sent: the agent numbers again what goes to the
 // cloud, so only seq may differ.
-func same(m published, sent []byte) bool {
+func same(m outboxtest.Message, sent []byte) bool {
 	env, err := contract.ParseEnvelope(sent)
 	if err != nil {
 		return false
 	}
-	got := m.env
+	got := m.Env
 	got.Seq, env.Seq = 0, 0
 	return reflect.DeepEqual(got, env)
 }

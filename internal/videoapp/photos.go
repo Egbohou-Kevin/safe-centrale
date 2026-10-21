@@ -20,7 +20,7 @@ func (a *App) takePhotos(tp video.TakePhotos) {
 // camera that gives no picture is left out of the next rounds. Each photo is kept,
 // then announced; their bytes count in the month's usage.
 func (a *App) shoot(tp video.TakePhotos) {
-	ctx, cancel := context.WithTimeout(a.base, a.cfg.PhotoWait)
+	ctx, cancel := context.WithTimeout(a.life, a.cfg.PhotoWait)
 	sh, err := a.deps.Camera.Open(ctx)
 	cancel()
 	if err != nil {
@@ -39,7 +39,7 @@ func (a *App) shoot(tp video.TakePhotos) {
 			if failed[cam] {
 				continue
 			}
-			if a.base.Err() != nil {
+			if a.life.Err() != nil {
 				return
 			}
 			n, ok := a.photograph(sh, tp, cam)
@@ -60,7 +60,7 @@ func (a *App) shoot(tp video.TakePhotos) {
 func (a *App) pause(d time.Duration) bool {
 	fired, stop := a.deps.Clock.Timer(d)
 	select {
-	case <-a.base.Done():
+	case <-a.life.Done():
 		stop()
 		return false
 	case <-fired:
@@ -71,7 +71,7 @@ func (a *App) pause(d time.Duration) bool {
 // photograph takes one picture of the camera, keeps it and announces it. It returns
 // the picture's size, 0 if it could not be kept, and false if the camera gave none.
 func (a *App) photograph(sh Shooter, tp video.TakePhotos, cam string) (int64, bool) {
-	ctx, cancel := context.WithTimeout(a.base, a.cfg.PhotoWait)
+	ctx, cancel := context.WithTimeout(a.life, a.cfg.PhotoWait)
 	jpeg, err := sh.Frame(ctx, cam, tp.Width)
 	cancel()
 	if err != nil {
@@ -84,7 +84,7 @@ func (a *App) photograph(sh Shooter, tp video.TakePhotos, cam string) (int64, bo
 		return 0, true
 	}
 	size := int64(len(jpeg))
-	a.enqueue(contract.PhotoTakenTopic(a.cfg.Site), contract.TypePhotoTaken, contract.PhotoTakenData{
+	a.out.Send(src, contract.PhotoTakenTopic(a.cfg.Site), contract.TypePhotoTaken, contract.PhotoTakenData{
 		Photo: id, Incident: tp.Incident, Camera: cam, Bytes: size, Width: tp.Width,
 	}, false, a.deps.Clock.Now())
 	return size, true

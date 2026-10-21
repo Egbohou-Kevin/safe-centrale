@@ -55,10 +55,11 @@ type Item struct {
 // wait for the broker, so it drops messages here and Run sends them in order,
 // retrying while the broker is away.
 type Outbox struct {
-	pub  Publisher
-	seq  *Sequencer
-	site string
-	log  *slog.Logger
+	pub   Publisher
+	seq   *Sequencer
+	site  string
+	newID func() string // the ids of the messages given to Send
+	log   *slog.Logger
 
 	max            int
 	retryMin       time.Duration
@@ -95,22 +96,22 @@ func (s Settings) Validate() error {
 }
 
 // Open builds the outbox of an application, with its message counter saved in store
-// under key.
-func Open(store driver.Store, pub Publisher, key, site string, s Settings, log *slog.Logger) (*Outbox, error) {
+// under key. newID gives the ids of the messages queued with Send.
+func Open(store driver.Store, pub Publisher, key, site string, s Settings, newID func() string, log *slog.Logger) (*Outbox, error) {
 	seq, err := NewSequencer(store, key, log)
 	if err != nil {
 		return nil, err
 	}
-	return New(pub, seq, site, s, log), nil
+	return New(pub, seq, site, s, newID, log), nil
 }
 
 // New builds an outbox that numbers its messages with seq; Open is the usual way.
-func New(pub Publisher, seq *Sequencer, site string, s Settings, log *slog.Logger) *Outbox {
+func New(pub Publisher, seq *Sequencer, site string, s Settings, newID func() string, log *slog.Logger) *Outbox {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
 	return &Outbox{
-		pub: pub, seq: seq, site: site, log: log,
+		pub: pub, seq: seq, site: site, newID: newID, log: log,
 		max: s.Size, retryMin: s.RetryMin, retryMax: s.RetryMax, attemptTimeout: 5 * time.Second,
 		wake: make(chan struct{}, 1),
 	}
@@ -142,6 +143,21 @@ func (o *Outbox) Put(it *Item) {
 	case o.wake <- struct{}{}:
 	default:
 	}
+}
+
+// Send queues a message of the contract from src, at QoS 1 like every message of the
+// site's programs. data is encoded now: the caller may change it afterwards. A message
+// that cannot be encoded is logged and left out. Send returns the message's id, empty
+// when it was left out.
+func (o *Outbox) Send(src, topic, typ string, data any, retain bool, ts time.Time) string {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		o.log.Error("encoding a message failed", "type", typ, "err", err)
+		return ""
+	}
+	id := o.newID()
+	o.Put(&Item{Topic: topic, Src: src, Type: typ, Data: raw, QoS: 1, Retain: retain, ID: id, TS: ts})
+	return id
 }
 
 // Depth is the number of messages waiting.

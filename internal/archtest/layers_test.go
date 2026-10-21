@@ -63,8 +63,11 @@ func TestDriverAndAdaptersKnowNoDomain(t *testing.T) {
 // zigbeeapp, agentapp, videoapp, maintapp, configapp): it builds envelopes, so it
 // knows the contract, and saves its counter through the driver's Store port. It
 // knows no domain and no application.
+// Its fake broker, for the applications' tests, knows only the outbox and the
+// contract.
 func TestOutboxKnowsOnlyTheContractAndTheStorePort(t *testing.T) {
 	layer{local: internal("contract", "driver")}.check(t, "outbox")
+	layer{local: internal("contract", "outbox")}.check(t, filepath.Join("outbox", "outboxtest"))
 }
 
 // The inbox is the way in of every application layer, the console and the

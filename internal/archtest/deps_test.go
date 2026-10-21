@@ -50,13 +50,14 @@ func TestProductionCodeHasNoThirdPartyDependencies(t *testing.T) {
 
 // internal/schematest pulls in a third-party validator, internal/adapter/mqtt/
 // mqtttest starts a broker process, internal/adapter/atmodem/attest pretends to be
-// a modem, internal/adapter/go2rtc/go2rtctest a video relay and
-// internal/driver/drivertest fakes the clock and the disk: shipped code must never
-// import them.
+// a modem, internal/adapter/go2rtc/go2rtctest a video relay,
+// internal/driver/drivertest fakes the clock and the disk and
+// internal/outbox/outboxtest the broker: shipped code must never import them.
 func TestOnlyTestsImportTestSupport(t *testing.T) {
 	testSupport := []string{
 		module + "/internal/schematest",
 		module + "/internal/driver/drivertest",
+		module + "/internal/outbox/outboxtest",
 		module + "/internal/adapter/mqtt/mqtttest",
 		module + "/internal/adapter/atmodem/attest",
 		module + "/internal/adapter/go2rtc/go2rtctest",

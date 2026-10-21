@@ -9,7 +9,6 @@ package maintapp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -93,12 +92,11 @@ type App struct {
 	out  *outbox.Outbox
 	seen *inbox.RecentIDs
 
-	// base is the tunnels' parent, set by Run before the loop starts; cancel stops
-	// the tunnel under way. Both belong to the loop's goroutine.
-	base    context.Context
-	cancel  context.CancelFunc
+	cancel  context.CancelFunc // stops the tunnel under way; owned by the loop's goroutine
 	tunnels sync.WaitGroup
 
+	// life ends with Run: the loop and the tunnel run on it, and work handed to the
+	// loop after it ended is given up quietly.
 	life context.Context
 	stop context.CancelFunc
 	ran  atomic.Bool
@@ -122,7 +120,7 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if a.core, err = maint.New(cfg.Maint); err != nil {
 		return nil, err
 	}
-	if a.out, err = outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, log); err != nil {
+	if a.out, err = outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, deps.NewID, log); err != nil {
 		return nil, err
 	}
 	a.loop, err = driver.New(driver.Options[maint.Input, maint.Action, maint.Snapshot]{
@@ -155,13 +153,15 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.New("maintapp: Run called twice")
 	}
 	defer a.stop()
-	a.base = ctx
+	defer context.AfterFunc(ctx, a.stop)()
+	// Everything runs on life, which ends with ctx: a loop only stops once life is
+	// over, so a message handed to it meanwhile is known to be given up.
 	var wg sync.WaitGroup
 	for _, run := range []func(context.Context){func(c context.Context) { a.loop.Run(c) }, a.out.Run} {
-		wg.Go(func() { run(ctx) })
+		wg.Go(func() { run(a.life) })
 	}
 	// An order received before this point is taken first; Boot leaves its session alone.
-	a.loop.Do(ctx, func(now time.Time) []maint.Action { return a.core.Handle(maint.Boot{Now: now}) })
+	a.loop.Do(a.life, func(now time.Time) []maint.Action { return a.core.Handle(maint.Boot{Now: now}) })
 	wg.Wait()
 	a.tunnels.Wait()
 	a.out.Flush()
@@ -217,7 +217,7 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []maint.Action)
 		case maint.Report:
 			a.log.Info("remote maintenance", "session", v.Session, "user", v.User, "status", v.Status, "reason", v.Reason,
 				"until", v.Until, "open_for", v.Duration)
-			a.enqueue(now, maintwire.Session(v))
+			a.out.Send(src, contract.MaintSessionTopic(a.cfg.Site), contract.TypeMaintSession, maintwire.Session(v), false, now)
 		}
 	}
 	return nil
@@ -225,13 +225,13 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []maint.Action)
 
 // startTunnel opens the tunnel away from the loop. It runs on the loop's goroutine.
 func (a *App) startTunnel(session string) {
-	if a.base == nil || a.base.Err() != nil {
+	if a.life.Err() != nil {
 		return
 	}
 	if a.cancel != nil {
 		a.cancel()
 	}
-	ctx, cancel := context.WithCancel(a.base)
+	ctx, cancel := context.WithCancel(a.life)
 	a.cancel = cancel
 	a.tunnels.Add(1)
 	go func() {
@@ -289,12 +289,4 @@ func (a *App) stopTunnel() {
 		a.cancel()
 		a.cancel = nil
 	}
-}
-
-func (a *App) enqueue(now time.Time, d contract.MaintSessionData) {
-	raw, err := json.Marshal(d)
-	if err != nil {
-		return
-	}
-	a.out.Put(&outbox.Item{Topic: contract.MaintSessionTopic(a.cfg.Site), Src: src, Type: contract.TypeMaintSession, Data: raw, QoS: 1, ID: a.deps.NewID(), TS: now})
 }

@@ -102,6 +102,8 @@ type App struct {
 	last contract.ZigbeeStatusData // the last status published, owned by the loop
 	sent bool
 
+	// life ends with Run: the loop runs on it, and work handed to it after it ended
+	// is given up quietly.
 	life context.Context
 	stop context.CancelFunc
 	ran  atomic.Bool
@@ -126,7 +128,7 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if a.core, err = zigbee.New(cfg.Zigbee, deps.NewDeviceID); err != nil {
 		return nil, err
 	}
-	if a.out, err = outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, log); err != nil {
+	if a.out, err = outbox.Open(deps.Store, deps.Publisher, keySeq, cfg.Site, cfg.Outbox, deps.NewID, log); err != nil {
 		return nil, err
 	}
 	a.loop, err = driver.New(driver.Options[zigbee.Input, zigbee.Action, zigbee.Snapshot]{
@@ -164,6 +166,9 @@ func (a *App) Run(ctx context.Context) error {
 		return errors.New("zigbeeapp: Run called twice")
 	}
 	defer a.stop()
+	defer context.AfterFunc(ctx, a.stop)()
+	// Everything runs on life, which ends with ctx: a loop only stops once life is
+	// over, so a message handed to it meanwhile is known to be given up.
 	var wg sync.WaitGroup
 	for _, run := range []func(context.Context){
 		func(c context.Context) { a.loop.Run(c) },
@@ -172,10 +177,10 @@ func (a *App) Run(ctx context.Context) error {
 		// hangs stops the repetition, and the hub notices.
 		func(c context.Context) { driver.Every(c, a.deps.Clock, a.cfg.StatusEvery, a.repeatStatus) },
 	} {
-		wg.Go(func() { run(ctx) })
+		wg.Go(func() { run(a.life) })
 	}
 	// The registry and the status, even if nothing changed since the last run.
-	a.loop.Do(ctx, func(now time.Time) []zigbee.Action {
+	a.loop.Do(a.life, func(now time.Time) []zigbee.Action {
 		a.publishRegistry(now, a.core.Devices())
 		a.publishStatusAgain(now)
 		return nil

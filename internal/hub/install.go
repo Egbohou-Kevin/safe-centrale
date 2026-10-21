@@ -55,7 +55,7 @@ func (h *Hub) openInstall(o order) {
 		}
 		h.startInstall(now)
 		h.log.Warn("installation mode opened at the keypad", "until", h.alarm.inst.until.Format(time.RFC3339))
-		h.enqueue(srcEngine, contract.AlarmAckTopic(h.cfg.Site), contract.TypeAlarmAck, contract.AlarmAckData{
+		h.out.Send(srcEngine, contract.AlarmAckTopic(h.cfg.Site), contract.TypeAlarmAck, contract.AlarmAckData{
 			Ref: o.ref, Status: contract.AckDone, Detail: map[string]any{"install": contract.InstallOpen},
 		}, false, now)
 		h.publishInstall(now, "")
@@ -151,7 +151,7 @@ func (h *Hub) publishInstall(now time.Time, reason string) {
 	if reason == "" {
 		d = contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(h.alarm.inst.until)}
 	}
-	h.enqueue(srcInstall, contract.InstallModeTopic(h.cfg.Site), contract.TypeInstallMode, d, true, now)
+	h.out.Send(srcInstall, contract.InstallModeTopic(h.cfg.Site), contract.TypeInstallMode, d, true, now)
 }
 
 // installMessage takes an order of the local console: install.close.

@@ -12,6 +12,7 @@ import (
 	"safehome/internal/contract"
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/inbox"
+	"safehome/internal/outbox/outboxtest"
 	"safehome/internal/schematest"
 	"safehome/internal/zigbee"
 )
@@ -21,56 +22,6 @@ const site = "tg-lom-0001"
 var t0 = time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)
 
 // --- fakes ---------------------------------------------------------------------
-
-type published struct {
-	topic  string
-	retain bool
-	raw    []byte
-	env    contract.Envelope
-	isEnv  bool
-}
-
-type fakeBroker struct {
-	mu   sync.Mutex
-	msgs []published
-}
-
-func (b *fakeBroker) Publish(_ context.Context, topic string, payload []byte, _ byte, retain bool) error {
-	p := published{topic: topic, retain: retain, raw: append([]byte(nil), payload...)}
-	if env, err := contract.ParseEnvelope(payload); err == nil {
-		p.env, p.isEnv = env, true
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.msgs = append(b.msgs, p)
-	return nil
-}
-
-func (b *fakeBroker) all() []published {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return append([]published(nil), b.msgs...)
-}
-
-func (b *fakeBroker) ofType(typ string) []published {
-	var out []published
-	for _, m := range b.all() {
-		if m.isEnv && m.env.Type == typ {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
-func (b *fakeBroker) on(topic string) []published {
-	var out []published
-	for _, m := range b.all() {
-		if m.topic == topic {
-			out = append(out, m)
-		}
-	}
-	return out
-}
 
 // --- profiles ------------------------------------------------------------------
 
@@ -107,7 +58,7 @@ type rig struct {
 	app    *App
 	clock  *drivertest.FakeClock
 	store  *drivertest.MemStore
-	broker *fakeBroker
+	broker *outboxtest.Broker
 	logs   *drivertest.SyncBuffer
 	ids    *contract.IDGenerator
 	devIDs chan string
@@ -121,7 +72,7 @@ func newRig(t *testing.T, store *drivertest.MemStore, mutate ...func(*Config)) *
 		store = drivertest.NewMemStore()
 	}
 	r := &rig{
-		t: t, clock: drivertest.NewFakeClock(t0), store: store, broker: &fakeBroker{},
+		t: t, clock: drivertest.NewFakeClock(t0), store: store, broker: &outboxtest.Broker{},
 		logs: drivertest.Logs(t), ids: contract.NewIDGenerator(), devIDs: make(chan string, 10),
 	}
 	cfg := DefaultConfig(site, zigbee.DefaultConfig(profiles()))
@@ -149,7 +100,7 @@ func newRig(t *testing.T, store *drivertest.MemStore, mutate ...func(*Config)) *
 	r.cancel, r.done = cancel, make(chan struct{})
 	go func() { app.Run(ctx); close(r.done) }()
 	t.Cleanup(r.stop)
-	drivertest.WaitFor(r.t, "the first status", func() bool { return len(r.broker.ofType(contract.TypeZigbeeStatus)) > 0 })
+	drivertest.WaitFor(r.t, "the first status", func() bool { return len(r.broker.OfType(contract.TypeZigbeeStatus)) > 0 })
 	return r
 }
 
@@ -189,23 +140,23 @@ func (r *rig) order(topic, typ string, data any) string {
 }
 
 func (r *rig) status() contract.ZigbeeStatusData {
-	all := r.broker.ofType(contract.TypeZigbeeStatus)
-	d, _ := contract.DecodeData[contract.ZigbeeStatusData](all[len(all)-1].env)
+	all := r.broker.OfType(contract.TypeZigbeeStatus)
+	d, _ := contract.DecodeData[contract.ZigbeeStatusData](all[len(all)-1].Env)
 	return d
 }
 
 func (r *rig) registry() contract.RegistrySnapshotData {
-	all := r.broker.ofType(contract.TypeRegistrySnapshot)
-	d, _ := contract.DecodeData[contract.RegistrySnapshotData](all[len(all)-1].env)
+	all := r.broker.OfType(contract.TypeRegistrySnapshot)
+	d, _ := contract.DecodeData[contract.RegistrySnapshotData](all[len(all)-1].Env)
 	return d
 }
 
 // rawOn returns the bodies sent on a Zigbee2MQTT topic.
 func (r *rig) rawOn(topic string) []map[string]any {
 	var out []map[string]any
-	for _, m := range r.broker.on("zigbee2mqtt/" + topic) {
+	for _, m := range r.broker.On("zigbee2mqtt/" + topic) {
 		var v map[string]any
-		json.Unmarshal(m.raw, &v)
+		json.Unmarshal(m.Payload, &v)
 		out = append(out, v)
 	}
 	return out
@@ -232,23 +183,23 @@ var schemaOf = map[string]string{
 // validateAll checks every contract message against its schema.
 func (r *rig) validateAll() {
 	r.t.Helper()
-	for _, m := range r.broker.all() {
-		if !m.isEnv {
+	for _, m := range r.broker.All() {
+		if !m.IsEnv {
 			continue
 		}
-		file, ok := schemaOf[m.env.Type]
+		file, ok := schemaOf[m.Env.Type]
 		if !ok {
-			r.t.Errorf("unexpected type %s", m.env.Type)
+			r.t.Errorf("unexpected type %s", m.Env.Type)
 			continue
 		}
-		if err := schematest.Check(file, m.env.Data); err != nil {
-			r.t.Errorf("%s: %v", m.env.Type, err)
+		if err := schematest.Check(file, m.Env.Data); err != nil {
+			r.t.Errorf("%s: %v", m.Env.Type, err)
 		}
-		if err := schematest.Check("envelope.json", m.raw); err != nil {
+		if err := schematest.Check("envelope.json", m.Payload); err != nil {
 			r.t.Errorf("envelope: %v", err)
 		}
-		if m.env.Src != contract.AdapterZigbee {
-			r.t.Errorf("src %q", m.env.Src)
+		if m.Env.Src != contract.AdapterZigbee {
+			r.t.Errorf("src %q", m.Env.Src)
 		}
 	}
 }

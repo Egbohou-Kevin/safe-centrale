@@ -55,6 +55,29 @@ func TestTheClockFiresTimersWhenTheyAreDue(t *testing.T) {
 	}
 }
 
+func TestTimersFollowTheMonotonicClockNotTheTimeRead(t *testing.T) {
+	c := drivertest.NewFakeClock(t0)
+	minute, _ := c.Timer(time.Minute)
+	c.Set(t0.Add(-time.Hour)) // corrected backwards: the timer still fires a minute on
+	if !c.HasTimer(t0.Add(-time.Hour).Add(time.Minute)) {
+		t.Fatal("HasTimer reads the timer on the clock as it is now")
+	}
+	c.Advance(59 * time.Second)
+	if fired(minute) {
+		t.Fatal("fired early")
+	}
+	c.Advance(time.Second)
+	if !fired(minute) {
+		t.Fatal("a timer fires once its duration passed, whatever the time read says")
+	}
+	hour, _ := c.Timer(time.Hour)
+	c.Set(t0.Add(48 * time.Hour)) // corrected forwards: nothing fires before its time
+	c.Advance(time.Minute)
+	if fired(hour) {
+		t.Fatal("setting the time forward fired a timer")
+	}
+}
+
 func TestPassTimerWaitsForTheTimer(t *testing.T) {
 	c := drivertest.NewFakeClock(t0)
 	got := make(chan time.Time)

@@ -73,7 +73,7 @@ func newBox(t *testing.T, b *broker, max int) (*Outbox, *drivertest.MemStore) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(b, seq, "tg-lom-0001", Settings{Size: max, RetryMin: time.Millisecond, RetryMax: 4 * time.Millisecond}, nil), store
+	return New(b, seq, "tg-lom-0001", Settings{Size: max, RetryMin: time.Millisecond, RetryMax: 4 * time.Millisecond}, contract.NewIDGenerator().New, nil), store
 }
 
 func run(t *testing.T, o *Outbox) func() {
@@ -103,6 +103,22 @@ func TestMessagesLeaveInOrderWithIncreasingNumbers(t *testing.T) {
 	}
 	if o.Depth() != 0 {
 		t.Fatal("the queue must be empty")
+	}
+}
+
+func TestSendEncodesAtOnceAndLeavesOutWhatCannotBeEncoded(t *testing.T) {
+	b := &broker{}
+	o, _ := newBox(t, b, 10)
+	data := map[string]int{"n": 1}
+	id := o.Send("test", "a", contract.TypeHeartbeat, data, true, ts)
+	data["n"] = 2 // too late: the message is encoded already
+	if bad := o.Send("test", "b", contract.TypeHeartbeat, func() {}, false, ts); bad != "" || o.Depth() != 1 {
+		t.Fatalf("a message that cannot be encoded is left out: id %q, depth %d", bad, o.Depth())
+	}
+	o.Flush()
+	g := b.got()
+	if len(g) != 1 || g[0].env.ID != id || id == "" || string(g[0].env.Data) != `{"n":1}` || !g[0].retain || g[0].env.Src != "test" {
+		t.Fatalf("%+v", g)
 	}
 }
 
@@ -287,7 +303,7 @@ func TestOpenNumbersWithTheCounterSavedUnderItsKey(t *testing.T) {
 	store := drivertest.NewMemStore()
 	store.Save("app_seq", []byte(`{"seq":41}`))
 	b := &broker{}
-	o, err := Open(store, b, "app_seq", "tg-lom-0001", DefaultSettings(10), nil)
+	o, err := Open(store, b, "app_seq", "tg-lom-0001", DefaultSettings(10), contract.NewIDGenerator().New, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +315,7 @@ func TestOpenNumbersWithTheCounterSavedUnderItsKey(t *testing.T) {
 		t.Fatalf("seq %d, want 42", seq)
 	}
 	store.Save("broken", []byte(`{`))
-	if _, err := Open(store, b, "broken", "tg-lom-0001", DefaultSettings(10), nil); err == nil {
+	if _, err := Open(store, b, "broken", "tg-lom-0001", DefaultSettings(10), contract.NewIDGenerator().New, nil); err == nil {
 		t.Fatal("a damaged counter must stop the start")
 	}
 }

@@ -74,8 +74,9 @@ type Person struct {
 
 // Codes are the people's access codes, kept by the hub. People lists the site's
 // contacts, and apart the users of codes who are no longer contacts (leftovers: the
-// hub leaves their codes aside, the installer removes them). Set refuses a code that
-// is malformed, too easy, someone else's or the installer's (the ErrCode errors);
+// hub leaves their codes aside, the installer removes them). Set refuses a user who is
+// not a contact (ErrNotAContact), and a code that is malformed, too easy, someone
+// else's or the installer's (the ErrCode errors);
 // Remove refuses a user without a code (ErrNoSuchCode). Both have the running hub read
 // the codes again. Nothing here ever logs a code.
 type Codes interface {

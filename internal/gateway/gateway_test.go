@@ -15,23 +15,24 @@ import (
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/gsm"
 	"safehome/internal/inbox"
+	"safehome/internal/outbox/outboxtest"
 )
 
 func TestTheStatusIsRepeatedEvenWhenNothingChanged(t *testing.T) {
 	const every = 47 * time.Second // no other timer of the gateway uses it
 	r := newRig(t, nil, func(c *Config) { c.GSM.CheckEvery = time.Hour; c.StatusEvery = every })
-	before := len(r.broker.ofType(contract.TypeGSMStatus))
+	before := len(r.broker.OfType(contract.TypeGSMStatus))
 	stamp := func() time.Time {
-		all := r.broker.ofType(contract.TypeGSMStatus)
-		return all[len(all)-1].env.TS.Time
+		all := r.broker.OfType(contract.TypeGSMStatus)
+		return all[len(all)-1].Env.TS.Time
 	}
 	r.clock.PassTimer(t, every)
-	drivertest.WaitFor(t, "the repeated status", func() bool { return len(r.broker.ofType(contract.TypeGSMStatus)) == before+1 })
+	drivertest.WaitFor(t, "the repeated status", func() bool { return len(r.broker.OfType(contract.TypeGSMStatus)) == before+1 })
 	if !stamp().Equal(t0.Add(every)) {
 		t.Fatalf("stamped %v: the hub judges the gateway alive by this time", stamp())
 	}
 	r.clock.PassTimer(t, every)
-	drivertest.WaitFor(t, "once more", func() bool { return len(r.broker.ofType(contract.TypeGSMStatus)) == before+2 })
+	drivertest.WaitFor(t, "once more", func() bool { return len(r.broker.OfType(contract.TypeGSMStatus)) == before+2 })
 }
 
 func TestTheLinesStatusIsPublishedRetainedAtStart(t *testing.T) {
@@ -40,8 +41,8 @@ func TestTheLinesStatusIsPublishedRetainedAtStart(t *testing.T) {
 	if st.Lines[0].Operator != "TOGOCOM" || !st.Lines[0].Responding || st.Lines[0].Signal != 70 || st.Queued != 0 {
 		t.Fatalf("%+v", st)
 	}
-	all := r.broker.ofType(contract.TypeGSMStatus)
-	if !all[len(all)-1].retain || all[len(all)-1].topic != contract.GSMStatusTopic(site) {
+	all := r.broker.OfType(contract.TypeGSMStatus)
+	if !all[len(all)-1].Retain || all[len(all)-1].Topic != contract.GSMStatusTopic(site) {
 		t.Fatal("the status is retained, on its topic")
 	}
 	r.validateAll()
@@ -84,11 +85,12 @@ func TestRequestsForOtherChannelsAndDuplicatesAreIgnored(t *testing.T) {
 	ref := r.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
 	drivertest.WaitFor(t, "sent", func() bool { return len(r.results(ref)) == 2 })
 	// The same request delivered again by the broker.
-	env, _ := contract.NewEnvelope(site, "escalation", 1, ref, t0, contract.TypeAlertRequest, contract.AlertRequestData{
-		Incident: "inc1", Kind: contract.AlertIntrusion, Urgency: "high", Contact: "u_owner", Channel: contract.ChannelSMS,
+	r.publish(contract.AlertRequestTopic(site), ref, t0, contract.TypeAlertRequest, contract.AlertRequestData{
+		Incident: "inc1", Kind: contract.AlertIntrusion, Urgency: contract.UrgencyCritical, Contact: "u_owner", Channel: contract.ChannelSMS,
+		Text: "ALARME Boutique: intrusion a 21:04. Repondre 1 si vous gerez.",
 	})
+	env, _ := contract.NewEnvelope(site, "escalation", 1, ref, t0, contract.TypeAlertRequest, contract.AlertRequestData{})
 	b, _ := json.Marshal(env)
-	r.gw.HandleMessage(inbox.Message{Topic: contract.AlertRequestTopic(site), Payload: b})
 	// And things that are not alert requests at all.
 	r.gw.HandleMessage(inbox.Message{Topic: contract.AlertRequestTopic(site), Payload: []byte("{")})
 	r.gw.HandleMessage(inbox.Message{Topic: contract.AlertAckTopic(site), Payload: b})
@@ -137,8 +139,8 @@ func TestAnSMSAnswer1BecomesAnAcknowledgement(t *testing.T) {
 	drivertest.WaitFor(t, "sent", func() bool { return len(r.results(ref)) == 2 })
 	r.gw.Incoming("line1", "+22890123456", "1")
 	r.gw.Incoming("line1", "+22899999999", "1") // a stranger
-	drivertest.WaitFor(t, "the acknowledgement", func() bool { return len(r.broker.ofType(contract.TypeAlertAck)) == 1 })
-	d, _ := contract.DecodeData[contract.AlertAckData](r.broker.ofType(contract.TypeAlertAck)[0].env)
+	drivertest.WaitFor(t, "the acknowledgement", func() bool { return len(r.broker.OfType(contract.TypeAlertAck)) == 1 })
+	d, _ := contract.DecodeData[contract.AlertAckData](r.broker.OfType(contract.TypeAlertAck)[0].Env)
 	if d.Incident != "inc1" || d.Contact != "u_owner" || d.Via != "sms" {
 		t.Fatalf("%+v", d)
 	}
@@ -182,7 +184,7 @@ func TestTheQueueSurvivesARestartOfTheGateway(t *testing.T) {
 
 func TestConfigurationAndDependenciesAreChecked(t *testing.T) {
 	good := DefaultConfig(site, gsm.DefaultConfig([]gsm.Line{{ID: "line1"}}, nil))
-	deps := Deps{Clock: drivertest.NewFakeClock(t0), Store: drivertest.NewMemStore(), Publisher: &fakeBroker{}, NewID: contract.NewIDGenerator().New,
+	deps := Deps{Clock: drivertest.NewFakeClock(t0), Store: drivertest.NewMemStore(), Publisher: &outboxtest.Broker{}, NewID: contract.NewIDGenerator().New,
 		Lines: map[string]Modem{"line1": &fakeModem{}}}
 	if _, err := New(good, deps); err != nil {
 		t.Fatal(err)
@@ -276,10 +278,7 @@ func TestADisarmDropsTheWaitingMessages(t *testing.T) {
 	// The siren cycles running out is not the end of the incident.
 	r.publish(contract.AlarmEventTopic(site), r.ids.New(), t0, contract.TypeAlarmCleared,
 		contract.ClearedData{Incident: "inc1", Origin: contract.OriginTimeout, DurationS: 300})
-	r.gw.loop.Do(context.Background(), func(time.Time) []gsm.Action { return nil })
-	if r.status().Queued != 1 {
-		t.Fatal("the message still waits")
-	}
+	stillWaits(r)
 	r.publish(contract.AlarmEventTopic(site), r.ids.New(), t0, contract.TypeAlarmCleared,
 		contract.ClearedData{Incident: "inc1", Origin: contract.OriginUser, User: "u_owner", DurationS: 60})
 	noSMSAfterRetry(r)
@@ -294,15 +293,28 @@ func TestAnAcknowledgementDropsTheWaitingMessages(t *testing.T) {
 }
 
 // The escalation ignores an acknowledgement from someone who is not a contact, and
-// goes on: the gateway must not mute the SMS backup for it.
+// goes on: the gateway must not mute the SMS backup for it. The contacts are those
+// with a number, or the list given (some are reached by the app only).
 func TestAnAcknowledgementFromAStrangerDropsNothing(t *testing.T) {
-	r := newRig(t, nil)
-	failingRequest(r)
-	r.publish(contract.AlertAckTopic(site), r.ids.New(), t0, contract.TypeAlertAck,
-		contract.AlertAckData{Incident: "inc1", Contact: "u_stranger", Via: contract.ChannelApp})
-	r.gw.loop.Do(context.Background(), func(time.Time) []gsm.Action { return nil })
-	if r.status().Queued != 1 {
-		t.Fatal("the message must still wait")
+	for name, contacts := range map[string][]string{"contacts with a number": nil, "contacts given": {"u_owner", "u_deputy"}} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, nil, func(c *Config) { c.Contacts = contacts })
+			failingRequest(r)
+			r.publish(contract.AlertAckTopic(site), r.ids.New(), t0, contract.TypeAlertAck,
+				contract.AlertAckData{Incident: "inc1", Contact: "u_stranger", Via: contract.ChannelApp})
+			stillWaits(r)
+		})
+	}
+}
+
+// stillWaits checks that the message of the failing request still waits: nothing
+// dropped it, and the status published says so.
+func stillWaits(r *rig) {
+	r.t.Helper()
+	r.settle()
+	drivertest.WaitFor(r.t, "the outbox to empty", func() bool { return r.gw.out.Depth() == 0 })
+	if r.status().Queued != 1 || strings.Contains(r.logs.String(), "incident is over") {
+		r.t.Fatal("the message must still wait")
 	}
 }
 
@@ -313,4 +325,22 @@ func TestAnAcknowledgementFromAContactWithoutANumberDropsTheMessages(t *testing.
 	r.publish(contract.AlertAckTopic(site), r.ids.New(), t0, contract.TypeAlertAck,
 		contract.AlertAckData{Incident: "inc1", Contact: "u_deputy", Via: contract.ChannelApp})
 	noSMSAfterRetry(r)
+}
+
+// A message that arrives while the gateway stops (here during its last flush, which
+// the broker holds) is given up without an error.
+func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
+	r := newRig(t, nil)
+	r.settle()
+	release := r.broker.Hold()
+	r.gw.repeatStatus(context.Background()) // something left for the last flush
+	r.cancel()
+	drivertest.WaitFor(t, "the loop to stop", func() bool { return r.gw.Alive(context.Background()) != nil })
+	r.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
+	r.gw.Incoming("line1", "+22890123456", "1")
+	release()
+	<-r.done
+	if strings.Contains(r.logs.String(), "level=ERROR") {
+		t.Fatal("an error was logged for a message given up at shutdown")
+	}
 }

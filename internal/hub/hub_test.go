@@ -21,14 +21,14 @@ func TestBootPublishesTheRetainedStateAndHealth(t *testing.T) {
 	r.start()
 	r.settle()
 
-	st := r.broker.on(contract.AlarmStateTopic(site))
+	st := r.broker.On(contract.AlarmStateTopic(site))
 	if len(st) == 0 || !st[0].Retain || st[0].QoS != 1 || st[0].Env.Src != "engine" {
 		t.Fatalf("alarm state: %+v", st)
 	}
 	if d := dataOf[contract.AlarmStateData](t, st[0]); d.State != contract.StateDisarmed {
 		t.Fatalf("%+v", d)
 	}
-	h := r.broker.on(contract.HealthTopic(site))
+	h := r.broker.On(contract.HealthTopic(site))
 	if len(h) == 0 || !h[0].Retain || h[0].Env.Src != "health" {
 		t.Fatalf("health: %+v", h)
 	}
@@ -50,10 +50,10 @@ func TestAnIntrusionFromStartToFinish(t *testing.T) {
 	r.mustBe(engine.ModeArmed)
 
 	r.device(devBack, contract.CapContact, "open") // perimeter door forced
-	drivertest.WaitFor(t, "the siren order", func() bool { return len(r.broker.on(contract.DeviceCmdTopic(site, devSiren))) == 1 })
+	drivertest.WaitFor(t, "the siren order", func() bool { return len(r.broker.On(contract.DeviceCmdTopic(site, devSiren))) == 1 })
 	r.settle()
 
-	siren := r.broker.on(contract.DeviceCmdTopic(site, devSiren))[0]
+	siren := r.broker.On(contract.DeviceCmdTopic(site, devSiren))[0]
 	cmd := dataOf[contract.DeviceCommandData](t, siren)
 	if cmd.Command != contract.CmdSirenOn || cmd.Args.DurationS != 300 || cmd.Exp == nil ||
 		!cmd.Exp.Equal(r.clock.Now().Add(30*time.Second)) || siren.QoS != 1 || siren.Retain || siren.Env.Type != contract.TypeCommand {
@@ -72,7 +72,7 @@ func TestAnIntrusionFromStartToFinish(t *testing.T) {
 		!strings.Contains(a.Text, "intrusion") || alerts[0].Env.Src != "escalation" {
 		t.Fatalf("%+v", a)
 	}
-	if st := r.broker.on(contract.AlarmStateTopic(site)); dataOf[contract.AlarmStateData](t, st[len(st)-1]).State != contract.StateTriggered {
+	if st := r.broker.On(contract.AlarmStateTopic(site)); dataOf[contract.AlarmStateData](t, st[len(st)-1]).State != contract.StateTriggered {
 		t.Fatal("the retained state must follow the alarm")
 	}
 
@@ -80,7 +80,7 @@ func TestAnIntrusionFromStartToFinish(t *testing.T) {
 	r.order(contract.CmdDisarm, contract.CommandArgs{Code: "482915"}, contract.OriginApp, "u_owner")
 	drivertest.WaitFor(t, "disarmed", func() bool { return len(eventsOf(r, contract.TypeAlarmDisarmed)) == 1 })
 	r.mustBe(engine.ModeDisarmed)
-	off := r.broker.on(contract.DeviceCmdTopic(site, devSiren))
+	off := r.broker.On(contract.DeviceCmdTopic(site, devSiren))
 	if len(off) != 2 || dataOf[contract.DeviceCommandData](t, off[1]).Command != contract.CmdSirenOff {
 		t.Fatalf("siren orders: %d", len(off))
 	}
@@ -100,12 +100,12 @@ func TestTheSirenLeavesFirstThenTheEventsAndTheAlert(t *testing.T) {
 	r.mustBe(engine.ModeArming)
 	r.clock.Advance(2 * time.Minute)
 	r.mustBe(engine.ModeArmed)
-	before := len(r.broker.all())
+	before := len(r.broker.All())
 	r.device(devBack, contract.CapContact, "open")
 	r.settle()
 	var engineOrder []string
 	alerts := 0
-	for i, m := range r.broker.all()[before:] {
+	for i, m := range r.broker.All()[before:] {
 		if m.Env.Type != contract.TypeAlertRequest {
 			engineOrder = append(engineOrder, m.Env.Type)
 			continue
@@ -169,7 +169,7 @@ func TestWrongCodesLockTheKeypadAndAlertAndNeverLeak(t *testing.T) {
 	})
 
 	// Locked: even the right code is refused now.
-	acks := len(r.broker.ofType(contract.TypeAlarmAck))
+	acks := len(r.broker.OfType(contract.TypeAlarmAck))
 	r.keypad(contract.ValDisarm, "482915")
 	r.waitAcks(acks + 1)
 	r.mustBe(engine.ModeArmed)
@@ -178,7 +178,7 @@ func TestWrongCodesLockTheKeypadAndAlertAndNeverLeak(t *testing.T) {
 	}
 
 	// Nothing that was published or logged contains any of the codes.
-	all := string(joinPayloads(r.broker.all())) + r.logs.String()
+	all := string(joinPayloads(r.broker.All())) + r.logs.String()
 	for _, code := range []string{"482915", "111122", "222233", "333344"} {
 		if strings.Contains(all, code) {
 			t.Errorf("the code %s leaks into the messages or the logs", code)
@@ -189,7 +189,7 @@ func TestWrongCodesLockTheKeypadAndAlertAndNeverLeak(t *testing.T) {
 
 func lastAck(t *testing.T, r *rig) contract.AlarmAckData {
 	t.Helper()
-	acks := r.broker.ofType(contract.TypeAlarmAck)
+	acks := r.broker.OfType(contract.TypeAlarmAck)
 	if len(acks) == 0 {
 		t.Fatal("no ack")
 	}
@@ -232,7 +232,7 @@ func TestCommandsAreAcknowledgedWithTheirOwnID(t *testing.T) {
 	r.start()
 	id := r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u")
 	r.settle()
-	acks := r.broker.on(contract.AlarmAckTopic(site))
+	acks := r.broker.On(contract.AlarmAckTopic(site))
 	if len(acks) != 1 {
 		t.Fatalf("%d acks", len(acks))
 	}
@@ -252,7 +252,7 @@ func TestADuplicateMessageIsHandledOnce(t *testing.T) {
 		r.hub.HandleMessage(inbox.Message{Topic: contract.AlarmCmdTopic(site), Payload: b})
 	}
 	r.settle()
-	if n := len(r.broker.on(contract.AlarmAckTopic(site))); n != 1 {
+	if n := len(r.broker.On(contract.AlarmAckTopic(site))); n != 1 {
 		t.Fatalf("%d acks for one order", n)
 	}
 	if n := len(eventsOf(r, contract.TypeAlarmArming)); n != 1 {
@@ -286,10 +286,10 @@ func TestGarbageIsIgnoredAndNeverLogged(t *testing.T) {
 		"invalid device value":  {Topic: contract.DeviceEventTopic(site, "dev_a"), Payload: mustEnv(t, r, contract.TypeDeviceEvent, event("dev_a", contract.CapContact, "ajar"))},
 		"code on a door":        {Topic: contract.DeviceEventTopic(site, "dev_a"), Payload: mustEnv(t, r, contract.TypeDeviceEvent, map[string]any{"device_id": "dev_a", "capability": "contact", "value": "open", "code": "9999"})},
 	} {
-		before := len(r.broker.all())
+		before := len(r.broker.All())
 		r.hub.HandleMessage(m)
 		r.settle()
-		if len(r.broker.all()) != before {
+		if len(r.broker.All()) != before {
 			t.Errorf("%s: the hub reacted", name)
 		}
 	}
@@ -319,7 +319,7 @@ func TestEntryDelayThenSirenWhenNobodyDisarms(t *testing.T) {
 	r.mustBe(engine.ModeEntryDelay)
 	drivertest.WaitFor(t, "entry delay event", func() bool { return len(eventsOf(r, contract.TypeAlarmEntryDelay)) == 1 })
 	r.clock.Advance(45 * time.Second)
-	drivertest.WaitFor(t, "the siren", func() bool { return len(r.broker.on(contract.DeviceCmdTopic(site, devSiren))) == 1 })
+	drivertest.WaitFor(t, "the siren", func() bool { return len(r.broker.On(contract.DeviceCmdTopic(site, devSiren))) == 1 })
 	r.mustBe(engine.ModeTriggered)
 	r.settle()
 	r.validateAll()
@@ -340,7 +340,7 @@ func TestAutomaticArmingRunsFromTheClock(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 	r.settle()
-	st := r.broker.on(contract.AlarmStateTopic(site))
+	st := r.broker.On(contract.AlarmStateTopic(site))
 	if last := dataOf[contract.AlarmStateData](t, st[len(st)-1]); last.State != contract.StateArming {
 		t.Fatalf("%+v", last)
 	}
@@ -352,7 +352,7 @@ func TestStateAnnouncesTheNextScheduledArming(t *testing.T) {
 		c.Engine.Closing = map[time.Weekday]engine.TimeOfDay{time.Saturday: {Hour: 22}}
 	})
 	r.start()
-	st := r.broker.on(contract.AlarmStateTopic(site))
+	st := r.broker.On(contract.AlarmStateTopic(site))
 	d := dataOf[contract.AlarmStateData](t, st[len(st)-1])
 	if d.NextScheduled == nil || !d.NextScheduled.Equal(t0.Add(time.Hour)) {
 		t.Fatalf("%+v", d)

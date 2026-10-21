@@ -14,6 +14,7 @@ import (
 	"safehome/internal/contract"
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/inbox"
+	"safehome/internal/outbox/outboxtest"
 	"safehome/internal/schematest"
 	"safehome/internal/video"
 )
@@ -24,59 +25,42 @@ var t0 = time.Date(2026, 10, 20, 21, 0, 0, 0, time.UTC)
 
 // --- fakes ---------------------------------------------------------------------------
 
-type fakeBroker struct {
-	mu   sync.Mutex
-	msgs []contract.Envelope
-	ret  map[string]bool // topic -> retained
-}
+// fakeBroker reads the service's messages off the shared fake broker.
+type fakeBroker struct{ outboxtest.Broker }
 
-func (b *fakeBroker) Publish(_ context.Context, topic string, payload []byte, _ byte, retain bool) error {
-	env, err := contract.ParseEnvelope(payload)
-	if err != nil {
-		return err
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.msgs = append(b.msgs, env)
-	b.ret[topic] = retain
-	return nil
-}
-
-func (b *fakeBroker) sessions() []contract.VideoSessionData {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	var out []contract.VideoSessionData
-	for _, e := range b.msgs {
-		if e.Type == contract.TypeVideoSession {
-			d, _ := contract.DecodeData[contract.VideoSessionData](e)
-			out = append(out, d)
-		}
+// decoded returns the data of the messages of a type, in order.
+func decoded[T any](b *fakeBroker, typ string) []T {
+	var out []T
+	for _, m := range b.OfType(typ) {
+		d, _ := contract.DecodeData[T](m.Env)
+		out = append(out, d)
 	}
 	return out
 }
 
-func (b *fakeBroker) status() contract.VideoStatusData {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	var d contract.VideoStatusData
-	for _, e := range b.msgs {
-		if e.Type == contract.TypeVideoStatus {
-			d, _ = contract.DecodeData[contract.VideoStatusData](e)
-		}
-	}
-	return d
+func (b *fakeBroker) sessions() []contract.VideoSessionData {
+	return decoded[contract.VideoSessionData](b, contract.TypeVideoSession)
 }
 
-func (b *fakeBroker) count(typ string) int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	n := 0
-	for _, e := range b.msgs {
-		if e.Type == typ {
-			n++
-		}
+func (b *fakeBroker) photos() []contract.PhotoTakenData {
+	return decoded[contract.PhotoTakenData](b, contract.TypePhotoTaken)
+}
+
+// status is the last video.status published.
+func (b *fakeBroker) status() contract.VideoStatusData {
+	all := decoded[contract.VideoStatusData](b, contract.TypeVideoStatus)
+	if len(all) == 0 {
+		return contract.VideoStatusData{}
 	}
-	return n
+	return all[len(all)-1]
+}
+
+func (b *fakeBroker) count(typ string) int { return len(b.OfType(typ)) }
+
+// retained tells whether the messages on topic were published retained.
+func (b *fakeBroker) retained(topic string) bool {
+	on := b.On(topic)
+	return len(on) > 0 && on[len(on)-1].Retain
 }
 
 func (b *fakeBroker) has(session string, status string, reason string) bool {
@@ -229,7 +213,7 @@ func start(t *testing.T, edit ...func(*Config)) *harness {
 		e(&cfg)
 	}
 	h := &harness{
-		t: t, broker: &fakeBroker{ret: map[string]bool{}}, logs: drivertest.Logs(t), clock: drivertest.NewFakeClock(t0), ids: contract.NewIDGenerator(),
+		t: t, broker: &fakeBroker{}, logs: drivertest.Logs(t), clock: drivertest.NewFakeClock(t0), ids: contract.NewIDGenerator(),
 		stream: &fakeStreamer{streams: map[string]*fakeStream{}, startErr: map[string]error{}, down: map[string]bool{}},
 		camera: &fakeCamera{frameErr: map[string]error{}}, photos: &memPhotos{saved: map[string]int{}},
 		done: make(chan struct{}),
@@ -258,7 +242,8 @@ func (h *harness) stop() {
 	}
 }
 
-func (h *harness) send(typ string, data any) {
+// send hands the service an order, and returns it.
+func (h *harness) send(typ string, data any) []byte {
 	h.t.Helper()
 	env, err := contract.NewEnvelope(site, "cloud", 1, h.ids.New(), h.clock.Now(), typ, data)
 	if err != nil {
@@ -266,6 +251,7 @@ func (h *harness) send(typ string, data any) {
 	}
 	b, _ := json.Marshal(env)
 	h.app.HandleMessage(inbox.Message{Topic: contract.VideoCmdTopic(site), Payload: b})
+	return b
 }
 
 func (h *harness) request(session, camera string) {
@@ -338,7 +324,7 @@ func TestASessionFromRequestToStop(t *testing.T) {
 	if err := schematest.Check("video-status.json", raw); err != nil {
 		t.Fatal(err)
 	}
-	if !h.broker.ret[contract.VideoStatusTopic(site)] || h.broker.ret[contract.VideoSessionTopic(site)] {
+	if !h.broker.retained(contract.VideoStatusTopic(site)) || h.broker.retained(contract.VideoSessionTopic(site)) {
 		t.Fatal("video.status is retained, video.session is not")
 	}
 	if strings.Contains(h.logs.String(), "secret") {
@@ -501,19 +487,6 @@ func (h *harness) alarm(incident string) {
 	h.app.HandleMessage(inbox.Message{Topic: contract.AlarmEventTopic(site), Payload: b}) // QoS 1: again
 }
 
-func (b *fakeBroker) photos() []contract.PhotoTakenData {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	var out []contract.PhotoTakenData
-	for _, e := range b.msgs {
-		if e.Type == contract.TypePhotoTaken {
-			d, _ := contract.DecodeData[contract.PhotoTakenData](e)
-			out = append(out, d)
-		}
-	}
-	return out
-}
-
 func quickPhotos(c *Config) {
 	c.Video.Photos = video.PhotoPolicy{Count: 2, Every: 500 * time.Millisecond, Width: 320, PerHour: 6}
 }
@@ -546,10 +519,7 @@ func TestAnAlarmIsPhotographedAndEachPhotoAnnounced(t *testing.T) {
 		t.Fatalf("%s", order)
 	}
 	drivertest.WaitFor(t, "the camera freed", func() bool { _, o, c := h.camera.count(); return o == 1 && c == 1 })
-	h.broker.mu.Lock()
-	retained := h.broker.ret[contract.PhotoTakenTopic(site)]
-	h.broker.mu.Unlock()
-	if retained {
+	if h.broker.retained(contract.PhotoTakenTopic(site)) {
 		t.Fatal("photo.taken is not retained")
 	}
 }
@@ -599,4 +569,51 @@ func TestTooManyAlarmsAnHour(t *testing.T) {
 	h.alarm("inc1")
 	h.alarm("inc2")
 	drivertest.WaitFor(t, "the limit said", func() bool { return strings.Contains(h.logs.String(), "no photos for this alarm") })
+}
+
+// A message that arrives while the service stops (here during its last flush, which
+// the broker holds) is given up without an error.
+func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
+	h := start(t)
+	h.idle()
+	release := h.broker.Hold()
+	h.app.loop.Do(context.Background(), func(now time.Time) []video.Action { // something left for the last flush
+		h.app.sent = false
+		h.app.publishStatus(now)
+		return nil
+	})
+	h.stopRun()
+	drivertest.WaitFor(t, "the loop to stop", func() bool { return h.app.Alive(context.Background()) != nil })
+	h.request("s1", "cam_caisse")
+	h.alarm("inc1")
+	release()
+	<-h.done
+	if strings.Contains(h.logs.String(), "level=ERROR") {
+		t.Fatal("an error was logged for a message given up at shutdown")
+	}
+}
+
+// The broker may deliver an order twice (QoS 1), even once its session is over: it is
+// carried out once.
+func TestAnOrderDeliveredTwiceIsCarriedOutOnce(t *testing.T) {
+	h := start(t)
+	order := h.send(contract.TypeVideoRequest, contract.VideoRequestData{
+		Session: "s1", Camera: "cam_caisse", Reason: contract.VideoOnDemand, User: "u_owner",
+		PushURL: "rtmps://relay.safehome.example/live/s1", Token: "tok-s1-secret", Exp: contract.TS(h.clock.Now().Add(30 * time.Second)),
+	})
+	drivertest.WaitFor(t, "starting", func() bool { return h.broker.has("s1", contract.VideoStarting, "") })
+	h.send(contract.TypeVideoStop, contract.VideoStopData{Session: "s1"})
+	drivertest.WaitFor(t, "ended", func() bool { return h.broker.has("s1", contract.VideoEnded, contract.VideoStopped) })
+	h.app.HandleMessage(inbox.Message{Topic: contract.VideoCmdTopic(site), Payload: order})
+	h.idle()
+	drivertest.WaitFor(t, "the outbox to empty", func() bool { return h.app.out.Depth() == 0 })
+	n := 0
+	for _, d := range h.broker.sessions() {
+		if d.Status == contract.VideoStarting {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("the session started %d times", n)
+	}
 }

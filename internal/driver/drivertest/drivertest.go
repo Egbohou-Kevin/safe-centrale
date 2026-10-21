@@ -13,15 +13,18 @@ import (
 	"time"
 )
 
-// FakeClock is a driver.Clock that moves only when told.
+// FakeClock is a driver.Clock that moves only when told. Its timers follow a
+// monotonic clock of their own, as the real ones do: Advance moves both, Set only the
+// time read.
 type FakeClock struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers map[*timer]struct{}
+	mu      sync.Mutex
+	now     time.Time
+	elapsed time.Duration // the monotonic clock: how far Advance moved
+	timers  map[*timer]struct{}
 }
 
 type timer struct {
-	when  time.Time
+	due   time.Duration // on the monotonic clock
 	fired chan time.Time
 }
 
@@ -41,7 +44,7 @@ func (c *FakeClock) Now() time.Time {
 func (c *FakeClock) Timer(d time.Duration) (<-chan time.Time, func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	t := &timer{when: c.now.Add(d), fired: make(chan time.Time, 1)}
+	t := &timer{due: c.elapsed + d, fired: make(chan time.Time, 1)}
 	if d <= 0 {
 		t.fired <- c.now
 		return t.fired, func() {}
@@ -55,28 +58,30 @@ func (c *FakeClock) Advance(d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.now = c.now.Add(d)
+	c.elapsed += d
 	for t := range c.timers {
-		if !t.when.After(c.now) {
+		if t.due <= c.elapsed {
 			t.fired <- c.now
 			delete(c.timers, t)
 		}
 	}
 }
 
-// Set changes the time read, backwards too, and fires no timer: a system clock that
-// is corrected, while timers follow the monotonic clock.
+// Set changes the time read, backwards too, as when the system clock is corrected.
+// It fires no timer and moves none: timers follow the monotonic clock.
 func (c *FakeClock) Set(now time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.now = now
 }
 
-// HasTimer reports whether a timer waits to fire at when.
+// HasTimer reports whether a timer waits to fire at when, read on the clock as it is
+// now (a later Set moves that time, not the timer).
 func (c *FakeClock) HasTimer(when time.Time) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for t := range c.timers {
-		if t.when.Equal(when) {
+		if c.now.Add(t.due - c.elapsed).Equal(when) {
 			return true
 		}
 	}
