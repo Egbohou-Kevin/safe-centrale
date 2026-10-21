@@ -57,10 +57,11 @@ func TestLateTickStillTriggersAtDeadline(t *testing.T) {
 	h.armed()
 	h.open(door)
 	// The tick is very late: the alarm is replayed at its own time (45 s), so the
-	// siren has already run a whole cycle and started its pause.
+	// siren has already run a whole cycle and started its pause. Starting it now would
+	// be wrong: it stays off.
 	as := h.advance(5*time.Minute + 45*time.Second + time.Second)
-	if count[SirenOn](as) != 1 || count[SirenOff](as) != 1 {
-		t.Fatalf("want the siren started then stopped, got %v", as)
+	if count[SirenOn](as) != 0 || count[SirenOff](as) != 1 || len(eventsOf[Triggered](as)) != 1 {
+		t.Fatalf("want the alarm replayed with the siren off, got %v", as)
 	}
 	h.mustBe(ModeTriggered)
 	if got := h.e.Snapshot().Incident.Cycle; got != 1 {

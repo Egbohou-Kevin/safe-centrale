@@ -462,6 +462,54 @@ func TestRestartRestoresTheStateAndTheScheduleKeepsRunning(t *testing.T) {
 	second.eventually("armed after the restart", func() bool { return second.mode() == engine.ModeArmed })
 }
 
+// A restart in the middle of an alarm: the hub's loop runs for a while (its boot
+// window) before Boot. The deadlines missed meanwhile must wait for Boot, which
+// resumes the siren once, for what is left of the cycle; a tick of the loop before it
+// would send the siren a full cycle, then Boot the rest again.
+func TestARestartDuringAnAlarmResumesTheSirenOnceThroughBoot(t *testing.T) {
+	first := newRig(t, nil)
+	first.start()
+	first.arm()
+	first.settle()
+	first.clock.Advance(2 * time.Minute)
+	first.eventually("armed", func() bool { return first.mode() == engine.ModeArmed })
+	err := first.loop.Submit(first.ctx, func(now time.Time) engine.Input {
+		return engine.Signal{Now: now, DeviceID: "dev_back", Sensor: engine.SensorContact, Active: true}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.eventually("the alarm", func() bool { return first.mode() == engine.ModeTriggered })
+	alarmAt := t0.Add(2 * time.Minute)
+	first.stop()
+
+	// The hub was off from the alarm until 8 minutes later: cycle 1 ended at 5,
+	// cycle 2 started at 7 and ends at 12.
+	second := newRig(t, first.store)
+	second.clock.Set(alarmAt.Add(8 * time.Minute))
+	second.start()
+	time.Sleep(20 * time.Millisecond) // the boot window: an overdue timer would fire now
+	second.settle()
+	if err := second.loop.Do(second.ctx, func(now time.Time) []engine.Action { return second.eng.Boot(now, nil) }); err != nil {
+		t.Fatal(err)
+	}
+	var on []engine.SirenOn
+	for _, a := range second.dispatched() {
+		if s, ok := a.(engine.SirenOn); ok {
+			on = append(on, s)
+		}
+	}
+	if len(on) != 1 || on[0].Duration != 4*time.Minute {
+		t.Fatalf("want one siren order for the 4 minutes left of cycle 2, got %v", second.dispatched())
+	}
+	second.clock.Advance(4 * time.Minute)
+	second.eventually("the end of cycle 2", func() bool {
+		as := second.dispatched()
+		_, off := as[len(as)-1].(engine.SirenOff)
+		return off
+	})
+}
+
 func TestADamagedSavedStateStopsTheStart(t *testing.T) {
 	store := newMemStore()
 	store.loadErr = errors.New("filestore: document is corrupt")

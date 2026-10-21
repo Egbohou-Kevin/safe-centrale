@@ -5,32 +5,6 @@ import (
 	"time"
 )
 
-// ZoneKind is the type of a zone: it decides how its devices behave.
-type ZoneKind string
-
-const (
-	ZoneEntry    ZoneKind = "entry"      // entry door: entry delay
-	ZoneInstant  ZoneKind = "instant"    // perimeter: immediate alarm
-	ZoneInterior ZoneKind = "interior"   // interior motion
-	ZoneFire     ZoneKind = "24h_fire"   // smoke, always active
-	ZonePanic    ZoneKind = "24h_panic"  // panic button, always active
-	ZoneTamper   ZoneKind = "24h_tamper" // tamper, always active
-)
-
-func (k ZoneKind) valid() bool {
-	switch k {
-	case ZoneEntry, ZoneInstant, ZoneInterior, ZoneFire, ZonePanic, ZoneTamper:
-		return true
-	}
-	return false
-}
-
-// Zone describes the zone of a device. The name comes from the site configuration.
-type Zone struct {
-	Name string
-	Kind ZoneKind
-}
-
 // TimeOfDay is a wall-clock time in the site's time zone.
 type TimeOfDay struct{ Hour, Minute int }
 
@@ -63,7 +37,8 @@ type Config struct {
 	AutoArmLimit time.Duration
 
 	// Zones gives the zone of each device, by device_id. A device missing from
-	// this table is ignored.
+	// this table is ignored, except for its tamper sensor: a keypad or a siren that
+	// is opened must still be reported.
 	Zones map[string]Zone
 }
 

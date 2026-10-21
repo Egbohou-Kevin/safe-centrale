@@ -25,6 +25,10 @@ type Engine struct {
 	cfg   Config
 	newID func() string
 	s     Snapshot
+	// awaitingBoot is set by Restore and cleared by Boot: until then the engine asks
+	// for no tick, so that the deadlines missed while the hub was off are replayed by
+	// Boot, which resumes the siren once.
+	awaitingBoot bool
 }
 
 // New creates a disarmed engine. newID produces incident identifiers (for example
@@ -54,14 +58,20 @@ func (e *Engine) Restore(s Snapshot) {
 		s.Open = map[string]bool{}
 	}
 	e.s = s
+	e.awaitingBoot = true
 }
 
 // Mode returns the current mode of the alarm.
 func (e *Engine) Mode() Mode { return e.s.Mode }
 
 // NextWake returns the time at which the driver must send a Tick, or the zero time
-// if nothing is pending.
-func (e *Engine) NextWake() time.Time { return e.s.Deadline }
+// if nothing is pending. After Restore it is zero until Boot.
+func (e *Engine) NextWake() time.Time {
+	if e.awaitingBoot {
+		return time.Time{}
+	}
+	return e.s.Deadline
+}
 
 // State returns the public summary of the engine at time now.
 func (e *Engine) State(now time.Time) State {
@@ -92,6 +102,8 @@ func (e *Engine) Handle(in Input) []Action {
 		out = append(out, e.signal(v)...)
 	case Command:
 		out = append(out, e.command(v)...)
+	case Forget:
+		e.forget(v.DeviceID)
 	}
 	return out
 }
@@ -103,14 +115,14 @@ func (e *Engine) Handle(in Input) []Action {
 // Momentary sensors (motion) must therefore publish their return to rest, or a
 // stale "active" state would trigger an alarm on restart.
 func (e *Engine) Boot(now time.Time, current []Signal) []Action {
+	e.awaitingBoot = false
 	out := e.tick(now)
 	if e.s.Mode == ModeDisarmed && e.s.Schedule == nil {
 		e.planSchedule(now) // a snapshot from before the schedule existed, or a new configuration
 	}
-	if e.s.Mode == ModeTriggered && e.s.Incident != nil && e.s.Incident.SirenOn {
-		// A cycle replayed while the hub was off asked for a full cycle from its own
-		// start: only what is left of it must sound now, and only once.
-		out = slices.DeleteFunc(out, func(a Action) bool { _, on := a.(SirenOn); return on })
+	if e.sirenSounds() && !slices.ContainsFunc(out, isSirenOn) {
+		// The siren may have missed its order while the hub went down: it is told
+		// again, for what is left of the cycle.
 		out = append(out, SirenOn{Duration: e.s.Deadline.Sub(now)})
 	}
 	for _, sig := range current {
@@ -143,8 +155,43 @@ func (e *Engine) tick(now time.Time) []Action {
 			e.s.Deadline = time.Time{}
 		}
 	}
-	return out
+	return e.sirenFrom(now, out)
 }
+
+// sirenFrom keeps a single siren order among the actions of a tick: the last one,
+// which gives the state the siren must be in now. A cycle that started before now
+// (the tick is late: the hub was busy or off) sounds only for what is left of it.
+// The driver's ticks always come a little late, so this is the usual case.
+func (e *Engine) sirenFrom(now time.Time, out []Action) []Action {
+	last := -1
+	for i, a := range out {
+		if isSirenOn(a) {
+			last = i
+		}
+	}
+	if last < 0 {
+		return out
+	}
+	if e.sirenSounds() {
+		out[last] = SirenOn{Duration: e.s.Deadline.Sub(now)}
+	} else {
+		last = -1 // the siren is off by now: its last order is a SirenOff
+	}
+	kept := out[:0]
+	for i, a := range out {
+		if !isSirenOn(a) || i == last {
+			kept = append(kept, a)
+		}
+	}
+	return kept
+}
+
+// sirenSounds tells whether the siren must be sounding: an alarm is on, in a cycle.
+func (e *Engine) sirenSounds() bool {
+	return e.s.Mode == ModeTriggered && e.s.Incident != nil && e.s.Incident.SirenOn
+}
+
+func isSirenOn(a Action) bool { _, on := a.(SirenOn); return on }
 
 // setMode changes the mode. Entering disarmed plans the next automatic arming;
 // leaving it drops the plan.

@@ -15,7 +15,9 @@ const (
 	ModeTriggered  Mode = "triggered"
 )
 
-// SensorKind is what a device senses.
+// SensorKind is what a device senses. The values are spelled like the contract's
+// capabilities, which the installer's tools rely on (a test of the wire subpackage
+// keeps it so).
 type SensorKind string
 
 const (
@@ -58,8 +60,9 @@ const (
 	AlertPanic      AlertKind = "panic"
 	AlertTamper     AlertKind = "tamper"
 	AlertAuthFailed AlertKind = "auth_failed"
-	// AlertArmingBypassed: the automatic arming went ahead with open zones, which
-	// are therefore not protected.
+	// AlertArmingBypassed: the system armed with open zones, which are therefore not
+	// protected: at the automatic arming, or at the end of an exit delay during which
+	// a window was opened.
 	AlertArmingBypassed AlertKind = "arming_bypassed"
 )
 

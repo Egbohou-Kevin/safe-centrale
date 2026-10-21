@@ -325,6 +325,20 @@ func TestZigbee2MQTTAndTheAdapterShareTheBaseTopic(t *testing.T) {
 	}
 }
 
+// Zigbee2MQTT publishes the devices' messages at QoS 1: with the adapter's persistent
+// session, the broker keeps them while the adapter restarts, instead of dropping a
+// door that opened meanwhile. They are not retained: the adapter keeps the states
+// itself, and an old message replayed is never an event anyway.
+func TestZigbee2MQTTDeviceMessagesSurviveAnAdapterRestart(t *testing.T) {
+	z2m := rawLines(t, filepath.Join("zigbee2mqtt", "configuration.yaml"))
+	if got := yamlValue(t, z2m, "device_options", "qos"); got != "1" {
+		t.Errorf("zigbee2mqtt device_options.qos = %q, want 1", got)
+	}
+	if got := yamlValue(t, z2m, "device_options", "retain"); got != "false" {
+		t.Errorf("zigbee2mqtt device_options.retain = %q, want false", got)
+	}
+}
+
 func TestWhatMustBeWrittenIsOnTheDataPartition(t *testing.T) {
 	// The system is read-only: every folder written at run time must be bound to the
 	// data partition, or what it holds vanishes at the next restart.

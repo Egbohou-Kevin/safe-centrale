@@ -2,11 +2,19 @@ package engine
 
 import "time"
 
-// signal applies a sensor change. Contacts are tracked open or closed in every
-// mode, so that arming knows which doors are open.
+// signal applies a sensor change. A device's tamper sensor always means tamper,
+// whatever its zone and even without one; any other sensor counts only if the
+// device's zone reacts to it. Contacts are tracked open or closed in every mode, so
+// that arming knows which doors are open.
 func (e *Engine) signal(sig Signal) []Action {
 	zone, known := e.cfg.Zones[sig.DeviceID]
-	if !known {
+	if sig.Sensor == SensorTamper {
+		if !sig.Active {
+			return nil
+		}
+		return e.tamper(sig.Now, Cause{DeviceID: sig.DeviceID, Sensor: sig.Sensor, Zone: zone.Name})
+	}
+	if !known || !Accepts(zone.Kind, sig.Sensor) {
 		return nil
 	}
 	if sig.Sensor == SensorContact {
@@ -31,12 +39,6 @@ func (e *Engine) signal(sig Signal) []Action {
 		}
 		return []Action{e.alert(AlertPanic, &cause)} // silent alert
 
-	case ZoneTamper:
-		if e.s.Mode == ModeDisarmed {
-			return []Action{e.alert(AlertTamper, &cause)} // no siren
-		}
-		return e.trigger(sig.Now, cause, AlertTamper)
-
 	case ZoneEntry, ZoneInstant, ZoneInterior:
 		if e.s.Bypassed[sig.DeviceID] {
 			return nil
@@ -44,6 +46,23 @@ func (e *Engine) signal(sig Signal) []Action {
 		return e.armedZone(sig.Now, zone.Kind, cause)
 	}
 	return nil
+}
+
+// tamper applies the rule of the 24h_tamper zones: an alert without siren while
+// disarmed, an alarm otherwise. A tamper never changes the disarmed mode, so it never
+// ends the installation mode either.
+func (e *Engine) tamper(at time.Time, cause Cause) []Action {
+	if e.s.Mode == ModeDisarmed {
+		return []Action{e.alert(AlertTamper, &cause)}
+	}
+	return e.trigger(at, cause, AlertTamper)
+}
+
+// forget drops a device removed from the site: it no longer holds a door open or a
+// bypass. What the incidents remember of it stays.
+func (e *Engine) forget(id string) {
+	delete(e.s.Open, id)
+	delete(e.s.Bypassed, id)
 }
 
 // armedZone applies the rules of the zones that only watch while the system is

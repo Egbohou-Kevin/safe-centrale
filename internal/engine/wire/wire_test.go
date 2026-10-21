@@ -127,8 +127,6 @@ func TestTranslateRefusesUnknownThings(t *testing.T) {
 		"event":   engine.Emit{Event: alien{}},
 		"status":  engine.Reply{Status: "maybe"},
 		"reason":  engine.Reply{Status: engine.StatusRefused, Reason: "because"},
-		"kind":    engine.Alert{Kind: "ufo", Urgency: engine.UrgencyHigh},
-		"urgency": engine.Alert{Kind: engine.AlertFire, Urgency: "meh"},
 		"cleared": engine.Emit{Event: engine.Cleared{By: "nobody"}},
 	} {
 		if _, err := Translate([]engine.Action{a}); err == nil {
@@ -137,14 +135,47 @@ func TestTranslateRefusesUnknownThings(t *testing.T) {
 	}
 }
 
+// The engine's alerts go to the escalation, not to the wire.
+func TestTranslateLeavesTheAlertsOut(t *testing.T) {
+	out, err := Translate([]engine.Action{engine.Alert{Kind: engine.AlertFire, Urgency: engine.UrgencyCritical}})
+	if err != nil || !reflect.DeepEqual(out, Out{}) {
+		t.Fatalf("%+v %v", out, err)
+	}
+}
+
 func TestTranslateSiren(t *testing.T) {
-	out, err := Translate([]engine.Action{engine.SirenOn{Duration: 5 * time.Minute}, engine.SirenOff{}})
+	out, err := Translate([]engine.Action{
+		engine.SirenOn{Duration: 5 * time.Minute}, engine.SirenOff{},
+		// What is left of a cycle, from a tick a little late: rounded up, never zero.
+		engine.SirenOn{Duration: 4*time.Minute + 59*time.Second + 999*time.Millisecond},
+		engine.SirenOn{Duration: 200 * time.Millisecond},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []SirenCommand{{Command: contract.CmdSirenOn, DurationS: 300}, {Command: contract.CmdSirenOff}}
+	want := []SirenCommand{
+		{Command: contract.CmdSirenOn, DurationS: 300}, {Command: contract.CmdSirenOff},
+		{Command: contract.CmdSirenOn, DurationS: 300}, {Command: contract.CmdSirenOn, DurationS: 1},
+	}
 	if !reflect.DeepEqual(out.Siren, want) {
 		t.Fatalf("%+v", out.Siren)
+	}
+}
+
+// The installer's tools check a device's capabilities against engine.Accepts by
+// name: each sensor kind must be spelled like its capability.
+func TestSensorKindsAreSpelledLikeTheCapabilities(t *testing.T) {
+	for capability, kind := range sensors {
+		if string(kind) != capability {
+			t.Errorf("capability %q is sensor %q", capability, kind)
+		}
+	}
+}
+
+func TestForget(t *testing.T) {
+	got := Forget(contract.RegistryDeviceRemovedData{Ref: "m-1", DeviceID: "dev_door"}, t0)
+	if got != (engine.Forget{Now: t0, DeviceID: "dev_door"}) {
+		t.Fatalf("%+v", got)
 	}
 }
 
@@ -248,21 +279,14 @@ func TestEverythingTheEnginePublishesMatchesTheSchemas(t *testing.T) {
 		schematest.Validate(t, "alarm-ack.json", ack)
 		envelope(contract.TypeAlarmAck, ack)
 	}
-	for _, al := range out.Alerts {
-		seen[contract.TypeAlertRequest] = true
-		schematest.Validate(t, "alert-request.json", al)
-		envelope(contract.TypeAlertRequest, al)
-	}
 
 	for typ := range schemaFor {
 		if !seen[typ] {
 			t.Errorf("the scenario never produced %s: it checks nothing for that type", typ)
 		}
 	}
-	for _, typ := range []string{contract.TypeAlarmAck, contract.TypeAlertRequest} {
-		if !seen[typ] {
-			t.Errorf("the scenario never produced %s", typ)
-		}
+	if !seen[contract.TypeAlarmAck] {
+		t.Errorf("the scenario never produced %s", contract.TypeAlarmAck)
 	}
 	if len(out.Siren) == 0 {
 		t.Error("the scenario never moved the siren")
@@ -362,14 +386,16 @@ func TestScheduleMessagesMatchTheSchemas(t *testing.T) {
 		t.Error("the fourth postponement must be refused with postpone_limit")
 	}
 
-	if len(out.Alerts) != 1 {
-		t.Fatalf("alerts: %+v", out.Alerts)
+	// The alert itself goes to the escalation, whose wire checks its own messages.
+	var alerts []engine.Alert
+	for _, a := range all {
+		if al, ok := a.(engine.Alert); ok {
+			alerts = append(alerts, al)
+		}
 	}
-	al := out.Alerts[0]
-	if al.Kind != contract.AlertArmingBypassed || len(al.Devices) != 1 || al.Devices[0] != "dev_back" {
-		t.Fatalf("alert: %+v", al)
+	if len(alerts) != 1 || alerts[0].Kind != engine.AlertArmingBypassed || !reflect.DeepEqual(alerts[0].Devices, []string{"dev_back"}) {
+		t.Fatalf("alerts: %+v", alerts)
 	}
-	schematest.Validate(t, "alert-request.json", al)
 }
 
 func TestSirenCommandData(t *testing.T) {

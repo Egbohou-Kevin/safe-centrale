@@ -15,6 +15,14 @@ advanced:
   log_level: warning
   log_output:
     - console              # to the journal, kept in memory
+# The devices' messages go out at QoS 1: safehome-zigbee keeps a persistent session,
+# so the broker queues them while the adapter restarts instead of dropping them (a
+# door that opened meanwhile). They are not retained: the adapter saves the states
+# itself, a retained message replayed is never an event anyway (docs/adapter-zigbee.md,
+# "Messages retenus"), and it would only add writes to the broker's store.
+device_options:
+  qos: 1
+  retain: false
 # Our adapter watches presence itself and decides about pairing: Zigbee2MQTT's own
 # availability feature and web interface stay off (less memory, nothing exposed).
 availability:

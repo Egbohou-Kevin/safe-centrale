@@ -7,7 +7,6 @@ import (
 
 	"safehome/internal/contract"
 	"safehome/internal/health"
-	"safehome/internal/schematest"
 )
 
 var t0 = time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)
@@ -44,24 +43,10 @@ func TestInput(t *testing.T) {
 	}
 }
 
-func TestTranslateRefusesUnknownThings(t *testing.T) {
-	for name, a := range map[string]health.Action{
-		"kind":    health.Alert{Kind: "ufo", Urgency: health.UrgencyLow},
-		"urgency": health.Alert{Kind: health.AlertBatteryLow, Urgency: "meh"},
-	} {
-		if _, err := Translate([]health.Action{a}); err == nil {
-			t.Errorf("%s: want an error", name)
-		}
-	}
-	type alien struct{ health.Action }
-	if _, err := Translate([]health.Action{alien{}}); err == nil {
-		t.Error("an unknown action must be an error")
-	}
-}
-
-// A day of supervision, end to end: the events of the contract go in, and every
-// alert that comes out is checked against the JSON Schema, envelope included.
-func TestEverythingTheMonitorPublishesMatchesTheSchemas(t *testing.T) {
+// A day of supervision, end to end: the events of the contract go in, and the
+// monitor raises the alerts the contract expects. The alerts leave through the
+// escalation, whose wire checks its own messages against the JSON Schemas.
+func TestADayOfSupervisionFromContractEvents(t *testing.T) {
 	cfg := health.DefaultConfig()
 	cfg.HubDeviceID = "dev_hub"
 	ids := contract.NewIDGenerator()
@@ -92,33 +77,27 @@ func TestEverythingTheMonitorPublishesMatchesTheSchemas(t *testing.T) {
 	now = now.Add(13 * time.Hour) // next morning
 	all = append(all, m.Handle(health.Tick{Now: now})...)
 
-	out, err := Translate(all)
-	if err != nil {
-		t.Fatal(err)
-	}
-	seen := map[string]int{}
-	for _, al := range out {
-		seen[al.Kind]++
-		schematest.Validate(t, "alert-request.json", al)
-		env, err := contract.NewEnvelope("tg-lom-0001", "health", 1, ids.New(), time.Now(), contract.TypeAlertRequest, al)
-		if err != nil {
-			t.Fatalf("invalid envelope: %v", err)
+	seen := map[health.AlertKind]int{}
+	for _, a := range all {
+		al, ok := a.(health.Alert)
+		if !ok {
+			t.Fatalf("unexpected action %T", a)
 		}
-		schematest.Validate(t, "envelope.json", env)
+		seen[al.Kind]++
 	}
-	want := map[string]int{
-		contract.AlertBatteryLowHub: 2, // 40 % and 10 %
-		contract.AlertMainsRestored: 1,
-		contract.AlertDeviceOffline: 1,
-		contract.AlertBatteryLow:    1,
+	want := map[health.AlertKind]int{
+		health.AlertHubBatteryLow: 2, // 40 % and 10 %
+		health.AlertMainsRestored: 1,
+		health.AlertDeviceOffline: 1,
+		health.AlertBatteryLow:    1,
 	}
 	for kind, n := range want {
 		if seen[kind] != n {
 			t.Errorf("%s: %d alerts, want %d", kind, seen[kind], n)
 		}
 	}
-	if len(out) != 5 {
-		t.Errorf("%d alerts, want 5: %+v", len(out), out)
+	if len(all) != 5 {
+		t.Errorf("%d alerts, want 5: %+v", len(all), all)
 	}
 }
 

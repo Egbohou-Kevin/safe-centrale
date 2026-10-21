@@ -39,6 +39,11 @@ func Signal(d contract.DeviceEventData, now time.Time) (sig engine.Signal, ok bo
 	}, true
 }
 
+// Forget tells the engine that a device left the registry (registry.device_removed).
+func Forget(d contract.RegistryDeviceRemovedData, now time.Time) engine.Forget {
+	return engine.Forget{Now: now, DeviceID: d.DeviceID}
+}
+
 var commands = map[string]engine.CommandName{
 	contract.CmdArm:      engine.CmdArm,
 	contract.CmdArmNow:   engine.CmdArmNow,
@@ -101,13 +106,14 @@ func (s SirenCommand) Data(deviceID string, exp time.Time) contract.DeviceComman
 
 // Out groups what the driver must publish after a call to Engine.Handle.
 type Out struct {
-	Events []Event                     // alarm/event
-	Acks   []contract.AlarmAckData     // alarm/ack
-	Alerts []contract.AlertRequestData // alert/request
-	Siren  []SirenCommand              // device/{siren}/cmd
+	Events []Event                 // alarm/event
+	Acks   []contract.AlarmAckData // alarm/ack
+	Siren  []SirenCommand          // device/{siren}/cmd
 }
 
-// Translate turns engine actions into contract payloads.
+// Translate turns engine actions into contract payloads. The engine's alerts are
+// left out: they do not leave as they are, the escalation turns each into one alert
+// request per contact and channel.
 func Translate(actions []engine.Action) (Out, error) {
 	var out Out
 	for _, a := range actions {
@@ -125,13 +131,9 @@ func Translate(actions []engine.Action) (Out, error) {
 			}
 			out.Acks = append(out.Acks, ack)
 		case engine.Alert:
-			al, err := translateAlert(v)
-			if err != nil {
-				return Out{}, err
-			}
-			out.Alerts = append(out.Alerts, al)
+			// left to the escalation
 		case engine.SirenOn:
-			out.Siren = append(out.Siren, SirenCommand{Command: contract.CmdSirenOn, DurationS: int(v.Duration / time.Second)})
+			out.Siren = append(out.Siren, SirenCommand{Command: contract.CmdSirenOn, DurationS: sirenSeconds(v.Duration)})
 		case engine.SirenOff:
 			out.Siren = append(out.Siren, SirenCommand{Command: contract.CmdSirenOff})
 		default:
@@ -139,6 +141,12 @@ func Translate(actions []engine.Action) (Out, error) {
 		}
 	}
 	return out, nil
+}
+
+// sirenSeconds rounds a siren duration up to whole seconds: what is left of a cycle
+// is rarely round, and a siren order must last at least a second.
+func sirenSeconds(d time.Duration) int {
+	return int((d + time.Second - 1) / time.Second)
 }
 
 var clearedBy = map[engine.ClearedBy]string{
@@ -217,32 +225,6 @@ func translateReply(r engine.Reply) (contract.AlarmAckData, error) {
 		ack.Reason = reason
 	}
 	return ack, nil
-}
-
-var alertKinds = map[engine.AlertKind]string{
-	engine.AlertIntrusion:      contract.AlertIntrusion,
-	engine.AlertFire:           contract.AlertFire,
-	engine.AlertPanic:          contract.AlertPanic,
-	engine.AlertTamper:         contract.AlertTamper,
-	engine.AlertAuthFailed:     contract.AlertAuthFailed,
-	engine.AlertArmingBypassed: contract.AlertArmingBypassed,
-}
-
-var urgencies = map[engine.Urgency]string{
-	engine.UrgencyHigh:     contract.UrgencyHigh,
-	engine.UrgencyCritical: contract.UrgencyCritical,
-}
-
-func translateAlert(a engine.Alert) (contract.AlertRequestData, error) {
-	kind, ok := alertKinds[a.Kind]
-	if !ok {
-		return contract.AlertRequestData{}, fmt.Errorf("wire: unknown alert kind %q", a.Kind)
-	}
-	urgency, ok := urgencies[a.Urgency]
-	if !ok {
-		return contract.AlertRequestData{}, fmt.Errorf("wire: unknown urgency %q", a.Urgency)
-	}
-	return contract.AlertRequestData{Incident: a.Incident, Kind: kind, Urgency: urgency, Devices: a.Devices}, nil
 }
 
 var modes = map[engine.Mode]string{

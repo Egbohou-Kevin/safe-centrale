@@ -97,10 +97,37 @@ func (e *Engine) armNow(c Command) []Action {
 	return refused(c, ReasonWrongState)
 }
 
+// finishArming ends the exit delay. Contacts report changes only, so a zone opened
+// during the exit delay and still open must be dealt with now or never: an entry door
+// starts the entry delay, as if it had just opened; a window is bypassed and the
+// contacts are alerted, as the automatic arming does, since nobody is at the keypad
+// any more to be told.
 func (e *Engine) finishArming(at time.Time) []Action {
 	e.setMode(ModeArmed, at)
 	e.s.Deadline = time.Time{}
-	return []Action{Emit{Armed{Origin: e.s.ArmOrigin, User: e.s.ArmUser}}}
+	out := []Action{Emit{Armed{Origin: e.s.ArmOrigin, User: e.s.ArmUser}}}
+
+	var doors, windows []string
+	for _, id := range e.blockingOpen() {
+		if e.cfg.Zones[id].Kind == ZoneEntry {
+			doors = append(doors, id)
+		} else {
+			windows = append(windows, id)
+		}
+	}
+	if len(windows) > 0 {
+		for _, id := range windows {
+			e.s.Bypassed[id] = true
+		}
+		al := e.alert(AlertArmingBypassed, nil)
+		al.Devices = windows
+		out = append(out, al)
+	}
+	if len(doors) > 0 {
+		cause := Cause{DeviceID: doors[0], Sensor: SensorContact, Zone: e.cfg.Zones[doors[0]].Name}
+		out = append(out, e.armedZone(at, ZoneEntry, cause)...)
+	}
+	return out
 }
 
 func (e *Engine) bypass(c Command) []Action {

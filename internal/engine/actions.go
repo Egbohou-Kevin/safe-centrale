@@ -2,8 +2,9 @@ package engine
 
 import "time"
 
-// Input is what the engine receives: a sensor signal, an order, or a clock tick.
-// Every input carries the time it happened; the engine never reads the clock.
+// Input is what the engine receives: a sensor signal, an order, a clock tick, or a
+// device that left. Every input carries the time it happened; the engine never reads
+// the clock.
 type Input interface{ at() time.Time }
 
 // Tick advances the engine's clock. The driver sends one at the time returned by
@@ -39,9 +40,17 @@ type Command struct {
 	Auth    Auth
 }
 
+// Forget tells the engine that a device was removed from the site, so that a door
+// left open when it was taken away does not block arming any more.
+type Forget struct {
+	Now      time.Time
+	DeviceID string
+}
+
 func (t Tick) at() time.Time    { return t.Now }
 func (s Signal) at() time.Time  { return s.Now }
 func (c Command) at() time.Time { return c.Now }
+func (f Forget) at() time.Time  { return f.Now }
 
 // Action is what the engine asks the outside world to do. The engine has no side
 // effects of its own: the driver carries the actions out.

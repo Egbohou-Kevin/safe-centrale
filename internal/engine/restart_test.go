@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 )
@@ -103,7 +104,9 @@ func TestRestartAcrossACycleStartResumesTheSirenOnce(t *testing.T) {
 	if len(on) != 1 || on[0].Duration != 4*time.Minute {
 		t.Fatalf("the siren must sound once, for the 4 minutes left of cycle 2: %v", as)
 	}
-	if as[len(as)-1] != (SirenOn{Duration: 4 * time.Minute}) {
+	off := slices.IndexFunc(as, func(a Action) bool { _, ok := a.(SirenOff); return ok })
+	at := slices.IndexFunc(as, func(a Action) bool { _, ok := a.(SirenOn); return ok })
+	if off < 0 || at < off {
 		t.Fatalf("the siren order must come after the replayed end of cycle 1: %v", as)
 	}
 	onlyEvent[SirenCycleStarted](t, as)

@@ -48,6 +48,8 @@ func (n *Network) readFields(id string, p Profile, r Report) []Action {
 }
 
 // momentary announces an action (a button, a keypad): an event every time, no state.
+// The code typed comes with every key; the wire subpackage keeps it only for the keys
+// the contract lets carry one.
 func momentary(id, capability, v string, rule Rule, r Report) Changed {
 	ch := Changed{DeviceID: id, Capability: capability, Value: v, Since: r.Now, Notify: true}
 	if rule.CodeFrom != "" {
