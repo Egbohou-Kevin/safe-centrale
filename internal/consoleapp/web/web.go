@@ -28,6 +28,7 @@ type Console interface {
 	Siren(id string, on bool) error
 	Remove(ctx context.Context, id string) error
 	SetCode(user, code, again string) error
+	RemoveCode(user string) error
 	Finish(ctx context.Context) error
 }
 
@@ -77,6 +78,7 @@ func New(c Console, host string, loc *time.Location) (*Handler, error) {
 	h.mux.HandleFunc("POST /code", h.act("code", func(r *http.Request, user string) error {
 		return h.c.SetCode(user, r.PostFormValue("code"), r.PostFormValue("again"))
 	}))
+	h.mux.HandleFunc("POST /uncode", h.act("uncode", func(r *http.Request, user string) error { return h.c.RemoveCode(user) }))
 	h.mux.HandleFunc("POST /finish", h.act("finish", func(r *http.Request, _ string) error { return h.c.Finish(r.Context()) }))
 	return h, nil
 }
@@ -194,6 +196,7 @@ var refusals = []struct {
 	{consoleapp.ErrCodeWeak, "code_weak"},
 	{consoleapp.ErrCodeTaken, "code_taken"},
 	{consoleapp.ErrCodeFull, "code_full"},
+	{consoleapp.ErrNoSuchCode, "no_such_code"},
 }
 
 // Refusal names a known refusal for the templates; an unknown one is "other", with

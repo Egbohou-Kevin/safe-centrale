@@ -50,13 +50,9 @@ type Hotspot interface {
 	Down(ctx context.Context) error
 }
 
-// Sites keeps the zones and the sirens of the hub. Write and Check refuse what the hub
-// would refuse.
-type Sites interface {
-	Read() (install.Site, error)
-	Check(install.Site) error
-	Write(install.Site) error
-}
+// Sites keeps the zones and the sirens of the hub; the console changes them through
+// the installer's application (install.Editor), as the command-line tool does.
+type Sites = install.Sites
 
 // Person is a contact of the site, and whether they have an access code.
 type Person struct {
@@ -64,12 +60,16 @@ type Person struct {
 	HasCode        bool
 }
 
-// Codes are the people's access codes, kept by the hub. Set refuses a code that is
-// malformed, too easy, someone else's or the installer's (the ErrCode errors), and
-// has the running hub read the codes again. Nothing here ever logs a code.
+// Codes are the people's access codes, kept by the hub. People lists the site's
+// contacts, and apart the users of codes who are no longer contacts (leftovers: the
+// hub leaves their codes aside, the installer removes them). Set refuses a code that
+// is malformed, too easy, someone else's or the installer's (the ErrCode errors);
+// Remove refuses a user without a code (ErrNoSuchCode). Both have the running hub read
+// the codes again. Nothing here ever logs a code.
 type Codes interface {
-	People() ([]Person, error)
+	People() (contacts []Person, leftovers []string, err error)
 	Set(user, code string) error
+	Remove(user string) error
 }
 
 // Deps are the ports of the console.
@@ -98,14 +98,12 @@ var (
 	ErrClosed     = errors.New("the installation mode is closed")
 	ErrBusy       = errors.New("a pairing is under way: wait for its end")
 	ErrUnknown    = errors.New("no such device among the paired ones")
-	ErrNotASiren  = errors.New("this device cannot sound")
-	ErrNoZone     = errors.New("the device has no zone")
 	ErrNoRegistry = errors.New("the devices are not known yet: is safehome-zigbee running?")
-	// ErrLastSiren: the hub refuses a site without a siren. The console says so
-	// before asking the hub, for the page to explain it.
-	ErrLastSiren = errors.New("the site must keep at least one siren")
 
 	// The installer's application's refusals, named here for the page.
+	ErrNotASiren   = install.ErrCannotSound
+	ErrNoZone      = install.ErrNoZone
+	ErrLastSiren   = install.ErrLastSiren
 	ErrEmptyName   = install.ErrEmptyName
 	ErrNameTooLong = install.ErrNameTooLong
 	ErrCannotServe = install.ErrCannotServe
@@ -117,6 +115,7 @@ var (
 	ErrCodeWeak     = errors.New("code too easy to guess")
 	ErrCodeTaken    = errors.New("this code belongs to someone else")
 	ErrCodeFull     = errors.New("the site already has the maximum number of codes")
+	ErrNoSuchCode   = errors.New("no code left by someone who is no longer a contact")
 )
 
 // App is the console.
@@ -125,14 +124,11 @@ type App struct {
 	deps Deps
 	log  *slog.Logger
 	sess *install.Session
+	site *install.Editor
 
 	modes chan contract.InstallModeData
 	jobs  chan func(context.Context)
 	ping  chan chan struct{}
-
-	// siteMu has the changes of the site wait for each other: each one reads the
-	// site, edits it and writes it, and two at once would lose one.
-	siteMu sync.Mutex
 
 	mu         sync.Mutex
 	open       bool
@@ -167,7 +163,7 @@ func New(cfg Config, deps Deps) (*App, error) {
 		return nil, err
 	}
 	return &App{
-		cfg: cfg, deps: deps, log: log, sess: sess,
+		cfg: cfg, deps: deps, log: log, sess: sess, site: install.NewEditor(deps.Sites),
 		modes: make(chan contract.InstallModeData, 16),
 		jobs:  make(chan func(context.Context), 1),
 		ping:  make(chan chan struct{}),

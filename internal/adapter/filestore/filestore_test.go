@@ -2,10 +2,12 @@ package filestore
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -212,4 +214,39 @@ func TestOpenFailsOnAFile(t *testing.T) {
 	if _, err := Open(filepath.Join(f, "sub"), nil); err == nil {
 		t.Fatal("want an error")
 	}
+}
+
+// A tool run as another user than the folder's owner (sudo without -u safehome) must
+// not leave a document the hub cannot read: the document gets the folder's owner, or
+// the save fails and says why. Only root can give a file away, so here, as an
+// ordinary user in a folder of root's that anyone may write to (/tmp), it must fail.
+func TestADocumentGetsTheFoldersOwnerOrIsNotSaved(t *testing.T) {
+	dir, err := filepath.EvalSymlinks("/tmp")
+	if err != nil {
+		t.Skip("no /tmp")
+	}
+	info, err := os.Stat(dir)
+	if err != nil || os.Geteuid() == 0 || info.Mode().Perm()&0o002 == 0 || ownerOf(info) == os.Geteuid() {
+		t.Skip("needs a world-writable /tmp owned by someone else, and not running as root")
+	}
+	s := newStore(dir, nil, info)
+	name := fmt.Sprintf("safehome-filestore-test-%d", os.Getpid())
+	t.Cleanup(func() { os.Remove(s.path(name)) })
+	err = s.Save(name, []byte(`{"v":1}`))
+	if err == nil || !strings.Contains(err.Error(), "run the tool as that user") {
+		t.Fatalf("a document owned by the wrong user was saved: %v", err)
+	}
+	if _, err := os.Stat(s.path(name)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the document is there: %v", err)
+	}
+	if tmps, _ := filepath.Glob(filepath.Join(dir, name+".*.tmp")); len(tmps) != 0 {
+		t.Fatalf("left behind: %v", tmps)
+	}
+}
+
+func ownerOf(info os.FileInfo) int {
+	if st, ok := info.Sys().(*syscall.Stat_t); ok {
+		return int(st.Uid)
+	}
+	return -1
 }

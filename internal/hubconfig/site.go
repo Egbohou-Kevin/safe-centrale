@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"safehome/internal/configfile"
+	"safehome/internal/install"
 )
 
 // DevicesFile is the file of the hub's state folder that holds the zones and the
@@ -19,44 +20,51 @@ import (
 // hub, and the devices change after the installation (a sensor added, a siren moved).
 const DevicesFile = "site-devices.json"
 
-// Zone is what a device is for.
-type Zone struct {
-	Name string `json:"name"`
-	Kind string `json:"kind"`
+// devicesFile is the form of DevicesFile: what the installer's tools change, the zones
+// and the sirens (install.Site). Everything else (contacts, delays...) is written by
+// hand or sent by the cloud.
+type devicesFile struct {
+	Zones    map[string]zoneFile `json:"zones"`
+	SirenIDs []string            `json:"siren_ids"`
 }
 
-// Site is what the installer's tools change: the zones and the sirens. Everything
-// else (contacts, delays...) is written by hand or sent by the cloud.
-type Site struct {
-	Zones    map[string]Zone `json:"zones"`
-	SirenIDs []string        `json:"siren_ids"`
-}
+// SiteFiles gives the installer's tools (install.Sites) the zones and the sirens of
+// the hub whose configuration file is at Path.
+type SiteFiles struct{ Path string }
+
+func (s SiteFiles) Read() (install.Site, error)   { return ReadSite(s.Path) }
+func (s SiteFiles) Check(site install.Site) error { return CheckSite(s.Path, site) }
+func (s SiteFiles) Write(site install.Site) error { return WriteSite(s.Path, site) }
 
 // ReadSite returns the zones and the sirens the hub at path runs with: those of the
 // state folder once a tool wrote them, those of the configuration file before.
-func ReadSite(path string) (Site, error) {
+func ReadSite(path string) (install.Site, error) {
 	f, err := readFile(path)
 	if err != nil {
-		return Site{}, err
-	}
-	s := Site{Zones: map[string]Zone{}, SirenIDs: f.SirenIDs}
-	for id, z := range f.Zones {
-		s.Zones[id] = Zone(z)
+		return install.Site{}, err
 	}
 	d, _, found, err := readDevices(f.StateDir)
 	switch {
 	case err != nil:
-		return Site{}, err
+		return install.Site{}, err
 	case found:
-		return d, nil
+		return siteOf(d.Zones, d.SirenIDs), nil
 	}
-	return s, nil
+	return siteOf(f.Zones, f.SirenIDs), nil
+}
+
+func siteOf(zones map[string]zoneFile, sirenIDs []string) install.Site {
+	s := install.Site{Zones: make(map[string]install.Zone, len(zones)), SirenIDs: sirenIDs}
+	for id, z := range zones {
+		s.Zones[id] = install.Zone(z)
+	}
+	return s
 }
 
 // WriteSite keeps the zones and the sirens in the state folder of the hub at path,
 // once the hub's whole configuration is checked with them. The file is replaced
 // atomically, readable by the hub's user only. The hub reads it at its next start.
-func WriteSite(path string, s Site) error {
+func WriteSite(path string, s install.Site) error {
 	f, err := readFile(path)
 	if err != nil {
 		return err
@@ -75,7 +83,7 @@ func WriteSite(path string, s Site) error {
 
 // CheckSite says whether WriteSite would accept s, without writing anything: a tool
 // asks before an action that cannot be undone (removing a device from the network).
-func CheckSite(path string, s Site) error {
+func CheckSite(path string, s install.Site) error {
 	f, err := readFile(path)
 	if err != nil {
 		return err
@@ -113,46 +121,44 @@ func readFile(path string) (file, error) {
 }
 
 // checkSite returns the devices file for s, once the configuration builds with it.
-func checkSite(f file, s Site) ([]byte, error) {
-	if s.Zones == nil {
-		s.Zones = map[string]Zone{}
+func checkSite(f file, s install.Site) ([]byte, error) {
+	d := devicesFile{Zones: make(map[string]zoneFile, len(s.Zones)), SirenIDs: s.SirenIDs}
+	for id, z := range s.Zones {
+		d.Zones[id] = zoneFile(z)
 	}
-	if s.SirenIDs == nil {
-		s.SirenIDs = []string{}
+	if d.SirenIDs == nil {
+		d.SirenIDs = []string{}
 	}
-	withDevices(&f, s)
+	withDevices(&f, d)
 	if _, err := build(f); err != nil {
 		return nil, fmt.Errorf("hubconfig: the hub would refuse these zones and sirens: %w", err)
 	}
-	data, err := json.MarshalIndent(s, "", "  ")
+	data, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("hubconfig: %w", err)
 	}
 	return append(data, '\n'), nil
 }
 
-func withDevices(f *file, s Site) {
-	f.Zones = make(map[string]zoneFile, len(s.Zones))
-	for id, z := range s.Zones {
-		f.Zones[id] = zoneFile(z)
-	}
-	f.SirenIDs = s.SirenIDs
+// withDevices lays the devices file d over f.
+func withDevices(f *file, d devicesFile) {
+	f.Zones, f.SirenIDs = d.Zones, d.SirenIDs
 }
 
 // readDevices reads the devices file of a state folder, strictly.
-func readDevices(dir string) (s Site, digest string, found bool, err error) {
+func readDevices(dir string) (d devicesFile, digest string, found bool, err error) {
 	data, err := os.ReadFile(filepath.Join(dir, DevicesFile))
 	if errors.Is(err, fs.ErrNotExist) {
-		return Site{}, "", false, nil
+		return devicesFile{}, "", false, nil
 	}
 	if err != nil {
-		return Site{}, "", false, fmt.Errorf("hubconfig: %w", err)
+		return devicesFile{}, "", false, fmt.Errorf("hubconfig: %w", err)
 	}
-	if err := configfile.DecodeBytes(data, &s); err != nil {
-		return Site{}, "", false, fmt.Errorf("hubconfig: %s is damaged: %w", DevicesFile, err)
+	if err := configfile.DecodeBytes(data, &d); err != nil {
+		return devicesFile{}, "", false, fmt.Errorf("hubconfig: %s is damaged: %w", DevicesFile, err)
 	}
-	if s.Zones == nil {
-		s.Zones = map[string]Zone{}
+	if d.Zones == nil {
+		d.Zones = map[string]zoneFile{}
 	}
-	return s, sum(data), true, nil
+	return d, sum(data), true, nil
 }

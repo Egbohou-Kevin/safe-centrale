@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeNMCLI writes a script that logs its arguments, one call per line, and fails
@@ -107,5 +108,24 @@ func TestNewRefusesABadNetwork(t *testing.T) {
 		if _, err := New(c); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+// A hung nmcli must not block the stop: Down keeps the caller's deadline, even though
+// it ignores its cancellation.
+func TestDownKeepsTheCallersDeadline(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nmcli")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h, _ := New(good(path))
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if err := h.Down(ctx); err == nil {
+		t.Fatal("a hung nmcli was taken for a success")
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Fatalf("Down took %v past its deadline", took)
 	}
 }

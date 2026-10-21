@@ -65,6 +65,12 @@
       <button>{{if .HasCode}}Changer le code{{else}}Donner un code{{end}}</button>
     </form>
   </div>{{else}}{{if not .CodesErr}}<p class="warn">Aucun contact dans la configuration de la centrale.</p>{{end}}{{end}}
+  {{if .Leftovers}}<h2>Codes d'anciens contacts</h2>
+  <p class="muted">Ces personnes ne sont plus des contacts du site : la centrale ignore leur code, mais il occupe une place. Retirez-le.</p>
+  {{range .Leftovers}}<div class="device">
+    <span class="id">{{.}}</span>
+    <form method="post" action="/uncode"><input type="hidden" name="id" value="{{.}}"><button class="danger">Retirer ce code</button></form>
+  </div>{{end}}{{end}}
 </section>
 
 <section>

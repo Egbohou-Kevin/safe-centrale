@@ -53,8 +53,12 @@ func codes(cfg hubconfig.Result, args []string, stdin io.Reader, stdout, stderr 
 	return 0
 }
 
-// registries are the hub's two code registries: the people's, and the installer's.
-type registries struct{ people, installer *access.Registry }
+// registries are the hub's two code registries: the people's, and the installer's,
+// with the site's contacts: the hub leaves aside the code of anyone else.
+type registries struct {
+	people, installer *access.Registry
+	contacts          map[string]bool
+}
 
 func openRegistries(cfg hubconfig.Result) (registries, error) {
 	store, err := filestore.Open(cfg.StateDir, nil)
@@ -69,7 +73,11 @@ func openRegistries(cfg hubconfig.Result) (registries, error) {
 	if err != nil {
 		return registries{}, fmt.Errorf("cannot read the installer code: %w", err)
 	}
-	return registries{people: people, installer: installer}, nil
+	contacts := map[string]bool{}
+	for _, c := range cfg.Hub.Escalation.Contacts {
+		contacts[c.ID] = true
+	}
+	return registries{people: people, installer: installer, contacts: contacts}, nil
 }
 
 // of returns the registry of user, and the other one, whose codes the user's must
@@ -82,17 +90,28 @@ func (r registries) of(user string) (own, other *access.Registry) {
 }
 
 func (r registries) list(stdout io.Writer) {
-	users := append(r.people.Users(), r.installer.Users()...)
-	if len(users) == 0 {
+	people, installer := r.people.Users(), r.installer.Users()
+	if len(people)+len(installer) == 0 {
 		fmt.Fprintln(stdout, "no access code is set")
 	}
-	for _, u := range users {
+	for _, u := range people {
+		if r.contacts[u] {
+			fmt.Fprintln(stdout, u)
+		} else {
+			fmt.Fprintf(stdout, "%s (not a contact of the site: the hub leaves this code aside, remove it)\n", u)
+		}
+	}
+	for _, u := range installer {
 		fmt.Fprintln(stdout, u)
 	}
 }
 
-// set reads the code on in and gives it to user.
+// set reads the code on in and gives it to user, a contact of the site or the
+// installer.
 func (r registries) set(user string, in io.Reader, stdout io.Writer) error {
+	if user != hub.InstallerUser && !r.contacts[user] {
+		return fmt.Errorf("the code was not set: %s is not a contact of the site (see the configuration), the hub would leave it aside", user)
+	}
 	code, err := readCode(in)
 	if err != nil {
 		return err

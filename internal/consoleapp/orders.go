@@ -86,7 +86,9 @@ func (a *App) pair(sctx context.Context) {
 
 // Remove takes a device out of the network for good, then out of the site. It is
 // refused before anything is sent if the site without it would not work (the last
-// siren). It waits for the Zigbee adapter's answer.
+// siren). It waits for the Zigbee adapter's answer; once the order is sent, the
+// removal and the site's change go to their end even if the mode ends meanwhile, so
+// the site never keeps a device the network lost.
 func (a *App) Remove(ctx context.Context, id string) error {
 	sctx, err := a.sessionCtx()
 	if err != nil {
@@ -95,36 +97,36 @@ func (a *App) Remove(ctx context.Context, id string) error {
 	if _, err := a.paired(id); err != nil {
 		return err
 	}
-	site, err := a.deps.Sites.Read()
-	if err != nil {
+	if _, err := a.site.CheckRemoval(id); err != nil {
 		return err
 	}
-	without := siteWithout(site, id)
-	if len(site.SirenIDs) > 0 && len(without.SirenIDs) == 0 {
-		return ErrLastSiren
-	}
-	if err := a.deps.Sites.Check(without); err != nil {
-		return fmt.Errorf("cannot be removed yet: %w", err)
-	}
 	result := make(chan error, 1)
-	if err := a.submit(func(context.Context) { result <- a.sess.Remove(sctx, id) }); err != nil {
+	if err := a.submit(func(wctx context.Context) { result <- a.remove(sctx, wctx, id) }); err != nil {
 		return err
 	}
 	select {
-	case err = <-result:
+	case err := <-result:
+		return err
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-sctx.Done():
 		return ErrClosed // the console may stop before the order's turn comes
 	}
-	if err != nil {
+}
+
+// remove runs on the worker: it removes the device from the network, unless the mode
+// whose context is sctx ended before the order's turn came, then from the site. The
+// wait for the adapter is bounded by the session, and by wctx, the console's life.
+func (a *App) remove(sctx, wctx context.Context, id string) error {
+	if sctx.Err() != nil {
+		return ErrClosed
+	}
+	if err := a.sess.Remove(wctx, id); err != nil {
 		return err
 	}
 	a.log.Info("device removed from the console", "device", id)
-	return a.change(func(s *install.Site) error {
-		*s = siteWithout(*s, id)
-		return nil
-	})
+	_, err := a.site.FinishRemoval(id)
+	return err
 }
 
 // Finish asks the hub to close the installation mode: the console stops when the hub

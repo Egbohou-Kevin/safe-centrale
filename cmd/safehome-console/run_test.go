@@ -20,6 +20,7 @@ import (
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/contract"
 	"safehome/internal/hubconfig"
+	"safehome/internal/install"
 )
 
 const site = "tg-lom-0001"
@@ -238,7 +239,7 @@ func TestTheConsoleEndToEnd(t *testing.T) {
 	if !strings.Contains(string(body), "zone enregistr") {
 		t.Fatalf("after the zone: %s", body)
 	}
-	if s, err := hubconfig.ReadSite(hubPath); err != nil || s.Zones["dev_k7p2"] != (hubconfig.Zone{Name: "Reserve", Kind: "interior"}) {
+	if s, err := hubconfig.ReadSite(hubPath); err != nil || s.Zones["dev_k7p2"] != (install.Zone{Name: "Reserve", Kind: "interior"}) {
 		t.Fatalf("site %+v %v", s, err)
 	}
 

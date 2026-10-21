@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -27,8 +28,9 @@ var ErrCorrupt = errors.New("filestore: document is corrupt")
 
 // Store is a directory of JSON documents.
 type Store struct {
-	dir string
-	log *slog.Logger
+	dir   string
+	log   *slog.Logger
+	owner *syscall.Stat_t // the folder's owner and group; nil where the system has none
 }
 
 // staleAfter is the age from which a temporary file is a crash's leftover. Several
@@ -39,14 +41,23 @@ const staleAfter = 10 * time.Minute
 // Open creates the directory if needed and removes the temporary files that a crash
 // may have left behind. A nil logger discards the logs.
 func Open(dir string, log *slog.Logger) (*Store, error) {
-	if log == nil {
-		log = slog.New(slog.DiscardHandler)
-	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("filestore: %w", err)
 	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("filestore: %w", err)
+	}
 	removeStale(dir, time.Now().Add(-staleAfter))
-	return &Store{dir: dir, log: log}, nil
+	return newStore(dir, log, info), nil
+}
+
+func newStore(dir string, log *slog.Logger, info fs.FileInfo) *Store {
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	owner, _ := info.Sys().(*syscall.Stat_t)
+	return &Store{dir: dir, log: log, owner: owner}
 }
 
 // removeStale removes the temporary files last written before limit.
@@ -82,6 +93,10 @@ func (s *Store) Save(name string, data []byte) error {
 		return fmt.Errorf("filestore: %w", err)
 	}
 	cleanup := func() { tmp.Close(); os.Remove(tmp.Name()) }
+	if err := s.ownedLikeTheFolder(tmp); err != nil {
+		cleanup()
+		return err
+	}
 	if _, err := tmp.Write(data); err != nil {
 		cleanup()
 		return fmt.Errorf("filestore: %w", err)
@@ -112,6 +127,27 @@ func (s *Store) Save(name string, data []byte) error {
 		return fmt.Errorf("filestore: %w", err)
 	}
 	return syncDir(s.dir)
+}
+
+// ownedLikeTheFolder gives a new file the owner and group of the folder: a tool run
+// with sudo must not leave a document the service that owns the folder cannot read
+// (the same rule as the configuration files'; an adapter shares no code). Only root
+// can give a file away; anyone else already owns what they create in their own folder.
+func (s *Store) ownedLikeTheFolder(f *os.File) error {
+	if s.owner == nil {
+		return nil
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("filestore: %w", err)
+	}
+	if cur, ok := info.Sys().(*syscall.Stat_t); ok && cur.Uid == s.owner.Uid && cur.Gid == s.owner.Gid {
+		return nil
+	}
+	if err := f.Chown(int(s.owner.Uid), int(s.owner.Gid)); err != nil {
+		return fmt.Errorf("filestore: %s belongs to another user: run the tool as that user (sudo -u safehome): %w", s.dir, err)
+	}
+	return nil
 }
 
 // syncDir flushes the directory entry, so the rename itself survives a power cut.

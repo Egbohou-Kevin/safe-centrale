@@ -344,9 +344,18 @@ func (r *rig) order(cmd string, args contract.CommandArgs, origin, user string) 
 		contract.AlarmCommandData{Command: cmd, Args: args, Origin: origin, User: user})
 }
 
+// setCode sets a code as the installer's tools do: in the saved codes, then the hub
+// is told to read them again.
 func (r *rig) setCode(user, code string) {
 	r.t.Helper()
-	if err := r.hub.Codes().Set(user, code); err != nil {
+	reg, err := OpenCodes(testConfig().Access, r.store)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	if err := reg.Set(user, code); err != nil {
+		r.t.Fatal(err)
+	}
+	if err := r.hub.ReloadCodes(); err != nil {
 		r.t.Fatal(err)
 	}
 }

@@ -111,7 +111,7 @@ func TestTheSirenLeavesBeforeTheAlertAndTheEvents(t *testing.T) {
 func TestKeypadDisarmWithTheRightCode(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
-	r.setCode("u_guard", "730264")
+	r.setCode("u_owner", "730264")
 	r.keypad(contract.ValArm, "")
 	r.mustBe(engine.ModeArming)
 	r.keypad(contract.ValArmNow, "")
@@ -123,7 +123,7 @@ func TestKeypadDisarmWithTheRightCode(t *testing.T) {
 	r.waitFor("disarmed", func() bool { return len(eventsOf(r, contract.TypeAlarmDisarmed)) == 1 })
 	r.mustBe(engine.ModeDisarmed)
 	d := dataOf[contract.DisarmedData](t, eventsOf(r, contract.TypeAlarmDisarmed)[0])
-	if d.User != "u_guard" || d.Origin != contract.OriginKeypad {
+	if d.User != "u_owner" || d.Origin != contract.OriginKeypad {
 		t.Fatalf("%+v", d)
 	}
 	r.settle()

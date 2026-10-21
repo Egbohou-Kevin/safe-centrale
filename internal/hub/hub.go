@@ -144,7 +144,7 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 // openSaved opens what the hub keeps apart from the domains' states: the access
 // codes and the message counter.
 func (h *Hub) openSaved() (err error) {
-	if h.codes, err = OpenCodes(h.cfg.Access, h.deps.Store); err != nil {
+	if h.codes, err = h.openPeopleCodes(); err != nil {
 		return err
 	}
 	if h.installer, err = OpenInstallerCode(h.cfg.Access, h.deps.Store); err != nil {

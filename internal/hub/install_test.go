@@ -1,8 +1,8 @@
 package hub
 
 import (
+	"slices"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,8 +12,8 @@ import (
 
 const installerCode = "259031"
 
-// withInstaller gives the rig an installer code, and counts the restarts asked for.
-func (r *rig) withInstaller(changed bool) *atomic.Int32 {
+// withInstaller gives the rig an installer code.
+func (r *rig) withInstaller() {
 	r.t.Helper()
 	reg, err := OpenInstallerCode(testConfig().Access, r.store)
 	if err != nil {
@@ -25,10 +25,6 @@ func (r *rig) withInstaller(changed bool) *atomic.Int32 {
 	if err := r.hub.ReloadCodes(); err != nil {
 		r.t.Fatal(err)
 	}
-	restarts := &atomic.Int32{}
-	r.hub.deps.DevicesChanged = func() bool { return changed }
-	r.hub.deps.RestartWhenQuiet = func() { restarts.Add(1) }
-	return restarts
 }
 
 // installModes returns the installation modes published, in order.
@@ -59,7 +55,7 @@ func (r *rig) openInstall() {
 
 func TestTheInstallerCodeOpensTheInstallationModeForHalfAnHour(t *testing.T) {
 	r := newRig(t, nil)
-	r.withInstaller(false)
+	r.withInstaller()
 	r.start()
 	r.settle()
 	if m := r.installModes(); len(m) != 1 || m[0] != (contract.InstallModeData{Status: contract.InstallClosed, Reason: contract.InstallRestart}) {
@@ -94,11 +90,26 @@ func TestTheInstallerCodeOpensTheInstallationModeForHalfAnHour(t *testing.T) {
 
 func TestArmingClosesTheInstallationMode(t *testing.T) {
 	r := newRig(t, nil)
-	r.withInstaller(false)
+	r.withInstaller()
 	r.start()
 	r.openInstall()
 	r.keypad(contract.ValArm, "")
 	r.waitFor("the mode closed", func() bool { return r.lastInstall().Reason == contract.InstallArmed })
+
+	// The arming's state leaves before the mode's end: the configuration's application,
+	// which follows both, must know the exit delay has begun when the mode ends.
+	var order []string
+	for _, p := range r.broker.all() {
+		switch {
+		case p.Topic == contract.AlarmStateTopic(site):
+			order = append(order, dataOf[contract.AlarmStateData](t, p).State)
+		case p.Topic == contract.InstallModeTopic(site) && dataOf[contract.InstallModeData](t, p).Reason == contract.InstallArmed:
+			order = append(order, "install closed")
+		}
+	}
+	if i := slices.Index(order, "install closed"); i < 1 || order[i-1] != contract.StateArming {
+		t.Fatalf("published in this order: %v", order)
+	}
 
 	// An older timer does nothing to a later mode.
 	r.clock.Advance(30 * time.Minute)
@@ -108,33 +119,24 @@ func TestArmingClosesTheInstallationMode(t *testing.T) {
 	}
 }
 
-func TestTheConsoleClosesTheModeAndTheHubRestartsForNewZones(t *testing.T) {
-	for _, changed := range []bool{false, true} {
-		r := newRig(t, nil)
-		restarts := r.withInstaller(changed)
-		r.start()
-		r.openInstall()
-		r.send(contract.InstallCmdTopic(site), contract.TypeInstallClose, contract.InstallCloseData{})
-		r.waitFor("the mode closed", func() bool { return r.lastInstall().Reason == contract.InstallStopped })
-		want := int32(0)
-		if changed {
-			want = 1
-		}
-		if got := restarts.Load(); got != want {
-			t.Errorf("devices changed %v: %d restart(s), want %d", changed, got, want)
-		}
-		// Closing what is closed says nothing more.
-		r.send(contract.InstallCmdTopic(site), contract.TypeInstallClose, contract.InstallCloseData{})
-		r.settle()
-		if n := len(r.installModes()); n != 3 {
-			t.Errorf("%d install.mode, want start, open, closed", n)
-		}
+func TestTheConsoleClosesTheMode(t *testing.T) {
+	r := newRig(t, nil)
+	r.withInstaller()
+	r.start()
+	r.openInstall()
+	r.send(contract.InstallCmdTopic(site), contract.TypeInstallClose, contract.InstallCloseData{})
+	r.waitFor("the mode closed", func() bool { return r.lastInstall().Reason == contract.InstallStopped })
+	// Closing what is closed says nothing more.
+	r.send(contract.InstallCmdTopic(site), contract.TypeInstallClose, contract.InstallCloseData{})
+	r.settle()
+	if n := len(r.installModes()); n != 3 {
+		t.Errorf("%d install.mode, want start, open, closed", n)
 	}
 }
 
 func TestTheInstallerCodeNeverDisarms(t *testing.T) {
 	r := newRig(t, nil)
-	r.withInstaller(false)
+	r.withInstaller()
 	r.start()
 	r.keypad(contract.ValArm, "")
 	r.keypad(contract.ValArmNow, "")
@@ -149,7 +151,7 @@ func TestTheInstallerCodeNeverDisarms(t *testing.T) {
 
 func TestOnlyTheKeypadOpensTheInstallationMode(t *testing.T) {
 	r := newRig(t, nil)
-	r.withInstaller(false)
+	r.withInstaller()
 	r.start()
 	r.order(contract.CmdDisarm, contract.CommandArgs{Code: installerCode}, contract.OriginApp, "u_owner")
 	r.waitAcks(1)
@@ -168,7 +170,7 @@ func TestOnlyTheKeypadOpensTheInstallationMode(t *testing.T) {
 
 func TestAPersonsCodeStillDisarmsWithAnInstallerCode(t *testing.T) {
 	r := newRig(t, nil)
-	r.withInstaller(false)
+	r.withInstaller()
 	r.setCode("u_owner", "482915")
 	r.start()
 	r.keypad(contract.ValArm, "")
@@ -178,20 +180,12 @@ func TestAPersonsCodeStillDisarmsWithAnInstallerCode(t *testing.T) {
 	r.mustBe(engine.ModeDisarmed)
 }
 
-func TestRestartAndDevicesChangedGoTogether(t *testing.T) {
-	_, err := New(testConfig(), Deps{Clock: newFakeClock(), Store: newMemStore(), Publisher: &fakeBroker{},
-		NewID: contract.NewIDGenerator().New, DevicesChanged: func() bool { return true }})
-	if err == nil {
-		t.Fatal("DevicesChanged without RestartWhenQuiet was accepted")
-	}
-}
-
 func TestTamperIsQuietDuringTheInstallationModeButNotFire(t *testing.T) {
 	r := newRig(t, nil, func(c *Config) {
 		c.Engine.Zones["dev_box"] = engine.Zone{Name: "box", Kind: engine.ZoneTamper}
 		c.Engine.Zones["dev_smoke"] = engine.Zone{Name: "smoke", Kind: engine.ZoneFire}
 	})
-	r.withInstaller(false)
+	r.withInstaller()
 	r.start()
 	r.openInstall()
 	r.device("dev_box", contract.CapTamper, contract.ValTriggered)
@@ -211,7 +205,7 @@ func TestTamperAlertsAgainOnceTheModeIsClosed(t *testing.T) {
 	r := newRig(t, nil, func(c *Config) {
 		c.Engine.Zones["dev_box"] = engine.Zone{Name: "box", Kind: engine.ZoneTamper}
 	})
-	r.withInstaller(false)
+	r.withInstaller()
 	r.start()
 	r.openInstall()
 	r.send(contract.InstallCmdTopic(site), contract.TypeInstallClose, contract.InstallCloseData{})
@@ -224,7 +218,7 @@ func TestTamperAlertsAgainOnceTheModeIsClosed(t *testing.T) {
 // starts with it: the mode lasts exactly its half hour.
 func TestTheInstallTimerFollowsTheMode(t *testing.T) {
 	r := newRig(t, nil)
-	r.withInstaller(false)
+	r.withInstaller()
 	r.start()
 	r.openInstall()
 	end := t0.Add(installLength)

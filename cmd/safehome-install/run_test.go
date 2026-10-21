@@ -49,7 +49,7 @@ func cli(ctx context.Context, args ...string) (int, string, string) {
 	return code, out.String(), errb.String()
 }
 
-func readSite(t *testing.T, path string) hubconfig.Site {
+func readSite(t *testing.T, path string) install.Site {
 	t.Helper()
 	s, err := hubconfig.ReadSite(path)
 	if err != nil {
@@ -292,7 +292,7 @@ func TestAnInstallation(t *testing.T) {
 	if code != 0 || !strings.Contains(out, `is now "Reserve" (entry)`) {
 		t.Fatalf("zone change: %d %q", code, out)
 	}
-	if z := readSite(t, path).Zones["dev_k7p2"]; z != (hubconfig.Zone{Name: "Reserve", Kind: "entry"}) {
+	if z := readSite(t, path).Zones["dev_k7p2"]; z != (install.Zone{Name: "Reserve", Kind: "entry"}) {
 		t.Fatalf("zone in the file: %+v", z)
 	}
 	if code, out, _ := cli(ctx, "check", "-config", path); code != 0 || !strings.Contains(out, "OK: 8 zone(s)") {

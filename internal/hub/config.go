@@ -127,20 +127,11 @@ type Deps struct {
 	// ClockSynced says whether the system clock is synchronised, for the heartbeat;
 	// known is false when it cannot tell. Nil leaves clock_ok out.
 	ClockSynced func() (synced, known bool)
-	// DevicesChanged says whether the installer's tools changed the zones or the
-	// sirens since the hub loaded them; RestartWhenQuiet has the hub restart to load
-	// them, at a quiet moment. Asked when the installation mode closes; both or
-	// neither.
-	DevicesChanged   func() bool
-	RestartWhenQuiet func()
 }
 
 func (d Deps) validate() error {
 	if d.Clock == nil || d.Store == nil || d.Publisher == nil || d.NewID == nil {
 		return errors.New("hub: Clock, Store, Publisher and NewID are required")
-	}
-	if (d.DevicesChanged == nil) != (d.RestartWhenQuiet == nil) {
-		return errors.New("hub: DevicesChanged and RestartWhenQuiet go together")
 	}
 	return nil
 }

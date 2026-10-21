@@ -94,6 +94,7 @@ type rig struct {
 	restarts int
 	checkErr error
 	saveErr  error
+	devices  bool // the installer's tools changed the zones or the sirens
 }
 
 func start(t *testing.T, cfg Config) *rig {
@@ -112,8 +113,9 @@ func start(t *testing.T, cfg Config) *rig {
 			r.saved = append(r.saved, d)
 			return nil
 		},
-		Restart: func() { r.mu.Lock(); r.restarts++; r.mu.Unlock() },
-		Logger:  slog.New(slog.NewTextHandler(r.logs, nil)),
+		Restart:        func() { r.mu.Lock(); r.restarts++; r.mu.Unlock() },
+		DevicesChanged: func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.devices },
+		Logger:         slog.New(slog.NewTextHandler(r.logs, nil)),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -143,6 +145,17 @@ func (r *rig) config(d contract.ConfigSetData) {
 func (r *rig) alarm(state string) {
 	r.send(contract.AlarmStateTopic(site), contract.TypeAlarmState, contract.AlarmStateData{State: state, Since: contract.TS(time.Now())})
 }
+
+// install publishes the installation mode as the hub does: open when reason is empty.
+func (r *rig) install(reason string) {
+	d := contract.InstallModeData{Status: contract.InstallClosed, Reason: reason}
+	if reason == "" {
+		d = contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(time.Now().Add(30 * time.Minute))}
+	}
+	r.send(contract.InstallModeTopic(site), contract.TypeInstallMode, d)
+}
+
+func (r *rig) changeDevices() { r.mu.Lock(); r.devices = true; r.mu.Unlock() }
 
 func (r *rig) restarted() int { r.mu.Lock(); defer r.mu.Unlock(); return r.restarts }
 
@@ -215,8 +228,11 @@ func TestAQuietHubRestartsAtOnce(t *testing.T) {
 
 func TestNewZonesRestartTheHubAtAQuietMoment(t *testing.T) {
 	r := start(t, DefaultConfig(site, 0))
-	r.alarm(contract.StateArming) // the installation mode closed because the alarm is arming
-	r.app.RestartWhenQuiet()
+	r.alarm(contract.StateDisarmed)
+	r.install("")
+	r.changeDevices()
+	r.alarm(contract.StateArming) // the installation mode closes because the alarm is arming
+	r.install(contract.InstallArmed)
 	if r.restarted() != 0 {
 		t.Fatal("never during a delay")
 	}
@@ -224,12 +240,61 @@ func TestNewZonesRestartTheHubAtAQuietMoment(t *testing.T) {
 	if r.restarted() != 1 {
 		t.Fatal("restart once quiet")
 	}
-	r.app.RestartWhenQuiet()
+	r.alarm(contract.StateDisarmed)
 	if r.restarted() != 1 {
 		t.Fatal("once only")
 	}
 	if _, n := r.broker.last(); n != 0 {
 		t.Fatal("new zones are no configuration from the cloud: nothing to answer")
+	}
+}
+
+// The installation mode exists only while the alarm is disarmed, but it is no quiet
+// moment: a restart would close it, cut the console's network and page, and bring the
+// tamper alerts back while the installer has the devices open.
+func TestNoRestartWhileTheInstallationModeIsOpen(t *testing.T) {
+	r := start(t, DefaultConfig(site, 0))
+	r.alarm(contract.StateDisarmed)
+	r.install("")
+	r.config(phoneConfig(1))
+	if len(r.saved) != 1 || r.restarted() != 0 {
+		t.Fatalf("saved %d, restarts %d: kept, but no restart during the installation", len(r.saved), r.restarted())
+	}
+	r.alarm(contract.StateDisarmed)
+	if r.restarted() != 0 {
+		t.Fatal("still installing")
+	}
+	r.install(contract.InstallStopped)
+	if r.restarted() != 1 {
+		t.Fatal("restart once the mode closed")
+	}
+}
+
+// A change that lands just after the mode closed (a removal from the console that
+// ends late) is applied at a later quiet moment.
+func TestZonesChangedAfterTheModeClosedAreAppliedLater(t *testing.T) {
+	r := start(t, DefaultConfig(site, 0))
+	r.alarm(contract.StateDisarmed)
+	r.install("")
+	r.install(contract.InstallTimeout)
+	if r.restarted() != 0 {
+		t.Fatal("nothing changed")
+	}
+	r.changeDevices()
+	r.alarm(contract.StateArming)
+	r.alarm(contract.StateArmed)
+	if r.restarted() != 1 {
+		t.Fatal("the late change is applied at the next quiet moment")
+	}
+}
+
+func TestAnInvalidInstallationModeIsIgnored(t *testing.T) {
+	r := start(t, DefaultConfig(site, 0))
+	r.alarm(contract.StateDisarmed)
+	r.send(contract.InstallModeTopic(site), contract.TypeInstallMode, contract.InstallModeData{Status: "ajar"})
+	r.config(phoneConfig(1))
+	if r.restarted() != 1 {
+		t.Fatal("an invalid mode must not hold the restart back")
 	}
 }
 
@@ -307,7 +372,7 @@ func TestNothingToSayWithoutConfiguration(t *testing.T) {
 	if _, n := r.broker.last(); n != 0 {
 		t.Fatal("no configuration from the cloud: no answer")
 	}
-	if subs := r.app.Subscriptions(); len(subs) != 2 {
+	if subs := r.app.Subscriptions(); len(subs) != 3 {
 		t.Fatalf("%+v", subs)
 	}
 }

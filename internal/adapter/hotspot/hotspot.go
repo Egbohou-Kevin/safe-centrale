@@ -16,6 +16,7 @@ import (
 	"net"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Config says which network to make.
@@ -81,23 +82,41 @@ func (h *Hotspot) Up(ctx context.Context) error {
 		return err
 	}
 	if err := h.run(ctx, "connection", "up", c.Connection); err != nil {
-		h.run(context.WithoutCancel(ctx), "connection", "delete", c.Connection)
+		cleanCtx, cancel := detached(ctx)
+		defer cancel()
+		h.run(cleanCtx, "connection", "delete", c.Connection)
 		return err
 	}
 	return nil
 }
 
-// Down stops the network and deletes it. It runs even when ctx is over: the network
-// must not outlive the installation mode.
+// Down stops the network and deletes it. It runs even when ctx is cancelled: the
+// network must not outlive the installation mode. It keeps ctx's deadline, though: a
+// hung nmcli must not hold up the next mode or the console's stop.
 func (h *Hotspot) Down(ctx context.Context) error {
-	ctx = context.WithoutCancel(ctx)
+	ctx, cancel := detached(ctx)
+	defer cancel()
 	h.run(ctx, "connection", "down", h.cfg.Connection) // already down: nothing to say
 	return h.run(ctx, "connection", "delete", h.cfg.Connection)
+}
+
+// cleanupWait bounds a cleanup whose caller gave no deadline.
+const cleanupWait = 30 * time.Second
+
+// detached returns a context that ignores ctx's cancellation but keeps its deadline,
+// or cleanupWait when it has none.
+func detached(ctx context.Context) (context.Context, context.CancelFunc) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(cleanupWait)
+	}
+	return context.WithDeadline(context.WithoutCancel(ctx), deadline)
 }
 
 // run runs nmcli. Its error carries what nmcli said, never the passphrase.
 func (h *Hotspot) run(ctx context.Context, args ...string) error {
 	cmd := exec.CommandContext(ctx, h.cfg.NMCLI, args...)
+	cmd.WaitDelay = time.Second // a child left holding the output must not hold the call
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {

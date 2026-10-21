@@ -134,7 +134,7 @@ func runConsole(ctx context.Context, cfg consoleconfig.Result, hub hubconfig.Res
 	pub := &service.Publisher{}
 	var page atomic.Pointer[web.Handler] // the page needs the application, which serves it
 	app, err := consoleapp.New(cfg.App, consoleapp.Deps{
-		Clock: driver.SystemClock(), Publisher: pub, NewID: ids.New, Hotspot: spot, Sites: sites{hubConfig: cfg.HubConfig},
+		Clock: driver.SystemClock(), Publisher: pub, NewID: ids.New, Hotspot: spot, Sites: hubconfig.SiteFiles{Path: cfg.HubConfig},
 		Codes: codes{hubConfig: cfg.HubConfig, log: log}, Logger: log,
 		Serve: func(ctx context.Context) error { return serve(ctx, cfg.Listen(), page.Load(), log) },
 	})

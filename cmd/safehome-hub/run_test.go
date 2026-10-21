@@ -15,11 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"safehome/internal/adapter/filestore"
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/adapter/pidfile"
 	"safehome/internal/contract"
+	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
+	"safehome/internal/install"
 	"safehome/internal/schematest"
 	"safehome/internal/siteconfig"
 )
@@ -65,6 +68,20 @@ func writeConfig(t *testing.T, brokerURL, stateDir string, extra string) string 
 	return path
 }
 
+// moreContacts gives the site of the configuration at path a deputy and a guard too.
+func moreContacts(t *testing.T, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := `{"id": "u_owner", "name": "Owner", "role": "owner", "channels": ["app", "sms"]}`
+	more := owner + `, {"id": "u_deputy", "name": "Deputy", "role": "deputy", "channels": ["app"]}, {"id": "u_guard", "name": "Guard", "role": "guard", "channels": ["app"]}`
+	if err := os.WriteFile(path, bytes.Replace(data, []byte(owner), []byte(more), 1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // cli runs the program's command line and returns its exit code and outputs.
 func cli(t *testing.T, stdin string, args ...string) (int, string, string) {
 	t.Helper()
@@ -105,6 +122,7 @@ func TestCheck(t *testing.T) {
 func TestCodesCommands(t *testing.T) {
 	state := t.TempDir()
 	path := writeConfig(t, "mqtt://127.0.0.1:1883", state, "")
+	moreContacts(t, path)
 
 	if code, out, _ := cli(t, "", "codes", "-config", path, "list"); code != 0 || !strings.Contains(out, "no access code") {
 		t.Fatalf("%d %q", code, out)
@@ -127,12 +145,13 @@ func TestCodesCommands(t *testing.T) {
 		args  []string
 		want  string
 	}{
-		"weak code":    {"1234\n", []string{"set", "u_x"}, "too easy to guess"},
-		"not digits":   {"48a915\n", []string{"set", "u_x"}, "4 to 8 digits"},
-		"taken":        {"482915\n", []string{"set", "u_x"}, "already has this code"},
-		"no code":      {"", []string{"set", "u_x"}, "no code given"},
-		"blank code":   {"   \n", []string{"set", "u_x"}, "no code given"},
-		"unknown user": {"", []string{"remove", "nobody"}, "no such user"},
+		"weak code":     {"1234\n", []string{"set", "u_deputy"}, "too easy to guess"},
+		"not digits":    {"48a915\n", []string{"set", "u_deputy"}, "4 to 8 digits"},
+		"taken":         {"482915\n", []string{"set", "u_deputy"}, "already has this code"},
+		"no code":       {"", []string{"set", "u_deputy"}, "no code given"},
+		"blank code":    {"   \n", []string{"set", "u_deputy"}, "no code given"},
+		"not a contact": {"615273\n", []string{"set", "u_x"}, "u_x is not a contact of the site"},
+		"unknown user":  {"", []string{"remove", "nobody"}, "no such user"},
 	} {
 		code, out, errb := cli(t, c.stdin, append([]string{"codes", "-config", path}, c.args...)...)
 		if code != 1 || !strings.Contains(errb, c.want) {
@@ -171,6 +190,27 @@ func TestCodesCommands(t *testing.T) {
 	}
 	if _, out, _ := cli(t, "", "codes", "-config", path, "list"); out != "u_owner\ninstaller\n" {
 		t.Fatalf("%q", out)
+	}
+
+	// A code left by someone no longer a contact (the cloud's configuration changed the
+	// contacts) is listed as such, and can be removed.
+	gone, err := hubconfig.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := filestore.Open(state, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := hub.OpenCodes(gone.Hub.Access, store)
+	if err != nil || reg.Set("u_gone", "615273") != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ := cli(t, "", "codes", "-config", path, "list"); !strings.Contains(out, "u_gone (not a contact of the site") {
+		t.Fatalf("%q", out)
+	}
+	if code, out, _ := cli(t, "", "codes", "-config", path, "remove", "u_gone"); code != 0 || !strings.Contains(out, "code removed for u_gone") {
+		t.Fatalf("%d %q", code, out)
 	}
 
 	// The codes are saved hashed: nothing in the state directory holds a code.
@@ -509,14 +549,14 @@ func TestCodesSetWhileTheHubRunsTakeEffectWithoutARestart(t *testing.T) {
 	l.waitState("armed")
 
 	// The installer sets a code with the command-line tool; the running hub is told.
-	code, out, errb := cli(t, "730264\n", "codes", "-config", cfg, "set", "u_guard")
+	code, out, errb := cli(t, "730264\n", "codes", "-config", cfg, "set", "u_owner")
 	if code != 0 || !strings.Contains(out, "told to reload") {
 		t.Fatalf("%d %q %q", code, out, errb)
 	}
 	l.waitFor("the reload", func() bool { return strings.Contains(l.logs.String(), "access codes reloaded") })
 	l.event("dev_keypad", contract.CapKeypad, "disarm", "730264")
 	l.waitState("disarmed")
-	if d, _ := contract.DecodeData[contract.DisarmedData](l.seen(contract.TypeAlarmDisarmed)[0]); d.User != "u_guard" {
+	if d, _ := contract.DecodeData[contract.DisarmedData](l.seen(contract.TypeAlarmDisarmed)[0]); d.User != "u_owner" {
 		t.Fatalf("%+v", d)
 	}
 	l.validateEverything("730264")
@@ -754,9 +794,20 @@ func TestTheInstallationModeAppliesNewZonesByRestarting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	devices.Zones["dev_k7p2"] = hubconfig.Zone{Name: "Reserve", Kind: "instant"}
+	devices.Zones["dev_k7p2"] = install.Zone{Name: "Reserve", Kind: "instant"}
 	if err := hubconfig.WriteSite(cfg, devices); err != nil {
 		t.Fatal(err)
+	}
+	// A configuration from the cloud meanwhile is kept, but waits for the mode's end:
+	// a restart now would close the mode under the installer's feet.
+	l.publish(contract.ConfigSetTopic(site), contract.TypeConfigSet, contract.ConfigSetData{Version: 3, Contacts: []contract.ConfigContact{
+		{ID: "u_owner", Name: "Ama", Role: "owner", Channels: []string{"app", "sms"}, Phone: "+22890000001"},
+	}}, false)
+	l.waitFor("the configuration kept", func() bool { _, ok, _ := siteconfig.Read(state); return ok })
+	select {
+	case <-l.done:
+		t.Fatalf("the hub restarted during the installation mode\nlogs:\n%s", l.logs.String())
+	case <-time.After(time.Second):
 	}
 	l.publish(contract.InstallCmdTopic(site), contract.TypeInstallClose, contract.InstallCloseData{}, false)
 	select {

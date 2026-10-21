@@ -51,6 +51,7 @@
   {{else if eq .Code "siren"}}{{if .On}}{{.ID}} sert maintenant de sirène.{{else}}{{.ID}} ne sert plus de sirène.{{end}}
   {{else if eq .Code "remove"}}{{.ID}} est retiré du réseau.
   {{else if eq .Code "code"}}Code enregistré ({{.ID}}) : la centrale le prend aussitôt.
+  {{else if eq .Code "uncode"}}Code retiré ({{.ID}}) : sa place est libre.
   {{else if eq .Code "finish"}}Installation terminée : la centrale ferme le mode installation et redémarre si les zones ont changé. Ce réseau Wi-Fi va disparaître.
   {{else}}C'est fait.{{end}}
 </section>{{else}}<section class="err">
@@ -70,7 +71,8 @@
   {{else if eq .Code "code_invalid"}}Un code fait de 4 à 8 chiffres.
   {{else if eq .Code "code_weak"}}Code trop facile à deviner : pas de chiffres répétés ni de suite (1234, 1111).
   {{else if eq .Code "code_taken"}}Ce code est déjà pris : choisissez-en un autre.
-  {{else if eq .Code "code_full"}}Le site a déjà le nombre maximal de codes.
+  {{else if eq .Code "code_full"}}Le site a déjà le nombre maximal de codes : retirez d'abord le code d'une personne qui n'est plus contact.
+  {{else if eq .Code "no_such_code"}}{{.ID}} n'a pas de code à retirer ici.
   {{else}}Refusé : {{.Detail}}{{end}}
 </section>{{end}}{{end}}
 

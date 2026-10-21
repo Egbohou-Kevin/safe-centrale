@@ -14,7 +14,7 @@ func (a *App) SetCode(user, code, again string) error {
 	if code != again {
 		return ErrCodeMismatch
 	}
-	people, err := a.deps.Codes.People()
+	people, _, err := a.deps.Codes.People()
 	if err != nil {
 		return err
 	}
@@ -25,5 +25,25 @@ func (a *App) SetCode(user, code, again string) error {
 		return err
 	}
 	a.log.Info("access code set from the console", "user", user)
+	return nil
+}
+
+// RemoveCode removes the code of someone who is no longer a contact of the site: the
+// hub leaves it aside, but it still takes one of the places.
+func (a *App) RemoveCode(user string) error {
+	if _, err := a.sessionCtx(); err != nil {
+		return err
+	}
+	_, leftovers, err := a.deps.Codes.People()
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(leftovers, user) {
+		return fmt.Errorf("%w: %s", ErrNoSuchCode, user)
+	}
+	if err := a.deps.Codes.Remove(user); err != nil {
+		return err
+	}
+	a.log.Info("access code of a former contact removed from the console", "user", user)
 	return nil
 }

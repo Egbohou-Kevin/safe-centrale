@@ -240,6 +240,60 @@ func TestCodesAreSetOnlyWhileTheModeIsOpenAndForAContact(t *testing.T) {
 	}
 }
 
+// A code left by someone no longer a contact is shown apart, and removed from the
+// page, only while the mode is open.
+func TestTheCodeOfAFormerContactIsShownAndRemoved(t *testing.T) {
+	r := newRig(t)
+	r.codes.codes["u_gone"] = "7391"
+	if err := r.app.RemoveCode("u_gone"); !errors.Is(err, ErrClosed) {
+		t.Fatalf("mode closed: %v", err)
+	}
+	r.open()
+	if o := r.app.Overview(); !slices.Equal(o.Leftovers, []string{"u_gone"}) || len(o.People) != 1 {
+		t.Fatalf("%+v %+v", o.People, o.Leftovers)
+	}
+	r.codes.codes["u_owner"] = "2580"
+	if err := r.app.RemoveCode("u_owner"); !errors.Is(err, ErrNoSuchCode) {
+		t.Fatalf("a contact's code is not removed here: %v", err)
+	}
+	if err := r.app.RemoveCode("u_gone"); err != nil {
+		t.Fatal(err)
+	}
+	if o := r.app.Overview(); len(o.Leftovers) != 0 || r.codes.codes["u_owner"] != "2580" {
+		t.Fatalf("%+v %v", o.Leftovers, r.codes.codes)
+	}
+}
+
+// A removal the adapter confirms after the mode ended still leaves the site: the
+// site must not keep a device the network lost.
+func TestARemovalEndingAfterTheModeStillLeavesTheSite(t *testing.T) {
+	r := newRig(t)
+	r.open()
+	sent, release := make(chan struct{}), make(chan struct{})
+	r.mu.Lock()
+	r.hold = func(env contract.Envelope) {
+		if env.Type == contract.TypeRegistryRemove {
+			close(sent)
+			<-release
+		}
+	}
+	r.mu.Unlock()
+	result := make(chan error, 1)
+	go func() { result <- r.app.Remove(context.Background(), "dev_door") }()
+	<-sent
+	r.mode(contract.InstallModeData{Status: contract.InstallClosed, Reason: contract.InstallTimeout})
+	r.waitFor("the mode closed", func() bool { return !r.app.Overview().Open })
+	close(release)
+	if err := <-result; !errors.Is(err, ErrClosed) {
+		t.Fatalf("the page is told the mode closed: %v", err)
+	}
+	r.waitFor("the site without the device", func() bool {
+		site, _ := r.sites.Read()
+		_, zoned := site.Zones["dev_door"]
+		return !zoned
+	})
+}
+
 // nmcli may take long to start the network: the console's loop must keep answering
 // meanwhile, or systemd's watchdog kills it in the middle of an installation.
 func TestTheConsoleAnswersWhileTheNetworkStarts(t *testing.T) {

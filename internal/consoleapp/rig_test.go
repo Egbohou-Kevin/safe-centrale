@@ -132,11 +132,28 @@ type fakeCodes struct {
 	codes map[string]string
 }
 
-func (c *fakeCodes) People() ([]Person, error) {
+// People: u_owner is the only contact; any other user with a code is a leftover.
+func (c *fakeCodes) People() ([]Person, []string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	_, has := c.codes["u_owner"]
-	return []Person{{ID: "u_owner", Name: "Kofi", Role: "owner", HasCode: has}}, nil
+	var leftovers []string
+	for _, u := range slices.Sorted(maps.Keys(c.codes)) {
+		if u != "u_owner" {
+			leftovers = append(leftovers, u)
+		}
+	}
+	return []Person{{ID: "u_owner", Name: "Kofi", Role: "owner", HasCode: has}}, leftovers, nil
+}
+
+func (c *fakeCodes) Remove(user string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.codes[user]; !ok {
+		return ErrNoSuchCode
+	}
+	delete(c.codes, user)
+	return nil
 }
 
 func (c *fakeCodes) Set(user, code string) error {

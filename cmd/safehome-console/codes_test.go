@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -27,8 +28,8 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	logs := &syncBuffer{}
 	c := codes{hubConfig: hubPath, log: slog.New(slog.NewTextHandler(logs, nil))}
 
-	people, err := c.People()
-	if err != nil || len(people) != 4 || people[0].ID != "u_owner" || people[0].Role != "owner" || people[0].HasCode {
+	people, leftovers, err := c.People()
+	if err != nil || len(leftovers) != 0 || len(people) != 4 || people[0].ID != "u_owner" || people[0].Role != "owner" || people[0].HasCode {
 		t.Fatalf("%+v %v", people, err)
 	}
 
@@ -75,9 +76,27 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 		t.Fatal("the hub was not told")
 	}
 
-	people, _ = c.People()
+	people, _, _ = c.People()
 	if !people[0].HasCode {
 		t.Fatalf("%+v", people[0])
+	}
+
+	// A code left by someone no longer a contact is listed apart, and removed.
+	other, err := hub.OpenCodes(cfg.Hub.Access, store)
+	if err != nil || other.Set("u_gone", "7391") != nil {
+		t.Fatal(err)
+	}
+	if _, leftovers, err := c.People(); err != nil || !slices.Equal(leftovers, []string{"u_gone"}) {
+		t.Fatalf("%v %v", leftovers, err)
+	}
+	if err := c.Remove("u_gone"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Remove("u_gone"); !errors.Is(err, consoleapp.ErrNoSuchCode) {
+		t.Fatalf("%v", err)
+	}
+	if _, leftovers, _ := c.People(); len(leftovers) != 0 {
+		t.Fatalf("%v", leftovers)
 	}
 	reg, err := hub.OpenCodes(cfg.Hub.Access, store)
 	if err != nil {

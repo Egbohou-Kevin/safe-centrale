@@ -43,6 +43,10 @@ func (f *fakeConsole) SetCode(user, code, again string) error {
 	f.calls = append(f.calls, fmt.Sprintf("code %s %s %s", user, code, again))
 	return f.err
 }
+func (f *fakeConsole) RemoveCode(user string) error {
+	f.calls = append(f.calls, "uncode "+user)
+	return f.err
+}
 func (f *fakeConsole) Finish(context.Context) error {
 	f.calls = append(f.calls, "finish")
 	return f.err
@@ -247,6 +251,30 @@ func TestTheCodesSection(t *testing.T) {
 		if body := get(h, loc).Body.String(); !strings.Contains(body, want) || strings.Contains(loc+body, "1357") {
 			t.Errorf("%v: missing %q, or the code shows", err, want)
 		}
+	}
+}
+
+func TestTheCodesOfFormerContacts(t *testing.T) {
+	c := &fakeConsole{o: overview()}
+	h := newHandler(t, c)
+	if body := get(h, "/").Body.String(); strings.Contains(body, "anciens contacts") {
+		t.Fatal("a section without leftovers")
+	}
+	c.o.Leftovers = []string{"u_gone"}
+	body := get(h, "/").Body.String()
+	for _, want := range []string{"Codes d'anciens contacts", "u_gone", `action="/uncode"`, "Retirer ce code"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	loc := post(h, "/uncode", url.Values{"id": {"u_gone"}}).Header().Get("Location")
+	if c.calls[0] != "uncode u_gone" || !strings.Contains(get(h, loc).Body.String(), "Code retir\u00e9 (u_gone)") {
+		t.Fatalf("%v %s", c.calls, loc)
+	}
+	c.err = fmt.Errorf("%w: u_owner", consoleapp.ErrNoSuchCode)
+	loc = post(h, "/uncode", url.Values{"id": {"u_owner"}}).Header().Get("Location")
+	if body := get(h, loc).Body.String(); !strings.Contains(body, "u_owner n'a pas de code \u00e0 retirer") {
+		t.Fatalf("after %s: %s", loc, body)
 	}
 }
 

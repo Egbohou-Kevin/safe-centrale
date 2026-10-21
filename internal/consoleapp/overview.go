@@ -24,7 +24,9 @@ type Overview struct {
 	Busy     bool    // an order runs: a pairing, a removal
 	Events   []Event // the latest first
 	People   []Person
-	CodesErr string
+	// Leftovers are the users of codes who are no longer contacts: to remove.
+	Leftovers []string
+	CodesErr  string
 }
 
 // Device is one paired device, or one the site uses without it being paired.
@@ -61,11 +63,11 @@ type Pairing struct {
 
 // Overview returns what the page shows now.
 func (a *App) Overview() Overview {
-	site, siteErr := a.deps.Sites.Read()
-	people, codesErr := a.deps.Codes.People()
+	site, siteErr := a.site.Read()
+	people, leftovers, codesErr := a.deps.Codes.People()
 	o, registered, events := a.snapshot()
 
-	o.People = people
+	o.People, o.Leftovers = people, leftovers
 	if codesErr != nil {
 		o.CodesErr = codesErr.Error()
 	}

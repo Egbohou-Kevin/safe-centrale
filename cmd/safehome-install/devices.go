@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"safehome/internal/contract"
-	"safehome/internal/hubconfig"
 	"safehome/internal/install"
 )
 
@@ -19,7 +18,7 @@ func (c *command) devices(ctx context.Context, s *install.Session) error {
 	if err != nil {
 		return err
 	}
-	site, err := hubconfig.ReadSite(c.path)
+	site, err := c.editor().Read()
 	if err != nil {
 		return err
 	}
@@ -53,7 +52,7 @@ func statusLine(st *contract.ZigbeeStatusData) string {
 	return fmt.Sprintf("Zigbee2MQTT: %s, %d device(s), pairing %s", st.Bridge, st.Devices, pairing)
 }
 
-func use(site hubconfig.Site, d contract.RegistryDevice) string {
+func use(site install.Site, d contract.RegistryDevice) string {
 	var uses []string
 	if z, ok := site.Zones[d.DeviceID]; ok {
 		uses = append(uses, fmt.Sprintf("zone %q (%s)", z.Name, z.Kind))
@@ -71,7 +70,7 @@ func use(site hubconfig.Site, d contract.RegistryDevice) string {
 }
 
 func (c *command) watch(ctx context.Context, s *install.Session) error {
-	site, err := hubconfig.ReadSite(c.path)
+	site, err := c.editor().Read()
 	if err != nil {
 		return err
 	}
@@ -102,15 +101,11 @@ func (c *command) check(ctx context.Context, s *install.Session) error {
 	if err != nil {
 		return err
 	}
-	site, err := hubconfig.ReadSite(c.path)
+	site, err := c.editor().Read()
 	if err != nil {
 		return err
 	}
-	zones := map[string]install.Zone{}
-	for id, z := range site.Zones {
-		zones[id] = install.Zone{Name: z.Name, Kind: z.Kind}
-	}
-	findings := install.Check(install.Site{Zones: zones, SirenIDs: site.SirenIDs}, view.Devices)
+	findings := install.Check(site, view.Devices)
 	for _, f := range findings {
 		fmt.Fprintln(c.stdout, f)
 	}

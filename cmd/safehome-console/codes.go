@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
+	"slices"
 	"syscall"
 
 	"safehome/internal/access"
@@ -52,20 +54,22 @@ func (c codes) open() (opened, error) {
 	return opened{cfg: cfg, people: people, installer: installer}, nil
 }
 
-func (c codes) People() ([]consoleapp.Person, error) {
+// People lists the contacts, and the users of the codes who are not contacts: the
+// hub leaves those codes aside.
+func (c codes) People() (contacts []consoleapp.Person, leftovers []string, err error) {
 	o, err := c.open()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	have := map[string]bool{}
 	for _, u := range o.people.Users() {
 		have[u] = true
 	}
-	var out []consoleapp.Person
 	for _, ct := range o.cfg.Hub.Escalation.Contacts {
-		out = append(out, consoleapp.Person{ID: ct.ID, Name: ct.Name, Role: string(ct.Role), HasCode: have[ct.ID]})
+		contacts = append(contacts, consoleapp.Person{ID: ct.ID, Name: ct.Name, Role: string(ct.Role), HasCode: have[ct.ID]})
+		delete(have, ct.ID)
 	}
-	return out, nil
+	return contacts, slices.Sorted(maps.Keys(have)), nil
 }
 
 // Set saves the code, unless it is the installer's (one code opens one thing), then
@@ -88,6 +92,22 @@ func (c codes) Set(user, code string) error {
 			return consoleapp.ErrCodeTaken
 		case errors.Is(err, access.ErrTooManyUsers):
 			return consoleapp.ErrCodeFull
+		}
+		return err
+	}
+	c.notifyHub(o.cfg.StateDir)
+	return nil
+}
+
+// Remove removes the code of user, then tells a running hub to read the codes again.
+func (c codes) Remove(user string) error {
+	o, err := c.open()
+	if err != nil {
+		return err
+	}
+	if err := o.people.Remove(user); err != nil {
+		if errors.Is(err, access.ErrNoSuchUser) {
+			return consoleapp.ErrNoSuchCode
 		}
 		return err
 	}

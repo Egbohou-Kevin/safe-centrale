@@ -1,9 +1,10 @@
 // Package configapp applies the site's configuration set from the cloud
 // (config.set, see docs/contract.md). It runs in the hub's program: it checks a new
 // configuration against the site's files, keeps it in the state folder, and has the
-// hub restart to load it, at a quiet moment: never during an exit or entry delay nor
-// an alarm. It answers with config.applied, retained, once the hub runs with it, or
-// at once when it refuses it.
+// hub restart to load it, at a quiet moment: never during an exit or entry delay, an
+// alarm, nor the installation mode. It answers with config.applied, retained, once the
+// hub runs with it, or at once when it refuses it. The zones and sirens changed by the
+// installer's tools are applied the same way.
 //
 // The other programs that read this configuration (the GSM gateway, the video
 // service) restart when config.applied names a version they do not run.
@@ -59,6 +60,10 @@ type Deps struct {
 	Save func(contract.ConfigSetData) error
 	// Restart has the hub's program stop, to be started again with it.
 	Restart func()
+	// DevicesChanged says whether the installer's tools (the local console, the
+	// command-line tool) changed the zones or the sirens since the hub loaded them: the
+	// hub restarts for them too. Asked at each quiet moment; nil when none can change.
+	DevicesChanged func() bool
 	// Logger: never given a configuration, which holds phone numbers.
 	Logger *slog.Logger
 }
@@ -89,11 +94,11 @@ type App struct {
 	out  *outbox.Outbox
 	seen *outbox.RecentIDs
 
-	mu        sync.Mutex
-	saved     int    // the version kept, waiting for a quiet moment (0: none)
-	devices   bool   // the installer changed the zones or the sirens: restart too
-	state     string // the alarm's state, from alarm/state ("" until known)
-	restarted bool
+	mu         sync.Mutex
+	saved      int    // the version kept, waiting for a quiet moment (0: none)
+	state      string // the alarm's state, from alarm/state ("" until known)
+	installing bool   // the installation mode is open, from install/mode
+	restarted  bool
 }
 
 // New builds the application.
@@ -122,11 +127,12 @@ func New(cfg Config, deps Deps) (*App, error) {
 }
 
 // Subscriptions lists what the application listens to: the configuration, and the
-// alarm's state, to restart at a quiet moment.
+// alarm's state and the installation mode, to restart at a quiet moment.
 func (a *App) Subscriptions() []Subscription {
 	return []Subscription{
 		{Filter: contract.ConfigSetTopic(a.cfg.Site), QoS: 1},
 		{Filter: contract.AlarmStateTopic(a.cfg.Site), QoS: 1},
+		{Filter: contract.InstallModeTopic(a.cfg.Site), QoS: 1},
 	}
 }
 
@@ -155,6 +161,8 @@ func (a *App) HandleMessage(m Message) {
 	switch m.Topic {
 	case contract.AlarmStateTopic(a.cfg.Site):
 		a.alarmState(m.Payload)
+	case contract.InstallModeTopic(a.cfg.Site):
+		a.installMode(m.Payload)
 	case contract.ConfigSetTopic(a.cfg.Site):
 		a.configSet(m.Payload)
 	}
@@ -171,6 +179,24 @@ func (a *App) alarmState(payload []byte) {
 	}
 	a.mu.Lock()
 	a.state = d.State
+	a.mu.Unlock()
+	a.restartIfQuiet()
+}
+
+// installMode follows the installation mode. The hub publishes it on the same outbox
+// as the alarm's state, in order: a mode closed by an arming arrives after the
+// arming's state, so the exit delay is known before the mode's end.
+func (a *App) installMode(payload []byte) {
+	env, err := contract.ParseEnvelope(payload)
+	if err != nil || env.Site != a.cfg.Site || env.Type != contract.TypeInstallMode {
+		return
+	}
+	d, err := contract.DecodeData[contract.InstallModeData](env)
+	if err != nil || d.Validate() != nil {
+		return
+	}
+	a.mu.Lock()
+	a.installing = d.Status == contract.InstallOpen
 	a.mu.Unlock()
 	a.restartIfQuiet()
 }
@@ -224,33 +250,25 @@ func (a *App) configSet(payload []byte) {
 	a.restartIfQuiet()
 }
 
-// RestartWhenQuiet has the hub restart at the next quiet moment, as for a new
-// configuration: the installer changed the zones or the sirens (the hub calls it when
-// the installation mode closes).
-func (a *App) RestartWhenQuiet() {
-	a.mu.Lock()
-	a.devices = true
-	a.mu.Unlock()
-	a.restartIfQuiet()
-}
-
-// restartIfQuiet restarts the hub when a configuration waits and the alarm is
-// disarmed or armed: never in the middle of a delay or of an alarm.
+// restartIfQuiet restarts the hub when a configuration or new devices wait and the
+// moment is quiet: the alarm disarmed or armed, never in the middle of a delay or of
+// an alarm, and no installation under way.
 func (a *App) restartIfQuiet() {
+	devices := a.deps.DevicesChanged != nil && a.deps.DevicesChanged() // reads a file: outside the lock
 	a.mu.Lock()
-	pending := (a.saved != 0 || a.devices) && !a.restarted
-	quiet := a.state == contract.StateDisarmed || a.state == contract.StateArmed
+	pending := (a.saved != 0 || devices) && !a.restarted
+	quiet := (a.state == contract.StateDisarmed || a.state == contract.StateArmed) && !a.installing
 	if pending && quiet {
 		a.restarted = true
 	}
-	version, devices, state := a.saved, a.devices, a.state
+	version, state, installing := a.saved, a.state, a.installing
 	a.mu.Unlock()
 	switch {
 	case pending && quiet:
 		a.log.Info("restarting to apply the new configuration", "version", version, "devices", devices)
 		a.deps.Restart()
 	case pending:
-		a.log.Info("waiting for a quiet moment to restart", "version", version, "devices", devices, "alarm", state)
+		a.log.Info("waiting for a quiet moment to restart", "version", version, "devices", devices, "alarm", state, "installing", installing)
 	}
 }
 

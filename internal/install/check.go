@@ -2,9 +2,10 @@
 // removing devices, giving each one its use (zone or siren), checking that the site's
 // configuration agrees with what is paired, and watching devices during the tests.
 //
-// The command-line tool uses it today, the local web console will later. It knows no
-// adapter and no configuration file: the program gives it a publisher and the
-// messages, and translates the site from and to the hub's configuration.
+// The command-line tool (cmd/safehome-install) and the local console
+// (internal/consoleapp) both sit on it. It knows no adapter and no configuration file:
+// the program gives it a publisher and the messages (Session), and the site's files
+// behind the Sites port (Editor).
 package install
 
 import (
@@ -19,18 +20,6 @@ import (
 	"safehome/internal/contract"
 	"safehome/internal/engine"
 )
-
-// Zone is what a device is for: a name for people and a kind for the engine.
-type Zone struct {
-	Name string
-	Kind string
-}
-
-// Site is the use of the devices: their zones and the sirens.
-type Site struct {
-	Zones    map[string]Zone
-	SirenIDs []string
-}
 
 // Level says how serious a finding is.
 type Level string

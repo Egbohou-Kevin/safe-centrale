@@ -118,7 +118,8 @@ func (h *Hub) installFollowsAlarm(now time.Time) {
 }
 
 // closeInstall ends the mode. If the installer changed the zones or the sirens, the
-// hub restarts to load them, at a quiet moment. It runs on the engine's loop.
+// configuration's application (internal/configapp), which follows the mode, has the
+// hub restart to load them at a quiet moment. It runs on the engine's loop.
 func (h *Hub) closeInstall(now time.Time, reason string) {
 	if !h.inst.open {
 		return
@@ -127,10 +128,6 @@ func (h *Hub) closeInstall(now time.Time, reason string) {
 	h.stopInstallTimer()
 	h.log.Info("installation mode closed", "reason", reason)
 	h.publishInstall(now, reason)
-	if h.deps.DevicesChanged != nil && h.deps.DevicesChanged() {
-		h.log.Info("the zones or the sirens changed: the hub restarts to apply them at a quiet moment")
-		h.deps.RestartWhenQuiet()
-	}
 }
 
 // quietTamper drops the tamper alerts while the installation mode is open: the

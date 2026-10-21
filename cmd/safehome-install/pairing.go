@@ -3,11 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"safehome/internal/contract"
-	"safehome/internal/hubconfig"
 	"safehome/internal/install"
 )
 
@@ -54,41 +52,24 @@ func (c *command) pair(ctx context.Context, s *install.Session) error {
 }
 
 func (c *command) remove(ctx context.Context, s *install.Session) error {
-	id := c.args[0]
-	site, err := hubconfig.ReadSite(c.path)
-	if err != nil {
+	id, editor := c.args[0], c.editor()
+	if _, err := editor.CheckRemoval(id); err != nil {
 		return err
-	}
-	z, zoned := site.Zones[id]
-	siren := slices.Contains(site.SirenIDs, id)
-	delete(site.Zones, id)
-	site.SirenIDs = slices.DeleteFunc(site.SirenIDs, func(s string) bool { return s == id })
-	// A removal cannot be undone (the device would have to be paired again, with a new
-	// id): make sure the configuration can follow before doing it.
-	if zoned || siren {
-		if err := hubconfig.CheckSite(c.path, site); err != nil {
-			return fmt.Errorf("%s cannot be removed yet, the configuration could not follow (add its replacement first): %w", id, err)
-		}
 	}
 	if err := s.Remove(ctx, id); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.stdout, "%s removed from the network for good\n", id)
-	if !zoned && !siren {
-		return nil
+	u, err := editor.FinishRemoval(id)
+	if err != nil || !u.Used() {
+		return err
 	}
-	if err := hubconfig.WriteSite(c.path, site); err != nil {
-		return fmt.Errorf("the device is removed but the configuration still uses it: %w", err)
+	if u.Zone != nil {
+		fmt.Fprintf(c.stdout, "zone %q removed from the configuration\n", u.Zone.Name)
 	}
-	if zoned {
-		fmt.Fprintf(c.stdout, "zone %q removed from the configuration\n", z.Name)
-	}
-	if siren {
+	if u.Siren {
 		fmt.Fprintln(c.stdout, "siren removed from the configuration")
 	}
 	fmt.Fprintln(c.stdout, restartHint)
 	return nil
 }
-
-// registered finds a device in the registry. With -force, a device the registry does
-// not know (one of another adapter) is accepted unchecked.

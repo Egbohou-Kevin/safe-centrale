@@ -104,15 +104,13 @@ func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr
 	ids := contract.NewIDGenerator()
 	pub := &service.Publisher{}
 	restart := service.NewRestart()
-	var conf *configapp.App // built below; the hub calls it only once running
-	h, err := newHub(cfg, hub.Deps{Store: store, Publisher: pub, NewID: ids.New, Logger: log,
-		RestartWhenQuiet: func() { conf.RestartWhenQuiet() }})
+	h, err := newHub(cfg, hub.Deps{Store: store, Publisher: pub, NewID: ids.New, Logger: log})
 	if err != nil {
 		log.Error("cannot start the hub", "err", err)
 		return 1
 	}
 	log.Info("starting", "site", cfg.Hub.Site, "broker", cfg.BrokerURL, "version", version)
-	conf, err = newConfigApp(cfg, configPath, configapp.Deps{Store: store, Publisher: pub, NewID: ids.New, Logger: log,
+	conf, err := newConfigApp(cfg, configPath, configapp.Deps{Store: store, Publisher: pub, NewID: ids.New, Logger: log,
 		Restart: restart.Ask})
 	if err != nil {
 		log.Error("cannot start the configuration from the cloud", "err", err)
@@ -125,15 +123,24 @@ func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr
 func newHub(cfg hubconfig.Result, deps hub.Deps) (*hub.Hub, error) {
 	deps.Clock = driver.SystemClock()
 	deps.ClockSynced = sysclock.Synced
-	// The installer changed the zones or the sirens (the local console, the
-	// command-line tool): restart to load them, as for a configuration from the cloud.
-	deps.DevicesChanged = func() bool { return hubconfig.DevicesSum(cfg.StateDir) != cfg.DevicesSum }
 	return hub.New(cfg.Hub, deps)
+}
+
+// devicesChanged says whether the installer changed the zones or the sirens (the
+// local console, the command-line tool) since the start: the hub restarts to load
+// them, as for a configuration from the cloud. A file the hub left aside counts as
+// the one it started with: it must not restart for it again and again.
+func devicesChanged(cfg hubconfig.Result) func() bool {
+	loaded := cfg.DevicesSum
+	if cfg.DevicesErr != nil {
+		loaded = hubconfig.DevicesSum(cfg.StateDir)
+	}
+	return func() bool { return hubconfig.DevicesSum(cfg.StateDir) != loaded }
 }
 
 // newConfigApp builds the application of the configuration set from the cloud:
 // checked against the hub's file, kept in the state folder, applied by restarting
-// (systemd starts the hub again).
+// (systemd starts the hub again). It restarts the hub for new zones or sirens too.
 func newConfigApp(cfg hubconfig.Result, configPath string, deps configapp.Deps) (*configapp.App, error) {
 	ccfg := configapp.DefaultConfig(cfg.Hub.Site, cfg.SiteVersion)
 	if cfg.SiteErr != nil {
@@ -150,6 +157,7 @@ func newConfigApp(cfg hubconfig.Result, configPath string, deps configapp.Deps) 
 		return err
 	}
 	deps.Save = func(d contract.ConfigSetData) error { return siteconfig.Write(cfg.StateDir, d) }
+	deps.DevicesChanged = devicesChanged(cfg)
 	return configapp.New(ccfg, deps)
 }
 
