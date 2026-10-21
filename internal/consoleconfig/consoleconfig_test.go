@@ -66,6 +66,11 @@ func TestDefaults(t *testing.T) {
 	if strings.Contains(b.String(), "k7p2m9x4q8wd") {
 		t.Fatal("the passphrase shows in the logs")
 	}
+	for _, format := range []string{"%v", "%+v", "%#v"} {
+		if s := fmt.Sprintf(format, r); strings.Contains(s, "k7p2m9x4q8wd") || !strings.Contains(s, "safehome-tg-lom-0001") {
+			t.Errorf("%s shows the passphrase, or not the network: %s", format, s)
+		}
+	}
 }
 
 func TestMistakesAreRefused(t *testing.T) {

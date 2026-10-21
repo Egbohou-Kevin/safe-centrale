@@ -85,9 +85,4 @@ func TestMistakes(t *testing.T) {
 	if _, err := Load(bad); err == nil || !strings.Contains(err.Error(), "bad.json") {
 		t.Fatalf("%v", err)
 	}
-	for _, l := range []string{"info", "warn", "warning", "error", ""} {
-		if _, err := parseLevel(l); err != nil {
-			t.Errorf("%q", l)
-		}
-	}
 }

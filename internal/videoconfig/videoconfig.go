@@ -5,19 +5,16 @@
 package videoconfig
 
 import (
-	"bytes"
 	"cmp"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
-	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"time"
 
+	"safehome/internal/configfile"
 	"safehome/internal/siteconfig"
 	"safehome/internal/video"
 	"safehome/internal/videoapp"
@@ -80,11 +77,11 @@ var cameraID = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 
 // Load reads the configuration at path.
 func Load(path string) (Result, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+	var f file
+	if err := configfile.Decode(path, &f); err != nil {
 		return Result{}, fmt.Errorf("videoconfig: %w", err)
 	}
-	r, err := parse(data)
+	r, err := build(f)
 	if err != nil {
 		return Result{}, fmt.Errorf("videoconfig: %s: %w", path, err)
 	}
@@ -126,22 +123,13 @@ func withSite(r Result) Result {
 	return merged
 }
 
-func parse(data []byte) (Result, error) {
-	var f file
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&f); err != nil {
-		return Result{}, fmt.Errorf("invalid JSON: %w", err)
-	}
-	if dec.More() {
-		return Result{}, errors.New("invalid JSON: trailing data")
-	}
+func build(f file) (Result, error) {
 	if f.StateDir == "" {
 		return Result{}, errors.New("state_dir is required (where the month's usage is kept)")
 	}
 	r := withDefaults(f)
 	var err error
-	if r.LogLevel, err = parseLevel(f.LogLevel); err != nil {
+	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
 		return Result{}, err
 	}
 	var cams []video.Camera
@@ -213,7 +201,7 @@ func videoSettings(f file, cams []video.Camera) (video.Config, error) {
 		name, value string
 		dst         *time.Duration
 	}{{"start_timeout", f.StartTimeout, &v.StartTimeout}, {"stall_after", f.StallAfter, &v.StallAfter}, {"probe_every", f.ProbeEvery, &v.ProbeEvery}} {
-		if err := duration(d.name, d.value, d.dst); err != nil {
+		if err := configfile.Duration(d.name, d.value, d.dst); err != nil {
 			return v, err
 		}
 	}
@@ -245,7 +233,7 @@ func uplink(f file, v *video.Config) error {
 	case *m == "0":
 		v.MaxLength = 0
 	default:
-		return duration("max_session", *m, &v.MaxLength)
+		return configfile.Duration("max_session", *m, &v.MaxLength)
 	}
 	return nil
 }
@@ -274,31 +262,5 @@ func checkSource(s string) error {
 	case u.Scheme != "rtsp" && u.Scheme != "rtsps":
 		return fmt.Errorf("scheme %q: use rtsp:// or rtsps://", u.Scheme)
 	}
-	return nil
-}
-
-func parseLevel(s string) (slog.Level, error) {
-	switch strings.ToLower(s) {
-	case "", "info":
-		return slog.LevelInfo, nil
-	case "debug":
-		return slog.LevelDebug, nil
-	case "warn", "warning":
-		return slog.LevelWarn, nil
-	case "error":
-		return slog.LevelError, nil
-	}
-	return 0, fmt.Errorf("log_level %q: use debug, info, warn or error", s)
-}
-
-func duration(name, value string, dst *time.Duration) error {
-	if value == "" {
-		return nil
-	}
-	d, err := time.ParseDuration(value)
-	if err != nil {
-		return fmt.Errorf("%s %q: %w (write for example 45s, 2m or 1h30m)", name, value, err)
-	}
-	*dst = d
 	return nil
 }

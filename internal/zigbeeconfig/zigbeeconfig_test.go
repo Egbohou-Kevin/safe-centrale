@@ -104,11 +104,6 @@ func TestMistakesInTheConfiguration(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "b.json") {
 		t.Errorf("the faulty profile is named: %v", err)
 	}
-	for _, l := range []string{"info", "warn", "warning", "error", ""} {
-		if _, err := parseLevel(l); err != nil {
-			t.Errorf("%q", l)
-		}
-	}
 }
 
 func TestAProfileIsReadWithItsCommands(t *testing.T) {

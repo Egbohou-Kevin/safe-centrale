@@ -3,16 +3,13 @@
 package gsmconfig
 
 import (
-	"bytes"
 	"cmp"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"strings"
 	"time"
 
+	"safehome/internal/configfile"
 	"safehome/internal/gateway"
 	"safehome/internal/gsm"
 	"safehome/internal/siteconfig"
@@ -78,13 +75,9 @@ type file struct {
 // (internal/siteconfig). One that does not fit never stops the gateway: SiteErr
 // says why it was left aside.
 func Load(path string) (Result, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+	var f file
+	if err := configfile.Decode(path, &f); err != nil {
 		return Result{}, fmt.Errorf("gsmconfig: %w", err)
-	}
-	f, err := decode(data)
-	if err != nil {
-		return Result{}, fmt.Errorf("gsmconfig: %s: %w", path, err)
 	}
 	r, err := build(f)
 	if err != nil {
@@ -120,24 +113,11 @@ func withSite(r Result, f file) Result {
 
 // Parse reads and checks a configuration.
 func Parse(data []byte) (Result, error) {
-	f, err := decode(data)
-	if err != nil {
+	var f file
+	if err := configfile.DecodeBytes(data, &f); err != nil {
 		return Result{}, err
 	}
 	return build(f)
-}
-
-func decode(data []byte) (file, error) {
-	var f file
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&f); err != nil {
-		return file{}, fmt.Errorf("invalid JSON: %w", err)
-	}
-	if dec.More() {
-		return file{}, errors.New("invalid JSON: trailing data after the configuration")
-	}
-	return f, nil
 }
 
 func build(f file) (Result, error) {
@@ -150,7 +130,7 @@ func build(f file) (Result, error) {
 		StateDir:  f.StateDir,
 	}
 	var err error
-	if r.LogLevel, err = parseLevel(f.LogLevel); err != nil {
+	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
 		return Result{}, err
 	}
 	lines, ports, err := parseLines(f.Lines)
@@ -165,7 +145,7 @@ func build(f file) (Result, error) {
 		return Result{}, err
 	}
 	r.Gateway = gateway.DefaultConfig(f.Site, g)
-	if err := duration("status_every", f.StatusEvery, &r.Gateway.StatusEvery); err != nil {
+	if err := configfile.Duration("status_every", f.StatusEvery, &r.Gateway.StatusEvery); err != nil {
 		return Result{}, err
 	}
 	if err := r.Gateway.Validate(); err != nil {
@@ -203,7 +183,7 @@ func parseDurations(f file, g *gsm.Config) error {
 		{"check_every", f.CheckEvery, &g.CheckEvery},
 		{"test_every", f.TestEvery, &g.TestEvery},
 	} {
-		if err := duration(d.name, d.value, d.dst); err != nil {
+		if err := configfile.Duration(d.name, d.value, d.dst); err != nil {
 			return err
 		}
 	}
@@ -219,36 +199,10 @@ func parseDurations(f file, g *gsm.Config) error {
 		{"max_age.other", f.MaxAge.Other, gsm.PriorityOther},
 	} {
 		v := g.MaxAge[d.p]
-		if err := duration(d.name, d.value, &v); err != nil {
+		if err := configfile.Duration(d.name, d.value, &v); err != nil {
 			return err
 		}
 		g.MaxAge[d.p] = v
 	}
 	return nil
-}
-
-func duration(name, value string, dst *time.Duration) error {
-	if value == "" {
-		return nil
-	}
-	d, err := time.ParseDuration(value)
-	if err != nil {
-		return fmt.Errorf("%s %q: %w (write for example 20s, 30s or 168h)", name, value, err)
-	}
-	*dst = d
-	return nil
-}
-
-func parseLevel(s string) (slog.Level, error) {
-	switch strings.ToLower(s) {
-	case "", "info":
-		return slog.LevelInfo, nil
-	case "debug":
-		return slog.LevelDebug, nil
-	case "warn", "warning":
-		return slog.LevelWarn, nil
-	case "error":
-		return slog.LevelError, nil
-	}
-	return 0, fmt.Errorf("log_level %q: use debug, info, warn or error", s)
 }

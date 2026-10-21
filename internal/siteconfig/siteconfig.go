@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"safehome/internal/configfile"
 	"safehome/internal/contract"
 )
 
@@ -42,7 +43,8 @@ func Read(dir string) (contract.ConfigSetData, bool, error) {
 }
 
 // Write replaces the configuration, atomically: after a power cut the file is the
-// old one or the new one, never half of each.
+// old one or the new one, never half of each. Only the state folder's owner may read
+// it.
 func Write(dir string, d contract.ConfigSetData) error {
 	if err := d.Validate(); err != nil {
 		return fmt.Errorf("siteconfig: %w", err)
@@ -51,27 +53,8 @@ func Write(dir string, d contract.ConfigSetData) error {
 	if err != nil {
 		return fmt.Errorf("siteconfig: %w", err)
 	}
-	tmp, err := os.CreateTemp(dir, "."+FileName+"-*")
-	if err != nil {
+	if err := configfile.WriteAtomic(filepath.Join(dir, FileName), data, 0o600); err != nil {
 		return fmt.Errorf("siteconfig: %w", err)
-	}
-	defer os.Remove(tmp.Name()) // gone once renamed
-	_, err = tmp.Write(data)
-	if err == nil {
-		err = tmp.Sync()
-	}
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		return fmt.Errorf("siteconfig: %w", err)
-	}
-	if err := os.Rename(tmp.Name(), filepath.Join(dir, FileName)); err != nil {
-		return fmt.Errorf("siteconfig: %w", err)
-	}
-	if f, err := os.Open(dir); err == nil {
-		f.Sync() // the rename itself reaches the disk
-		f.Close()
 	}
 	return nil
 }

@@ -6,7 +6,7 @@
 package zigbeeconfig
 
 import (
-	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,9 +15,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
+	"safehome/internal/configfile"
 	"safehome/internal/contract"
 	"safehome/internal/zigbee"
 	"safehome/internal/zigbeeapp"
@@ -77,52 +77,33 @@ type profileFile struct {
 // Load reads the configuration at path and the profiles it names. A relative
 // profiles_dir is taken from the configuration file's folder.
 func Load(path string) (Result, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+	var f file
+	if err := configfile.Decode(path, &f); err != nil {
 		return Result{}, fmt.Errorf("zigbeeconfig: %w", err)
 	}
-	r, err := parse(data, filepath.Dir(path))
+	r, err := build(f, filepath.Dir(path))
 	if err != nil {
 		return Result{}, fmt.Errorf("zigbeeconfig: %s: %w", path, err)
 	}
 	return r, nil
 }
 
-func decodeStrict(data []byte, v any) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		return fmt.Errorf("invalid JSON: %w", err)
-	}
-	if dec.More() {
-		return errors.New("invalid JSON: trailing data")
-	}
-	return nil
-}
-
-func parse(data []byte, dir string) (Result, error) {
-	var f file
-	if err := decodeStrict(data, &f); err != nil {
-		return Result{}, err
-	}
+func build(f file, dir string) (Result, error) {
 	if f.StateDir == "" {
 		return Result{}, errors.New("state_dir is required (where the adapter keeps its registry)")
 	}
 	if f.ProfilesDir == "" {
 		return Result{}, errors.New("profiles_dir is required (the folder of the device profiles)")
 	}
-	r := Result{BrokerURL: f.BrokerURL, ClientID: f.ClientID, StateDir: f.StateDir}
-	if r.BrokerURL == "" {
-		r.BrokerURL = "mqtt://127.0.0.1:1883"
+	r := Result{
+		BrokerURL: cmp.Or(f.BrokerURL, "mqtt://127.0.0.1:1883"),
+		ClientID:  cmp.Or(f.ClientID, "safehome-zigbee-"+f.Site),
+		StateDir:  f.StateDir,
 	}
-	if r.ClientID == "" {
-		r.ClientID = "safehome-zigbee-" + f.Site
-	}
-	level, err := parseLevel(f.LogLevel)
-	if err != nil {
+	var err error
+	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
 		return Result{}, err
 	}
-	r.LogLevel = level
 	if r.App, err = f.app(dir); err != nil {
 		return Result{}, err
 	}
@@ -131,11 +112,7 @@ func parse(data []byte, dir string) (Result, error) {
 
 // app builds the adapter's settings: the defaults, with what the file overrides.
 func (f file) app(dir string) (zigbeeapp.Config, error) {
-	profilesDir := f.ProfilesDir
-	if !filepath.IsAbs(profilesDir) {
-		profilesDir = filepath.Join(dir, profilesDir)
-	}
-	profiles, err := LoadProfiles(profilesDir)
+	profiles, err := LoadProfiles(configfile.Path(dir, f.ProfilesDir))
 	if err != nil {
 		return zigbeeapp.Config{}, err
 	}
@@ -159,7 +136,7 @@ func (f file) app(dir string) (zigbeeapp.Config, error) {
 		{"pair_max", f.PairMax, &app.Zigbee.PairMax},
 		{"status_every", f.StatusEvery, &app.StatusEvery},
 	} {
-		if err := duration(d.name, d.value, d.dst); err != nil {
+		if err := configfile.Duration(d.name, d.value, d.dst); err != nil {
 			return zigbeeapp.Config{}, err
 		}
 	}
@@ -195,14 +172,14 @@ func LoadProfiles(dir string) ([]zigbee.Profile, error) {
 // can produce must be one the contract allows.
 func ParseProfile(data []byte) (zigbee.Profile, error) {
 	var f profileFile
-	if err := decodeStrict(data, &f); err != nil {
+	if err := configfile.DecodeBytes(data, &f); err != nil {
 		return zigbee.Profile{}, err
 	}
 	p := zigbee.Profile{
 		Name: f.Name, Models: f.Models,
 		Capabilities: map[string]zigbee.Rule{}, Commands: map[string]zigbee.ProfileCommand{},
 	}
-	if err := duration("offline_after", f.OfflineAfter, &p.OfflineAfter); err != nil {
+	if err := configfile.Duration("offline_after", f.OfflineAfter, &p.OfflineAfter); err != nil {
 		return zigbee.Profile{}, err
 	}
 	for c, rf := range f.Capabilities {
@@ -258,30 +235,4 @@ func checkCapability(c string, r zigbee.Rule) error {
 		}
 	}
 	return nil
-}
-
-func duration(name, value string, dst *time.Duration) error {
-	if value == "" {
-		return nil
-	}
-	d, err := time.ParseDuration(value)
-	if err != nil {
-		return fmt.Errorf("%s %q: %w (write for example 3s, 10m or 4h)", name, value, err)
-	}
-	*dst = d
-	return nil
-}
-
-func parseLevel(s string) (slog.Level, error) {
-	switch strings.ToLower(s) {
-	case "", "info":
-		return slog.LevelInfo, nil
-	case "debug":
-		return slog.LevelDebug, nil
-	case "warn", "warning":
-		return slog.LevelWarn, nil
-	case "error":
-		return slog.LevelError, nil
-	}
-	return 0, fmt.Errorf("log_level %q: use debug, info, warn or error", s)
 }

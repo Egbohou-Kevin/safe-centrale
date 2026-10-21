@@ -1,7 +1,6 @@
 package hubconfig
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,7 +9,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"syscall"
+
+	"safehome/internal/configfile"
 )
 
 // DevicesFile is the file of the hub's state folder that holds the zones and the
@@ -65,7 +65,9 @@ func WriteSite(path string, s Site) error {
 	if err != nil {
 		return err
 	}
-	if err := writeDevices(f.StateDir, data); err != nil {
+	// Owned like the state folder: a tool run with sudo must not leave a file the hub
+	// cannot read.
+	if err := configfile.WriteAtomic(filepath.Join(f.StateDir, DevicesFile), data, 0o600); err != nil {
 		return fmt.Errorf("hubconfig: %w", err)
 	}
 	return nil
@@ -146,79 +148,11 @@ func readDevices(dir string) (s Site, digest string, found bool, err error) {
 	if err != nil {
 		return Site{}, "", false, fmt.Errorf("hubconfig: %w", err)
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&s); err != nil || dec.More() {
-		return Site{}, "", false, fmt.Errorf("hubconfig: %s is damaged: %v", DevicesFile, err)
+	if err := configfile.DecodeBytes(data, &s); err != nil {
+		return Site{}, "", false, fmt.Errorf("hubconfig: %s is damaged: %w", DevicesFile, err)
 	}
 	if s.Zones == nil {
 		s.Zones = map[string]Zone{}
 	}
 	return s, sum(data), true, nil
-}
-
-// writeDevices writes data next to the devices file, then renames it over: a power
-// cut leaves the old file or the new one, never half of each. The file belongs to
-// the owner of the state folder: a tool run with sudo must not leave a file the hub
-// cannot read.
-func writeDevices(dir string, data []byte) error {
-	info, err := os.Stat(dir)
-	if err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+DevicesFile+"-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name()) // nothing left behind on failure; a no-op after the rename
-	if err := fillPrivate(tmp, info, data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp.Name(), filepath.Join(dir, DevicesFile)); err != nil {
-		return err
-	}
-	if d, err := os.Open(dir); err == nil {
-		d.Sync() // the rename itself reaches the disk
-		d.Close()
-	}
-	return nil
-}
-
-// fillPrivate writes data to f, which only the owner of the folder dir may read, and
-// waits until it is on the disk.
-func fillPrivate(f *os.File, dir os.FileInfo, data []byte) error {
-	if err := ownedLike(f, dir); err != nil {
-		return err
-	}
-	if err := f.Chmod(0o600); err != nil {
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		return err
-	}
-	return f.Sync()
-}
-
-// ownedLike gives the new file the owner and group of the folder. Only root can give
-// a file away; anyone else already owns what they create in their own folder.
-func ownedLike(f *os.File, dir os.FileInfo) error {
-	want, ok := dir.Sys().(*syscall.Stat_t)
-	if !ok {
-		return nil
-	}
-	mine, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	if cur, ok := mine.Sys().(*syscall.Stat_t); ok && cur.Uid == want.Uid && cur.Gid == want.Gid {
-		return nil
-	}
-	if err := f.Chown(int(want.Uid), int(want.Gid)); err != nil {
-		return fmt.Errorf("the state folder belongs to another user: run the tool as that user (sudo -u safehome): %w", err)
-	}
-	return nil
 }

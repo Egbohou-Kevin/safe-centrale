@@ -1,0 +1,154 @@
+package configfile
+
+import (
+	"errors"
+	"io/fs"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+type sample struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+func TestDecodeBytesIsStrict(t *testing.T) {
+	var s sample
+	if err := DecodeBytes([]byte("{\"name\": \"a\", \"count\": 2}\n  \n"), &s); err != nil || s != (sample{"a", 2}) {
+		t.Fatalf("%+v %v", s, err)
+	}
+	for name, body := range map[string]string{
+		"broken":         `{"name": `,
+		"unknown key":    `{"nmae": "a"}`,
+		"wrong type":     `{"count": "two"}`,
+		"empty":          ``,
+		"second object":  `{"name": "a"} {}`,
+		"stray brace":    `{"name": "a"} }`,
+		"stray bracket":  `{"name": "a"}]`,
+		"trailing words": `{"name": "a"} and more`,
+	} {
+		err := DecodeBytes([]byte(body), &sample{})
+		if err == nil || !strings.HasPrefix(err.Error(), "invalid JSON: ") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if err := DecodeBytes([]byte(`{} {}`), &sample{}); err == nil || !strings.Contains(err.Error(), "trailing data") {
+		t.Errorf("trailing data is named: %v", err)
+	}
+}
+
+func TestDecodeNamesTheFile(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "good.json")
+	bad := filepath.Join(dir, "bad.json")
+	os.WriteFile(good, []byte(`{"name": "a"}`), 0o600)
+	os.WriteFile(bad, []byte(`{"name": 1}`), 0o600)
+	var s sample
+	if err := Decode(good, &s); err != nil || s.Name != "a" {
+		t.Fatalf("%+v %v", s, err)
+	}
+	if err := Decode(bad, &s); err == nil || !strings.HasPrefix(err.Error(), bad+": invalid JSON") {
+		t.Errorf("a file that does not decode: %v", err)
+	}
+	missing := filepath.Join(dir, "missing.json")
+	if err := Decode(missing, &s); !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), missing) {
+		t.Errorf("a missing file: %v", err)
+	}
+}
+
+func TestLevel(t *testing.T) {
+	for in, want := range map[string]slog.Level{
+		"": slog.LevelInfo, "info": slog.LevelInfo, "INFO": slog.LevelInfo, "debug": slog.LevelDebug,
+		"warn": slog.LevelWarn, "warning": slog.LevelWarn, "error": slog.LevelError,
+	} {
+		if got, err := Level(in); err != nil || got != want {
+			t.Errorf("%q: %v %v", in, got, err)
+		}
+	}
+	if _, err := Level("loud"); err == nil || !strings.Contains(err.Error(), `log_level "loud"`) {
+		t.Errorf("%v", err)
+	}
+}
+
+func TestDuration(t *testing.T) {
+	d := time.Minute
+	if err := Duration("wait", "", &d); err != nil || d != time.Minute {
+		t.Fatalf("empty keeps the default: %v %v", d, err)
+	}
+	if err := Duration("wait", "1h30m", &d); err != nil || d != 90*time.Minute {
+		t.Fatalf("%v %v", d, err)
+	}
+	err := Duration("alarm.wait", "soon", &d)
+	if err == nil || !strings.Contains(err.Error(), `alarm.wait "soon"`) || !strings.Contains(err.Error(), "write for example") {
+		t.Errorf("%v", err)
+	}
+	if d != 90*time.Minute {
+		t.Errorf("a bad value changed the setting: %v", d)
+	}
+}
+
+func TestPathAndSecret(t *testing.T) {
+	dir := t.TempDir()
+	if got := Path(dir, "a.secret"); got != filepath.Join(dir, "a.secret") {
+		t.Errorf("relative: %s", got)
+	}
+	if got := Path(dir, "/etc/a.secret"); got != "/etc/a.secret" {
+		t.Errorf("absolute: %s", got)
+	}
+	os.WriteFile(filepath.Join(dir, "a.secret"), []byte("  s3cret\n"), 0o600)
+	if s, err := Secret(dir, "a.secret"); err != nil || s != "s3cret" {
+		t.Errorf("%q %v", s, err)
+	}
+	if s, err := Secret(dir, filepath.Join(dir, "a.secret")); err != nil || s != "s3cret" {
+		t.Errorf("absolute: %q %v", s, err)
+	}
+	if _, err := Secret(dir, "missing.secret"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("%v", err)
+	}
+}
+
+func TestWriteAtomicReplacesTheFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	for _, content := range []string{"one", "two"} {
+		if err := WriteAtomic(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := os.ReadFile(path); string(got) != content {
+			t.Fatalf("got %q, want %q", got, content)
+		}
+	}
+	fi, err := os.Stat(path)
+	if err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("%v %v", fi, err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatalf("a temporary file was left: %v", entries)
+	}
+	if err := WriteAtomic(path, []byte("x"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o640 {
+		t.Errorf("perm %v", fi.Mode())
+	}
+}
+
+func TestWriteAtomicFailsCleanly(t *testing.T) {
+	if err := WriteAtomic(filepath.Join(t.TempDir(), "missing", "f.json"), []byte("x"), 0o600); err == nil {
+		t.Error("a missing folder was accepted")
+	}
+	// A folder in the way of the rename: the write fails, and nothing is left.
+	dir := t.TempDir()
+	os.Mkdir(filepath.Join(dir, "f.json"), 0o700)
+	os.WriteFile(filepath.Join(dir, "f.json", "keep"), nil, 0o600)
+	if err := WriteAtomic(filepath.Join(dir, "f.json"), []byte("x"), 0o600); err == nil {
+		t.Error("renamed over a folder")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("a temporary file was left: %v", entries)
+	}
+}

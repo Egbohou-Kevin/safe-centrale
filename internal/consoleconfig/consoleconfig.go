@@ -4,19 +4,16 @@
 package consoleconfig
 
 import (
-	"bytes"
 	"cmp"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
-	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
+	"safehome/internal/configfile"
 	"safehome/internal/consoleapp"
 	"safehome/internal/contract"
 )
@@ -28,6 +25,14 @@ type Wifi struct {
 	Passphrase string // read from passphrase_file; never printed
 	Address    string // the hub's address on it, where the page is
 }
+
+// String hides the passphrase, for %v and %+v (of a Result too).
+func (w Wifi) String() string {
+	return fmt.Sprintf("{interface:%s ssid:%q passphrase:*** address:%s}", w.Interface, w.SSID, w.Address)
+}
+
+// GoString hides the passphrase for %#v.
+func (w Wifi) GoString() string { return w.String() }
 
 // LogValue keeps the passphrase out of the logs.
 func (w Wifi) LogValue() slog.Value {
@@ -80,27 +85,18 @@ type file struct {
 // Load reads the configuration at path. A relative passphrase_file is taken from the
 // configuration file's folder.
 func Load(path string) (Result, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+	var f file
+	if err := configfile.Decode(path, &f); err != nil {
 		return Result{}, fmt.Errorf("consoleconfig: %w", err)
 	}
-	r, err := parse(data, filepath.Dir(path))
+	r, err := build(f, filepath.Dir(path))
 	if err != nil {
 		return Result{}, fmt.Errorf("consoleconfig: %s: %w", path, err)
 	}
 	return r, nil
 }
 
-func parse(data []byte, dir string) (Result, error) {
-	var f file
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&f); err != nil {
-		return Result{}, fmt.Errorf("invalid JSON: %w", err)
-	}
-	if dec.More() {
-		return Result{}, errors.New("invalid JSON: trailing data")
-	}
+func build(f file, dir string) (Result, error) {
 	r, err := parseService(f)
 	if err != nil {
 		return Result{}, err
@@ -136,7 +132,7 @@ func parseService(f file) (Result, error) {
 		return Result{}, fmt.Errorf("port %d: from 1 to 65535", r.Port)
 	}
 	var err error
-	if r.LogLevel, err = parseLevel(f.LogLevel); err != nil {
+	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
 		return Result{}, err
 	}
 	if f.PairFor != "" {
@@ -161,15 +157,10 @@ func parseWifi(w wifiFile, site, dir string) (Wifi, error) {
 	if w.PassphraseFile == "" {
 		return Wifi{}, errors.New("wifi.passphrase_file is required (the passphrase printed on the hub's label)")
 	}
-	pf := w.PassphraseFile
-	if !filepath.IsAbs(pf) {
-		pf = filepath.Join(dir, pf)
-	}
-	b, err := os.ReadFile(pf)
-	if err != nil {
+	var err error
+	if out.Passphrase, err = configfile.Secret(dir, w.PassphraseFile); err != nil {
 		return Wifi{}, fmt.Errorf("wifi.passphrase_file: %w", err)
 	}
-	out.Passphrase = strings.TrimSpace(string(b))
 	if !validPassphrase(out.Passphrase) {
 		return Wifi{}, errors.New("wifi.passphrase_file: the passphrase must be 8 to 63 printable ASCII characters (WPA2)")
 	}
@@ -189,18 +180,4 @@ func validPassphrase(s string) bool {
 		}
 	}
 	return true
-}
-
-func parseLevel(s string) (slog.Level, error) {
-	switch strings.ToLower(s) {
-	case "", "info":
-		return slog.LevelInfo, nil
-	case "debug":
-		return slog.LevelDebug, nil
-	case "warn", "warning":
-		return slog.LevelWarn, nil
-	case "error":
-		return slog.LevelError, nil
-	}
-	return 0, fmt.Errorf("log_level %q: use debug, info, warn or error", s)
 }

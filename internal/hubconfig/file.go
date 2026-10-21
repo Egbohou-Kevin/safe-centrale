@@ -1,11 +1,9 @@
 package hubconfig
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
+
+	"safehome/internal/configfile"
 )
 
 // file is the configuration file as written. Every section is optional: what is
@@ -105,29 +103,12 @@ type repeatFile struct {
 	Times int    `json:"times"`
 }
 
-// readConfig reads and decodes the file at path.
+// readConfig reads and decodes the file at path, strictly: an unknown key or
+// trailing data is an error.
 func readConfig(path string) (file, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return file{}, fmt.Errorf("hubconfig: %w", err)
-	}
-	f, err := decode(data)
-	if err != nil {
-		return file{}, fmt.Errorf("hubconfig: %s: %w", path, err)
-	}
-	return f, nil
-}
-
-// decode reads a configuration strictly: an unknown key or trailing data is an error.
-func decode(data []byte) (file, error) {
 	var f file
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&f); err != nil {
-		return file{}, fmt.Errorf("invalid JSON: %w", err)
-	}
-	if dec.More() {
-		return file{}, errors.New("invalid JSON: trailing data after the configuration")
+	if err := configfile.Decode(path, &f); err != nil {
+		return file{}, fmt.Errorf("hubconfig: %w", err)
 	}
 	return f, nil
 }

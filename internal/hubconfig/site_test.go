@@ -135,6 +135,7 @@ func TestADamagedDevicesFileNeverStopsTheHub(t *testing.T) {
 		"no siren":       `{"zones": {}, "siren_ids": []}`,
 		"unknown kind":   `{"zones": {"dev_door": {"name": "A", "kind": "garage"}}, "siren_ids": ["dev_siren1"]}`,
 		"trailing data":  `{"zones": {}, "siren_ids": ["dev_siren1"]} {}`,
+		"stray brace":    `{"zones": {}, "siren_ids": ["dev_siren1"]} }`,
 		"not an object":  `[]`,
 		"empty siren id": `{"zones": {}, "siren_ids": [""]}`,
 	} {

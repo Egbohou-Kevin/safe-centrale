@@ -11,10 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 	_ "time/tzdata" // the hub's image may have no time zone database
 
+	"safehome/internal/configfile"
 	"safehome/internal/contract"
 	"safehome/internal/hub"
 	"safehome/internal/siteconfig"
@@ -72,8 +72,8 @@ func WithSiteConfig(path string, o contract.ConfigSetData) (Result, error) {
 
 // Parse reads and checks a configuration.
 func Parse(data []byte) (Result, error) {
-	f, err := decode(data)
-	if err != nil {
+	var f file
+	if err := configfile.DecodeBytes(data, &f); err != nil {
 		return Result{}, err
 	}
 	return build(f)
@@ -177,11 +177,10 @@ func programSettings(f file) (Result, error) {
 	if r.ClientID == "" {
 		r.ClientID = "safehome-hub-" + f.Site
 	}
-	level, err := parseLevel(f.LogLevel)
-	if err != nil {
+	var err error
+	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
 		return Result{}, err
 	}
-	r.LogLevel = level
 	return r, nil
 }
 
@@ -227,18 +226,4 @@ func hubConfig(f file) (hub.Config, error) {
 		return hub.Config{}, err
 	}
 	return cfg, nil
-}
-
-func parseLevel(s string) (slog.Level, error) {
-	switch strings.ToLower(s) {
-	case "", "info":
-		return slog.LevelInfo, nil
-	case "debug":
-		return slog.LevelDebug, nil
-	case "warn", "warning":
-		return slog.LevelWarn, nil
-	case "error":
-		return slog.LevelError, nil
-	}
-	return 0, fmt.Errorf("log_level %q: use debug, info, warn or error", s)
 }

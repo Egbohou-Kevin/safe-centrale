@@ -4,16 +4,12 @@
 package maintconfig
 
 import (
-	"bytes"
 	"cmp"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"strings"
-	"time"
 
+	"safehome/internal/configfile"
 	"safehome/internal/maint"
 	"safehome/internal/maintapp"
 )
@@ -62,27 +58,18 @@ type file struct {
 
 // Load reads the configuration at path.
 func Load(path string) (Result, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+	var f file
+	if err := configfile.Decode(path, &f); err != nil {
 		return Result{}, fmt.Errorf("maintconfig: %w", err)
 	}
-	r, err := parse(data)
+	r, err := build(f)
 	if err != nil {
 		return Result{}, fmt.Errorf("maintconfig: %s: %w", path, err)
 	}
 	return r, nil
 }
 
-func parse(data []byte) (Result, error) {
-	var f file
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&f); err != nil {
-		return Result{}, fmt.Errorf("invalid JSON: %w", err)
-	}
-	if dec.More() {
-		return Result{}, errors.New("invalid JSON: trailing data")
-	}
+func build(f file) (Result, error) {
 	if f.StateDir == "" {
 		return Result{}, errors.New("state_dir is required (where a session is kept across a restart)")
 	}
@@ -93,17 +80,15 @@ func parse(data []byte) (Result, error) {
 		Tunnel:    tunnel(f),
 	}
 	var err error
-	if r.LogLevel, err = parseLevel(f.LogLevel); err != nil {
+	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
 		return Result{}, err
 	}
 	m := maint.DefaultConfig()
 	if f.Enabled != nil {
 		m.Enabled = *f.Enabled
 	}
-	if f.MaxLength != "" {
-		if m.MaxLength, err = time.ParseDuration(f.MaxLength); err != nil {
-			return Result{}, fmt.Errorf("max_length %q: %w (write for example 30m or 1h)", f.MaxLength, err)
-		}
+	if err := configfile.Duration("max_length", f.MaxLength, &m.MaxLength); err != nil {
+		return Result{}, err
 	}
 	r.App = maintapp.DefaultConfig(f.Site, m)
 	if err := r.App.Validate(); err != nil {
@@ -136,18 +121,4 @@ func checkTunnel(t Tunnel) error {
 		return errors.New("key_file and known_hosts are required (the hub's key, the bastion's host key)")
 	}
 	return nil
-}
-
-func parseLevel(s string) (slog.Level, error) {
-	switch strings.ToLower(s) {
-	case "", "info":
-		return slog.LevelInfo, nil
-	case "debug":
-		return slog.LevelDebug, nil
-	case "warn", "warning":
-		return slog.LevelWarn, nil
-	case "error":
-		return slog.LevelError, nil
-	}
-	return 0, fmt.Errorf("log_level %q: use debug, info, warn or error", s)
 }

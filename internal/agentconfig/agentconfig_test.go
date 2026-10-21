@@ -147,3 +147,19 @@ func TestMistakesAreRefused(t *testing.T) {
 		t.Error("a missing file was accepted")
 	}
 }
+
+// A password written in a cloud URL by mistake never reaches an error: errors are
+// logged.
+func TestACloudURLErrorNeverRepeatsAPassword(t *testing.T) {
+	for _, u := range []string{
+		"mqtt://site:pw123@cloud.example:1883",
+		"mqtts://site:pw123@",
+		"mqtts://site:pw123@cloud.example:8883",
+		"mqtts://site:pw123@cloud.example:port",
+	} {
+		_, err := Load(write(t, cfg(`"urls": ["`+u+`"], "password_file": "cloud.secret"`, "")))
+		if err == nil || strings.Contains(err.Error(), "pw123") || !strings.Contains(err.Error(), "cloud.urls[0]") {
+			t.Errorf("%s: %v", u, err)
+		}
+	}
+}

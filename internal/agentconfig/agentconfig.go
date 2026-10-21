@@ -5,19 +5,17 @@
 package agentconfig
 
 import (
-	"bytes"
-	"encoding/json"
+	"cmp"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"safehome/internal/agent"
 	"safehome/internal/agentapp"
+	"safehome/internal/configfile"
 )
 
 // Cloud is how to reach the cloud's broker.
@@ -89,48 +87,34 @@ type downFile struct {
 // Load reads the configuration at path. Relative password_file and ca_file are taken
 // from the configuration file's folder.
 func Load(path string) (Result, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+	var f file
+	if err := configfile.Decode(path, &f); err != nil {
 		return Result{}, fmt.Errorf("agentconfig: %w", err)
 	}
-	r, err := parse(data, filepath.Dir(path))
+	r, err := build(f, filepath.Dir(path))
 	if err != nil {
 		return Result{}, fmt.Errorf("agentconfig: %s: %w", path, err)
 	}
 	return r, nil
 }
 
-func parse(data []byte, dir string) (Result, error) {
-	var f file
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&f); err != nil {
-		return Result{}, fmt.Errorf("invalid JSON: %w", err)
-	}
-	if dec.More() {
-		return Result{}, errors.New("invalid JSON: trailing data")
-	}
+func build(f file, dir string) (Result, error) {
 	if f.StateDir == "" {
 		return Result{}, errors.New("state_dir is required (where the agent keeps its queue)")
 	}
-	// The same folder as the video service's (videoconfig).
-	r := Result{BrokerURL: f.BrokerURL, ClientID: f.ClientID, StateDir: f.StateDir, PhotoDir: filepath.Join(f.StateDir, "photos")}
-	if r.BrokerURL == "" {
-		r.BrokerURL = "mqtt://127.0.0.1:1883"
+	r := Result{
+		BrokerURL: cmp.Or(f.BrokerURL, "mqtt://127.0.0.1:1883"),
+		ClientID:  cmp.Or(f.ClientID, "safehome-agent-"+f.Site),
+		StateDir:  f.StateDir,
+		PhotoDir:  filepath.Join(f.StateDir, "photos"), // the same folder as the video service's (videoconfig)
 	}
-	if r.ClientID == "" {
-		r.ClientID = "safehome-agent-" + f.Site
-	}
-	level, err := parseLevel(f.LogLevel)
-	if err != nil {
+	var err error
+	if r.LogLevel, err = configfile.Level(f.LogLevel); err != nil {
 		return Result{}, err
 	}
-	r.LogLevel = level
-
 	if r.Cloud, err = cloud(f.Cloud, f.Site, dir); err != nil {
 		return Result{}, err
 	}
-
 	if r.App, err = appConfig(f); err != nil {
 		return Result{}, err
 	}
@@ -140,16 +124,16 @@ func parse(data []byte, dir string) (Result, error) {
 // appConfig reads the agent's settings over the defaults.
 func appConfig(f file) (agentapp.Config, error) {
 	app := agentapp.DefaultConfig(f.Site)
-	if err := duration("status_every", f.StatusEvery, &app.StatusEvery); err != nil {
+	if err := configfile.Duration("status_every", f.StatusEvery, &app.StatusEvery); err != nil {
 		return agentapp.Config{}, err
 	}
-	if err := duration("confirm_wait", f.ConfirmWait, &app.Relay.ConfirmWait); err != nil {
+	if err := configfile.Duration("confirm_wait", f.ConfirmWait, &app.Relay.ConfirmWait); err != nil {
 		return agentapp.Config{}, err
 	}
 	if q := f.Queue; q != nil {
 		setInt(&app.Relay.QueueItems, q.MaxItems)
 		setInt(&app.Relay.QueueBytes, q.MaxBytes)
-		if err := duration("queue.max_age", q.MaxAge, &app.Relay.QueueAge); err != nil {
+		if err := configfile.Duration("queue.max_age", q.MaxAge, &app.Relay.QueueAge); err != nil {
 			return agentapp.Config{}, err
 		}
 	}
@@ -174,37 +158,28 @@ func cloud(f *cloudFile, site, dir string) (Cloud, error) {
 	if f == nil || len(f.URLs) == 0 {
 		return Cloud{}, errors.New("cloud.urls is required (the cloud's broker, then its fallbacks)")
 	}
-	c := Cloud{URLs: f.URLs, ClientID: f.ClientID, Username: f.Username}
-	for _, raw := range f.URLs {
-		u, err := url.Parse(raw)
-		switch {
-		case err != nil || u.Host == "":
-			return Cloud{}, fmt.Errorf("cloud.urls: invalid URL %q", raw)
-		case u.Scheme != "mqtts" && u.Scheme != "wss":
-			return Cloud{}, fmt.Errorf("cloud.urls: %q is not encrypted, use mqtts:// or wss://", raw)
-		case u.User != nil:
-			return Cloud{}, fmt.Errorf("cloud.urls: no credentials in %q, use username and password_file", u.Redacted())
+	for i, raw := range f.URLs {
+		if err := checkCloudURL(raw); err != nil {
+			return Cloud{}, fmt.Errorf("cloud.urls[%d]: %w", i, err)
 		}
 	}
-	if c.ClientID == "" {
-		c.ClientID = "safehome-agent-" + site
-	}
-	if c.Username == "" {
-		c.Username = site
+	c := Cloud{
+		URLs:     f.URLs,
+		ClientID: cmp.Or(f.ClientID, "safehome-agent-"+site),
+		Username: cmp.Or(f.Username, site),
 	}
 	if f.PasswordFile == "" {
 		return Cloud{}, errors.New("cloud.password_file is required (the site's secret for the cloud)")
 	}
-	pw, err := os.ReadFile(relative(dir, f.PasswordFile))
-	if err != nil {
+	var err error
+	if c.Password, err = configfile.Secret(dir, f.PasswordFile); err != nil {
 		return Cloud{}, fmt.Errorf("cloud.password_file: %w", err)
 	}
-	c.Password = strings.TrimSpace(string(pw))
 	if c.Password == "" {
 		return Cloud{}, errors.New("cloud.password_file is empty")
 	}
 	if f.CAFile != "" {
-		c.CAFile = relative(dir, f.CAFile)
+		c.CAFile = configfile.Path(dir, f.CAFile)
 		if _, err := os.Stat(c.CAFile); err != nil {
 			return Cloud{}, fmt.Errorf("cloud.ca_file: %w", err)
 		}
@@ -212,36 +187,20 @@ func cloud(f *cloudFile, site, dir string) (Cloud, error) {
 	return c, nil
 }
 
-func relative(dir, path string) string {
-	if filepath.IsAbs(path) {
-		return path
+// checkCloudURL accepts an encrypted address without credentials. The errors never
+// repeat a password written in it by mistake: they end up in the logs.
+func checkCloudURL(raw string) error {
+	u, err := url.Parse(raw)
+	switch {
+	case err != nil:
+		return errors.New("invalid URL (mqtts://host:8883 or wss://host:443/mqtt)")
+	case u.Host == "":
+		return fmt.Errorf("invalid URL %q", u.Redacted())
+	case u.Scheme != "mqtts" && u.Scheme != "wss":
+		return fmt.Errorf("%q is not encrypted, use mqtts:// or wss://", u.Redacted())
+	case u.User != nil:
+		return fmt.Errorf("no credentials in %q, use username and password_file", u.Redacted())
 	}
-	return filepath.Join(dir, path)
-}
-
-func parseLevel(s string) (slog.Level, error) {
-	switch strings.ToLower(s) {
-	case "", "info":
-		return slog.LevelInfo, nil
-	case "debug":
-		return slog.LevelDebug, nil
-	case "warn", "warning":
-		return slog.LevelWarn, nil
-	case "error":
-		return slog.LevelError, nil
-	}
-	return 0, fmt.Errorf("log_level %q: use debug, info, warn or error", s)
-}
-
-func duration(name, value string, dst *time.Duration) error {
-	if value == "" {
-		return nil
-	}
-	d, err := time.ParseDuration(value)
-	if err != nil {
-		return fmt.Errorf("%s %q: %w (write for example 45s, 2m or 1h30m)", name, value, err)
-	}
-	*dst = d
 	return nil
 }
 

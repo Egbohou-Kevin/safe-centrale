@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"safehome/internal/configfile"
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
 	escwire "safehome/internal/escalation/wire"
@@ -79,19 +80,6 @@ func clock(s string) (engine.TimeOfDay, error) {
 	return engine.TimeOfDay{Hour: t.Hour(), Minute: t.Minute()}, nil
 }
 
-// duration sets dst from value, named name in the errors; empty leaves dst alone.
-func duration(name, value string, dst *time.Duration) error {
-	if value == "" {
-		return nil
-	}
-	d, err := time.ParseDuration(value)
-	if err != nil {
-		return fmt.Errorf("%s %q: %w (write for example 45s, 2m or 1h30m)", name, value, err)
-	}
-	*dst = d
-	return nil
-}
-
 // durationField is a duration of the file and the setting it goes to.
 type durationField struct {
 	name, value string
@@ -100,7 +88,7 @@ type durationField struct {
 
 func durations(fields []durationField) error {
 	for _, d := range fields {
-		if err := duration(d.name, d.value, d.dst); err != nil {
+		if err := configfile.Duration(d.name, d.value, d.dst); err != nil {
 			return err
 		}
 	}
@@ -230,7 +218,7 @@ func plan(path string, f planFile) (escalation.Plan, error) {
 	p := escalation.Plan{InternetOnly: f.InternetOnly}
 	for i, w := range f.Waves {
 		wave := escalation.Wave{SMSNow: w.SMSNow, Double: w.Double}
-		if err := duration(fmt.Sprintf("%s.waves[%d].after", path, i+1), w.After, &wave.After); err != nil {
+		if err := configfile.Duration(fmt.Sprintf("%s.waves[%d].after", path, i+1), w.After, &wave.After); err != nil {
 			return escalation.Plan{}, err
 		}
 		for _, a := range w.To {
@@ -240,11 +228,11 @@ func plan(path string, f planFile) (escalation.Plan, error) {
 	}
 	if f.Repeat != nil {
 		p.Repeat.Times = f.Repeat.Times
-		if err := duration(path+".repeat.every", f.Repeat.Every, &p.Repeat.Every); err != nil {
+		if err := configfile.Duration(path+".repeat.every", f.Repeat.Every, &p.Repeat.Every); err != nil {
 			return escalation.Plan{}, err
 		}
 	}
-	if err := duration(path+".gsm_after", f.GSMAfter, &p.GSMAfter); err != nil {
+	if err := configfile.Duration(path+".gsm_after", f.GSMAfter, &p.GSMAfter); err != nil {
 		return escalation.Plan{}, err
 	}
 	return p, nil
