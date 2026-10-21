@@ -270,6 +270,18 @@ func TestSerialPortsAreReachable(t *testing.T) {
 	}
 }
 
+// The battery module's lines and bus belong to the gpio and i2c groups on Raspberry
+// Pi OS.
+func TestTheBatteryModuleIsReachable(t *testing.T) {
+	u := readUnit(t, filepath.Join("systemd", "safehome-power.service"))
+	if got := u.get(t, "Service", "SupplementaryGroups"); got != "gpio i2c" {
+		t.Errorf("SupplementaryGroups = %q, want gpio i2c (the X728's lines and gauge)", got)
+	}
+	if slices.Contains(rawLines(t, filepath.Join("systemd", "safehome-power.service")), "PrivateDevices=yes") {
+		t.Error("PrivateDevices hides /dev/gpiochip0 and /dev/i2c-1")
+	}
+}
+
 func TestOnlyTheHubReloadsOnSIGHUP(t *testing.T) {
 	// The hub rereads its codes on SIGHUP; the other programs would exit.
 	units, err := filepath.Glob(filepath.Join("systemd", "*.service"))

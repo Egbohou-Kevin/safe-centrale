@@ -18,6 +18,8 @@ step_reset() {
 	say "fresh site"
 	systemctl stop 'safehome-*' vkit-z2m mosquitto
 	rm -rf /var/lib/safehome/* /var/lib/mosquitto/*
+	vkit-power mains present
+	vkit-power battery 4100 90
 	systemctl start mosquitto vkit-z2m
 	# Every program install.sh enabled, whatever the site runs.
 	systemctl start $(systemctl list-unit-files 'safehome-*' --state=enabled --no-legend | awk '{print $1}')
@@ -312,6 +314,51 @@ step_photo() {
 	expect bus '"type":"alarm.disarmed"' 10 "disarmed"
 }
 
+# The battery module (docs/alimentation.md): a power cut alone tells no one; the
+# battery running down does, and nearly empty the hub asks the module to shut it
+# down; the mains back are told too. The hub keeps the supply across its restart.
+step_power() {
+	say "power cut: the hub runs on its battery"
+	mark
+	vkit-power mains lost
+	expect bus 'dev_hubpower/event .*"capability":"mains","value":"lost"' 10 "the battery module tells the cut"
+	expect_retained system/health '"mains":"lost"' 20 "the hub's health shows it"
+	sleep 3
+	if found cloud '"kind":"battery_low_hub"'; then
+		check_failed "a power cut with a full battery alerts"
+	else
+		check_passed "a power cut with a full battery alerts no one"
+	fi
+
+	say "the battery runs down"
+	mark
+	vkit-power battery 3650 38
+	expect cloud '"kind":"battery_low_hub","urgency":"high","percent":38' 20 "below 40 %, the cloud gets the alert"
+	vkit-power battery 2950 9
+	expect cloud '"kind":"battery_low_hub","urgency":"critical","percent":9' 20 "below 10 %, an urgent one"
+	expect safehome-power "asking the battery module to shut the hub down" 45 "nearly empty, the hub asks the module to shut it down"
+	local held=0 _
+	for _ in $(seq 1 12); do
+		[ "$(vkit-power button)" = 1 ] && held=1 && break
+		sleep 0.25
+	done
+	sleep 4
+	if [ "$held" = 1 ] && [ "$(vkit-power button)" = 0 ]; then
+		check_passed "the module's power button is held, then let go"
+	else
+		check_failed "the module's power button is held, then let go (held=$held, now $(vkit-power button))"
+	fi
+
+	say "the mains come back"
+	mark
+	vkit-power battery 3900 60
+	vkit-power mains present
+	expect cloud '"kind":"mains_restored"' 20 "the cloud is told the power is back"
+	systemctl restart safehome-hub
+	expect_retained system/health '"mains":"present"' 30 "after a restart, the hub still shows the supply"
+	vkit-power battery 4100 90
+}
+
 # send_photo PHOTO TOKEN: the cloud tells the agent where to send a photo.
 send_photo() {
 	cloud_send photo/cmd photo.upload \
@@ -337,12 +384,6 @@ join_wifi() {
 	pkill -f "wpa_supplicant -B -i wlan1" || true
 	# Up, and the network seen by a scan, before associating: a radio just moved into
 	# the namespace is down, and the hub's network takes a few seconds to beacon.
-	$PHONE ip link set wlan1 up
-	local _
-	for _ in $(seq 1 15); do
-		$PHONE iw dev wlan1 scan 2>/dev/null | grep -q "SSID: $1\$" && break
-		sleep 2
-	done
 	$PHONE ip link set wlan1 up
 	local _
 	for _ in $(seq 1 15); do

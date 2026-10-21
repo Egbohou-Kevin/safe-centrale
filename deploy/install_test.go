@@ -273,6 +273,11 @@ func TestInstallRefusesWhatWouldBreakTheSite(t *testing.T) {
 		{"read-only system", []string{"FAKE_FSTYPE=overlay"}, (*rig).minimalSite, "read-only"},
 		{"no configuration", nil, func(*rig) {}, "no hub.json gsm.json zigbee.json agent.json cloud.secret"},
 		{"camera without go2rtc", nil, func(r *rig) { r.minimalSite(); r.site("video.json", "{}") }, "not go2rtc"},
+		{"battery module of another device", nil, func(r *rig) {
+			r.minimalSite()
+			r.site("hub.json", `{"hub_device_id": "dev_hubpower"}`)
+			r.site("power.json", `{"device_id": "dev_other"}`)
+		}, "the hub would never see a power cut"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -308,6 +313,19 @@ func TestASiteWithCamerasGetsVideo(t *testing.T) {
 		"bundle/safehome-video check -config /etc/safehome/video.json",
 		"systemctl restart safehome-video",
 	} {
+		if !slices.Contains(cmds, w) {
+			t.Errorf("did not run %q", w)
+		}
+	}
+}
+
+func TestASiteWithTheBatteryModuleGetsItsService(t *testing.T) {
+	r := newRig(t)
+	r.minimalSite()
+	r.site("hub.json", `{"site": "tg-lom-0001", "hub_device_id": "dev_hubpower"}`)
+	r.site("power.json", `{"site": "tg-lom-0001", "device_id": "dev_hubpower"}`)
+	cmds := r.mustRun()
+	for _, w := range []string{"bundle/safehome-power check -config /etc/safehome/power.json", "systemctl restart safehome-power"} {
 		if !slices.Contains(cmds, w) {
 			t.Errorf("did not run %q", w)
 		}

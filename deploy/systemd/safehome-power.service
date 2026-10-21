@@ -1,0 +1,35 @@
+[Unit]
+Description=safeHome battery module (mains and battery of the hub)
+After=mosquitto.service
+Wants=mosquitto.service
+# Restart forever: an alarm that gives up after a few failures is worse than one that keeps trying.
+StartLimitIntervalSec=0
+
+[Service]
+# The program says when it is ready, then that it still works: a program stuck for
+# 30 s is killed with SIGABRT (its goroutines go to the journal) and started again.
+Type=notify
+NotifyAccess=main
+WatchdogSec=30s
+User=safehome
+Group=safehome
+# The module's GPIO lines and I2C bus (Raspberry Pi OS gives them to these groups).
+SupplementaryGroups=gpio i2c
+ExecStart=/usr/local/bin/safehome-power run -config /etc/safehome/power.json
+Restart=always
+# A module that does not answer at start stops the program: try again, without
+# filling the journal.
+RestartSec=10
+TimeoutStopSec=15
+
+# Hardening: the program writes only its state directory.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/safehome
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target

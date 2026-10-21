@@ -36,6 +36,7 @@ programmes et leurs configurations d'exemple : même broker, même dossier d'ét
 | `safehome-agent` | L'agent de liaison avec le cloud (connexion sortante seulement) | `systemd/safehome-agent.service` |
 | `safehome-video` | La vidéo en direct (un go2rtc par session, sans port ouvert) et les photos à l'alarme (site avec caméras) | `systemd/safehome-video.service` |
 | `safehome-maint` | La maintenance à distance : un tunnel SSH sortant vers notre bastion, sur demande, une heure au plus (`maintenance.md`) | `systemd/safehome-maint.service` |
+| `safehome-power` | Le module batterie (Geekworm X728) : coupure du secteur, charge, arrêt propre avant la batterie vide (`alimentation.md`) | `systemd/safehome-power.service` |
 | `safehome-console` | La console locale : pendant le mode installation seulement, le réseau Wi-Fi de la centrale et la page de l'installateur (`security-install.md`) | `systemd/safehome-console.service`, `system/polkit-safehome-console.rules` |
 
 Réglages système : `system/journald-safehome.conf` (journaux),
@@ -48,7 +49,8 @@ d'administration, et ne peuvent écrire que dans `/var/lib/safehome`
 (`ProtectSystem=strict`). La configuration réglée depuis l'application y est gardée
 (`site-config.json`, mode 0600 : elle contient les numéros des contacts), puisque
 `/etc/safehome` est en lecture seule (voir `operations.md`). La passerelle GSM et Zigbee2MQTT ont en plus accès aux ports
-série (groupe `dialout`).
+série (groupe `dialout`), le programme du module batterie à ses broches et à son bus
+(groupes `gpio` et `i2c`).
 
 ## Disposition de la carte SD (32 Go)
 
@@ -153,6 +155,10 @@ Après redémarrage : `timedatectl` (l'heure, `Africa/Lome`, la synchronisation 
 internet) et `sudo hwclock -r` (l'heure du module). Quand internet est là, le système
 se cale dessus et met le module à l'heure. **À valider** avec le module choisi.
 
+**Module batterie (X728).** Ses réglages vont dans le même fichier : voir
+`alimentation.md`, « Réglages du système ». Le module porte peut-être sa propre
+horloge, qui dispenserait du DS3231 : **à valider** avec la carte.
+
 Le heartbeat porte `clock_ok` : c'est la ligne `System clock synchronized` de
 `timedatectl`. Avec le module, l'heure est juste dès le démarrage, mais `clock_ok`
 reste à `false` jusqu'au retour d'internet : le noyau ne connaît que la synchronisation
@@ -220,7 +226,7 @@ sudo install -m 755 go2rtc_linux_arm64 /usr/local/bin/go2rtc
 sudo apt install --no-install-recommends ffmpeg     # site avec caméras : les photos à l'alarme
 
 sudo mkdir -p /etc/safehome
-# hub.json, gsm.json, zigbee.json, agent.json, video.json, maint.json, console.json et profiles/ : partir de config/*.example.json
+# hub.json, gsm.json, zigbee.json, agent.json, video.json, maint.json, console.json, power.json et profiles/ : partir de config/*.example.json
 # console.secret : la phrase de passe du Wi-Fi de la console, pour l'étiquette (8 à 63 caractères ASCII imprimables)
 # maint.key, maint_known_hosts : la clé de la centrale et celle du bastion (maintenance.md)
 # cloud.secret : le secret du site pour le cloud, fourni à l'installation (security-install.md)
@@ -234,6 +240,7 @@ safehome-agent check  -config /etc/safehome/agent.json
 safehome-video check  -config /etc/safehome/video.json
 safehome-maint check  -config /etc/safehome/maint.json
 safehome-console check -config /etc/safehome/console.json
+safehome-power check  -config /etc/safehome/power.json
 ```
 
 Les caméras : mot de passe d'usine changé, flux secondaire réglé en H.264, accès à
@@ -368,7 +375,8 @@ Préparer un dossier avec la configuration du site :
 - toujours : `hub.json`, `gsm.json`, `zigbee.json`, `agent.json` et `cloud.secret`
   (partir de `config/*.example.json`) ;
 - si le site les utilise : `video.json`, `maint.json`, `maint_known_hosts`,
-  `console.json`.
+  `console.json`, `power.json` (module batterie : son `device_id` doit être le
+  `hub_device_id` de `hub.json`).
 
 Puis fabriquer le paquet et l'envoyer :
 
@@ -484,6 +492,8 @@ se changent à tout moment.
 | Sur la page : une zone, un test, « Terminer » | l'événement s'affiche dans Tests ; le réseau disparaît ; la centrale redémarre et la nouvelle zone déclenche l'alarme une fois armée |
 | Code installateur alarme armée | refusé comme un mauvais code ; pas de réseau |
 | `sudo ss -tlnp` pendant le mode installation | la page seulement sur `10.42.0.1:80`, rien sur l'adresse de la box |
+| Débrancher le bloc secteur du module batterie 1 min, puis rebrancher | `mains` à `lost` puis `present` sur l'appareil de la centrale (`system.health`) ; aucune alerte si la batterie reste au-dessus de 40 % |
+| Laisser la centrale sur batterie jusqu'au bout | `battery_low_hub` à 40 % puis à 10 % ; vers 3,0 V, « asking the battery module to shut the hub down » dans le journal, arrêt propre, courant coupé ; au retour du secteur, la centrale redémarre seule, dans son état |
 | `free -m` avec tout démarré | `available` au-dessus de 400 Mo |
 
 ## Limites connues

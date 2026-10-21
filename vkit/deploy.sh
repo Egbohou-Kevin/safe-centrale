@@ -29,7 +29,7 @@ mkdir -p "$work/vkit/bin"
 for tool in fakemodem fakez2m fakeupload; do
 	(cd "$repo" && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o "$work/vkit/bin/vkit-$tool" "./vkit/$tool")
 done
-cp -R "$here/systemd" "$here/cloud.conf" "$here/camera.yaml" "$here/install-kit.sh" "$work/vkit/"
+cp -R "$here/systemd" "$here/cloud.conf" "$here/camera.yaml" "$here/install-kit.sh" "$here/power.sh" "$work/vkit/"
 
 limactl shell "$VM" -- rm -rf /tmp/vkit-deploy
 limactl copy -r "$work" "$VM:/tmp/vkit-deploy"

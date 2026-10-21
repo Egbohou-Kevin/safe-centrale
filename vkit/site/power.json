@@ -1,0 +1,13 @@
+{
+  "site": "tg-lom-0001",
+  "broker_url": "mqtt://127.0.0.1:1883",
+  "client_id": "safehome-power-tg-lom-0001",
+  "state_dir": "/var/lib/safehome",
+  "log_level": "info",
+  "device_id": "dev_hubpower",
+  "gpio_chip": "pinctrl-bcm2711",
+  "mains_line": 6,
+  "cut_line": 26,
+  "i2c_bus": "/dev/i2c-vkit",
+  "cut_millivolts": 3000
+}

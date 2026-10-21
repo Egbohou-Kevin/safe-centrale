@@ -115,7 +115,7 @@ Zigbee) reste dans l'adaptateur.
 | `tamper` | `triggered`, `clear` |
 | `keypad` | `arm`, `arm_now`, `disarm`, `silence`, `postpone` (`disarm` et `silence` portent un champ `code`) |
 | `siren` | `on`, `off` |
-| `mains` | `present`, `lost` (de l'appareil `hub_device_id` de la centrale, jamais d'un profil Zigbee ; source à décider, rien ne la publie encore : voir `escalation.md`) |
+| `mains` | `present`, `lost` (de l'appareil `hub_device_id` de la centrale, publiée par `safehome-power` depuis le module batterie, jamais d'un profil Zigbee : voir `alimentation.md`) |
 | `battery` | pourcentage, 0 à 100 |
 | `link` | qualité du lien radio, 0 à 100 |
 | `availability` | `online`, `offline` (présence de l'appareil, émis par l'adaptateur) |

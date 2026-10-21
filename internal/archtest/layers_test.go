@@ -18,7 +18,7 @@ func TestDomainCoresArePure(t *testing.T) {
 		noClock: true,
 		why:     ": the domain depends on nothing but the standard library, without I/O, and inputs carry their own time",
 	}
-	for _, pkg := range []string{"engine", "health", "access", "escalation", "gsm", "zigbee", "video", "maint"} {
+	for _, pkg := range []string{"engine", "health", "access", "escalation", "gsm", "zigbee", "video", "maint", "power"} {
 		pure.check(t, pkg)
 	}
 }
@@ -60,7 +60,7 @@ func TestDriverAndAdaptersKnowNoDomain(t *testing.T) {
 }
 
 // The outbox serves every application layer of the site's programs (hub, gateway,
-// zigbeeapp, agentapp, videoapp, maintapp, configapp): it builds envelopes, so it
+// zigbeeapp, agentapp, videoapp, maintapp, powerapp, configapp): it builds envelopes, so it
 // knows the contract, and saves its counter through the driver's Store port. It
 // knows no domain and no application.
 // Its fake broker, for the applications' tests, knows only the outbox and the
@@ -108,6 +108,16 @@ func TestMaintAppKnowsNoAdapter(t *testing.T) {
 	}.check(t, "maintapp")
 }
 
+// The battery module's application layer reads the module through its own Board port:
+// it knows the power core, its translation, the contract, the driver and the outbox,
+// and no adapter (the X728 is wired by cmd/safehome-power). It listens to nothing.
+func TestPowerAppKnowsNoAdapter(t *testing.T) {
+	layer{
+		local: internal("power", "power/wire", "contract", "driver", "outbox"),
+		noStd: []string{"os", "os/exec", "net", "syscall"},
+	}.check(t, "powerapp")
+}
+
 // The configuration set from the cloud: the application that receives it knows no
 // file and no process (checking, keeping and restarting are ports, wired by
 // cmd/safehome-hub), and never reads the clock. The file that keeps it knows only the
@@ -127,7 +137,7 @@ func TestTheCloudConfigurationKnowsNoAdapter(t *testing.T) {
 // domain or application may.
 func TestConfigFileServesOnlyTheConfigurationPackages(t *testing.T) {
 	layer{noClock: true, why: ": configfile is standard-library only"}.check(t, "configfile")
-	users := []string{"agentconfig", "consoleconfig", "gsmconfig", "hubconfig", "maintconfig", "siteconfig", "videoconfig", "zigbeeconfig"}
+	users := []string{"agentconfig", "consoleconfig", "gsmconfig", "hubconfig", "maintconfig", "powerconfig", "siteconfig", "videoconfig", "zigbeeconfig"}
 	configfile := module + "/internal/configfile"
 	walkSources(t, func(rel string, f *ast.File) {
 		dir, name := filepath.Split(filepath.Dir(rel))
@@ -255,7 +265,7 @@ func TestServiceIsSharedAssemblyForThePrograms(t *testing.T) {
 // stated here for the hub, which sits above them).
 func TestNoDomainImportsTheHub(t *testing.T) {
 	hub := module + "/internal/hub"
-	for _, pkg := range []string{"engine", "health", "access", "escalation", "gsm", "zigbee", "video", "maint", "contract", "driver"} {
+	for _, pkg := range []string{"engine", "health", "access", "escalation", "gsm", "zigbee", "video", "maint", "power", "contract", "driver"} {
 		_, files := parsePackage(t, filepath.Join(root(t), "internal", pkg))
 		for name, f := range files {
 			if slices.Contains(importsOf(f), hub) {
@@ -268,7 +278,7 @@ func TestNoDomainImportsTheHub(t *testing.T) {
 // Each wire package is the only bridge between one domain core and the contract.
 // It does no I/O.
 func TestWireOnlyBridgesItsDomainAndTheContract(t *testing.T) {
-	for _, domain := range []string{"engine", "health", "escalation", "gsm", "zigbee", "video", "maint"} {
+	for _, domain := range []string{"engine", "health", "escalation", "gsm", "zigbee", "video", "maint", "power"} {
 		layer{
 			local: internal(domain, "contract"),
 			noStd: []string{"os", "net", "net/http", "database/sql"},

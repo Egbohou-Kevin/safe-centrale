@@ -271,9 +271,9 @@ Le vocabulaire commun entre les documents (français) et le code (anglais) est d
 8. **Agent de liaison** : envoie les événements au cloud avec un heartbeat, et
    garde les messages en file d'attente quand internet tombe.
 9. **Surveillance de la centrale** : coupure secteur, batterie faible, redémarrage.
-   La source de la coupure et de la batterie reste à décider (module batterie de la
-   centrale ou prise connectée) : rien ne publie encore la capacité `mains` (voir
-   `escalation.md`, « Coupures de courant »).
+   La coupure et la batterie viennent du module batterie de la centrale (Geekworm
+   X728), lu par `safehome-power`, qui éteint aussi la centrale proprement avant la
+   batterie vide (voir `alimentation.md`).
 
 ## Composants cloud
 

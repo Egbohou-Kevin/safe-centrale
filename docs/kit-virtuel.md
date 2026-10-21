@@ -22,6 +22,7 @@ d'intégration entre programmes et de comportement face aux pannes.
 | Relais vidéo du cloud | `vkit-relay` (ffmpeg qui reçoit le flux RTMP) derrière `vkit-relay-tls` (rtmps sur `127.0.0.1:1936`, certificat du faux cloud, reconnu par le système comme le serait le vrai) |
 | Stockage des photos du cloud | `vkit-fakeupload` : reçoit les `PUT` HTTPS de l'agent (certificat du faux cloud), vérifie qu'il s'agit d'un JPEG ; un jeton qui ne commence pas par `vkit-ok` est refusé (401) |
 | Bastion de maintenance | Le serveur SSH de la VM : un compte `tunnel` sans shell, la clé de la centrale limitée à son port (`permitlisten`), comme dans `maintenance.md` |
+| Module batterie (Geekworm X728) | `vkit-power` : les simulateurs du noyau `gpio-sim` (ses broches, sur une puce nommée comme celle du Pi 4) et `i2c-stub` (sa jauge à `0x36`), compilés par `up.sh` ; `safehome-power` les lit par les mêmes interfaces que sur le Pi |
 | Wi-Fi de la console, téléphone de l'installateur | Deux radios simulées par le noyau (`mac80211_hwsim`) : `wlan0` pour la centrale, `wlan1` pour le téléphone |
 
 Nos programmes tournent **sans aucune modification** : seule la configuration du site
@@ -38,12 +39,13 @@ du faux modem.
 
 ## S'en servir
 
-Sur un Mac Apple silicon, avec Lima (`brew install lima`). `deploy.sh` télécharge
+Sur un Mac Apple silicon, avec Lima (`brew install lima`). `up.sh` télécharge les sources
+de deux simulateurs du noyau (version et empreintes épinglées). `deploy.sh` télécharge
 une fois go2rtc pour la centrale (version et empreinte épinglées, gardé dans
 `~/.cache/safehome-vkit`) :
 
 ```bash
-vkit/up.sh       # crée et prépare la VM (une fois, quelques minutes)
+vkit/up.sh       # crée et prépare la VM (une fois, quelques minutes ; à relancer si prepare-pi.sh change)
 vkit/deploy.sh   # construit le paquet de l'arbre courant et l'installe, comme une mise à jour
 vkit/test.sh     # rejoue tout le scénario depuis un site vierge (une dizaine de minutes)
 vkit/test.sh arm intrusion   # ou seulement certaines étapes
@@ -54,14 +56,16 @@ Pour agir à la main sur les faux équipements, dans la VM (`limactl shell safeh
 ```bash
 echo 'sms +22870000003 1' | sudo tee /run/vkit/modem        # un SMS arrive
 echo 'unplug' | sudo tee /run/vkit/modem                    # le modem est débranché
+sudo vkit-power mains lost                                  # coupure du secteur
+sudo vkit-power battery 3650 38                             # l'accu à 3,65 V, 38 %
 echo 'network off' | sudo tee /run/vkit/modem               # plus de réseau GSM
 echo 'send 0x00158d0000000001 {"contact":false}' | sudo tee /run/vkit/zigbee  # la porte s'ouvre
 sudo systemctl stop vkit-cloud                              # coupure d'internet
 journalctl -u vkit-modem -f                                 # les SMS et appels partis
 ```
 
-Les ordres reconnus sont décrits en tête de `vkit/fakemodem/control.go` et
-`vkit/fakez2m/devices.go`.
+Les ordres reconnus sont décrits en tête de `vkit/fakemodem/control.go`,
+`vkit/fakez2m/devices.go` et `vkit/power.sh`.
 
 ## Le scénario
 
@@ -91,6 +95,10 @@ Les ordres reconnus sont décrits en tête de `vkit/fakemodem/control.go` et
     l'apprend ; une adresse refusée est signalée (`url_expired`), puis la photo
     arrive au stockage en JPEG et l'agent confirme l'envoi ; le jeton n'apparaît
     dans aucun journal.
+13. **Coupure de courant** : la coupure seule n'alerte personne ; la batterie qui
+    baisse alerte à 40 %, puis en urgence à 10 % ; presque vide, la centrale tient le
+    bouton du module pour s'éteindre proprement ; le retour du secteur est annoncé, et
+    la centrale le montre encore après son redémarrage.
 
 ## Ce qu'il a déjà trouvé
 
@@ -113,7 +121,8 @@ Quatre défauts que les tests unitaires ne voyaient pas, corrigés avec un test 
   son Wi-Fi alors que la centrale tenait le mode ouvert. Trouvé seulement en
   enchaînant les étapes du scénario.
 
-Et un détail : `pair` proposait `zone` comme étape suivante pour une sirène.
+Et deux détails : `pair` proposait `zone` comme étape suivante pour une sirène, et
+la centrale redémarrée ne montrait plus l'état du secteur tant qu'il ne changeait pas.
 
 Il a aussi conduit à l'alerte `siren_failed` : une sirène qui refuse de sonner
 pendant une alarme n'était qu'une ligne de journal.

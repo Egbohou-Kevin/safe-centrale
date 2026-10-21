@@ -22,7 +22,7 @@ vérifiés en octobre 2026) : à confirmer avant de commander.
 | Caméras | 2 | Tapo C200 ou Reolink avec flux RTSP, **en H.264** et avec un flux secondaire basse définition (pour le direct, voir `docs/video.md`) | 25-50 € pièce |
 | Routeur 4G Wi-Fi | 1 | Seulement pour un client sans box : relie les caméras et la centrale. Forfait de données à la charge du client | 40-60 € |
 | Module d'horloge à pile (RTC) | 1 | Module RTC compatible Raspberry Pi, pour garder l'heure pendant les coupures | 5-10 € |
-| Batterie de secours de la centrale | 1 | Module batterie ou UPS qui **signale son état** à la centrale : sur secteur ou sur batterie, niveau de charge (par exemple un UPS HAT pour Raspberry Pi) | 40-80 € |
+| Batterie de secours de la centrale | 1 | **Geekworm X728** (choisi le 21 octobre 2026), avec ses accus 18650 et son bloc secteur : il signale la coupure et la charge à la centrale (`docs/alimentation.md`) | 40-80 € |
 | Boîtier, câbles | | Boîtier sécurisé. La SIM et son crédit sont à la charge du client | 20-40 € |
 
 Total estimé : **395 à 625 €**, hors routeur 4G (réservé aux clients sans box).

@@ -149,14 +149,11 @@ nous et nous ne la gérons pas). Les alertes de batterie suivent la règle gén�
 internet d'abord, GSM quand internet est inutilisable. En pratique, elles partent
 donc par SMS.
 
-**Pas encore fait.** La supervision (`internal/health`) applique ces règles, mais rien
-ne publie aujourd'hui la capacité `mains` : aucun programme ne la produit, et
-`internal/zigbeeconfig` l'interdit dans les profils d'appareil. La coupure n'est donc
-jamais vue, et ni `battery_low_hub` (qui n'est envoyée que pendant une coupure) ni
-`mains_restored` ne partent. La source reste à décider : un module batterie de la
-centrale (`contract.md`) ou une prise connectée (`architecture.md`). La centrale
-attend déjà son identifiant d'appareil (`hub_device_id`, dans son fichier de
-configuration).
+**Source.** Le module batterie de la centrale (Geekworm X728) : `safehome-power`
+publie le secteur et la charge au nom de l'appareil `hub_device_id`, et éteint la
+centrale proprement avant que la batterie soit vide (`alimentation.md`).
+`internal/zigbeeconfig` interdit la capacité `mains` dans les profils d'appareil :
+seule la centrale la donne.
 
 ## Canaux interchangeables
 

@@ -10,6 +10,7 @@ src="$1"
 bundle="$src/bundle"
 
 install -m 755 "$src"/vkit/bin/vkit-* /usr/local/bin/
+install -m 755 "$src/vkit/power.sh" /usr/local/bin/vkit-power
 install -m 644 "$src"/vkit/systemd/*.service /etc/systemd/system/
 
 # The cloud's broker: its own authority and certificate, made once.
@@ -47,8 +48,16 @@ systemctl reload ssh
 # The bastion's host key, pinned by the hub (read on the bastion itself).
 echo "127.0.0.1 $(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)" >"$bundle/site/maint_known_hosts"
 
+# The battery module's devices belong to the gpio and i2c groups, as on Raspberry Pi OS.
+for g in gpio i2c; do getent group "$g" >/dev/null || groupadd --system "$g"; done
+cat >/etc/udev/rules.d/99-vkit-gpio-i2c.rules <<'RULES'
+SUBSYSTEM=="gpio", KERNEL=="gpiochip*", GROUP="gpio", MODE="0660"
+SUBSYSTEM=="i2c-dev", GROUP="i2c", MODE="0660"
+RULES
+udevadm control --reload
+
 systemctl daemon-reload
-systemctl enable --now vkit-modem vkit-cloud
+systemctl enable --now vkit-modem vkit-cloud vkit-power
 "$bundle/deploy/install.sh"
 systemctl enable --now vkit-z2m vkit-camera vkit-relay vkit-relay-tls vkit-upload
 

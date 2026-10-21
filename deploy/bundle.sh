@@ -6,7 +6,7 @@
 #
 #   -v VERSION  written into the programs (safehome-hub version)
 #   -s SITE     the site's configuration: hub.json, gsm.json, zigbee.json, agent.json,
-#               cloud.secret, and video.json, maint.json, maint_known_hosts if used
+#               cloud.secret, and video.json, maint.json, maint_known_hosts, power.json if used
 #   -g GO2RTC   go2rtc for linux/arm64, checked beforehand (site with cameras only)
 #
 # Then: scp -r dist/tg-lom-0001 admin@safehome-tg-lom-0001:safehome

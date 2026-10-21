@@ -1,0 +1,11 @@
+[Unit]
+Description=Virtual kit: the battery module (gpio-sim and i2c-stub as an X728)
+Before=safehome-power.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/vkit-power setup
+
+[Install]
+WantedBy=multi-user.target

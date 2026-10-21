@@ -17,6 +17,36 @@ kernel="${kernel#/boot/vmlinuz-}"
 echo "GRUB_DEFAULT=\"$sub>gnulinux-$kernel-advanced-${sub#gnulinux-advanced-}\"" >/etc/default/grub.d/99-safehome-vkit.cfg
 update-grub
 
+# The battery module's lines and fuel gauge (vkit-power): the kernel's simulators,
+# gpio-sim and i2c-stub, which Debian does not build. Their sources, pinned, are built
+# for the standard kernel. irq_sim (which gpio-sim needs, not built either) goes into
+# gpio-sim's module, with the one call to a function the kernel does not export
+# replaced by its exported equivalent.
+KERNEL_TAG=v6.12.113
+KERNEL_SOURCES=(
+	"drivers/gpio/gpio-sim.c e97b27cb38d9f13245eafd983bbc8d2b97837e052d4a7c65c7960eefd026b909"
+	"drivers/i2c/i2c-stub.c da8d98eeb24b6c306b630a94a02655e84713f73df375894ca7a4a17e86ec1a69"
+	"kernel/irq/irq_sim.c 808a37813c4f58a567b22f30c408b912042e137572e7e143f1f59274387de879"
+)
+if [ "v${kernel%%+*}" != "$KERNEL_TAG" ]; then
+	echo "prepare-pi.sh: the simulators' sources are pinned for $KERNEL_TAG, the kernel is $kernel: update KERNEL_TAG and the digests" >&2
+	exit 1
+fi
+apt-get install -y -q "linux-headers-$kernel" build-essential i2c-tools
+sim="$(mktemp -d)"
+for entry in "${KERNEL_SOURCES[@]}"; do
+	read -r path digest <<<"$entry"
+	curl -fsSL -o "$sim/${path##*/}" "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/$path?h=$KERNEL_TAG"
+	echo "$digest  $sim/${path##*/}" | sha256sum -c - >/dev/null
+done
+mv "$sim/gpio-sim.c" "$sim/gpio-sim-main.c"
+sed -i 's/handle_simple_irq(irq_to_desc(irqnum));/generic_handle_irq(irqnum);/' "$sim/irq_sim.c"
+printf 'obj-m += gpio-sim.o i2c-stub.o\ngpio-sim-y := gpio-sim-main.o irq_sim.o\n' >"$sim/Kbuild"
+make -s -C "/lib/modules/$kernel/build" M="$sim" modules
+install -D -m 644 -t "/lib/modules/$kernel/updates/vkit" "$sim/gpio-sim.ko" "$sim/i2c-stub.ko"
+depmod "$kernel"
+rm -rf "$sim"
+
 # Two simulated Wi-Fi radios (wlan0 for the console's hotspot, wlan1 for a phone)
 # and a software watchdog in place of the Pi's.
 printf 'mac80211_hwsim\nsoftdog\n' >/etc/modules-load.d/safehome-vkit.conf

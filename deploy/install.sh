@@ -16,10 +16,10 @@ set -euo pipefail
 ROOT="${SAFEHOME_ROOT:-}"
 
 # The services under cmd/, and the tools run by hand (deploy_test.go checks both lists).
-PROGRAMS="hub gsm zigbee agent video maint console"
+PROGRAMS="hub gsm zigbee agent video maint console power"
 TOOLS="install"
-# Every site runs these; video (cameras), maint (remote maintenance) and console (the
-# local console) only when their configuration is there.
+# Every site runs these; video (cameras), maint (remote maintenance), console (the
+# local console) and power (the battery module) only when their configuration is there.
 REQUIRED="hub gsm zigbee agent"
 
 BUNDLE="$(cd "$(dirname "$0")/.." && pwd)"
@@ -66,6 +66,15 @@ configured cloud.secret || missing="$missing cloud.secret"
 has() { case " $enabled " in *" $1 "*) return 0 ;; esac; return 1; }
 if has video && [ ! -x "$BUNDLE/bin/go2rtc" ] && [ ! -x "$BIN/go2rtc" ]; then
 	fail "video.json is there but not go2rtc: give it to deploy/bundle.sh (-g)"
+fi
+# json_value KEY FILE: a string value of a configuration file (enough for an id).
+json_value() { sed -n 's/.*"'"$1"'": *"\([^"]*\)".*/\1/p' "$2" | head -n 1; }
+site_file() { if [ -f "$SITE/$1" ]; then echo "$SITE/$1"; else echo "$ETC/$1"; fi; }
+if has power; then
+	hub_device="$(json_value hub_device_id "$(site_file hub.json)")"
+	power_device="$(json_value device_id "$(site_file power.json)")"
+	[ "$hub_device" = "$power_device" ] ||
+		fail "power.json device_id ($power_device) is not hub.json hub_device_id ($hub_device): the hub would never see a power cut"
 fi
 say "programs to run:$enabled"
 

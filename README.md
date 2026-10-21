@@ -36,6 +36,8 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/video/wire` | La traduction entre la vidéo et le contrat |
 | `internal/maint` | La maintenance à distance (huitième domaine) : une session à la fois, une heure au plus, reprise après une coupure du tunnel |
 | `internal/maint/wire` | La traduction entre la maintenance et le contrat |
+| `internal/power` | Le module batterie de la centrale (neuvième domaine) : coupure du secteur confirmée après quelques secondes, charge annoncée par paliers, arrêt propre avant la batterie vide |
+| `internal/power/wire` | La traduction entre le module batterie et le contrat (secteur et batterie de l'appareil `hub_device_id`) |
 | `internal/agent` | Le cœur de l'agent de liaison : file pour le cloud à priorités et bornée, contrôle de ce qui descend du cloud, délai de prise en charge des alertes. Sans entrées-sorties ni horloge, il ne connaît que le contrat |
 
 ### Les couches application
@@ -48,6 +50,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/agentapp` | La couche application de l'agent : envoi au cloud avec reprise, republication sur la centrale, `agent.status` |
 | `internal/videoapp` | La couche application de la vidéo : démarre et arrête les flux par le port `Streamer`, compte les octets, publie `video.session` et `video.status` |
 | `internal/maintapp` | La couche application de la maintenance : ouvre et ferme le tunnel par le port `Tunneler`, publie `maint.session` |
+| `internal/powerapp` | La couche application du module batterie : lit le module par le port `Board` chaque seconde, publie le secteur et la batterie de la centrale, demande l'arrêt |
 | `internal/install` | La couche application de l'installateur : appairage, retrait, zones et sirènes (seul à modifier le site : `Editor`, port `Sites`), vérification de la configuration contre les appareils appairés, tests en direct. L'outil en ligne de commande et la console locale s'en servent |
 | `internal/consoleapp` | La couche application de la console locale : suit le mode installation, allume le Wi-Fi de la centrale et sert la page pendant qu'il dure, fait l'appairage, les zones et les sirènes (par `internal/install`), les codes des contacts (et retire ceux d'anciens contacts) et les tests. Elle déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`) |
 | `internal/consoleapp/web` | La page de la console : formulaires HTML en français, lisibles sur un téléphone, rien de chargé d'ailleurs, seulement à l'adresse de la centrale sur son réseau |
@@ -74,6 +77,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/agentconfig` | Lecture de la configuration de l'agent et du secret du cloud |
 | `internal/videoconfig` | Lecture de la configuration de la vidéo (caméras, liaison, plafond) |
 | `internal/maintconfig` | Lecture de la configuration de la maintenance |
+| `internal/powerconfig` | Lecture de la configuration du module batterie |
 | `internal/consoleconfig` | Lecture de la configuration de la console et de la phrase de passe de son Wi-Fi |
 
 ### Les adaptateurs
@@ -91,6 +95,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/adapter/pidfile` | Empêche un programme de tourner deux fois sur le même état |
 | `internal/adapter/go2rtc` | L'adaptateur go2rtc : un processus par session, piloté sur un socket Unix (bibliothèque standard seulement) ; `go2rtctest` est un faux go2rtc pour les tests |
 | `internal/adapter/sshtunnel` | Le tunnel : le client OpenSSH vers le bastion (`ssh -R`), bastion épinglé, aucune configuration lue |
+| `internal/adapter/x728` | Le module batterie Geekworm X728 : ligne du secteur et bouton d'alimentation par l'interface GPIO de Linux, jauge sur le bus I2C, bibliothèque standard seule |
 | `internal/adapter/hotspot` | Le réseau Wi-Fi propre à la centrale, créé et supprimé par `nmcli` (NetworkManager), jamais démarré au boot (bibliothèque standard seulement) |
 
 ### Les programmes
@@ -103,6 +108,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `cmd/safehome-agent` | Le programme de l'agent de liaison |
 | `cmd/safehome-video` | Le programme de la vidéo en direct |
 | `cmd/safehome-maint` | Le programme de la maintenance à distance |
+| `cmd/safehome-power` | Le programme du module batterie |
 | `cmd/safehome-console` | Le programme de la console locale |
 | `cmd/safehome-install` | L'outil de l'installateur, en ligne de commande sur la centrale |
 | `deploy/` | Les fichiers à poser sur la centrale (services systemd, Mosquitto, Zigbee2MQTT, journaux, chien de garde). Aussi `bundle.sh`, qui fabrique le paquet d'un site, et `install.sh`, qui l'installe ou le met à jour sur la centrale. Des tests vérifient que ces fichiers sont d'accord avec les programmes et font tourner le script sur un faux système |
