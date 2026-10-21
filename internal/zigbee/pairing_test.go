@@ -35,6 +35,24 @@ func TestPairingAcceptsAModelWithAProfile(t *testing.T) {
 	}
 }
 
+// The Heiman siren of the catalogue reports nothing when it sounds: it only takes
+// siren.on and siren.off. It is still a siren, or no installer could make it one.
+func TestADeviceDrivenAsASirenIsASiren(t *testing.T) {
+	quiet := sirenProfile()
+	quiet.Capabilities = map[string]Rule{"link": {From: "linkquality", Max: 255}}
+	for name, cmd := range quiet.Commands {
+		cmd.Confirm = nil
+		quiet.Commands[name] = cmd
+	}
+	h := newHarness(t, func(c *Config) { c.Profiles = []Profile{quiet} })
+	h.ids = []string{"dev_s1"}
+	h.do(Pair{Now: h.now, Ref: "p1", For: time.Minute})
+	added, ok := find[Added](h.do(Interviewed{Now: h.now, IEEE: "0x04", Model: "HS2WD-E", OK: true}))
+	if !ok || !reflect.DeepEqual(added.Device.Capabilities, []string{"link", "siren"}) {
+		t.Fatalf("%+v", added)
+	}
+}
+
 func TestPairingIsBoundedAndCanBeClosed(t *testing.T) {
 	h := newHarness(t)
 	if out := h.do(Pair{Now: h.now, Ref: "p", For: time.Hour}); out[0] != (PermitJoin{Seconds: 600}) {

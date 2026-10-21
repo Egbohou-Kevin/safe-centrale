@@ -74,16 +74,17 @@ func TestDeviceMessagesBecomeEventsAndStates(t *testing.T) {
 	r.pair("dev_door", "0x01", "MCCGQ11LM")
 	r.z2m("dev_door", `{"contact":true,"battery":90,"linkquality":100}`, false)
 	r.settle()
-	if len(r.broker.On(contract.DeviceEventTopic(site, "dev_door"))) != 1 {
-		t.Fatal("only the battery is an event at first: the first door state is not a change")
+	first := len(r.broker.On(contract.DeviceEventTopic(site, "dev_door")))
+	if first != 2 {
+		t.Fatalf("the first door state and the battery are events: %d", first)
 	}
 	contact := r.broker.On(contract.DeviceStateTopic(site, "dev_door", "contact"))
 	if len(contact) != 1 || !contact[0].Retain {
 		t.Fatalf("%+v", contact)
 	}
 	r.z2m("dev_door", `{"contact":false,"battery":90,"linkquality":100}`, false)
-	drivertest.WaitFor(t, "the door event", func() bool { return len(r.broker.On(contract.DeviceEventTopic(site, "dev_door"))) == 2 })
-	ev := r.broker.On(contract.DeviceEventTopic(site, "dev_door"))[1]
+	drivertest.WaitFor(t, "the door event", func() bool { return len(r.broker.On(contract.DeviceEventTopic(site, "dev_door"))) == first+1 })
+	ev := r.broker.On(contract.DeviceEventTopic(site, "dev_door"))[first]
 	d, _ := contract.DecodeData[contract.DeviceEventData](ev.Env)
 	if d.Capability != "contact" || d.StringValue() != "open" || ev.Retain {
 		t.Fatalf("%+v", d)

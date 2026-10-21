@@ -69,6 +69,17 @@ func (s *Sim) Push(line string) {
 	s.write(c, line)
 }
 
+// Unplug closes the connection from the modem's side, as pulling a USB modem out
+// does; the next Open plugs it back.
+func (s *Sim) Unplug() {
+	s.Mu.Lock()
+	c := s.conn
+	s.Mu.Unlock()
+	if c != nil {
+		c.Close()
+	}
+}
+
 // Commands lists the commands received so far.
 func (s *Sim) Commands() []string {
 	s.Mu.Lock()

@@ -6,6 +6,7 @@ import (
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -137,8 +138,18 @@ func fill(v any, durationS int) any {
 	return v
 }
 
-// capabilities lists what the profile reads, sorted.
-func (p Profile) capabilities() []string { return slices.Sorted(maps.Keys(p.Capabilities)) }
+// capabilities lists what the device is, sorted: what the profile reads, and what
+// its commands drive ("siren.on" makes it a siren). A siren that reports nothing
+// when it sounds is still a siren.
+func (p Profile) capabilities() []string {
+	caps := maps.Clone(p.Capabilities)
+	for name := range p.Commands {
+		if c, verb, _ := strings.Cut(name, "."); verb == "on" || verb == "off" {
+			caps[c] = Rule{}
+		}
+	}
+	return slices.Sorted(maps.Keys(caps))
+}
 
 func (p Profile) validate() error {
 	switch {

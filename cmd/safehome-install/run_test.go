@@ -260,10 +260,10 @@ func TestAnInstallation(t *testing.T) {
 
 	// Pairing a new contact.
 	a.mu.Lock()
-	a.join = []contract.RegistryDevice{dev("dev_k7p2", "contact", "battery")}
+	a.join = []contract.RegistryDevice{dev("dev_k7p2", "contact", "battery"), dev("dev_s2", "siren", "link")}
 	a.mu.Unlock()
 	code, out, errb = cli(ctx, "pair", "-config", path, "-for", "1m")
-	for _, want := range []string{"+ dev_k7p2", "next: safehome-install zone", "x refused TS0203: no profile", "network closed: 1 device(s) added"} {
+	for _, want := range []string{"+ dev_k7p2", "next: safehome-install zone", "next: safehome-install siren -config " + path + " add dev_s2", "x refused TS0203: no profile", "network closed: 2 device(s) added"} {
 		if code != 0 || !strings.Contains(out, want) {
 			t.Fatalf("pair: missing %q in %d %q %q", want, code, out, errb)
 		}

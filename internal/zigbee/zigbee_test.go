@@ -246,6 +246,17 @@ func TestTheStateSurvivesARestart(t *testing.T) {
 	}
 }
 
+// A device paired before its profile changed (the catalogue's siren, once listed
+// with "link" only) is what its profile says now, from the next start.
+func TestARestartTakesTheCapabilitiesFromTheProfile(t *testing.T) {
+	h := newHarness(t)
+	stale := Device{ID: "dev_siren", IEEE: ieeeSiren, Model: "HS2WD-E", Profile: "heiman.siren.hs2wd", Capabilities: []string{"link"}}
+	h.n.Restore(Snapshot{Devices: map[string]Device{"dev_siren": stale}})
+	if got := h.n.Devices()[0].Capabilities; !reflect.DeepEqual(got, []string{"siren"}) {
+		t.Fatalf("%v", got)
+	}
+}
+
 func TestBridgeStatus(t *testing.T) {
 	h := newHarness(t)
 	if h.n.Status().Bridge {

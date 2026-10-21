@@ -22,6 +22,7 @@ func (m *Modem) read(port io.Reader) {
 		if err != nil {
 			m.mu.Lock()
 			if m.port == port {
+				m.gone = m.gone || !m.closed // not closed by us: it went away
 				m.closed = true
 			}
 			m.mu.Unlock()

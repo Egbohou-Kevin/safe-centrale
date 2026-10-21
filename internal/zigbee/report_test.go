@@ -16,8 +16,8 @@ func TestOnlyChangesAreAnnounced(t *testing.T) {
 
 	out := h.report("dev_door", map[string]any{"contact": true})
 	ch := all[Changed](out)
-	if len(ch) != 1 || ch[0] != (Changed{DeviceID: "dev_door", Capability: "contact", Value: "closed", Since: t0, State: true}) {
-		t.Fatalf("the first value is a state, not an event: %+v", out)
+	if len(ch) != 1 || ch[0] != (Changed{DeviceID: "dev_door", Capability: "contact", Value: "closed", Since: t0, State: true, Notify: true}) {
+		t.Fatalf("the first value is a state and an event: %+v", out)
 	}
 	none(t, h.report("dev_door", map[string]any{"contact": true})) // repeated: nothing
 	h.now = h.now.Add(time.Minute)
@@ -28,6 +28,17 @@ func TestOnlyChangesAreAnnounced(t *testing.T) {
 	}
 	// A value no profile knows, a missing field, a wrong type: nothing.
 	none(t, h.report("dev_door", map[string]any{"contact": "maybe", "tamper": 3.0, "voltage": 3000.0}))
+}
+
+// Found with the virtual kit: a door paired while closed but silent until the
+// intrusion says "open" first. The alarm must hear it.
+func TestAFirstOpeningIsAnnounced(t *testing.T) {
+	h := newHarness(t)
+	h.add("dev_door", ieeeDoor, "MCCGQ11LM")
+	ch := all[Changed](h.report("dev_door", map[string]any{"contact": false}))
+	if len(ch) != 1 || ch[0].Value != "open" || !ch[0].Notify {
+		t.Fatalf("%+v", ch)
+	}
 }
 
 func TestNumbersAreScaledAndAnnouncedWhenTheyMoveEnough(t *testing.T) {

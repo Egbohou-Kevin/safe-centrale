@@ -180,6 +180,14 @@ func (n *Network) Restore(s Snapshot) {
 	if s.Pending == nil {
 		s.Pending = map[string]Pending{}
 	}
+	// What a device is comes from its profile, which may have changed since it was
+	// paired (a reading added, a fix): the saved list is not kept.
+	for id, d := range s.Devices {
+		if p, ok := n.byName[d.Profile]; ok {
+			d.Capabilities = p.capabilities()
+			s.Devices[id] = d
+		}
+	}
 	n.s = s
 	n.seen = map[string]time.Time{}
 }

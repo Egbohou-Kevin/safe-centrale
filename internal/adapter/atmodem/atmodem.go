@@ -61,7 +61,8 @@ type Modem struct {
 	o   Options
 	log *slog.Logger
 
-	cmdMu sync.Mutex // one command at a time
+	cmdMu    sync.Mutex // one command at a time
+	reviveMu sync.Mutex // one reopening at a time
 
 	mu      sync.Mutex
 	port    io.ReadWriteCloser
@@ -70,6 +71,9 @@ type Modem struct {
 	calls   chan string // call progress after ATD (BUSY, NO CARRIER...)
 	cmtFrom string      // an SMS delivered directly (+CMT): its text is the next line
 	closed  bool        // the port is closed: commands fail until connect
+	// gone: the port ended by itself (a USB modem unplugged, or reset on its own),
+	// not closed by us. The next request opens it again.
+	gone bool
 
 	inbox chan int // indexes of SMS to read
 	done  chan struct{}
@@ -121,7 +125,7 @@ func (m *Modem) connect(ctx context.Context) error {
 		port.Close()
 		return ErrClosed
 	}
-	m.port, m.closed = port, false
+	m.port, m.closed, m.gone = port, false, false
 	m.mu.Unlock()
 	go m.read(port)
 	for _, c := range setup {
@@ -133,11 +137,29 @@ func (m *Modem) connect(ctx context.Context) error {
 	return nil
 }
 
+// revive opens the port again if it went away by itself. Without it, a modem
+// unplugged and plugged back would stay lost until the gateway decides to restart
+// it, which it does only on a line idle long enough: never during an alarm, when
+// every SMS fails at once and the line stays busy.
+func (m *Modem) revive(ctx context.Context) error {
+	m.reviveMu.Lock()
+	defer m.reviveMu.Unlock()
+	m.mu.Lock()
+	gone := m.gone && !m.isDone()
+	m.mu.Unlock()
+	if !gone {
+		return nil
+	}
+	m.log.Warn("the modem's port went away, opening it again")
+	m.dropPort() // releases the dead one
+	return m.connect(ctx)
+}
+
 // dropPort closes the port; commands fail with ErrClosed until the next connect.
 func (m *Modem) dropPort() {
 	m.mu.Lock()
 	port := m.port
-	m.closed = true
+	m.closed, m.gone = true, false
 	m.mu.Unlock()
 	if port != nil {
 		port.Close()

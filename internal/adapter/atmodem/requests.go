@@ -13,6 +13,9 @@ func (m *Modem) SendSMS(ctx context.Context, number, text string) (string, error
 	if !validNumber(number) {
 		return "", fmt.Errorf("%w: invalid number", ErrUnreachable)
 	}
+	if err := m.revive(ctx); err != nil {
+		return "", err
+	}
 	lines, err := m.commandWithText(ctx, fmt.Sprintf("AT+CMGS=%q", number), clean(text))
 	if err != nil {
 		return "", err
@@ -30,6 +33,9 @@ func (m *Modem) SendSMS(ctx context.Context, number, text string) (string, error
 func (m *Modem) Call(ctx context.Context, number string, ringFor time.Duration) error {
 	if !validNumber(number) {
 		return fmt.Errorf("%w: invalid number", ErrUnreachable)
+	}
+	if err := m.revive(ctx); err != nil {
+		return err
 	}
 	m.drainCalls()
 	if _, err := m.command(ctx, "ATD"+number+";"); err != nil {
@@ -77,6 +83,9 @@ func (m *Modem) drainCalls() {
 // Check asks whether the modem answers and how the network looks. Only the
 // registration is required; the signal and the operator are best effort.
 func (m *Modem) Check(ctx context.Context) (Info, error) {
+	if err := m.revive(ctx); err != nil {
+		return Info{}, err
+	}
 	if _, err := m.command(ctx, "AT"); err != nil {
 		return Info{}, err
 	}

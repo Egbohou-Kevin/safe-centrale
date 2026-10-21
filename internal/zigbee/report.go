@@ -1,9 +1,15 @@
 package zigbee
 
+import (
+	"maps"
+	"slices"
+)
+
 // report reads a device's message. Only changes are announced: Zigbee2MQTT repeats
-// the whole state in every message. The first value of a state is recorded without
-// an event (nothing changed that anyone saw), except for numbers, which the
-// supervision needs to know. Actions are announced every time.
+// the whole state in every message. The first value of a state is announced too: a
+// live message tells the present, and a new door whose first word is "open" is an
+// opening the alarm must hear. Only retained messages (old news) are silent.
+// Actions are announced every time.
 func (n *Network) report(r Report) []Action {
 	d, ok := n.resolve(r.Name)
 	if !ok {
@@ -24,7 +30,7 @@ func (n *Network) report(r Report) []Action {
 // readFields turns the fields of a message into changes, capability by capability.
 func (n *Network) readFields(id string, p Profile, r Report) []Action {
 	var out []Action
-	for _, c := range p.capabilities() {
+	for _, c := range slices.Sorted(maps.Keys(p.Capabilities)) {
 		rule := p.Capabilities[c]
 		raw, present := r.Fields[rule.From]
 		if !present {
@@ -76,7 +82,7 @@ func (n *Network) setState(id, capability, v string, rule Rule, r Report) (Chang
 	n.s.States[id][capability] = State{Value: v, Since: r.Now}
 	return Changed{
 		DeviceID: id, Capability: capability, Value: v, Numeric: rule.numeric(), Since: r.Now,
-		State: true, Notify: !r.Retained && (known || rule.numeric()),
+		State: true, Notify: !r.Retained,
 	}, true
 }
 

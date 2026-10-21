@@ -247,8 +247,10 @@ retenu par capacité.
 Choix faits au codage :
 
 - **Premier état** : la première valeur connue d'une capacité (appareil neuf, état
-  perdu) est enregistrée sans événement : rien n'a changé aux yeux de personne. Les
-  nombres (pile, lien) sont annoncés dès la première fois, la supervision en a besoin.
+  perdu) est enregistrée **et annoncée** : un message en direct dit le présent, et
+  une porte neuve dont le premier mot est « ouverte » est une ouverture que l'alarme
+  doit entendre (trou trouvé avec le kit virtuel). Le prix, dans le cas rare d'un état
+  perdu, est un événement de plus pour une valeur que la centrale connaissait déjà.
 - **Messages retenus** : ils mettent à jour l'état sans événement, ne ramènent pas un
   appareil hors ligne, ne confirment aucune commande, et une action retenue est
   ignorée.

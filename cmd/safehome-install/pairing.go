@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"safehome/internal/contract"
@@ -26,8 +27,8 @@ func (c *command) pair(ctx context.Context, s *install.Session) error {
 		switch {
 		case n.Added != nil:
 			added++
-			fmt.Fprintf(c.stdout, "+ %s  %s  (%s)\n    next: safehome-install zone -config %s -name NAME -kind KIND %s\n",
-				n.Added.DeviceID, n.Added.Model, strings.Join(n.Added.Capabilities, ", "), c.path, n.Added.DeviceID)
+			fmt.Fprintf(c.stdout, "+ %s  %s  (%s)\n    next: %s\n", n.Added.DeviceID, n.Added.Model,
+				strings.Join(n.Added.Capabilities, ", "), c.nextStep(n.Added.DeviceID, n.Added.Capabilities))
 		case n.Rejected != nil:
 			model := n.Rejected.Model
 			if model == "" {
@@ -49,6 +50,15 @@ func (c *command) pair(ctx context.Context, s *install.Session) error {
 	}
 	fmt.Fprintf(c.stdout, "network closed: %d device(s) added\n", added)
 	return nil
+}
+
+// nextStep is the command that gives a new device its use: a siren is made one, the
+// rest get a zone.
+func (c *command) nextStep(id string, caps []string) string {
+	if slices.Contains(caps, contract.CapSiren) {
+		return fmt.Sprintf("safehome-install siren -config %s add %s", c.path, id)
+	}
+	return fmt.Sprintf("safehome-install zone -config %s -name NAME -kind KIND %s", c.path, id)
 }
 
 func (c *command) remove(ctx context.Context, s *install.Session) error {

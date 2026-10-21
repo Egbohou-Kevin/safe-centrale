@@ -250,6 +250,41 @@ func TestRestartOpensThePortAgain(t *testing.T) {
 	}
 }
 
+// Found with the virtual kit: a modem unplugged and plugged back stayed lost, and
+// every SMS of the alarm failed with "port closed".
+func TestAPortThatWentAwayIsOpenedAgain(t *testing.T) {
+	s := attest.New()
+	m, _ := openSim(t, s)
+	s.Unplug()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		m.mu.Lock()
+		gone := m.gone
+		m.mu.Unlock()
+		if gone {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the reader never saw the port go")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := m.SendSMS(context.Background(), "+22890000001", "hello"); err != nil {
+		t.Fatalf("after the modem came back: %v", err)
+	}
+	s.Mu.Lock()
+	opens, sent := s.Opens, len(s.Sent)
+	s.Mu.Unlock()
+	if opens != 2 || sent != 1 {
+		t.Fatalf("%d opens, %d sent", opens, sent)
+	}
+	// Closed on purpose, it stays closed.
+	m.Close()
+	if _, err := m.Check(context.Background()); !errors.Is(err, ErrClosed) {
+		t.Fatalf("%v", err)
+	}
+}
+
 func TestAClosedModemRefusesCommands(t *testing.T) {
 	s := attest.New()
 	m, _ := openSim(t, s)
