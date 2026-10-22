@@ -102,14 +102,18 @@ type pendingAlert struct {
 // Snapshot is the relay's state, saved after every change. The queue for the cloud
 // is saved apart, item by item, and the numbering on its own (see queue.go).
 type Snapshot struct {
-	Pending   map[string]pendingAlert `json:"pending"`   // alert.request id -> its state
-	Incidents map[string]time.Time    `json:"incidents"` // incidents seen going up -> last seen
-	Seen      []string                `json:"seen"`      // ids of the last messages from the cloud
-	Dropped   int                     `json:"dropped"`   // items that left the queue without reaching the cloud
-	Tokens    float64                 `json:"tokens"`    // the cloud's allowance of messages
-	TokensAt  time.Time               `json:"tokens_at"`
-	Photos    map[string]photo        `json:"photos,omitempty"`   // photo id -> its upload
-	Retained  map[string]string       `json:"retained,omitempty"` // retained topic -> id of the hub's last state queued (see up.go)
+	Pending map[string]pendingAlert `json:"pending"` // alert.request id -> its state
+	// GivenUp holds the alerts the hub was told failed while the cloud may still
+	// hold them (alert.request id -> when to forget it): the cloud's word on them,
+	// should it come, is late, not unknown.
+	GivenUp   map[string]time.Time `json:"given_up,omitempty"`
+	Incidents map[string]time.Time `json:"incidents"` // incidents seen going up -> last seen
+	Seen      []string             `json:"seen"`      // ids of the last messages from the cloud
+	Dropped   int                  `json:"dropped"`   // items that left the queue without reaching the cloud
+	Tokens    float64              `json:"tokens"`    // the cloud's allowance of messages
+	TokensAt  time.Time            `json:"tokens_at"`
+	Photos    map[string]photo     `json:"photos,omitempty"`   // photo id -> its upload
+	Retained  map[string]string    `json:"retained,omitempty"` // retained topic -> id of the hub's last state queued (see up.go)
 }
 
 // Relay is the agent's core.
@@ -147,6 +151,7 @@ func (r *Relay) Snapshot() Snapshot {
 	s := r.s
 	s.Seen = slices.Clone(s.Seen)
 	s.Pending = maps.Clone(s.Pending)
+	s.GivenUp = maps.Clone(s.GivenUp)
 	s.Incidents = maps.Clone(s.Incidents)
 	s.Photos = maps.Clone(s.Photos)
 	s.Retained = maps.Clone(s.Retained)
@@ -158,6 +163,9 @@ func (r *Relay) Snapshot() Snapshot {
 func (r *Relay) Restore(s Snapshot) {
 	if s.Pending == nil {
 		s.Pending = map[string]pendingAlert{}
+	}
+	if s.GivenUp == nil {
+		s.GivenUp = map[string]time.Time{}
 	}
 	if s.Incidents == nil {
 		s.Incidents = map[string]time.Time{}
@@ -207,6 +215,9 @@ func (r *Relay) NextWake() time.Time {
 		} else {
 			soonest(p.Deadline)
 		}
+	}
+	for _, at := range r.s.GivenUp {
+		soonest(at)
 	}
 	for _, at := range r.s.Incidents {
 		soonest(at.Add(incidentMemory))
@@ -275,12 +286,22 @@ func (r *Relay) failUnconfirmed(match func(pendingAlert) bool) []Action {
 	slices.Sort(refs) // the same order every time
 	var out []Action
 	for _, ref := range refs {
-		delete(r.s.Pending, ref)
+		fail := r.giveUp(ref)
 		_, drop := r.removeIf(func(it Item) bool { return it.ID == ref })
 		out = append(out, drop...)
-		out = append(out, FailAlert{Ref: ref})
+		out = append(out, fail)
 	}
 	return out
+}
+
+// giveUp stops following an alert and returns the action that tells the hub it
+// failed. The cloud may hold it all the same (its broker keeps a session while the
+// cloud restarts): the ref is remembered as long as the alert would have been, so
+// that the cloud's word on it is recognised as late, and dropped.
+func (r *Relay) giveUp(ref string) Action {
+	r.s.GivenUp[ref] = r.s.Pending[ref].Forget
+	delete(r.s.Pending, ref)
+	return FailAlert{Ref: ref}
 }
 
 // expire does what time has made due: unconfirmed alerts fail, items too old leave
@@ -290,6 +311,11 @@ func (r *Relay) expire(now time.Time) []Action {
 	for ref, p := range r.s.Pending {
 		if p.Confirmed && !now.Before(p.Forget) {
 			delete(r.s.Pending, ref)
+		}
+	}
+	for ref, at := range r.s.GivenUp {
+		if !now.Before(at) {
+			delete(r.s.GivenUp, ref)
 		}
 	}
 	for inc, at := range r.s.Incidents {

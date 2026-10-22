@@ -143,8 +143,7 @@ func (r *Relay) bound() []Action {
 		size -= len(it.Payload)
 		gone = append(gone, it)
 		if _, ok := r.s.Pending[it.ID]; ok {
-			delete(r.s.Pending, it.ID) // an alert that will not reach the cloud: the hub must know
-			out = append(out, FailAlert{Ref: it.ID})
+			out = append(out, r.giveUp(it.ID)) // an alert that will not reach the cloud: the hub must know
 		}
 	}
 	return append(out, r.dropped(gone, "queue full")...)

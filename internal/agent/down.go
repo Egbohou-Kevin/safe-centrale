@@ -34,6 +34,10 @@ func (r *Relay) cloud(c Cloud) []Action {
 	case !r.allow(c.Now):
 		return refuse("too many messages from the cloud")
 	}
+	if late, ok := r.lateResult(env); ok {
+		r.markSeen(env.ID)
+		return []Action{late}
+	}
 	if reason := r.check(c.Now, env); reason != "" {
 		return refuse(reason)
 	}
@@ -139,6 +143,19 @@ func (r *Relay) alertResult(env contract.Envelope) string {
 		return "unknown status " + d.Status
 	}
 	return ""
+}
+
+// lateResult tells whether a message is the cloud's word on an alert the agent gave
+// up on: the hub already turned to the GSM, so it never reaches the hub.
+func (r *Relay) lateResult(env contract.Envelope) (Late, bool) {
+	if env.Type != contract.TypeAlertResult {
+		return Late{}, false
+	}
+	d, err := contract.DecodeData[contract.AlertResultData](env)
+	if err != nil || r.s.GivenUp[d.Ref].IsZero() {
+		return Late{}, false
+	}
+	return Late{Ref: d.Ref, Status: d.Status}, true
 }
 
 // alertAck checks an acknowledgement from the app: only for an incident the cloud

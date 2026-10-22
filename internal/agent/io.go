@@ -89,6 +89,13 @@ type Refused struct {
 	Reason string
 }
 
+// Late: the cloud's word on an alert the hub was already told failed (it turned to
+// the GSM), dropped: it would disturb the escalation. For the logs.
+type Late struct {
+	Ref    string // the alert.request
+	Status string
+}
+
 // Dropped: items left the queue without reaching the cloud (full, too old, refused
 // by the cloud's broker).
 type Dropped struct {
@@ -100,6 +107,7 @@ func (PublishLocal) isAction()  {}
 func (FailAlert) isAction()     {}
 func (StatusChanged) isAction() {}
 func (Refused) isAction()       {}
+func (Late) isAction()          {}
 func (Dropped) isAction()       {}
 func (Replayed) isAction()      {}
 

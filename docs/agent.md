@@ -129,7 +129,12 @@ Quand le moteur demande une alerte par application ou WhatsApp :
 2. Le cloud confirme qu'il la prend en charge. Si l'agent n'a pas cette
    confirmation en **10 secondes**, il publie `alert.result` avec `failed` et la
    raison `no_uplink`. Le moteur passe alors au GSM, comme prévu dans
-   `escalation.md`.
+   `escalation.md`. De même si internet se coupe avant la confirmation. Le
+   cloud peut pourtant avoir l'alerte (son broker la garde pendant qu'il
+   redémarre) : l'agent se souvient une heure de celles qu'il a abandonnées, et
+   les résultats qui arrivent ensuite pour elles ne sont pas republiés (un `sent`
+   ou un `delivered` tardif dérangerait l'escalade, déjà passée au GSM). Le
+   journal le dit en simple information, pas comme un refus.
 3. Le cloud renvoie ensuite `delivered` quand la notification arrive, puis
    l'acquittement quand un contact répond depuis l'application. L'agent les
    republie en `alert.result` et `alert.ack` sur le broker local.

@@ -40,6 +40,9 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action)
 			a.publishStatus(now, v.Status)
 		case agent.Refused:
 			a.log.Warn("refused a message from the cloud", "topic", v.Topic, "reason", v.Reason)
+		case agent.Late:
+			a.log.Info("the cloud's word on an alert came after the hub turned to the GSM: dropped",
+				"ref", v.Ref, "status", v.Status)
 		case agent.Dropped:
 			a.log.Error("messages for the cloud were dropped", "count", v.Count, "reason", v.Reason)
 		case agent.Replayed:

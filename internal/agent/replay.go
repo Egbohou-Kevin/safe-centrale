@@ -63,8 +63,7 @@ func (r *Relay) rejected(id string) []Action {
 	gone, _ := r.removeIf(func(it Item) bool { return it.ID == id })
 	out := r.dropped(gone, "refused by the cloud's broker")
 	if p, ok := r.s.Pending[id]; ok && !p.Confirmed && len(gone) > 0 {
-		delete(r.s.Pending, id)
-		out = append(out, FailAlert{Ref: id})
+		out = append(out, r.giveUp(id))
 	}
 	return out
 }

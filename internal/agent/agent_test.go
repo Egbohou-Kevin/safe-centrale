@@ -203,9 +203,64 @@ func TestAnAppAlertTheCloudDoesNotConfirmFails(t *testing.T) {
 	if f := of[FailAlert](acts); len(f) != 1 || f[0].Ref != id || len(h.r.queue) != 0 {
 		t.Fatalf("%+v %v", acts, h.queued())
 	}
-	if _, _, acts := h.cloud(topic("alert", "result"), contract.TypeAlertResult, contract.AlertResultData{Ref: id, Status: contract.ResultSent}); len(of[Refused](acts)) != 1 {
-		t.Fatal("a late confirmation must be refused: the hub already turned to the GSM")
+	h.expectLate(id, contract.ResultSent)
+}
+
+// expectLate checks that the cloud's word on an alert the agent gave up on is
+// dropped as late: the hub already turned to the GSM, and a late sent or delivered
+// would disturb its escalation. It is no refusal either: the agent did send it.
+func (h *harness) expectLate(ref, status string) {
+	h.t.Helper()
+	_, _, acts := h.cloud(topic("alert", "result"), contract.TypeAlertResult, contract.AlertResultData{Ref: ref, Status: status})
+	if l := of[Late](acts); len(l) != 1 || l[0].Ref != ref || l[0].Status != status || len(acts) != 1 {
+		h.t.Fatalf("%+v: want only a late result for %s", acts, ref)
 	}
+}
+
+func (h *harness) expectRefusedResult(ref string) {
+	h.t.Helper()
+	_, _, acts := h.cloud(topic("alert", "result"), contract.TypeAlertResult, contract.AlertResultData{Ref: ref, Status: contract.ResultSent})
+	if len(of[Refused](acts)) != 1 || len(acts) != 1 {
+		h.t.Fatalf("%+v: want a refusal for %s", acts, ref)
+	}
+}
+
+// The cloud restarted during an alert: its broker kept the request in its session,
+// the agent gave up when the link dropped, and the cloud's results come back after.
+func TestAResultAfterTheLinkDroppedIsLate(t *testing.T) {
+	h := newHarness(t)
+	h.linkUp()
+	id, _ := h.local(topic("alert", "request"), contract.TypeAlertRequest, appAlert("inc1"))
+	it, _ := h.next()
+	h.handle(Sent{Now: h.now, ID: it.ID})
+	if f := of[FailAlert](h.handle(Link{Now: h.now, Up: false})); len(f) != 1 || f[0].Ref != id {
+		t.Fatal("the hub must turn to the GSM when the link drops")
+	}
+	h.now = h.now.Add(30 * time.Second)
+	h.linkUp()
+	h.expectLate(id, contract.ResultSent)
+	h.expectLate(id, contract.ResultDelivered)
+	h.expectRefusedResult("01SOMETHINGELSE0000000000") // never sent: refused as before
+}
+
+// The memory of an alert given up is bounded like the rest: kept across a restart,
+// forgotten when the alert would have been.
+func TestAnAlertGivenUpIsForgottenAfterAnHour(t *testing.T) {
+	h := newHarness(t)
+	h.linkUp()
+	id, _ := h.local(topic("alert", "request"), contract.TypeAlertRequest, appAlert("inc1"))
+	h.advance(10 * time.Second)
+	if !h.r.NextWake().Equal(t0.Add(time.Hour)) {
+		t.Fatalf("next wake %v", h.r.NextWake())
+	}
+	h.restart()
+	h.linkUp()
+	h.expectLate(id, contract.ResultQueued)
+	h.advance(time.Hour - 10*time.Second)
+	if len(h.r.Snapshot().GivenUp) != 0 {
+		t.Fatal("still remembered")
+	}
+	h.expectRefusedResult(id)
 }
 
 func TestTheCloudConfirmsAndDeliversAnAppAlert(t *testing.T) {
