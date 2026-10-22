@@ -318,7 +318,13 @@ automatique).
   `no_uplink`). Pour `app` et `whatsapp`, `sent` veut dire que le cloud a pris le
   message et `delivered` qu'il est arrivé sur le téléphone. `no_uplink` vient de
   l'agent de liaison : internet est coupé, ou le cloud n'a pas confirmé en 10
-  secondes. Le moteur s'en sert pour décider d'escalader.
+  secondes. Le moteur s'en sert pour décider d'escalader. Pour `app` et `whatsapp`,
+  le cloud a ses propres raisons : `no_contact`, `no_app`, `no_phone`,
+  `not_on_whatsapp`, `whatsapp_off`, `whatsapp_refused`, `undelivered`,
+  `too_late`, `cloud_busy` (trop d'alertes en attente) et `cloud_error` (une panne
+  du cloud pendant l'envoi). Le moteur ne lit pas la raison : quand tous les
+  messages internet d'un tour ont échoué, le GSM part sans attendre les 10
+  secondes.
 - `alert.ack` : un contact acquitte. Champs : `incident`, `contact`, `via` (`sms`
   ou `app`). Il arrête l'escalade vers les autres contacts.
 - La passerelle GSM (`safehome-gsm`) lit aussi `alert/ack` et `alarm/event` (les
