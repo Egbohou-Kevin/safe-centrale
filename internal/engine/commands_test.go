@@ -133,6 +133,56 @@ func TestThreeWrongCodesWithinTenMinutesLockTheSite(t *testing.T) {
 	}
 }
 
+// A patient guesser stays under the window: two wrong codes every 10 minutes (the
+// cloud's cap for one phone) never lock. Every third wrong code since the last good
+// one alerts the contacts all the same, without locking. The count survives a
+// restart, and a good code starts it over.
+func TestAPatientGuesserAlertsTheContactsWithoutLocking(t *testing.T) {
+	h := newHarness(t)
+	h.armed()
+	guess := func(i int) {
+		t.Helper()
+		as := h.cmd(CmdDisarm, badCode, func(c *Command) { c.Origin = OriginApp })
+		af, al := onlyEvent[AuthFailed](t, as), alerts(as)
+		if !af.LockedUntil.IsZero() || replyOf(t, as).Reason != ReasonBadCode {
+			t.Fatalf("guess %d locked: %+v", i, af)
+		}
+		alerted := len(al) == 1 && al[0].Kind == AlertAuthFailed
+		if alerted != (i%3 == 0) || len(al) > 1 {
+			t.Fatalf("guess %d: alerts %v", i, al)
+		}
+		h.advance(6 * time.Minute)
+	}
+	for i := 1; i <= 4; i++ {
+		guess(i)
+	}
+	h.e = restart(t, h)
+	h.e.Boot(h.now, nil)
+	for i := 5; i <= 7; i++ {
+		guess(i)
+	}
+	h.mustBe(ModeArmed)
+
+	h.cmd(CmdDisarm, goodCode("u_owner"))
+	h.armed()
+	for i := 1; i <= 3; i++ {
+		guess(i)
+	}
+}
+
+// When the third wrong code since the last good one also locks, the contacts get one
+// alert, not two.
+func TestALockoutThatIsAlsoTheThirdWrongCodeAlertsOnce(t *testing.T) {
+	h := newHarness(t)
+	h.armed()
+	h.badAt(0, OriginKeypad)
+	h.badAt(time.Minute, OriginKeypad)
+	as := h.cmd(CmdDisarm, badCode)
+	if al := alerts(as); len(al) != 1 || onlyEvent[AuthFailed](t, as).LockedUntil.IsZero() {
+		t.Fatalf("alerts %v in %v", al, as)
+	}
+}
+
 func TestUncheckedCodeCountsAsBadCode(t *testing.T) {
 	h := newHarness(t)
 	h.armed()

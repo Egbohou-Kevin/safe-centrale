@@ -208,6 +208,23 @@ doit aussi connaître le code.
   (`engine.LockoutWindow`). Deux codes faux, puis un troisième 11 minutes après le
   premier, ne verrouillent pas ; trois codes faux espacés de quelques heures non plus.
   Un bon code remet le compte à zéro, comme le verrouillage.
+- Un second compte ignore le temps : les codes faux depuis le dernier bon code
+  (`wrong_codes` dans la sauvegarde du moteur, clavier et application ensemble). Au
+  3e, puis au 6e, au 9e..., les contacts reçoivent l'alerte `auth_failed`, **sans
+  verrouillage** : l'`alarm.auth_failed` de ce code n'a pas de `locked_until`. Sans
+  lui, quelqu'un de patient (un voleur avec le téléphone du propriétaire, que le cloud
+  laisse essayer 2 codes toutes les 10 minutes, ou quelqu'un au clavier qui espace ses
+  essais) resterait sous la fenêtre : jamais verrouillé, et personne ne le saurait,
+  les `alarm.auth_failed` n'allant qu'à l'historique, que le voleur lit. Seul un bon
+  code remet ce compte à zéro ; un verrouillage, non.
+- Une alerte tous les 3 codes faux, pas à chaque code faux : c'est le rythme
+  d'avant la fenêtre (le 3e code faux de suite verrouillait et alertait), et la limite
+  par contact et par heure de l'escalade (20 messages, `escalation.md`) est partagée
+  avec les intrusions, qu'un flot d'alertes `auth_failed` ne doit pas étouffer. Un
+  téléphone au rythme du cloud déclenche une alerte toutes les 15 minutes, 4 par
+  heure. Un code faux ne lève jamais deux alertes : quand le 3e code faux verrouille
+  aussi, une seule part. Au pire (un verrouillage qui ne tombe pas sur un multiple de
+  3), deux alertes pour trois codes faux.
 - Le même contrôle s'applique au clavier, avec le même compte : codes faux du clavier
   et de l'application s'ajoutent, et le verrouillage vaut pour les deux.
 - La fenêtre n'est pas un réglage : le cloud borne chaque téléphone à 2 codes faux en
@@ -362,7 +379,8 @@ Décidé :
 
 - Sirène : 3 cycles au maximum.
 - Verrouillage après 3 codes faux en 10 minutes (fenêtre glissante), pendant 10
-  minutes.
+  minutes. Alerte aux contacts, sans verrouillage, tous les 3 codes faux depuis le
+  dernier bon code.
 - Armement automatique : préavis de 10 min, report de 30 min, 3 reports au
   maximum.
 - Pas d'armement ni de désarmement par SMS dans la v1.

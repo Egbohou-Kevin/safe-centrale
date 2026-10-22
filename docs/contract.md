@@ -710,7 +710,10 @@ Changements depuis la v1 validée, sans changement de `v` :
   avec la nouvelle raison `rate_limited` pour un ordre au-delà de sa limite de débit
   (avant, il les jetait sans répondre). Le verrouillage ne compte plus que les codes faux des
   10 dernières minutes, et `attempts` d'`alarm.auth_failed` les compte de même (avant :
-  les codes faux de suite, sans limite de temps, voir `engine.md`). L'agent lit
+  les codes faux de suite, sans limite de temps, voir `engine.md`). Une alerte
+  `auth_failed` (`alert.request`) part aussi sans verrouillage, tous les 3 codes faux
+  depuis le dernier bon code ; l'`alarm.auth_failed` du même code n'a alors pas de
+  `locked_until` (aucun champ ni schéma ne change). L'agent lit
   `alarm/cmd` en QoS 0 sur le broker du cloud, qui ne garde donc plus pour un agent
   absent un ordre portant le code ; un ordre donné pendant une coupure n'est plus
   exécuté au retour, le téléphone le voit `expired` (voir « Qualité de service sur le

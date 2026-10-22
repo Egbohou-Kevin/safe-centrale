@@ -25,7 +25,7 @@ type Config struct {
 	SirenCycle      time.Duration // length of one siren cycle
 	SirenPause      time.Duration // pause between two cycles
 	SirenCycles     int           // maximum number of cycles
-	LockoutAttempts int           // wrong codes within LockoutWindow that lock disarming
+	LockoutAttempts int           // wrong codes within LockoutWindow that lock disarming; as many since the last good code alert
 	LockoutDuration time.Duration // how long disarming stays locked
 	PanicSiren      bool          // the panic button sounds the siren
 

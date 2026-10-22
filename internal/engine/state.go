@@ -63,6 +63,10 @@ type Snapshot struct {
 	// keypad and the app alike: the lockout is the site's.
 	Failures    []time.Time `json:"failures,omitempty"`
 	LockedUntil time.Time   `json:"locked_until"` // disarming is refused until this time
+	// WrongCodes counts the wrong codes since the last good one, however spread out,
+	// from the keypad and the app alike: every LockoutAttempts of them alert the
+	// contacts, locked or not. A lockout does not start it over.
+	WrongCodes int `json:"wrong_codes,omitempty"`
 }
 
 func (s Snapshot) clone() Snapshot {
