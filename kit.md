@@ -1,31 +1,32 @@
 # Kit de base — petit commerce (Togo)
 
 Kit de départ pour une boutique avec une porte d'entrée et une arrière-cour.
-Les modèles viennent de la connaissance du matériel courant. Les prix sont des
-ordres de grandeur en euros, **non vérifiés** sauf celui du cerveau (prix France
-vérifiés en octobre 2026) : à confirmer avant de commander.
+Les modèles viennent de la connaissance du matériel courant. Les prix marqués
+« vérifié » ont été relevés le 22 octobre 2026 (TTC France, avant transport et douane
+vers le Togo) ; les autres sont des ordres de grandeur en euros, **non vérifiés** : à
+confirmer avant de commander.
 
 ## Liste
 
 | Élément | Qté | Modèle possible | Prix approx. |
 |---|---|---|---|
-| Cerveau | 1 | Raspberry Pi 4 **1 Go**, carte SD « haute endurance » (32 Go), alimentation officielle (voir « Choix du cerveau ») | 60-70 € |
+| Cerveau | 1 | Raspberry Pi 4 **1 Go** (42 à 56 €), carte SD SanDisk « haute endurance » 32 Go (27 à 29 €), alimentation officielle (12,50 €, souvent en rupture : LDLC l'a en stock). Voir « Choix du cerveau » | 80-100 € (vérifié) |
 | Radio Zigbee | 1 | Sonoff ZBDongle-E | 15-20 € |
-| Modem 4G + SMS/appels (une SIM) | 1 | SIM7600E-H (HAT ou USB), ou Quectel EC25 | 50-70 € |
-| Détecteur d'ouverture | 2 | Aqara MCCGQ11LM (porte et arrière-cour) | 15-20 € pièce |
+| Modem 4G + SMS/appels (une SIM) | 1 | Waveshare SIM7600E-H USB (91,77 € chez Eckstein plus port, 133,99 € sur Amazon.fr), ou Quectel EC25. **Reporté** : voir « Pourquoi ces choix » pour les bandes | 92-134 € (vérifié) |
+| Détecteur d'ouverture | 2 | Aqara MCCGQ11LM (porte et arrière-cour). Présenté comme arrêté chez Aqara : en prendre tant qu'il est en stock, sinon un autre capteur Zigbee et son profil (`config/profiles`) | 19,99 € pièce (vérifié) |
 | Détecteur de mouvement | 2 | Aqara RTCGQ11LM | 15-25 € pièce |
 | Détecteur de fumée | 1 | Zigbee avec sirène intégrée | 20-30 € |
 | Détecteur de bris de vitre ou vibration | 1 | Zigbee (Tuya ou Heiman) | 20-30 € |
 | Sirène | 1 | Sirène Zigbee (Heiman ou Tuya) | 25-35 € |
-| Clavier ou télécommande | 1 | Clavier Zigbee ou badge | 20-30 € |
-| Bouton panique | 1 | Bouton SOS Zigbee | 10-20 € |
+| Clavier | 1 | frient (Develco) KEPZB-110, celui de nos profils : la plus grosse ligne du kit | 100-106 € (vérifié) |
+| Bouton panique | 1 | Tuya TS0215A (compatible Zigbee2MQTT, **sans profil** chez nous pour l'instant) | 7-15 € (vérifié) |
 | Caméras | 2 | Tapo C200 ou Reolink avec flux RTSP, **en H.264** et avec un flux secondaire basse définition (pour le direct, voir `docs/video.md`) | 25-50 € pièce |
 | Routeur 4G Wi-Fi | 1 | Seulement pour un client sans box : relie les caméras et la centrale. Forfait de données à la charge du client | 40-60 € |
-| Module d'horloge à pile (RTC) | 1 | Module RTC compatible Raspberry Pi, pour garder l'heure pendant les coupures | 5-10 € |
-| Batterie de secours de la centrale | 1 | **Geekworm X728** (choisi le 21 octobre 2026), avec ses accus 18650 et son bloc secteur : il signale la coupure et la charge à la centrale (`docs/alimentation.md`) | 40-80 € |
+| Module d'horloge à pile (RTC) | 0-1 | Les fiches du X728 annoncent une horloge sur la carte : à confirmer à la réception, sinon un module RTC compatible Raspberry Pi | 0-10 € |
+| Batterie de secours de la centrale | 1 | **Geekworm X728** (choisi le 21 octobre 2026, 45 $ chez Geekworm, **en rupture en Europe** en octobre 2026) : il signale la coupure et la charge à la centrale (`docs/alimentation.md`). Les accus 18650 ne sont pas fournis et voyagent mal par avion : les acheter sur place (paire Samsung 30Q, 14 à 17 €). Il se branche en USB-C 5 V 3 A : l'alimentation officielle du Pi suffit | 55-60 € (vérifié) |
 | Boîtier, câbles | | Boîtier sécurisé. La SIM et son crédit sont à la charge du client | 20-40 € |
 
-Total estimé : **395 à 625 €**, hors routeur 4G (réservé aux clients sans box).
+Total estimé : **555 à 770 €**, hors routeur 4G (réservé aux clients sans box).
 Pour un premier test, on peut retirer une caméra.
 
 ## Choix du cerveau
@@ -76,8 +77,10 @@ Sources : [Kubii, Raspberry Pi 4 1 Go](https://www.kubii.com/fr/cartes-nano-ordi
   simple batterie externe sans sortie d'état ne suffit pas : il faut un module que
   la centrale peut interroger. À dimensionner pour plusieurs heures de coupure.
 - **Modem 4G séparé du routeur** : il envoie SMS et appels même sans internet.
-  Vérifier que ses bandes LTE correspondent à celles de Togocom et Moov
-  (par exemple B3, B7, B20).
+  Vérifier que ses bandes LTE correspondent à celles de Togocom et Moov : le Togo
+  utilise B3, B7, B20 et B66 selon FrequencyCheck, mais la répartition par opérateur
+  n'est pas confirmée. À demander aux opérateurs avant tout achat ; la 2G reste le
+  repli pour le SMS.
 - **Détecteurs Zigbee, caméras à part** : les capteurs sur piles restent en
   service pendant une panne. Les caméras sont un confort : si elles tombent,
   l'alarme continue.
@@ -94,6 +97,8 @@ Sources : [Kubii, Raspberry Pi 4 1 Go](https://www.kubii.com/fr/cartes-nano-ordi
 - La box du client existe avant nous et n'est pas gérée par nous : pendant une
   coupure, elle s'éteint et les alertes passent par GSM.
 - Les piles des détecteurs s'usent : noter les dates de remplacement.
+- Un modem 4G tire des pointes d'environ 2 A sur l'USB. Un hub USB alimenté (50 à
+  60 €) ne s'achète que si le modem décroche à l'essai.
 - Choisir un capteur de mouvement qui ne se déclenche pas à cause des animaux
   ou de la chaleur.
 - Vérifier l'homologation du matériel radio auprès de l'ARCEP Togo.
