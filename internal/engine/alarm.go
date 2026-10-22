@@ -84,7 +84,7 @@ func (e *Engine) armedZone(at time.Time, kind ZoneKind, cause Cause) []Action {
 			e.setMode(ModeEntryDelay, at)
 			e.s.EntryCause = &cause
 			e.s.Deadline = at.Add(e.cfg.EntryDelay)
-			return []Action{Emit{EntryDelayStarted{DeviceID: cause.DeviceID, EndsAt: e.s.Deadline}}}
+			return []Action{Emit{EntryDelayStarted{DeviceID: cause.DeviceID, Zone: cause.Zone, EndsAt: e.s.Deadline}}}
 		}
 		return e.trigger(at, cause, AlertIntrusion)
 

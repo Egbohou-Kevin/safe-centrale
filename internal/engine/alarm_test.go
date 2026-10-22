@@ -14,7 +14,7 @@ func TestEntryDelayThenDisarmInTime(t *testing.T) {
 	as := h.open(door)
 	h.mustBe(ModeEntryDelay)
 	ev := onlyEvent[EntryDelayStarted](t, as)
-	if ev.DeviceID != door || !ev.EndsAt.Equal(h.now.Add(45*time.Second)) {
+	if ev.DeviceID != door || ev.Zone != "entrance" || !ev.EndsAt.Equal(h.now.Add(45*time.Second)) {
 		t.Fatalf("entry delay: %+v", ev)
 	}
 

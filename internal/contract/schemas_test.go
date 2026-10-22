@@ -147,6 +147,15 @@ func TestSchemasMatchGoTypes(t *testing.T) {
 	}
 }
 
+// A bound said by a schema is the Go constant's.
+func TestSchemaBoundsMatchConstants(t *testing.T) {
+	for _, file := range []string{"alarm-entry-delay.json", "alarm-triggered.json"} {
+		if got := loadSchema(t, file).Properties["device_name"]["maxLength"]; got != float64(MaxDeviceName) {
+			t.Errorf("%s: device_name maxLength %v, MaxDeviceName %d", file, got, MaxDeviceName)
+		}
+	}
+}
+
 func enumOf(t *testing.T, s schemaFile, prop string) []string {
 	t.Helper()
 	raw, ok := s.Properties[prop]["enum"].([]any)

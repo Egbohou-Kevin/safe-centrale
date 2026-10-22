@@ -12,6 +12,12 @@
       "type": "string",
       "minLength": 1
     },
+    "device_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "description": "Nom de l'appareil dans la configuration du site, absent s'il n'en a pas"
+    },
     "capability": {
       "type": "string",
       "minLength": 1

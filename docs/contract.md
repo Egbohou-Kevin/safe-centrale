@@ -133,7 +133,8 @@ Description d'un appareil dans le registre (tenu par l'adaptateur) :
 
 Le registre dit **ce qu'est** l'appareil. Son nom (« Porte d'entrée ») et sa zone
 (`entree`, `instant`…) appartiennent à la configuration du site, lue par le moteur
-(voir `engine.md` et `adapter-zigbee.md`).
+(voir `engine.md` et `adapter-zigbee.md`). Le nom part dans les événements d'alarme qui
+nomment l'appareil (`device_name`, voir plus bas).
 
 ## Types de messages
 
@@ -288,13 +289,21 @@ le planning arme dans le moteur.
 | `alarm.arming` | Le délai de sortie démarre | `origin`, `user`, `ends_at`, `forced`, `bypassed` (appareils contournés) ; `offline`, `low_battery` si des appareils sont muets ou ont une pile faible (avertissement) |
 | `alarm.armed` | Le délai est terminé, ou `arm_now` | `origin`, `user` ; `mode` optionnel, absent en v1 |
 | `alarm.disarmed` | Le système est désarmé | `origin`, `user` |
-| `alarm.entry_delay` | Un détecteur d'entrée s'est ouvert | `ends_at`, `device_id` |
-| `alarm.triggered` | L'alarme se déclenche | `incident`, cause : `device_id`, `capability`, `zone` |
+| `alarm.entry_delay` | Un détecteur d'entrée s'est ouvert | `ends_at`, `device_id`, `device_name` |
+| `alarm.triggered` | L'alarme se déclenche | `incident`, cause : `device_id`, `device_name`, `capability`, `zone` |
 | `alarm.siren_cycle` | Un cycle de sirène démarre | `incident`, `cycle`, `of` |
 | `alarm.cleared` | L'alarme est arrêtée | `incident`, `origin` (`user` ou `timeout`), `user`, `duration_s` |
 | `alarm.arming_scheduled` | Annonce de l'armement automatique | `scheduled_for` |
 | `alarm.postponed` | L'armement automatique est reporté | `scheduled_for`, `count`, `max` |
 | `alarm.auth_failed` | Code faux | `origin`, `attempts`, `locked_until` (si verrouillé) |
+
+`device_name` (facultatif) est le nom que la configuration du site donne à l'appareil
+(« Porte d'entrée »), 32 caractères au plus (un nom plus long est coupé). Il est absent
+quand l'appareil n'a pas de nom (pas de zone : le sabotage d'un clavier ou d'une sirène).
+La configuration nomme un appareil par sa zone : dans `alarm.triggered`, `zone` porte
+aujourd'hui le même nom, mais c'est `device_name` qui dit l'appareil. Les listes
+d'appareils (`bypassed`, `offline`, `low_battery` de `alarm.arming`) restent des
+`device_id`.
 
 `alarm.state` (retenu) contient l'état courant : `disarmed`, `arming`, `armed`,
 `entry_delay`, `triggered`. Il porte aussi `since`, et selon l'état :
@@ -654,7 +663,8 @@ Changements depuis la v1 validée, sans changement de `v` :
 
 - **22 octobre 2026** : l'agent de liaison redit au cloud le dernier `alarm.state` et le
   dernier `system.health` à chaque connexion, avec un nouvel `id` (voir « Ce qui part
-  vers le cloud »).
+  vers le cloud »). `alarm.entry_delay` et `alarm.triggered` portent `device_name`,
+  le nom de l'appareil, facultatif (voir « Événements d'alarme »).
 
 ## Prévu pour la phase fermée
 

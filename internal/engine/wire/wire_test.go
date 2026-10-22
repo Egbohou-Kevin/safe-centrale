@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -176,6 +177,34 @@ func TestForget(t *testing.T) {
 	got := Forget(contract.RegistryDeviceRemovedData{Ref: "m-1", DeviceID: "dev_door"}, t0)
 	if got != (engine.Forget{Now: t0, DeviceID: "dev_door"}) {
 		t.Fatalf("%+v", got)
+	}
+}
+
+// The events that name a device carry its name too (the name of its zone in the site
+// configuration), cut to the contract's length; none for a device without a zone.
+func TestEventsNameTheirDevice(t *testing.T) {
+	long := strings.Repeat("\u00e9", contract.MaxDeviceName+5) // two bytes each: the cut counts characters
+	out, err := Translate([]engine.Action{
+		engine.Emit{Event: engine.EntryDelayStarted{DeviceID: "dev_door", Zone: "Porte d'entr\u00e9e", EndsAt: t0}},
+		engine.Emit{Event: engine.Triggered{Incident: "inc1", Cause: engine.Cause{DeviceID: "dev_door", Sensor: engine.SensorContact, Zone: long}}},
+		engine.Emit{Event: engine.Triggered{Incident: "inc2", Cause: engine.Cause{DeviceID: "dev_siren", Sensor: engine.SensorTamper}}},
+	})
+	if err != nil || len(out.Events) != 3 {
+		t.Fatalf("%+v %v", out, err)
+	}
+	if d := out.Events[0].Data.(contract.EntryDelayData); d.DeviceName != "Porte d'entr\u00e9e" {
+		t.Errorf("entry delay: %+v", d)
+	}
+	if d := out.Events[1].Data.(contract.TriggeredData); d.DeviceName != strings.Repeat("\u00e9", contract.MaxDeviceName) {
+		t.Errorf("a long name is cut: %q", d.DeviceName)
+	}
+	none, _ := json.Marshal(out.Events[2].Data)
+	if strings.Contains(string(none), "device_name") {
+		t.Errorf("a device without a name: %s", none)
+	}
+	schematest.Validate(t, "alarm-entry-delay.json", out.Events[0].Data)
+	for _, ev := range out.Events[1:] {
+		schematest.Validate(t, "alarm-triggered.json", ev.Data)
 	}
 }
 

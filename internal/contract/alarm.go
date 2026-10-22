@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"unicode/utf8"
 )
 
 // CommandArgs are the arguments of an order to the engine. The access code is
@@ -101,16 +102,32 @@ type DisarmedData struct {
 
 // EntryDelayData: alarm.entry_delay.
 type EntryDelayData struct {
-	DeviceID string    `json:"device_id"`
-	EndsAt   Timestamp `json:"ends_at"`
+	DeviceID   string    `json:"device_id"`
+	DeviceName string    `json:"device_name,omitempty"` // see DeviceName
+	EndsAt     Timestamp `json:"ends_at"`
 }
 
 // TriggeredData: alarm.triggered. Incident ties the event to its alerts.
 type TriggeredData struct {
 	Incident   string `json:"incident"`
 	DeviceID   string `json:"device_id"`
+	DeviceName string `json:"device_name,omitempty"` // see DeviceName
 	Capability string `json:"capability"`
 	Zone       string `json:"zone"`
+}
+
+// MaxDeviceName bounds device_name, in characters: as long as the installer lets a
+// zone name be (it goes into SMS too).
+const MaxDeviceName = 32
+
+// DeviceName returns a device's name as the alarm events carry it (device_name):
+// the name the site configuration gives it ("Front door"), cut to MaxDeviceName
+// characters. Empty, the field is absent: a device without a zone has no name.
+func DeviceName(name string) string {
+	if utf8.RuneCountInString(name) <= MaxDeviceName {
+		return name
+	}
+	return string([]rune(name)[:MaxDeviceName])
 }
 
 // SirenCycleData: alarm.siren_cycle.

@@ -172,10 +172,14 @@ func translateEvent(e engine.Event) (Event, error) {
 	case engine.Disarmed:
 		return Event{contract.TypeAlarmDisarmed, contract.DisarmedData{Origin: string(v.Origin), User: v.User}}, nil
 	case engine.EntryDelayStarted:
-		return Event{contract.TypeAlarmEntryDelay, contract.EntryDelayData{DeviceID: v.DeviceID, EndsAt: contract.TS(v.EndsAt)}}, nil
+		// The site configuration names a device by its zone (device id -> name, kind).
+		return Event{contract.TypeAlarmEntryDelay, contract.EntryDelayData{
+			DeviceID: v.DeviceID, DeviceName: contract.DeviceName(v.Zone), EndsAt: contract.TS(v.EndsAt),
+		}}, nil
 	case engine.Triggered:
 		return Event{contract.TypeAlarmTriggered, contract.TriggeredData{
-			Incident: v.Incident, DeviceID: v.Cause.DeviceID, Capability: string(v.Cause.Sensor), Zone: v.Cause.Zone,
+			Incident: v.Incident, DeviceID: v.Cause.DeviceID, DeviceName: contract.DeviceName(v.Cause.Zone),
+			Capability: string(v.Cause.Sensor), Zone: v.Cause.Zone,
 		}}, nil
 	case engine.SirenCycleStarted:
 		return Event{contract.TypeAlarmSirenCycle, contract.SirenCycleData{Incident: v.Incident, Cycle: v.Cycle, Of: v.Of}}, nil

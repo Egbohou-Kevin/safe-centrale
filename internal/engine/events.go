@@ -30,6 +30,7 @@ type Disarmed struct {
 // EntryDelayStarted: an entry door opened while armed, the disarm delay is running.
 type EntryDelayStarted struct {
 	DeviceID string
+	Zone     string // the name of the device's zone, as in Cause
 	EndsAt   time.Time
 }
 

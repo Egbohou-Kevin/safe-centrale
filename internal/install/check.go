@@ -92,8 +92,9 @@ func CanServe(kind string, capabilities []string) error {
 		ErrCannotServe, kind, strings.Join(sensors, ", "), strings.Join(capabilities, ", "))
 }
 
-// MaxNameLength bounds a zone name: it goes into SMS and voice messages.
-const MaxNameLength = 32
+// MaxNameLength bounds a zone name: it goes into SMS and voice messages, and names
+// the device in the alarm events (device_name).
+const MaxNameLength = contract.MaxDeviceName
 
 // ValidName checks a zone name.
 func ValidName(name string) error {
