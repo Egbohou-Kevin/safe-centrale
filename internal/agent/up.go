@@ -20,7 +20,7 @@ func (r *Relay) local(now time.Time, topic string, payload []byte, own bool) []A
 	}
 	if route.retain && !own {
 		fresh := r.newState(topic, env.ID)
-		if again := r.heard(route, topic, payload, fresh); !fresh {
+		if again := r.heard(now, route, topic, payload, fresh); !fresh {
 			return again // given back by the hub's broker: said again only if this connection owes it (restate.go)
 		}
 	}

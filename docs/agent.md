@@ -124,8 +124,11 @@ Quand internet est coupé :
   centrale, comme des messages neufs : même contenu, même `ts`, mais un nouvel `id`
   (le cloud jette un `id` connu comme doublon). Ils passent par la file comme les
   autres : numérotés, confirmés, gardés pour un rejeu. Pas plus d'une fois par
-  connexion : sur une liaison qui saute, la file n'en garde qu'un de chaque, le plus
-  récent. Un état qui attend déjà dans la file part tel quel. L'agent garde ces deux
+  connexion, ni plus d'une fois par minute : sur une liaison qui saute (ou deux agents
+  sur le même identifiant, une carte SD clonée, qui se chassent l'un l'autre), chaque
+  connexion ajouterait sinon deux messages, deux fichiers de file et des octets payés
+  en mode économe. Un état redit il y a moins d'une minute est arrivé au cloud ou
+  attend encore dans la file. Un état qui attend déjà dans la file part tel quel. L'agent garde ces deux
   états en mémoire seulement : après un redémarrage, il les apprend quand le broker de
   la centrale les redonne, et les redit alors si la connexion au cloud est déjà là. Le
   cloud garde l'état le plus récent par son numéro : le même état redit n'y change

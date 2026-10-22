@@ -733,7 +733,7 @@ L'agent de liaison transmet seulement :
 
 - les événements `alarm.*` et `alert.*`, et les réponses aux ordres (`alarm.ack`),
 - `alarm.state` et `system.health`, à chaque changement, et de nouveau à chaque
-  connexion de l'agent au cloud : le dernier de chacun, même contenu et même `ts`, avec
+  connexion de l'agent au cloud (une fois par minute au plus) : le dernier de chacun, même contenu et même `ts`, avec
   un nouvel `id` (voir `agent.md`). Le cloud garde le plus récent par son `seq` ;
 - le `system.heartbeat`,
 - les `device.event` de type `smoke`, `panic`, `tamper`, `mains` et les

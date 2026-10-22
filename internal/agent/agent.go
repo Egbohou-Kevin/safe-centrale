@@ -137,9 +137,11 @@ type Relay struct {
 	// In memory only (see economy.go): when the cloud last got each repeated message.
 	got map[string]sentMark
 	// In memory only (see restate.go): the hub's latest states said again at each
-	// connection, and those this connection still owes the cloud.
-	states map[string][]byte
-	owed   map[string]bool
+	// connection, those this connection still owes the cloud, and when each was last
+	// said again.
+	states   map[string][]byte
+	owed     map[string]bool
+	restated map[string]time.Time
 }
 
 // New builds a relay with an empty queue.
@@ -193,7 +195,7 @@ func (r *Relay) Restore(s Snapshot) {
 	r.up, r.transport, r.sending = false, "", ""
 	r.journal, r.journalBytes, r.replay = nil, 0, nil
 	r.got = map[string]sentMark{}
-	r.states, r.owed = map[string][]byte{}, map[string]bool{}
+	r.states, r.owed, r.restated = map[string][]byte{}, map[string]bool{}, map[string]time.Time{}
 }
 
 // Up says whether the cloud can be reached.
@@ -276,7 +278,7 @@ func (r *Relay) link(l Link) []Action {
 	}
 	out := []Action{}
 	if l.Up {
-		out = append(out, r.restate()...)
+		out = append(out, r.restate(l.Now)...)
 	} else {
 		clear(r.owed)
 		// The alerts the cloud did not confirm will not be: tell the hub now rather

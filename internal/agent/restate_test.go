@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+	"time"
 
 	"safehome/internal/contract"
 )
@@ -118,5 +119,33 @@ func TestAfterARestartTheStateGivenBackIsSaidAgain(t *testing.T) {
 	given()
 	if got := h.restated(h.handle(Link{Now: h.now, Up: true, Transport: "mqtts"})); !reflect.DeepEqual(got, []string{"alarm/state"}) {
 		t.Fatalf("said again: %v", got)
+	}
+}
+
+// A flapping link (or two agents on one client id, a cloned SD card, kicking each
+// other off) connects again and again: a state is said again at most once a minute,
+// not at every connection.
+func TestAFlappingLinkSaysTheStateAgainAtMostOnceAMinute(t *testing.T) {
+	h := newHarness(t)
+	h.local(topic("alarm", "state"), contract.TypeAlarmState, contract.AlarmStateData{State: contract.StateArmed})
+	h.linkUp()
+	h.send()
+	reconnect := func(after time.Duration) []string {
+		h.now = h.now.Add(after)
+		h.handle(Link{Now: h.now, Up: false})
+		got := h.restated(h.handle(Link{Now: h.now, Up: true, Transport: "mqtts"}))
+		h.send()
+		return got
+	}
+	if got := reconnect(time.Second); !reflect.DeepEqual(got, []string{"alarm/state"}) {
+		t.Fatalf("said again: %v", got)
+	}
+	for range 5 {
+		if got := reconnect(10 * time.Second); len(got) != 0 {
+			t.Fatalf("said again %v within a minute", got)
+		}
+	}
+	if got := reconnect(10 * time.Second); !reflect.DeepEqual(got, []string{"alarm/state"}) {
+		t.Fatalf("a minute later, said again: %v", got)
 	}
 }
