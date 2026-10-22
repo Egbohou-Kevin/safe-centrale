@@ -13,7 +13,7 @@ passe si une centrale est volée, détruite ou remplacée.
 |---|---|
 | La centrale est volée ou détruite pendant un cambriolage | Le site devient muet : le cloud alerte le propriétaire (voir `agent.md`). Les identifiants de la centrale sont révoqués. |
 | Quelqu'un coupe le courant ou internet | La centrale continue sur batterie et par GSM (voir `escalation.md`). |
-| Un voleur a le téléphone du propriétaire | Le désarmement exige le code du site, et l'accès se verrouille après 3 codes faux (voir `engine.md`). |
+| Un voleur a le téléphone du propriétaire | Le désarmement exige le code du site, et l'accès se verrouille après 3 codes faux en 10 minutes (voir `engine.md`). |
 | Un appareil pirate est ajouté au site | L'appairage se fait seulement en local, et seuls les modèles connus sont acceptés (voir `adapter-zigbee.md`). |
 | Le cloud est compromis | Le cloud ne peut envoyer que des ordres d'alarme, de vidéo, de maintenance et de configuration, et les résultats des alertes. Il ne commande ni la sirène ni les appareils. |
 | Faux SMS d'acquittement | Il ne peut qu'arrêter l'escalade, et l'incident reste visible (voir `gsm-gateway.md`). |
@@ -50,8 +50,12 @@ difficile à deviner.
 - **Longueur** : 6 chiffres recommandés, 4 au minimum.
 - **Stockage** : sur la centrale seulement, sous forme hachée avec un algorithme lent.
   Il n'est jamais dans le cloud.
-- **Vérification** : toujours par le moteur, sur le site. Trois codes faux verrouillent
-  le désarmement pendant 10 minutes.
+- **Vérification** : toujours par le moteur, sur le site. Trois codes faux en
+  10 minutes verrouillent le désarmement pendant 10 minutes, pour tout le site : le
+  clavier et l'application comptent ensemble. Un code faux de plus de 10 minutes ne
+  compte plus : des erreurs éparses dans la journée ne verrouillent pas, et un
+  téléphone que le cloud borne à 2 codes faux en 10 minutes ne peut pas, seul, tenir
+  le site verrouillé.
 - **Limite connue** : avec 6 chiffres, un code se retrouve vite par essais si le fichier
   haché est volé avec la centrale. Le verrouillage ne protège que contre des essais en
   ligne. La parade est la révocation et le changement du code après un vol.
@@ -331,7 +335,8 @@ Reste à ajouter : les événements de journal `audit.config_applied`,
     qui n'a pas pu être enregistré n'est jamais accepté « en attendant », pour ne pas
     disparaître au prochain redémarrage.
   - Le code n'apparaît dans aucune erreur, aucune sauvegarde, aucun affichage.
-  - Le comptage des codes faux et le verrouillage restent dans le moteur d'alarme.
+  - Le comptage des codes faux (ceux des 10 dernières minutes) et le verrouillage
+    restent dans le moteur d'alarme.
 - Le coût du hachage est à régler sur la vraie centrale : vérifier 5 codes prend
   environ 90 ms sur un Mac récent, et sera plusieurs fois plus long sur un Raspberry Pi.
   Mesure à faire sur le matériel : `go test -run xxx -bench Verify ./internal/access`.

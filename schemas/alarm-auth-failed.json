@@ -14,7 +14,8 @@
     },
     "attempts": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "description": "Codes faux des 10 dernières minutes, celui-ci compris, clavier et application ensemble"
     },
     "locked_until": {
       "type": "string",

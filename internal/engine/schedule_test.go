@@ -322,7 +322,7 @@ func TestPostponeNeedsNoCode(t *testing.T) {
 	if r := replyOf(t, as); r.Status != StatusDone {
 		t.Fatalf("%+v", r)
 	}
-	if h.e.Snapshot().Failed != 0 {
+	if len(h.e.Snapshot().Failures) != 0 {
 		t.Fatal("postponing must not count as a wrong code")
 	}
 }

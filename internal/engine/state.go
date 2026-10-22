@@ -2,6 +2,7 @@ package engine
 
 import (
 	"maps"
+	"slices"
 	"time"
 )
 
@@ -58,14 +59,17 @@ type Snapshot struct {
 
 	Schedule *Schedule `json:"schedule,omitempty"`
 
-	Failed      int       `json:"failed"`       // consecutive wrong codes
-	LockedUntil time.Time `json:"locked_until"` // disarming is refused until this time
+	// Failures are the wrong codes of the last LockoutWindow, oldest first, from the
+	// keypad and the app alike: the lockout is the site's.
+	Failures    []time.Time `json:"failures,omitempty"`
+	LockedUntil time.Time   `json:"locked_until"` // disarming is refused until this time
 }
 
 func (s Snapshot) clone() Snapshot {
 	s.Bypassed = maps.Clone(s.Bypassed)
 	s.Open = maps.Clone(s.Open)
 	s.Tampered = maps.Clone(s.Tampered)
+	s.Failures = slices.Clone(s.Failures)
 	s.EntryCause = clonePtr(s.EntryCause)
 	s.Incident = clonePtr(s.Incident)
 	s.LastTrigger = clonePtr(s.LastTrigger)

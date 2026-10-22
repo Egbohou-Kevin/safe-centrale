@@ -47,7 +47,7 @@ func TestBadCodesLockOutThenRecover(t *testing.T) {
 	}
 	h.mustBe(ModeTriggered)
 	// And a wrong code during the lockout does not count.
-	if got := h.e.Snapshot().Failed; got != 0 {
+	if got := len(h.e.Snapshot().Failures); got != 0 {
 		t.Fatalf("counter %d", got)
 	}
 	r = replyOf(t, h.cmd(CmdDisarm, badCode))
@@ -78,6 +78,58 @@ func TestGoodCodeResetsFailureCounter(t *testing.T) {
 	as := h.cmd(CmdDisarm, badCode)
 	if af := onlyEvent[AuthFailed](t, as); af.Attempts != 1 {
 		t.Fatalf("the counter must start over: %+v", af)
+	}
+}
+
+// badAt enters a wrong code after d and returns how it was counted.
+func (h *harness) badAt(d time.Duration, origin Origin) AuthFailed {
+	h.t.Helper()
+	h.advance(d)
+	return onlyEvent[AuthFailed](h.t, h.cmd(CmdDisarm, badCode, func(c *Command) { c.Origin = origin }))
+}
+
+// Wrong codes spread over hours never lock: only those of the last LockoutWindow
+// count, the window sliding with each new one.
+func TestOnlyTheWrongCodesOfTheLastTenMinutesCount(t *testing.T) {
+	h := newHarness(t)
+	h.armed()
+	h.badAt(0, OriginApp)
+	h.badAt(time.Minute, OriginApp)
+	// 11 minutes after the first two: they are forgotten.
+	if af := h.badAt(11*time.Minute, OriginApp); af.Attempts != 1 || !af.LockedUntil.IsZero() {
+		t.Fatalf("a wrong code 11 min after two others: %+v", af)
+	}
+	if af := h.badAt(5*time.Minute, OriginApp); af.Attempts != 2 || !af.LockedUntil.IsZero() {
+		t.Fatalf("second within the window: %+v", af)
+	}
+	// 10 minutes after the first of the two: it just left the window.
+	if af := h.badAt(5*time.Minute, OriginApp); af.Attempts != 2 || !af.LockedUntil.IsZero() {
+		t.Fatalf("a wrong code exactly a window after another: %+v", af)
+	}
+	if got := h.e.State(h.now).LockedUntil; !got.IsZero() || LockoutWindow != 10*time.Minute {
+		t.Fatalf("locked until %v, window %v", got, LockoutWindow)
+	}
+	h.mustBe(ModeArmed)
+}
+
+// Three wrong codes within 10 minutes lock the whole site for LockoutDuration,
+// whether they came from the keypad or the app.
+func TestThreeWrongCodesWithinTenMinutesLockTheSite(t *testing.T) {
+	h := newHarness(t)
+	h.armed()
+	h.badAt(0, OriginKeypad)
+	if af := h.badAt(5*time.Minute, OriginApp); af.Attempts != 2 {
+		t.Fatalf("the keypad and the app count together: %+v", af)
+	}
+	af := h.badAt(5*time.Minute-time.Second, OriginKeypad)
+	if af.Attempts != 3 || !af.LockedUntil.Equal(h.now.Add(h.cfg.LockoutDuration)) {
+		t.Fatalf("three within 10 minutes: %+v", af)
+	}
+	if r := replyOf(t, h.cmd(CmdDisarm, goodCode("u_owner"), func(c *Command) { c.Origin = OriginApp })); r.Reason != ReasonLockedOut {
+		t.Fatalf("the lockout holds for every origin: %+v", r)
+	}
+	if n := len(h.e.Snapshot().Failures); n != 0 {
+		t.Fatalf("a lockout starts the count over: %d left", n)
 	}
 }
 

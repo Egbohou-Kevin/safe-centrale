@@ -166,7 +166,7 @@ func TestSnapshotJSONRoundTrip(t *testing.T) {
 	h.mustBe(ModeArmed)
 	h.cmd(CmdDisarm, badCode)
 	want := h.e.Snapshot()
-	if !want.Bypassed[back] || !want.Open[back] || want.Failed != 1 {
+	if !want.Bypassed[back] || !want.Open[back] || len(want.Failures) != 1 {
 		t.Fatalf("the snapshot must hold what we want to save: %+v", want)
 	}
 	b, err := json.Marshal(want)

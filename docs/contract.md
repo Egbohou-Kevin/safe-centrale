@@ -307,7 +307,7 @@ le planning arme dans le moteur.
 | `alarm.cleared` | L'alarme est arrêtée | `incident`, `origin` (`user` ou `timeout`), `user`, `duration_s` |
 | `alarm.arming_scheduled` | Annonce de l'armement automatique | `scheduled_for` |
 | `alarm.postponed` | L'armement automatique est reporté | `scheduled_for`, `count`, `max` |
-| `alarm.auth_failed` | Code faux | `origin`, `attempts`, `locked_until` (si verrouillé) |
+| `alarm.auth_failed` | Code faux | `origin`, `attempts` (codes faux des 10 dernières minutes, celui-ci compris, clavier et application ensemble), `locked_until` (si verrouillé) |
 
 `device_name` (facultatif) est le nom que la configuration du site donne à l'appareil
 (« Porte d'entrée »), 32 caractères au plus (un nom plus long est coupé). Il est absent
@@ -681,7 +681,9 @@ Changements depuis la v1 validée, sans changement de `v` :
   (voir « Ordres au moteur »). L'agent répond tout de suite par `alarm.ack` à un ordre
   de l'application qu'il ne transmet pas : `expired` pour un ordre périmé, `refused`
   avec la nouvelle raison `rate_limited` pour un ordre au-delà de sa limite de débit
-  (avant, il les jetait sans répondre).
+  (avant, il les jetait sans répondre). Le verrouillage ne compte plus que les codes faux des
+  10 dernières minutes, et `attempts` d'`alarm.auth_failed` les compte de même (avant :
+  les codes faux de suite, sans limite de temps, voir `engine.md`).
 
 ## Prévu pour la phase fermée
 
