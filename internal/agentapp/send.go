@@ -27,6 +27,8 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action)
 			a.publishOwn(now, contract.AlertResultTopic(a.cfg.Site), contract.TypeAlertResult, contract.AlertResultData{
 				Ref: v.Ref, Status: contract.ResultFailed, Reason: contract.ReasonNoUplink,
 			}, false)
+		case agent.AnswerOrder:
+			a.answer(now, v)
 		case agent.StatusChanged:
 			if v.Status.Up {
 				a.log.Info("connected to the cloud", "transport", v.Status.Transport, "queued", v.Status.Queued)
@@ -91,18 +93,39 @@ func (a *App) publishStatus(now time.Time, st agent.Status) {
 // core for the cloud: the agent does not hear its own publications (NoLocal). It runs
 // on the loop's goroutine.
 func (a *App) publishOwn(now time.Time, topic, typ string, data any, retain bool) {
-	env, err := contract.NewEnvelope(a.cfg.Site, src, a.seq.Next(), a.deps.NewID(), now, typ, data)
-	if err != nil {
-		a.log.Error("building a message failed", "type", typ, "err", err)
-		return
-	}
-	b, err := json.Marshal(env)
-	if err != nil {
-		a.log.Error("encoding a message failed", "type", typ, "err", err)
+	b, ok := a.message(now, typ, data)
+	if !ok {
 		return
 	}
 	a.out.Put(&outbox.Item{Topic: topic, Data: b, QoS: 1, Retain: retain, Raw: true})
 	a.handOwn(now, topic, b)
+}
+
+// answer answers an order from the app that did not go on to the hub (alarm.ack, ref
+// the order's id). For the cloud only: the hub never got the order, so the answer is
+// not published on its broker.
+func (a *App) answer(now time.Time, v agent.AnswerOrder) {
+	a.log.Warn("an order from the app did not go on to the hub: answered to the cloud",
+		"ref", v.Ref, "status", v.Status, "reason", v.Reason)
+	ack := contract.AlarmAckData{Ref: v.Ref, Status: v.Status, Reason: v.Reason}
+	if b, ok := a.message(now, contract.TypeAlarmAck, ack); ok {
+		a.handOwn(now, contract.AlarmAckTopic(a.cfg.Site), b)
+	}
+}
+
+// message builds and encodes a message of the agent.
+func (a *App) message(now time.Time, typ string, data any) ([]byte, bool) {
+	env, err := contract.NewEnvelope(a.cfg.Site, src, a.seq.Next(), a.deps.NewID(), now, typ, data)
+	if err != nil {
+		a.log.Error("building a message failed", "type", typ, "err", err)
+		return nil, false
+	}
+	b, err := json.Marshal(env)
+	if err != nil {
+		a.log.Error("encoding a message failed", "type", typ, "err", err)
+		return nil, false
+	}
+	return b, true
 }
 
 // restate hands the core a state of the hub to say again to the cloud, with a new id:

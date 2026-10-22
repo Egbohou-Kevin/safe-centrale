@@ -202,7 +202,7 @@ func TestSchemaEnumsMatchConstants(t *testing.T) {
 	check("alarm-command.json", "origin", origins)
 	check("alarm-ack.json", "status", []string{AckDone, AckRefused, AckExpired, AckFailed})
 	check("alarm-ack.json", "reason", []string{ReasonZoneOpen, ReasonBadCode, ReasonLockedOut,
-		ReasonWrongState, ReasonPostponeLimit, ReasonUnknownCommand})
+		ReasonWrongState, ReasonPostponeLimit, ReasonUnknownCommand, ReasonRateLimited})
 	check("alarm-state.json", "state", []string{StateDisarmed, StateArming, StateArmed, StateEntryDelay, StateTriggered})
 	check("alarm-cleared.json", "origin", []string{OriginUser, OriginTimeout})
 	check("device-command.json", "command", deviceCommands)

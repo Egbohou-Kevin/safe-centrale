@@ -226,6 +226,34 @@ func TestAnAppAlertWithoutTheCloudFailsOnTheHub(t *testing.T) {
 	}
 }
 
+// An order from the app that came too late is answered to the cloud at once, by the
+// agent: the hub never gets it, and the answer never carries the code.
+func TestAnOrderTheHubWillNotGetIsAnsweredToTheCloud(t *testing.T) {
+	r := newRig(t, nil)
+	r.app.LinkChanged(true, "mqtts")
+	order := r.fromCloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, contract.AlarmCommandData{Command: contract.CmdDisarm,
+		Args: contract.CommandArgs{Code: "482915"}, Origin: contract.OriginApp, User: "u_owner", Exp: contract.TSPtr(t0.Add(-time.Second))})
+	env, _ := contract.ParseEnvelope(order)
+	drivertest.WaitFor(t, "the answer", func() bool { return len(r.cloud.OfType(contract.TypeAlarmAck)) == 1 })
+	ack := r.cloud.OfType(contract.TypeAlarmAck)[0]
+	d, err := contract.DecodeData[contract.AlarmAckData](ack.Env)
+	if err != nil || d.Ref != env.ID || d.Status != contract.AckExpired || d.Reason != "" || ack.Topic != topic("alarm", "ack") || ack.Env.Src != contract.AgentLink {
+		t.Fatalf("%+v %+v %v", ack, d, err)
+	}
+	if bytes.Contains(ack.Payload, []byte("482915")) {
+		t.Fatal("the answer carries the code")
+	}
+	if err := schematest.Check("alarm-ack.json", ack.Env.Data); err != nil {
+		t.Fatal(err)
+	}
+	r.settle()
+	for _, m := range r.local.All() {
+		if m.Topic == topic("alarm", "cmd") || m.Topic == topic("alarm", "ack") {
+			t.Fatalf("the hub never got the order, nor its answer: %s %s", m.Topic, m.Payload)
+		}
+	}
+}
+
 func TestOrdersFromTheCloudReachTheHubUnchanged(t *testing.T) {
 	r := newRig(t, nil)
 	order := r.fromCloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp, User: "u_owner"})

@@ -112,6 +112,8 @@ type Snapshot struct {
 	Dropped   int                  `json:"dropped"`   // items that left the queue without reaching the cloud
 	Tokens    float64              `json:"tokens"`    // the cloud's allowance of messages
 	TokensAt  time.Time            `json:"tokens_at"`
+	Answers   float64              `json:"answers"` // the allowance of answers to orders over the limit (down.go)
+	AnswersAt time.Time            `json:"answers_at"`
 	Photos    map[string]photo     `json:"photos,omitempty"`   // photo id -> its upload
 	Retained  map[string]string    `json:"retained,omitempty"` // retained topic -> id of the hub's last state queued (see up.go)
 }
@@ -182,6 +184,9 @@ func (r *Relay) Restore(s Snapshot) {
 	}
 	if s.TokensAt.IsZero() {
 		s.Tokens = float64(r.cfg.DownBurst)
+	}
+	if s.AnswersAt.IsZero() {
+		s.Answers = float64(r.cfg.DownBurst)
 	}
 	r.s = s
 	r.queue, r.order, r.uplink = nil, 0, 0

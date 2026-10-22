@@ -8,7 +8,8 @@ import (
 )
 
 // From the cloud to the hub: what the cloud may send, checked before it reaches the
-// hub, and at what pace.
+// hub, and at what pace. An order from the app that passed the checks but does not
+// go on to the hub (too late, or over the limit) is answered to the cloud at once.
 
 // cloud checks a message from the cloud and passes it to the hub if it may go.
 func (r *Relay) cloud(c Cloud) []Action {
@@ -30,13 +31,16 @@ func (r *Relay) cloud(c Cloud) []Action {
 	case !slices.Contains(types, env.Type):
 		return refuse("wrong type for the topic: " + env.Type)
 	case slices.Contains(r.s.Seen, env.ID):
-		return nil // a duplicate: already passed on
+		return nil // a duplicate: already passed on, or answered
 	case !r.allow(c.Now):
-		return refuse("too many messages from the cloud")
+		return r.overLimit(c, env)
 	}
 	if late, ok := r.lateResult(env); ok {
 		r.markSeen(env.ID)
 		return []Action{late}
+	}
+	if env.Type == contract.TypeAlarmCommand {
+		return r.passOrder(c, env)
 	}
 	if reason := r.check(c.Now, env); reason != "" {
 		return refuse(reason)
@@ -64,8 +68,6 @@ func (r *Relay) markSeen(id string) {
 // "".
 func (r *Relay) check(now time.Time, env contract.Envelope) string {
 	switch env.Type {
-	case contract.TypeAlarmCommand:
-		return checkAlarmCommand(now, env)
 	case contract.TypeVideoRequest:
 		d, why := valid[contract.VideoRequestData](env)
 		return orExpired(why, now, &d.Exp)
@@ -106,21 +108,56 @@ func valid[T any](env contract.Envelope) (T, string) {
 // orExpired returns why, or that the order expired: an order seen after exp is
 // refused.
 func orExpired(why string, now time.Time, exp *contract.Timestamp) string {
-	if why == "" && exp != nil && !now.Before(exp.Time) {
+	if why == "" && expired(now, exp) {
 		return "expired order"
 	}
 	return why
 }
 
-func checkAlarmCommand(now time.Time, env contract.Envelope) string {
+func expired(now time.Time, exp *contract.Timestamp) bool { return exp != nil && !now.Before(exp.Time) }
+
+// appOrder reads an order from the cloud: it must come from the app. It returns why
+// it is refused, or "".
+func appOrder(env contract.Envelope) (contract.AlarmCommandData, string) {
 	d, err := contract.DecodeData[contract.AlarmCommandData](env)
 	switch {
 	case err != nil:
-		return err.Error()
+		return d, err.Error()
 	case d.Origin != contract.OriginApp:
-		return "an order from the cloud must come from the app, not " + d.Origin
+		return d, "an order from the cloud must come from the app, not " + d.Origin
 	}
-	return orExpired("", now, d.Exp)
+	return d, ""
+}
+
+// passOrder passes an order from the app on to the hub. One that came too late is
+// answered expired at once, as the engine would answer it: the cloud need not wait
+// for an answer that cannot come. Its code goes nowhere.
+func (r *Relay) passOrder(c Cloud, env contract.Envelope) []Action {
+	d, why := appOrder(env)
+	if why != "" {
+		return []Action{Refused{Topic: c.Topic, Reason: why}}
+	}
+	r.markSeen(env.ID) // passed on or answered: once either way
+	if expired(c.Now, d.Exp) {
+		return []Action{AnswerOrder{Ref: env.ID, Status: contract.AckExpired}}
+	}
+	return []Action{PublishLocal{Topic: c.Topic, Payload: c.Payload}}
+}
+
+// overLimit refuses a message over the cloud's allowance. An order from the app that
+// passes the checks is answered refused (rate_limited), so that the phone knows at
+// once, and is remembered: given again later, it must not run after that answer. The
+// answers draw on an allowance of their own, as large as the orders': a flood gets no
+// more of them than orders would pass (each one is a write to the SD card), the rest
+// is dropped as before, and the orders' allowance is not touched.
+func (r *Relay) overLimit(c Cloud, env contract.Envelope) []Action {
+	if env.Type == contract.TypeAlarmCommand {
+		if _, why := appOrder(env); why == "" && r.take(c.Now, &r.s.Answers, &r.s.AnswersAt) {
+			r.markSeen(env.ID)
+			return []Action{AnswerOrder{Ref: env.ID, Status: contract.AckRefused, Reason: contract.ReasonRateLimited}}
+		}
+	}
+	return []Action{Refused{Topic: c.Topic, Reason: "too many messages from the cloud"}}
 }
 
 // alertResult takes the cloud's word on an alert the agent sent it.
@@ -173,19 +210,22 @@ func (r *Relay) alertAck(env contract.Envelope) string {
 	return ""
 }
 
-// allow takes one message from the cloud's allowance, refilled DownPerMinute per
-// minute up to DownBurst.
-func (r *Relay) allow(now time.Time) bool {
-	if !r.s.TokensAt.IsZero() && now.After(r.s.TokensAt) {
-		r.s.Tokens += now.Sub(r.s.TokensAt).Minutes() * float64(r.cfg.DownPerMinute)
+// allow takes one message from the cloud's allowance.
+func (r *Relay) allow(now time.Time) bool { return r.take(now, &r.s.Tokens, &r.s.TokensAt) }
+
+// take takes one from an allowance (what is left, and when it was last refilled),
+// refilled DownPerMinute per minute up to DownBurst.
+func (r *Relay) take(now time.Time, tokens *float64, at *time.Time) bool {
+	if !at.IsZero() && now.After(*at) {
+		*tokens += now.Sub(*at).Minutes() * float64(r.cfg.DownPerMinute)
 	}
-	r.s.Tokens = min(r.s.Tokens, float64(r.cfg.DownBurst))
-	if r.s.TokensAt.IsZero() || now.After(r.s.TokensAt) {
-		r.s.TokensAt = now
+	*tokens = min(*tokens, float64(r.cfg.DownBurst))
+	if at.IsZero() || now.After(*at) {
+		*at = now
 	}
-	if r.s.Tokens < 1 {
+	if *tokens < 1 {
 		return false
 	}
-	r.s.Tokens--
+	*tokens--
 	return true
 }

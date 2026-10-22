@@ -276,8 +276,16 @@ le planning arme dans le moteur.
 
 - `status` : `done`, `refused`, `expired`, `failed`.
 - `reason` si refus : `zone_open`, `bad_code`, `locked_out`, `wrong_state`,
-  `postpone_limit`. Une commande inconnue répond `failed` avec la raison
+  `postpone_limit`, `rate_limited`. Une commande inconnue répond `failed` avec la raison
   `unknown_command`.
+- L'agent de liaison répond lui-même, tout de suite, à un ordre de l'application qu'il
+  ne transmet pas à la centrale, pour que le cloud n'attende pas une réponse qui ne
+  viendrait pas : `expired` (sans raison, comme le moteur) pour un ordre arrivé après son
+  `exp`, `refused` avec `rate_limited` pour un ordre au-delà de sa limite de messages du
+  cloud (voir `agent.md`). `ref` est l'`id` de l'ordre, `src` est `agent.link`. Il ne
+  répond qu'à un ordre qui a passé ses contrôles (topic et enveloppe du site, `origin` à
+  `app`) ; les autres restent refusés sans réponse. Cette réponse part au cloud
+  seulement : la centrale n'a jamais eu l'ordre.
 - Les accusés ne contiennent jamais le code.
 - Un armement accepté alors que des appareils sont muets ou ont une pile faible répond
   `done` avec `detail.offline` et `detail.low_battery` (listes d'appareils) : le clavier
@@ -670,7 +678,10 @@ Changements depuis la v1 validée, sans changement de `v` :
   vers le cloud »). `alarm.entry_delay` et `alarm.triggered` portent `device_name`,
   le nom de l'appareil, facultatif (voir « Événements d'alarme »). Le schéma
   d'`alarm.command` donne la forme du code : `pattern` `^[0-9]{4,8}$` sur `args.code`
-  (voir « Ordres au moteur »).
+  (voir « Ordres au moteur »). L'agent répond tout de suite par `alarm.ack` à un ordre
+  de l'application qu'il ne transmet pas : `expired` pour un ordre périmé, `refused`
+  avec la nouvelle raison `rate_limited` pour un ordre au-delà de sa limite de débit
+  (avant, il les jetait sans répondre).
 
 ## Prévu pour la phase fermée
 

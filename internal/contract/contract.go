@@ -182,6 +182,9 @@ const (
 	ReasonWrongState     = "wrong_state"
 	ReasonPostponeLimit  = "postpone_limit"
 	ReasonUnknownCommand = "unknown_command"
+	// ReasonRateLimited: the link agent refused an order from the app over its limit
+	// of messages from the cloud; the hub never got it.
+	ReasonRateLimited = "rate_limited"
 )
 
 // Alert kinds (alert.request).

@@ -404,14 +404,9 @@ func TestOrdersFromTheCloud(t *testing.T) {
 		t.Fatalf("%+v", acts)
 	}
 
-	earlier := contract.TS(t0)
 	refused := map[string]func() []Action{
 		"keypad origin": func() []Action {
 			_, _, a := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, cmd(contract.OriginKeypad, nil))
-			return a
-		},
-		"expired": func() []Action {
-			_, _, a := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, cmd(contract.OriginApp, &earlier))
 			return a
 		},
 		"wrong type": func() []Action {

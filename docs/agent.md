@@ -169,6 +169,26 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
   refusé.
 - Il y a une limite de débit (20 d'un coup, 60 par minute par défaut), pour qu'un
   cloud défaillant ou piraté ne puisse pas noyer la centrale d'ordres.
+- **Un ordre de l'application qui ne va pas à la centrale reçoit une réponse tout de
+  suite** : sans elle, le cloud attendrait plus d'une minute pour conclure `expired`.
+  L'agent publie lui-même `alarm.ack` vers le cloud, `ref` à l'`id` de l'ordre :
+  - ordre périmé (`exp` dépassée à l'arrivée) : `expired`, sans raison, comme le moteur ;
+  - ordre au-delà de la limite de débit : `refused` avec `rate_limited`. Pas
+    `locked_out`, qui dit au téléphone que trois codes faux ont verrouillé le
+    désarmement pour dix minutes, alors que rien n'a été vérifié et qu'on peut
+    réessayer dans quelques secondes.
+
+  Seul un ordre qui a passé les contrôles reçoit cette réponse : topic et enveloppe du
+  site, type attendu, `origin` à `app`. Les autres sont refusés sans réponse, comme
+  avant. La réponse ne reprend rien de l'ordre sauf son `id` (jamais le code). L'ordre
+  répondu est gardé parmi les `id` déjà vus : redonné plus tard par le broker, il ne
+  s'exécute pas après un `refused`. La réponse part au cloud seulement, sans passer par
+  la centrale, qui n'a jamais eu l'ordre ; elle suit la file comme les autres messages
+  d'alarme.
+- Les réponses aux ordres au-delà de la limite ont leur propre limite, de la même
+  taille (20 d'un coup, 60 par minute) : un flot d'ordres n'obtient pas plus de réponses
+  que d'ordres transmis (chaque réponse s'écrit sur la carte SD), le reste est refusé
+  sans réponse, et ces réponses ne prennent rien sur la limite des ordres.
 
 La **configuration** (contacts, horaires, délais, forfait vidéo) est numérotée par
 version. L'agent la transmet à la centrale, qui la vérifie, la garde sur disque et
@@ -277,15 +297,17 @@ alors directement aux canaux GSM.
 - Scénarios : coupure puis retour d'internet avec une file pleine, redémarrage de
   l'agent avec une file non vide, état du moment redit à chaque connexion, message en
   double, trou de `seq` et rejeu, ordre
-  refusé (mauvais site, périmé, déjà vu), alerte sans confirmation en 10 s, port
-  8883 bloqué avec repli sur 443, file pleine.
+  refusé (mauvais site, déjà vu), ordre périmé ou au-delà de la limite répondu tout de
+  suite, alerte sans confirmation en 10 s, port 8883 bloqué avec repli sur 443, file
+  pleine.
 
 ## Ce qui est codé
 
 - Le cœur (`internal/agent`) : la file à priorités, ses bornes et sa sauvegarde, la
   numérotation et le rejeu, l'état du moment redit à chaque connexion
-  (`internal/agent/restate.go`), les photos, les contrôles de ce qui descend du cloud, le
-  délai de confirmation des alertes. Il ne
+  (`internal/agent/restate.go`), les photos, les contrôles de ce qui descend du cloud et
+  la réponse aux ordres de l'application qui ne vont pas à la centrale
+  (`internal/agent/down.go`), le délai de confirmation des alertes. Il ne
   fait aucune entrée-sortie et ne lit pas l'horloge ; il ne connaît que le contrat.
 - La couche application (`internal/agentapp`) : l'envoi au cloud un message à la fois
   avec reprise, la republication sur la centrale, `agent.status` chaque minute.

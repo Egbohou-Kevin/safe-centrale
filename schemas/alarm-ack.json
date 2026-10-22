@@ -16,7 +16,8 @@
         "refused",
         "expired",
         "failed"
-      ]
+      ],
+      "description": "expired : l'ordre est arrivé après son exp et n'a pas été exécuté (réponse du moteur, ou de l'agent de liaison pour un ordre venu du cloud)."
     },
     "reason": {
       "type": "string",
@@ -26,8 +27,10 @@
         "locked_out",
         "wrong_state",
         "postpone_limit",
-        "unknown_command"
-      ]
+        "unknown_command",
+        "rate_limited"
+      ],
+      "description": "rate_limited : refusé par l'agent de liaison, au-delà de sa limite de messages du cloud ; la centrale ne l'a pas reçu."
     },
     "detail": {
       "type": "object"

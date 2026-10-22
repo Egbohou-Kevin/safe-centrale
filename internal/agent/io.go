@@ -81,6 +81,15 @@ type FailAlert struct {
 	Ref string // the alert.request
 }
 
+// AnswerOrder: an order from the app the agent does not pass on to the hub (too late,
+// or over the limit), answered to the cloud at once (alarm.ack, ref the order's id).
+// It never reaches the hub.
+type AnswerOrder struct {
+	Ref    string // the alarm.command
+	Status string // contract.AckExpired or contract.AckRefused
+	Reason string // contract.ReasonRateLimited for a refusal
+}
+
 // StatusChanged: the link changed, publish agent.status.
 type StatusChanged struct{ Status Status }
 
@@ -106,6 +115,7 @@ type Dropped struct {
 
 func (PublishLocal) isAction()  {}
 func (FailAlert) isAction()     {}
+func (AnswerOrder) isAction()   {}
 func (StatusChanged) isAction() {}
 func (Refused) isAction()       {}
 func (Late) isAction()          {}
