@@ -49,6 +49,8 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action)
 			a.log.Info("the cloud asked for messages again", "from", v.Report.From, "to", v.Report.To,
 				"resent", v.Report.Resent, "missing_ranges", len(v.Report.Missing))
 			a.publishOwn(now, contract.AgentReplayedTopic(a.cfg.Site), contract.TypeAgentReplayed, v.Report, false)
+		case agent.Restate:
+			a.restate(now, v)
 		case agent.Upload, agent.RemovePhoto, agent.PhotoReport:
 			a.dispatchPhoto(now, act)
 		case agent.QueueSave, agent.QueueDrop, agent.UplinkSave:
@@ -100,9 +102,31 @@ func (a *App) publishOwn(now time.Time, topic, typ string, data any, retain bool
 		return
 	}
 	a.out.Put(&outbox.Item{Topic: topic, Data: b, QoS: 1, Retain: retain, Raw: true})
-	// On the loop: safe, and saved with this task. A full queue may answer with
-	// actions of its own.
-	if acts := a.core.Handle(agent.Own{Now: now, Topic: topic, Payload: b}); len(acts) > 0 {
+	a.handOwn(now, topic, b)
+}
+
+// restate hands the core a state of the hub to say again to the cloud, with a new id:
+// the cloud drops a known id as a duplicate. The rest of the message is the hub's, its
+// ts too. Not published on the hub, which has it already.
+func (a *App) restate(now time.Time, r agent.Restate) {
+	env, err := contract.ParseEnvelope(r.Payload)
+	if err != nil {
+		a.log.Error("reading a state to say again failed", "topic", r.Topic, "err", err)
+		return
+	}
+	env.ID = a.deps.NewID()
+	b, err := json.Marshal(env)
+	if err != nil {
+		a.log.Error("encoding a state to say again failed", "topic", r.Topic, "err", err)
+		return
+	}
+	a.handOwn(now, r.Topic, b)
+}
+
+// handOwn hands a message of the agent to the core, for the cloud. On the loop: safe,
+// and saved with this task. A full queue may answer with actions of its own.
+func (a *App) handOwn(now time.Time, topic string, payload []byte) {
+	if acts := a.core.Handle(agent.Own{Now: now, Topic: topic, Payload: payload}); len(acts) > 0 {
 		a.dispatch(a.life, now, acts)
 	}
 }

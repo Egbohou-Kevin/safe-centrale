@@ -18,8 +18,11 @@ func (r *Relay) local(now time.Time, topic string, payload []byte, own bool) []A
 	if !ok || (route.own && !own) || slices.ContainsFunc(r.queue, func(it Item) bool { return it.ID == env.ID }) {
 		return nil // not for the cloud, given back by the broker, or the same message again (QoS 1)
 	}
-	if route.retain && !own && !r.newState(topic, env.ID) {
-		return nil
+	if route.retain && !own {
+		fresh := r.newState(topic, env.ID)
+		if again := r.heard(route, topic, payload, fresh); !fresh {
+			return again // given back by the hub's broker: said again only if this connection owes it (restate.go)
+		}
 	}
 	if inc := incidentOf(env); inc != "" {
 		r.s.Incidents[inc] = now

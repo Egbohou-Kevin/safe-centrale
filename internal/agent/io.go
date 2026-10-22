@@ -19,7 +19,8 @@ type Local struct {
 
 // Own is a message the agent itself publishes on the hub's broker (its status, a
 // failed alert): the agent does not read its own publications back, so it hands
-// them to the relay to go up like the others.
+// them to the relay to go up like the others. A state of the hub said again
+// (Restate), with its new id, comes back this way too.
 type Own struct {
 	Now     time.Time
 	Topic   string

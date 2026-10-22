@@ -14,7 +14,10 @@ type upRoute struct {
 	types  []string // the envelope types accepted on this topic
 	prio   Priority
 	retain bool // a retained topic: also retained on the cloud's broker, only the latest counts
-	device bool // a device event: only some capabilities go up
+	// restate: the hub's latest state there is said again at each new connection to
+	// the cloud (restate.go).
+	restate bool
+	device  bool // a device event: only some capabilities go up
 	// own: only the agent publishes there, and hands its messages over itself (Own).
 	// The hub's broker only gives them back, retained, at each new connection.
 	own bool
@@ -35,11 +38,11 @@ var alarmEvents = []string{
 var upRoutes = map[string]upRoute{
 	"alarm/event":      {types: alarmEvents, prio: PriorityAlarm},
 	"alarm/ack":        {types: []string{contract.TypeAlarmAck}, prio: PriorityAlarm},
-	"alarm/state":      {types: []string{contract.TypeAlarmState}, prio: PriorityState, retain: true},
+	"alarm/state":      {types: []string{contract.TypeAlarmState}, prio: PriorityState, retain: true, restate: true},
 	"alert/request":    {types: []string{contract.TypeAlertRequest}, prio: PriorityAlarm},
 	"alert/result":     {types: []string{contract.TypeAlertResult}, prio: PriorityAlarm},
 	"alert/ack":        {types: []string{contract.TypeAlertAck}, prio: PriorityAlarm},
-	"system/health":    {types: []string{contract.TypeHealth}, prio: PriorityState, retain: true},
+	"system/health":    {types: []string{contract.TypeHealth}, prio: PriorityState, retain: true, restate: true},
 	"system/heartbeat": {types: []string{contract.TypeHeartbeat}, prio: PriorityState},
 	"agent/status":     {types: []string{contract.TypeAgentStatus}, prio: PriorityState, retain: true, own: true},
 	"device/+/event":   {types: []string{contract.TypeDeviceEvent}, prio: PriorityNormal, device: true},

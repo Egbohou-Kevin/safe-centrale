@@ -112,6 +112,19 @@ Quand internet est coupé :
   du dernier état parti. Un état changé pendant un arrêt de l'agent a un autre `id` et
   part. L'agent ne lit pas ses propres topics (`agent/status`, `agent/replayed`) sur
   la centrale.
+- **L'état du moment à chaque connexion au cloud** : un cloud qui a perdu l'état de
+  l'alarme ou la santé (base remise à zéro, ou cloud qui ne les gardait pas encore)
+  n'aurait rien jusqu'au prochain changement. À chaque nouvelle connexion au cloud,
+  l'agent redit donc le dernier `alarm.state` et le dernier `system.health` de la
+  centrale, comme des messages neufs : même contenu, même `ts`, mais un nouvel `id`
+  (le cloud jette un `id` connu comme doublon). Ils passent par la file comme les
+  autres : numérotés, confirmés, gardés pour un rejeu. Pas plus d'une fois par
+  connexion : sur une liaison qui saute, la file n'en garde qu'un de chaque, le plus
+  récent. Un état qui attend déjà dans la file part tel quel. L'agent garde ces deux
+  états en mémoire seulement : après un redémarrage, il les apprend quand le broker de
+  la centrale les redonne, et les redit alors si la connexion au cloud est déjà là. Le
+  cloud garde l'état le plus récent par son numéro : le même état redit n'y change
+  rien. Ils ne sont pas republiés sur la centrale.
 - **Rejeu** : le cloud demande `agent.replay` (`from`, `to`, 1000 au plus, topic
   `agent/cmd`). L'agent renvoie ce qu'il a encore, après le reste, sans `retain`, avec
   le même `id` et le même `seq`, et répond `agent.replayed` (`resent`, `missing`,
@@ -210,7 +223,8 @@ la même valeur que dans `video.json`.
 - **Ce qui part comme avant.** Tout le reste : alarmes, alertes, états, santé.
 - **Ce qui part tout de suite quand même.** Un changement de liaison (connexion
   rétablie, repli en WebSocket). Le cloud efface ainsi au plus vite le « hors ligne »
-  laissé par le broker.
+  laissé par le broker. L'état de l'alarme et la santé redits à chaque connexion
+  partent aussi (quelques centaines d'octets par connexion).
 - **Après une coupure.** Le cloud reçoit le heartbeat le plus récent, pas les
   anciens.
 - **Ce que voit le cloud.** `agent.status` porte `economy`, et le cloud sait alors
@@ -261,14 +275,16 @@ alors directement aux canaux GSM.
 
 - **Faux cloud** (un broker MQTT local) pour tout tester sans serveur réel.
 - Scénarios : coupure puis retour d'internet avec une file pleine, redémarrage de
-  l'agent avec une file non vide, message en double, trou de `seq` et rejeu, ordre
+  l'agent avec une file non vide, état du moment redit à chaque connexion, message en
+  double, trou de `seq` et rejeu, ordre
   refusé (mauvais site, périmé, déjà vu), alerte sans confirmation en 10 s, port
   8883 bloqué avec repli sur 443, file pleine.
 
 ## Ce qui est codé
 
 - Le cœur (`internal/agent`) : la file à priorités, ses bornes et sa sauvegarde, la
-  numérotation et le rejeu, les photos, les contrôles de ce qui descend du cloud, le
+  numérotation et le rejeu, l'état du moment redit à chaque connexion
+  (`internal/agent/restate.go`), les photos, les contrôles de ce qui descend du cloud, le
   délai de confirmation des alertes. Il ne
   fait aucune entrée-sortie et ne lit pas l'horloge ; il ne connaît que le contrat.
 - La couche application (`internal/agentapp`) : l'envoi au cloud un message à la fois

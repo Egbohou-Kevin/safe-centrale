@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -280,6 +281,33 @@ func TestTheQueueSurvivesARestartOfTheAgent(t *testing.T) {
 	second := again.local.OfType(contract.TypeAgentStatus)
 	if second[0].Env.Seq <= first[len(first)-1].Env.Seq {
 		t.Fatalf("seq went from %d back to %d", first[len(first)-1].Env.Seq, second[0].Env.Seq)
+	}
+}
+
+// At each new connection, the cloud gets the hub's current state again, as a new
+// message: it may have lost the one sent before (its database reset).
+func TestEachConnectionSaysTheCurrentStateAgain(t *testing.T) {
+	r := newRig(t, nil)
+	r.fromHub(topic("alarm", "state"), contract.TypeAlarmState, contract.AlarmStateData{State: contract.StateArmed, Since: contract.TS(t0)})
+	r.app.LinkChanged(true, "mqtts")
+	drivertest.WaitFor(t, "the state", func() bool { return len(r.cloud.OfType(contract.TypeAlarmState)) == 1 })
+	r.app.LinkChanged(false, "")
+	r.app.LinkChanged(true, "wss")
+	drivertest.WaitFor(t, "the state again", func() bool { return len(r.cloud.OfType(contract.TypeAlarmState)) == 2 })
+	states := r.cloud.OfType(contract.TypeAlarmState)
+	first, again := states[0].Env, states[1].Env
+	if again.ID == first.ID || again.Seq <= first.Seq || !states[1].Retain {
+		t.Fatalf("a new id and a new number, retained: %+v after %+v", again, first)
+	}
+	again.ID, again.Seq = first.ID, first.Seq
+	if !reflect.DeepEqual(again, first) {
+		t.Fatalf("said again, the state must be the hub's: %+v, %+v", again, first)
+	}
+	if err := schematest.Check("envelope.json", states[1].Payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.local.OfType(contract.TypeAlarmState)) != 0 {
+		t.Fatal("said again to the cloud only, never on the hub")
 	}
 }
 

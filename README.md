@@ -38,7 +38,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/maint/wire` | La traduction entre la maintenance et le contrat |
 | `internal/power` | Le module batterie de la centrale (neuvième domaine) : coupure du secteur confirmée après quelques secondes, charge annoncée par paliers, arrêt propre avant la batterie vide |
 | `internal/power/wire` | La traduction entre le module batterie et le contrat (secteur et batterie de l'appareil `hub_device_id`) |
-| `internal/agent` | Le cœur de l'agent de liaison : file pour le cloud à priorités et bornée, contrôle de ce qui descend du cloud, délai de prise en charge des alertes. Sans entrées-sorties ni horloge, il ne connaît que le contrat |
+| `internal/agent` | Le cœur de l'agent de liaison : file pour le cloud à priorités et bornée, état de l'alarme et santé redits à chaque connexion au cloud, contrôle de ce qui descend du cloud, délai de prise en charge des alertes. Sans entrées-sorties ni horloge, il ne connaît que le contrat |
 
 ### Les couches application
 

@@ -650,6 +650,12 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 - Un composant qui reçoit un `v` plus grand que le sien l'ignore et le signale
   dans les journaux.
 
+Changements depuis la v1 validée, sans changement de `v` :
+
+- **22 octobre 2026** : l'agent de liaison redit au cloud le dernier `alarm.state` et le
+  dernier `system.health` à chaque connexion, avec un nouvel `id` (voir « Ce qui part
+  vers le cloud »).
+
 ## Prévu pour la phase fermée
 
 À réserver dès maintenant, à implémenter plus tard :
@@ -663,7 +669,9 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 L'agent de liaison transmet seulement :
 
 - les événements `alarm.*` et `alert.*`, et les réponses aux ordres (`alarm.ack`),
-- `alarm.state` et `system.health`,
+- `alarm.state` et `system.health`, à chaque changement, et de nouveau à chaque
+  connexion de l'agent au cloud : le dernier de chacun, même contenu et même `ts`, avec
+  un nouvel `id` (voir `agent.md`). Le cloud garde le plus récent par son `seq` ;
 - le `system.heartbeat`,
 - les `device.event` de type `smoke`, `panic`, `tamper`, `mains` et les
   changements utiles de `battery`,
