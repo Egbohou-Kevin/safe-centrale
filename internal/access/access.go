@@ -273,8 +273,14 @@ func (r *Registry) Verify(code string) (user string, ok bool) {
 	return user, ok
 }
 
-func (r *Registry) wellFormed(code string) bool {
-	if len(code) < r.cfg.MinDigits || len(code) > r.cfg.MaxDigits {
+func (r *Registry) wellFormed(code string) bool { return r.cfg.WellFormed(code) }
+
+// WellFormed reports whether code has the form of a code: digits only, from MinDigits
+// to MaxDigits. Any other code is nobody's. The contract's schema of an order says
+// the same (alarm-command.json, args.code), for the cloud; a test of the hub ties the
+// two.
+func (c Config) WellFormed(code string) bool {
+	if len(code) < c.MinDigits || len(code) > c.MaxDigits {
 		return false
 	}
 	for _, c := range code {

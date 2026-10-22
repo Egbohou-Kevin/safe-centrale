@@ -315,7 +315,9 @@ Reste à ajouter : les événements de journal `audit.config_applied`,
   ligne de commande `safehome-install` (par SSH, voir `operations.md`) fait le même
   travail et s'appuie sur la même logique (`internal/install`).
 - Choix faits au codage (`internal/access`) :
-  - 4 à 8 chiffres, uniquement des chiffres (c'est ce que saisit un clavier).
+  - 4 à 8 chiffres, uniquement des chiffres (c'est ce que saisit un clavier). Le schéma
+    des ordres (`schemas/alarm-command.json`, `args.code`) dit la même forme au cloud,
+    et un test de la centrale empêche les deux de s'écarter.
   - Refusés d'office : un chiffre répété (0000, 777777) et les suites (1234, 987654,
     7890). C'est un ajout, pour tenir « difficile à deviner » ; il ne remplace pas le
     conseil de 6 chiffres.

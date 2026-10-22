@@ -1,11 +1,13 @@
 package hub
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
 	"safehome/internal/contract"
 	"safehome/internal/engine"
+	"safehome/internal/schematest"
 )
 
 // The broker keeps the hub's session for a day: what was sent while the hub was down
@@ -74,5 +76,28 @@ func TestAFreshOrderAfterTheClockSteppedBackIsCarriedOut(t *testing.T) {
 	r.waitAcks(2)
 	if a := lastAck(t, r); a.Status != contract.AckExpired {
 		t.Fatalf("%+v", a)
+	}
+}
+
+// The cloud checks an order against the contract's schema before it sends it: the
+// schema's form of a code (alarm-command.json, args.code) is the hub's own. A code
+// the schema let through but the hub cannot recognise would be counted as a wrong
+// one; a code the hub recognises but the schema refused could not be typed in the app.
+func TestTheOrderSchemaTakesTheCodesTheHubRecognises(t *testing.T) {
+	codes := []string{"", "48a915", "4829 ", " 4829", "4829\n", "-4829", "+4829", "4829.0", "0x4829",
+		"\uff14\uff18\uff12\uff19", "\u0664\u0668\u0662\u0669\u0664\u0668"} // full-width and Arabic-Indic digits
+	for n := 1; n <= 12; n++ {
+		codes = append(codes, "482915736104"[:n])
+	}
+	format := DefaultConfig(site, devHub, devSiren).Access
+	for _, code := range codes {
+		raw, err := json.Marshal(map[string]any{"command": contract.CmdDisarm, "args": map[string]string{"code": code}, "origin": contract.OriginApp})
+		if err != nil {
+			t.Fatal(err)
+		}
+		inSchema, byHub := schematest.Check("alarm-command.json", raw) == nil, format.WellFormed(code)
+		if inSchema != byHub {
+			t.Errorf("code %q: the schema takes it %t, the hub %t", code, inSchema, byHub)
+		}
 	}
 }

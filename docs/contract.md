@@ -246,6 +246,10 @@ le planning arme dans le moteur.
 | `alarm.bypass` | Contourne des zones pour la période d'armement | `devices` (liste) |
 | `alarm.postpone` | Reporte l'armement automatique | |
 
+- `code` : 4 à 8 chiffres ASCII, rien d'autre (`pattern` `^[0-9]{4,8}$` du schéma),
+  la forme des codes de la centrale (`security-install.md`). Un code d'une autre forme
+  n'est celui de personne : la centrale le compterait comme faux. Un test de la centrale
+  lie le schéma à sa règle (`access.Config.WellFormed`).
 - `origin` : `keypad`, `app`, `schedule`. Il n'y a pas de SMS dans la v1.
 - `user` : identifiant de la personne, quand il est connu (application).
 - Le moteur répond sur `alarm/ack`.
@@ -664,7 +668,9 @@ Changements depuis la v1 validée, sans changement de `v` :
 - **22 octobre 2026** : l'agent de liaison redit au cloud le dernier `alarm.state` et le
   dernier `system.health` à chaque connexion, avec un nouvel `id` (voir « Ce qui part
   vers le cloud »). `alarm.entry_delay` et `alarm.triggered` portent `device_name`,
-  le nom de l'appareil, facultatif (voir « Événements d'alarme »).
+  le nom de l'appareil, facultatif (voir « Événements d'alarme »). Le schéma
+  d'`alarm.command` donne la forme du code : `pattern` `^[0-9]{4,8}$` sur `args.code`
+  (voir « Ordres au moteur »).
 
 ## Prévu pour la phase fermée
 

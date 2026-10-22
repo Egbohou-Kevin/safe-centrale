@@ -13,7 +13,8 @@
       "properties": {
         "code": {
           "type": "string",
-          "description": "Code d'accès. Jamais écrit dans un journal, jamais renvoyé."
+          "pattern": "^[0-9]{4,8}$",
+          "description": "Code d'accès : 4 à 8 chiffres ASCII, rien d'autre (la règle de la centrale). Jamais écrit dans un journal, jamais renvoyé."
         },
         "force": {
           "type": "boolean"
