@@ -19,15 +19,17 @@ touche que l'adaptateur (voir `architecture.md`).
   les mêmes topics.
 - **Au moins une fois** : les messages d'événements et de commandes passent en QoS
   1. Un message peut arriver deux fois, donc chaque récepteur déduplique avec
-  `id`.
+  `id`. Une exception : sur le broker du cloud, l'agent de liaison lit `alarm/cmd` en
+  QoS 0, pour que le code d'accès n'y attende jamais (voir « Qualité de service sur le
+  broker du cloud »).
 - **Tolérant aux champs inconnus** : un récepteur ignore ce qu'il ne connaît pas.
   Ajouter un champ ne casse rien.
 - **Pas de secret ni de donnée personnelle** dans les événements. Seule exception :
   le code du site, présent dans les événements `keypad` et dans les ordres
   `alarm.disarm` et `alarm.silence`. Il ne circule que sur le broker local et sur
-  la liaison TLS vers le site, n'est jamais écrit dans les journaux, n'est jamais
-  renvoyé dans une réponse et n'est jamais transmis au cloud par l'agent de
-  liaison dans un événement.
+  la liaison TLS vers le site, n'attend jamais sur le broker du cloud (QoS 0, voir
+  plus bas), n'est jamais écrit dans les journaux, n'est jamais renvoyé dans une
+  réponse et n'est jamais transmis au cloud par l'agent de liaison dans un événement.
 
 ## Enveloppe commune
 
@@ -97,6 +99,28 @@ Tous les topics commencent par `safehome/{site}/`.
 | `.../maint/session` | Étapes d'une session de maintenance, vues par le propriétaire | non |
 | `.../install/mode` | Mode installation ouvert ou fermé, publié par la centrale | oui |
 | `.../install/cmd` | Fin du mode installation, depuis la console locale, **local seulement** | non |
+
+### Qualité de service sur le broker du cloud
+
+L'agent de liaison garde sa session sur le broker du cloud pendant un jour (session
+MQTT 5 persistante) : pour un abonnement en QoS 1, le broker garde ce qui arrive pendant
+que l'agent est absent et le lui remet à son retour. Mosquitto le garde en mémoire et
+dans son fichier (`mosquitto.db`), même après l'expiration du message (la durée de vie
+MQTT 5 limite la remise, pas la garde). Pour un abonnement en QoS 0, il ne garde rien.
+
+| Topic (cloud vers site) | QoS de l'abonnement | Pourquoi |
+|---|---|---|
+| `alarm/cmd` | 0 | Porte le code d'accès (`alarm.disarm`, `alarm.silence`), que le cloud ne garde jamais : le broker ne doit pas le garder non plus. Un ordre ne vaut qu'une minute (`exp`) |
+| `video/cmd` | 1 | Le jeton est celui du cloud, pour une session ; un `video.stop` vaut encore après une coupure, une demande périmée est refusée par l'agent |
+| `photo/cmd` | 1 | Le jeton est celui du cloud, pour une photo ; l'adresse vaut jusqu'à son `exp` et la photo est une preuve de l'alarme |
+| `config/set`, `maint/cmd`, `agent/cmd`, `alert/result`, `alert/ack` | 1 | Pas de secret ; ils valent encore au retour de l'agent (un `maint.open` périmé est refusé) |
+
+Le cloud publie toujours en QoS 1 : le broker lui accuse réception, puis remet
+l'ordre à l'agent en QoS 0 (la plus petite des deux). Le prix, accepté : un ordre donné
+pendant que l'agent est absent, même brièvement (coupure d'internet, ou les quelque
+45 s où le broker ne le sait pas encore parti), n'est jamais remis ni exécuté au retour.
+Personne ne répond : le téléphone le voit `expired` (au bout de 70 s dans le cloud).
+Redonner l'ordre une fois le site revenu est un geste de la personne.
 
 ## Appareils et capacités
 
@@ -287,6 +311,9 @@ le planning arme dans le moteur.
   `app`) ; les autres restent refusés sans réponse. Cette réponse part au cloud
   seulement : la centrale n'a jamais eu l'ordre.
 - Les accusés ne contiennent jamais le code.
+- L'agent lit `alarm/cmd` en QoS 0 sur le broker du cloud : un ordre donné pendant son
+  absence n'est pas gardé pour lui et ne s'exécute pas à son retour ; il reste sans
+  réponse, `expired` pour le cloud (voir « Qualité de service sur le broker du cloud »).
 - Un armement accepté alors que des appareils sont muets ou ont une pile faible répond
   `done` avec `detail.offline` et `detail.low_battery` (listes d'appareils) : le clavier
   peut avertir. Ces défauts ne bloquent jamais l'armement.
@@ -683,7 +710,11 @@ Changements depuis la v1 validée, sans changement de `v` :
   avec la nouvelle raison `rate_limited` pour un ordre au-delà de sa limite de débit
   (avant, il les jetait sans répondre). Le verrouillage ne compte plus que les codes faux des
   10 dernières minutes, et `attempts` d'`alarm.auth_failed` les compte de même (avant :
-  les codes faux de suite, sans limite de temps, voir `engine.md`).
+  les codes faux de suite, sans limite de temps, voir `engine.md`). L'agent lit
+  `alarm/cmd` en QoS 0 sur le broker du cloud, qui ne garde donc plus pour un agent
+  absent un ordre portant le code ; un ordre donné pendant une coupure n'est plus
+  exécuté au retour, le téléphone le voit `expired` (voir « Qualité de service sur le
+  broker du cloud »). Les autres topics descendants restent en QoS 1.
 
 ## Prévu pour la phase fermée
 

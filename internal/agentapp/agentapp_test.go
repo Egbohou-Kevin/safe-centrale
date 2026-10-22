@@ -76,7 +76,12 @@ func TestSubscriptionsNeverHearThemselves(t *testing.T) {
 	}
 	for _, s := range r.app.CloudSubscriptions() {
 		cloud = append(cloud, s.Filter)
-		if !s.NoLocal || s.QoS != 1 {
+		// The order with the access code is read at QoS 0: never kept for an agent away.
+		wantQoS := byte(1)
+		if s.Filter == topic("alarm", "cmd") {
+			wantQoS = 0
+		}
+		if !s.NoLocal || s.QoS != wantQoS {
 			t.Errorf("%+v", s)
 		}
 	}

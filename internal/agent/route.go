@@ -2,6 +2,7 @@ package agent
 
 import (
 	"slices"
+	"strings"
 
 	"safehome/internal/contract"
 )
@@ -80,26 +81,50 @@ func routeKey(parts []string) string {
 	return parts[0] + "/" + parts[1]
 }
 
-// downRoutes are what the cloud may publish to the site, keyed like upRoutes, with
-// the envelope types accepted. Anything else is refused: the cloud never commands a
-// device nor pairs one.
-var downRoutes = map[string][]string{
-	"alarm/cmd":    {contract.TypeAlarmCommand},
-	"video/cmd":    {contract.TypeVideoRequest, contract.TypeVideoStop},
-	"alert/result": {contract.TypeAlertResult},
-	"alert/ack":    {contract.TypeAlertAck},
-	"config/set":   {contract.TypeConfigSet},
-	"photo/cmd":    {contract.TypePhotoUpload}, // for the agent itself
-	"maint/cmd":    {contract.TypeMaintOpen, contract.TypeMaintClose},
-	"agent/cmd":    {contract.TypeAgentReplay}, // for the agent itself
+// downRoute is what the cloud may publish on a topic.
+type downRoute struct {
+	types []string // the envelope types accepted
+	// code: the messages may carry the site's access code, which the cloud never
+	// keeps. The agent reads them at QoS 0, so the cloud's broker queues none of them
+	// for the agent while it is away, neither in memory nor in its file: an order
+	// worth a minute is not kept for a day, even past its expiry. One the agent
+	// misses is not run later; the phone sees it expired.
+	code bool
 }
 
-// DownFilters lists the topics the agent reads on the cloud's broker.
-func DownFilters(site string) []string {
-	var out []string
-	for key := range downRoutes {
-		out = append(out, contract.Topic(site, key))
+// downRoutes are what the cloud may publish to the site, keyed like upRoutes. Anything
+// else is refused: the cloud never commands a device nor pairs one. The tokens of
+// video/cmd and photo/cmd are the cloud's own, made for one session or one photo: its
+// broker may keep them, and a stop or an upload address still counts after an outage.
+var downRoutes = map[string]downRoute{
+	"alarm/cmd":    {types: []string{contract.TypeAlarmCommand}, code: true},
+	"video/cmd":    {types: []string{contract.TypeVideoRequest, contract.TypeVideoStop}},
+	"alert/result": {types: []string{contract.TypeAlertResult}},
+	"alert/ack":    {types: []string{contract.TypeAlertAck}},
+	"config/set":   {types: []string{contract.TypeConfigSet}},
+	"photo/cmd":    {types: []string{contract.TypePhotoUpload}}, // for the agent itself
+	"maint/cmd":    {types: []string{contract.TypeMaintOpen, contract.TypeMaintClose}},
+	"agent/cmd":    {types: []string{contract.TypeAgentReplay}}, // for the agent itself
+}
+
+// Filter is a topic the agent reads on the cloud's broker, with the QoS to ask for.
+type Filter struct {
+	Topic string
+	QoS   byte
+}
+
+// DownFilters lists the topics the agent reads on the cloud's broker: at QoS 1, so
+// the broker keeps what comes while the agent is away, except where the access code
+// may pass (QoS 0, nothing kept).
+func DownFilters(site string) []Filter {
+	var out []Filter
+	for key, route := range downRoutes {
+		f := Filter{Topic: contract.Topic(site, key), QoS: 1}
+		if route.code {
+			f.QoS = 0
+		}
+		out = append(out, f)
 	}
-	slices.Sort(out)
+	slices.SortFunc(out, func(a, b Filter) int { return strings.Compare(a.Topic, b.Topic) })
 	return out
 }

@@ -18,7 +18,7 @@ func (r *Relay) cloud(c Cloud) []Action {
 	if !ok || site != r.cfg.Site {
 		return refuse("not a topic of this site")
 	}
-	types, ok := downRoutes[routeKey(parts)]
+	route, ok := downRoutes[routeKey(parts)]
 	if !ok {
 		return refuse("the cloud may not publish there")
 	}
@@ -28,7 +28,7 @@ func (r *Relay) cloud(c Cloud) []Action {
 		return refuse("invalid message: " + err.Error())
 	case env.Site != r.cfg.Site:
 		return refuse("message for another site")
-	case !slices.Contains(types, env.Type):
+	case !slices.Contains(route.types, env.Type):
 		return refuse("wrong type for the topic: " + env.Type)
 	case slices.Contains(r.s.Seen, env.ID):
 		return nil // a duplicate: already passed on, or answered

@@ -284,35 +284,22 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	cloud.publish(contract.ConfigSetTopic(site), "cloud", contract.TypeConfigSet, contract.ConfigSetData{EntryDelayS: 30})
 	drivertest.WaitFor(t, "the bad configuration refused", func() bool { return strings.Contains(logs.String(), "refused a message from the cloud") })
 
-	// A photo of the alarm: announced to the cloud, which says where to send it; the
-	// agent sends the file over HTTPS, says so, and removes it.
-	endpoint := startPhotoEndpoint(t, files)
-	jpeg := []byte{0xFF, 0xD8, 'p', 'i', 'c', 0xFF, 0xD9}
-	os.MkdirAll(filepath.Join(state, "photos"), 0o700)
-	os.WriteFile(filepath.Join(state, "photos", "01JB8ZQ7V2T4X9H6N5R0WYCE00.jpg"), jpeg, 0o600)
-	taken := hub.publish(contract.PhotoTakenTopic(site), "video", contract.TypePhotoTaken, contract.PhotoTakenData{
-		Photo: "01JB8ZQ7V2T4X9H6N5R0WYCE00", Incident: "inc1", Camera: "cam_caisse", Bytes: int64(len(jpeg)), Width: 640,
-	})
-	drivertest.WaitFor(t, "photo.taken on the cloud", func() bool { return cloud.has(contract.TypePhotoTaken, taken) })
-	cloud.publish(contract.PhotoCmdTopic(site), "cloud", contract.TypePhotoUpload, contract.PhotoUploadData{
-		Photo: "01JB8ZQ7V2T4X9H6N5R0WYCE00", URL: endpoint.url + "/v1/photos/01JB8ZQ7V2T4X9H6N5R0WYCE00",
-		Token: "tok-photo-secret", Exp: contract.TS(time.Now().Add(10 * time.Minute)),
-	})
-	drivertest.WaitFor(t, "photo.sent on the cloud", func() bool { return len(cloud.of(contract.TypePhotoSent)) == 1 })
-	if got := endpoint.received(); !bytes.Equal(got, jpeg) {
-		t.Fatalf("the endpoint got %q", got)
-	}
-	if _, err := os.Stat(filepath.Join(state, "photos", "01JB8ZQ7V2T4X9H6N5R0WYCE00.jpg")); !os.IsNotExist(err) {
-		t.Fatal("a sent photo is removed")
-	}
-	if hub.of(contract.TypePhotoUpload) != nil || strings.Contains(logs.String(), "tok-photo-secret") {
-		t.Fatal("the upload's token reached the hub or the logs")
-	}
+	sendAPhoto(t, files, state, hub, cloud, logs)
 
 	// The internet goes down: the hub hears it, and an alarm raised meanwhile waits on
 	// the disk until the cloud is back.
 	link.cut()
 	drivertest.WaitFor(t, "the link down on the hub", func() bool { return hub.lastStatus().Uplink == contract.UplinkDown })
+
+	// Meanwhile the cloud's broker knows the agent away (its Last Will is out), and
+	// keeps its session. An order with the access code is not kept for it: the agent
+	// reads alarm/cmd at QoS 0. A new configuration is kept, and arrives later.
+	drivertest.WaitFor(t, "the site offline on the cloud", func() bool { return cloud.lastStatus().Uplink == contract.UplinkDown })
+	missed := cloud.publish(contract.AlarmCmdTopic(site), "cloud", contract.TypeAlarmCommand, contract.AlarmCommandData{
+		Command: contract.CmdDisarm, Args: contract.CommandArgs{Code: "482913"}, Origin: contract.OriginApp, User: "u_owner",
+		Exp: new(contract.TS(time.Now().Add(5 * time.Minute))),
+	})
+	later := cloud.publish(contract.ConfigSetTopic(site), "cloud", contract.TypeConfigSet, contract.ConfigSetData{Version: 3, EntryDelayS: 40})
 	second := hub.publish(contract.AlarmEventTopic(site), "engine.alarm", contract.TypeAlarmTriggered, triggered)
 	drivertest.WaitFor(t, "the alarm queued", func() bool { return hub.lastStatus().Queued > 0 || strings.Contains(logs.String(), "queued=1") })
 	waiting := filepath.Join(state, queueName, second+".json") // a file of its own, not the whole queue
@@ -322,6 +309,16 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	drivertest.WaitFor(t, "the alarm off the disk", func() bool { _, err := os.Stat(waiting); return os.IsNotExist(err) })
 	drivertest.WaitFor(t, "the link up again", func() bool { return hub.lastStatus().Uplink == contract.UplinkUp })
 	drivertest.WaitFor(t, "the site online on the cloud", func() bool { return cloud.lastStatus().Uplink == contract.UplinkUp })
+
+	// Back: the configuration kept by the broker arrives, the order with the code
+	// never does (the phone sees it expired), and an order given now passes as before.
+	drivertest.WaitFor(t, "the kept configuration on the hub", func() bool { return hub.has(contract.TypeConfigSet, later) })
+	now := cloud.publish(contract.AlarmCmdTopic(site), "cloud", contract.TypeAlarmCommand,
+		contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp, User: "u_owner"})
+	drivertest.WaitFor(t, "the order given once back on the hub", func() bool { return hub.has(contract.TypeAlarmCommand, now) })
+	if hub.has(contract.TypeAlarmCommand, missed) || cloud.has(contract.TypeAlarmAck, missed) {
+		t.Fatal("the cloud's broker kept the order with the code for the absent agent")
+	}
 
 	// The cloud numbers what it got without a hole, whatever stayed on the site, and
 	// gets a message again by asking for its number.
@@ -387,6 +384,34 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), "pw-of-the-site") {
 		t.Fatal("the cloud's password shows in the logs")
+	}
+}
+
+// sendAPhoto plays a photo of the alarm: announced to the cloud, which says where to
+// send it; the agent sends the file over HTTPS, says so, and removes it.
+func sendAPhoto(t *testing.T, files mqtttest.TLSFiles, state string, hub, cloud *side, logs *drivertest.SyncBuffer) {
+	t.Helper()
+	endpoint := startPhotoEndpoint(t, files)
+	jpeg := []byte{0xFF, 0xD8, 'p', 'i', 'c', 0xFF, 0xD9}
+	os.MkdirAll(filepath.Join(state, "photos"), 0o700)
+	os.WriteFile(filepath.Join(state, "photos", "01JB8ZQ7V2T4X9H6N5R0WYCE00.jpg"), jpeg, 0o600)
+	taken := hub.publish(contract.PhotoTakenTopic(site), "video", contract.TypePhotoTaken, contract.PhotoTakenData{
+		Photo: "01JB8ZQ7V2T4X9H6N5R0WYCE00", Incident: "inc1", Camera: "cam_caisse", Bytes: int64(len(jpeg)), Width: 640,
+	})
+	drivertest.WaitFor(t, "photo.taken on the cloud", func() bool { return cloud.has(contract.TypePhotoTaken, taken) })
+	cloud.publish(contract.PhotoCmdTopic(site), "cloud", contract.TypePhotoUpload, contract.PhotoUploadData{
+		Photo: "01JB8ZQ7V2T4X9H6N5R0WYCE00", URL: endpoint.url + "/v1/photos/01JB8ZQ7V2T4X9H6N5R0WYCE00",
+		Token: "tok-photo-secret", Exp: contract.TS(time.Now().Add(10 * time.Minute)),
+	})
+	drivertest.WaitFor(t, "photo.sent on the cloud", func() bool { return len(cloud.of(contract.TypePhotoSent)) == 1 })
+	if got := endpoint.received(); !bytes.Equal(got, jpeg) {
+		t.Fatalf("the endpoint got %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(state, "photos", "01JB8ZQ7V2T4X9H6N5R0WYCE00.jpg")); !os.IsNotExist(err) {
+		t.Fatal("a sent photo is removed")
+	}
+	if hub.of(contract.TypePhotoUpload) != nil || strings.Contains(logs.String(), "tok-photo-secret") {
+		t.Fatal("the upload's token reached the hub or the logs")
 	}
 }
 

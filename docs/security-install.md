@@ -49,7 +49,9 @@ difficile à deviner.
 
 - **Longueur** : 6 chiffres recommandés, 4 au minimum.
 - **Stockage** : sur la centrale seulement, sous forme hachée avec un algorithme lent.
-  Il n'est jamais dans le cloud.
+  Il n'est jamais dans le cloud, ni sur son broker : l'agent de liaison lit les ordres
+  de l'application (`alarm/cmd`) en QoS 0, et le broker n'en garde aucun pour une
+  centrale absente (voir `agent.md`).
 - **Vérification** : toujours par le moteur, sur le site. Trois codes faux en
   10 minutes verrouillent le désarmement pendant 10 minutes, pour tout le site : le
   clavier et l'application comptent ensemble. Un code faux de plus de 10 minutes ne

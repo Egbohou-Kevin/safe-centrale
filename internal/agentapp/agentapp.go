@@ -151,24 +151,30 @@ func New(cfg Config, deps Deps) (*App, error) {
 	return a, nil
 }
 
-// LocalSubscriptions lists what the agent reads on the hub's broker.
+// LocalSubscriptions lists what the agent reads on the hub's broker, at QoS 1.
 func (a *App) LocalSubscriptions() []inbox.Subscription {
-	return subscriptions(agent.UpFilters(a.cfg.Site))
-}
-
-// CloudSubscriptions lists what the agent reads on the cloud's broker.
-func (a *App) CloudSubscriptions() []inbox.Subscription {
-	return subscriptions(agent.DownFilters(a.cfg.Site))
-}
-
-// subscriptions always want NoLocal: the agent republishes between two brokers and
-// must not hear itself.
-func subscriptions(filters []string) []inbox.Subscription {
-	out := make([]inbox.Subscription, len(filters))
-	for i, f := range filters {
-		out[i] = inbox.Subscription{Filter: f, QoS: 1, NoLocal: true}
+	var out []inbox.Subscription
+	for _, f := range agent.UpFilters(a.cfg.Site) {
+		out = append(out, subscription(f, 1))
 	}
 	return out
+}
+
+// CloudSubscriptions lists what the agent reads on the cloud's broker, each at the
+// QoS the core gives: 0 where the access code may pass, so the cloud's broker keeps
+// none of it while the agent is away.
+func (a *App) CloudSubscriptions() []inbox.Subscription {
+	var out []inbox.Subscription
+	for _, f := range agent.DownFilters(a.cfg.Site) {
+		out = append(out, subscription(f.Topic, f.QoS))
+	}
+	return out
+}
+
+// subscription always wants NoLocal: the agent republishes between two brokers and
+// must not hear itself.
+func subscription(filter string, qos byte) inbox.Subscription {
+	return inbox.Subscription{Filter: filter, QoS: qos, NoLocal: true}
 }
 
 // Alive returns once the core's loop has taken what was queued for it: it is not

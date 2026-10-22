@@ -56,6 +56,11 @@ l'agent n'attend qu'une part tirée au hasard, la première tentative comprise (
 2 s) : des centaines de sites ne se reconnectent pas tous au même instant après une
 panne du cloud.
 
+La session est persistante (un jour) : ce que le cloud publie pendant une absence de
+l'agent l'attend sur le broker du cloud, sauf les ordres de l'application. L'agent lit
+`alarm/cmd` en QoS 0, et le broker ne garde rien pour lui sur ce topic (voir « Ordres
+et configuration reçus »).
+
 L'agent ne se dit relié au cloud qu'une fois abonné à ses ordres. Si le broker ne
 répond pas à l'abonnement (10 s), l'agent le redemande, avec le même délai croissant,
 tant que la connexion tient.
@@ -164,6 +169,17 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
   venir de l'app et porter sur un incident que l'agent a vu passer) ; et pour l'agent
   lui-même `photo.upload` sur `photo/cmd` et `agent.replay` sur `agent/cmd`, jamais
   republiés sur la centrale. Le reste est refusé et enregistré dans le journal.
+- **Aucun ordre avec un code n'attend sur le broker du cloud.** L'agent s'abonne à
+  `alarm/cmd` en QoS 0, à tous les autres topics du cloud en QoS 1. Avec une session
+  gardée un jour et un abonnement en QoS 1, Mosquitto garderait pour un agent absent
+  un `alarm.disarm` ou un `alarm.silence`, code compris, en mémoire et dans son fichier,
+  même périmé (la durée de vie MQTT 5 limite la remise, pas la garde : vérifié par le
+  cloud sur Mosquitto 2.0.22). En QoS 0, il ne garde rien. Un ordre ne vaut qu'une
+  minute : celui donné pendant une coupure, même courte, n'est pas exécuté au retour,
+  et le téléphone le voit `expired`. Les jetons de `video/cmd` et de `photo/cmd` sont
+  ceux du cloud, pour une session ou une photo : ils restent en QoS 1, pour qu'un
+  `video.stop` ou une adresse d'envoi arrivent encore après une coupure. Le tableau est
+  dans `contract.md` (« Qualité de service sur le broker du cloud »).
 - L'enveloppe doit être valide, avec le bon `site`.
 - Un message déjà vu (même `id`) est ignoré. Un message périmé (`exp` dépassée) est
   refusé.
@@ -297,7 +313,7 @@ alors directement aux canaux GSM.
 - Scénarios : coupure puis retour d'internet avec une file pleine, redémarrage de
   l'agent avec une file non vide, état du moment redit à chaque connexion, message en
   double, trou de `seq` et rejeu, ordre
-  refusé (mauvais site, déjà vu), ordre périmé ou au-delà de la limite répondu tout de
+  refusé (mauvais site, déjà vu), ordre donné pendant une coupure jamais remis, ordre périmé ou au-delà de la limite répondu tout de
   suite, alerte sans confirmation en 10 s, port 8883 bloqué avec repli sur 443, file
   pleine.
 
@@ -314,7 +330,9 @@ alors directement aux canaux GSM.
 - Le programme (`cmd/safehome-agent`) et son service systemd. Le test de bout en bout
   fait tourner l'agent entre deux vrais brokers Mosquitto, dont un en TLS : alarme qui
   monte, ordre qui descend, configuration transmise, configuration sans version
-  refusée, coupure d'internet avec alarme gardée puis envoyée au retour, numéros sans
+  refusée, coupure d'internet avec alarme gardée puis envoyée au retour, ordre avec
+  code donné pendant la coupure jamais remis (et configuration donnée en même temps
+  remise au retour), numéros sans
   trou côté cloud et rejeu d'un message, annonce « hors ligne » à l'arrêt.
 - Le repli WebSocket est testé contre Mosquitto 2.1. Celui-ci coupe la connexion quand
   un paquet MQTT arrive en plusieurs messages WebSocket ; l'adaptateur MQTT envoie

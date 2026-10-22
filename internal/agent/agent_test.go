@@ -629,8 +629,13 @@ func TestFilters(t *testing.T) {
 			t.Errorf("up filters include %s", never)
 		}
 	}
+	// alarm/cmd at QoS 0: the cloud's broker keeps no order with the access code for
+	// an agent away. The rest at QoS 1, kept until the agent is back.
 	down := DownFilters(site)
-	want := []string{topic("agent", "cmd"), topic("alarm", "cmd"), topic("alert", "ack"), topic("alert", "result"), topic("config", "set"), topic("maint", "cmd"), topic("photo", "cmd"), topic("video", "cmd")}
+	want := []Filter{
+		{topic("agent", "cmd"), 1}, {topic("alarm", "cmd"), 0}, {topic("alert", "ack"), 1}, {topic("alert", "result"), 1},
+		{topic("config", "set"), 1}, {topic("maint", "cmd"), 1}, {topic("photo", "cmd"), 1}, {topic("video", "cmd"), 1},
+	}
 	if !reflect.DeepEqual(down, want) {
 		t.Errorf("down filters %v", down)
 	}
