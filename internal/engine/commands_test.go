@@ -183,6 +183,43 @@ func TestALockoutThatIsAlsoTheThirdWrongCodeAlertsOnce(t *testing.T) {
 	}
 }
 
+// aheadThenBack restores the engine from a snapshot saved while the clock ran ahead
+// by d, and boots it now: the clock was pulled back meanwhile (an RTC glitch or a bad
+// time at boot, corrected while the hub was off). Within a run, the driver never
+// hands the engine a time earlier than the last.
+func (h *harness) aheadThenBack(d time.Duration, edit func(s *Snapshot, ahead time.Time)) {
+	h.t.Helper()
+	snap := h.e.Snapshot()
+	edit(&snap, h.now.Add(d))
+	h.e.Restore(snap)
+	h.e.Boot(h.now, nil)
+}
+
+// Wrong codes stamped in the future count as now: they leave the window
+// LockoutWindow from now, not once the clock has caught up with them.
+func TestWrongCodesStampedInTheFutureCountAsNow(t *testing.T) {
+	h := newHarness(t)
+	h.armed()
+	h.aheadThenBack(time.Hour, func(s *Snapshot, ahead time.Time) { s.Failures = []time.Time{ahead, ahead} })
+	if af := h.badAt(LockoutWindow, OriginKeypad); af.Attempts != 1 || !af.LockedUntil.IsZero() {
+		t.Fatalf("two wrong codes from the future still count 10 minutes later: %+v", af)
+	}
+}
+
+// A lockout set while the clock ran ahead ends at most LockoutDuration from now.
+func TestALockoutFromTheFutureEndsLockoutDurationFromNow(t *testing.T) {
+	h := newHarness(t)
+	h.armed()
+	h.aheadThenBack(time.Hour, func(s *Snapshot, ahead time.Time) { s.LockedUntil = ahead.Add(h.cfg.LockoutDuration) })
+	if got := h.e.State(h.now).LockedUntil; !got.Equal(h.now.Add(h.cfg.LockoutDuration)) {
+		t.Fatalf("locked until %v, want %v", got, h.now.Add(h.cfg.LockoutDuration))
+	}
+	h.advance(h.cfg.LockoutDuration)
+	if r := replyOf(t, h.cmd(CmdDisarm, goodCode("u_owner"))); r.Status != StatusDone {
+		t.Fatalf("still locked once the lockout's duration has passed: %+v", r)
+	}
+}
+
 func TestUncheckedCodeCountsAsBadCode(t *testing.T) {
 	h := newHarness(t)
 	h.armed()

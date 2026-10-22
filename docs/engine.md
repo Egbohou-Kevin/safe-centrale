@@ -217,6 +217,10 @@ doit aussi connaître le code.
   essais) resterait sous la fenêtre : jamais verrouillé, et personne ne le saurait,
   les `alarm.auth_failed` n'allant qu'à l'historique, que le voleur lit. Seul un bon
   code remet ce compte à zéro ; un verrouillage, non.
+- Une horloge qui a avancé puis reculé (module d'horloge défaillant, heure fausse au
+  démarrage corrigée ensuite par internet) ne prolonge rien : un code faux daté du
+  futur compte comme entré maintenant, et un verrouillage finit au plus tard 10 minutes
+  (`lockout_duration`) après maintenant.
 - Une alerte tous les 3 codes faux, pas à chaque code faux : c'est le rythme
   d'avant la fenêtre (le 3e code faux de suite verrouillait et alertait), et la limite
   par contact et par heure de l'escalade (20 messages, `escalation.md`) est partagée

@@ -22,7 +22,7 @@ confirmer avant de commander.
 | Bouton panique | 1 | Tuya TS0215A (compatible Zigbee2MQTT, **sans profil** chez nous pour l'instant) | 7-15 € (vérifié) |
 | Caméras | 2 | Tapo C200 ou Reolink avec flux RTSP, **en H.264** et avec un flux secondaire basse définition (pour le direct, voir `docs/video.md`) | 25-50 € pièce |
 | Routeur 4G Wi-Fi | 1 | Seulement pour un client sans box : relie les caméras et la centrale. Forfait de données à la charge du client | 40-60 € |
-| Module d'horloge à pile (RTC) | 0-1 | Les fiches du X728 annoncent une horloge sur la carte : à confirmer à la réception, sinon un module RTC compatible Raspberry Pi | 0-10 € |
+| Module d'horloge à pile (RTC) | 0-1 | **Une horloge à pile est nécessaire** (le Pi 4 n'en a pas, voir `docs/agent.md`, « Horloge ») : celle du X728 si sa carte en porte bien une (annoncée par ses fiches, à confirmer à la réception), sinon un module DS3231 compatible Raspberry Pi, à acheter aussi tant que le X728 manque | 0-10 € |
 | Batterie de secours de la centrale | 1 | **Geekworm X728** (choisi le 21 octobre 2026, 45 $ chez Geekworm, **en rupture en Europe** en octobre 2026) : il signale la coupure et la charge à la centrale (`docs/alimentation.md`). Les accus 18650 ne sont pas fournis et voyagent mal par avion : les acheter sur place (paire Samsung 30Q, 14 à 17 €). Il se branche en USB-C 5 V 3 A : l'alimentation officielle du Pi suffit | 55-60 € (vérifié) |
 | Boîtier, câbles | | Boîtier sécurisé. La SIM et son crédit sont à la charge du client | 20-40 € |
 

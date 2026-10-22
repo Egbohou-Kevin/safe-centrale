@@ -101,6 +101,7 @@ func (e *Engine) State(now time.Time) State {
 // have passed are processed first, in order, then the input itself. Between Restore
 // and Boot the deadlines wait: Boot replays them once the devices' states are known.
 func (e *Engine) Handle(in Input) []Action {
+	e.pullBack(in.at())
 	var out []Action
 	if !e.awaitingBoot {
 		out = e.tick(in.at())
@@ -129,6 +130,7 @@ func (e *Engine) Handle(in Input) []Action {
 // stale "active" state would trigger an alarm on restart.
 func (e *Engine) Boot(now time.Time, current []Signal) []Action {
 	e.awaitingBoot = false
+	e.pullBack(now)
 	alarms := e.learn(current)
 	out := e.tick(now)
 	if e.s.Mode == ModeDisarmed && e.s.Schedule == nil {
@@ -144,6 +146,24 @@ func (e *Engine) Boot(now time.Time, current []Signal) []Action {
 		out = append(out, e.signal(sig)...)
 	}
 	return out
+}
+
+// pullBack brings back to now what a clock running ahead stamped in the future: a
+// wrong code counts as entered now, and a lockout ends at most LockoutDuration from
+// now. Otherwise, once the clock is pulled back (an RTC glitch, a bad time at boot
+// corrected by NTP), they would hold until it caught up with them: a lockout an hour
+// too long, or two forgotten mistakes and one real slip locking the site. Within a
+// run the driver never hands an earlier time; a snapshot saved before a restart may
+// still hold one.
+func (e *Engine) pullBack(now time.Time) {
+	for i, at := range e.s.Failures {
+		if at.After(now) {
+			e.s.Failures[i] = now
+		}
+	}
+	if latest := now.Add(e.cfg.LockoutDuration); e.s.LockedUntil.After(latest) {
+		e.s.LockedUntil = latest
+	}
 }
 
 // learn records the devices' states given at Boot: which contacts are open, which

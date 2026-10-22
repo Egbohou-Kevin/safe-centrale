@@ -281,10 +281,14 @@ dans le heartbeat si l'horloge est synchronisée (`clock_ok`, lu dans le noyau p
 `internal/adapter/sysclock`). Le noyau cesse de la dire synchronisée après quelques
 heures sans correction : après une longue coupure d'internet, `false` veut dire « pas
 vérifiée depuis longtemps ». Le cloud ajoute sa propre
-heure de réception, comme prévu dans `contract.md`. Le kit ajoute un module d'horloge à
-pile (DS3231, `fake-hwclock` retiré, voir `systeme.md`, étape 4) : l'heure est juste dès
-le démarrage, mais `clock_ok` reste à `false` jusqu'au retour d'internet, le noyau ne
-connaissant que la synchronisation par NTP. À valider avec le module choisi.
+heure de réception, comme prévu dans `contract.md`. Il faut donc une horloge à pile
+(`fake-hwclock` retiré, voir `systeme.md`, étape 4) : celle du module batterie X728 si
+sa carte en porte bien une (ses fiches l'annoncent, à confirmer à la réception), sinon
+un module DS3231 (voir `kit.md`). L'heure est alors juste dès le démarrage, mais
+`clock_ok` reste à `false` jusqu'au retour d'internet, le noyau ne connaissant que la
+synchronisation par NTP. À valider avec le module choisi. Si l'horloge se trompe
+malgré tout puis recule, le moteur ne prolonge ni un verrouillage ni le compte des
+codes faux (voir `engine.md`).
 
 ## Authentification
 
@@ -348,4 +352,5 @@ adresse reçue, envoyée en HTTPS à un faux point d'arrivée du cloud, effacée
 - Liaison : MQTT sur TLS, avec repli en WebSocket sur le port 443.
 - Photos : 3 images réduites par alarme, 1 seule en mode économe (4G payée par le
   client).
-- Module d'horloge à pile dans le kit.
+- Une horloge à pile dans le kit : celle du X728 si sa carte en porte une (à
+  confirmer), sinon un module DS3231.
