@@ -184,7 +184,9 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
 - Un message déjà vu (même `id`) est ignoré. Un message périmé (`exp` dépassée) est
   refusé.
 - Il y a une limite de débit (20 d'un coup, 60 par minute par défaut), pour qu'un
-  cloud défaillant ou piraté ne puisse pas noyer la centrale d'ordres.
+  cloud défaillant ou piraté ne puisse pas noyer la centrale d'ordres. Un message
+  refusé par cette limite ne change rien à ce que l'agent sauvegarde : un flot ne
+  devient pas un flot d'écritures sur la carte SD.
 - **Un ordre de l'application qui ne va pas à la centrale reçoit une réponse tout de
   suite** : sans elle, le cloud attendrait plus d'une minute pour conclure `expired`.
   L'agent publie lui-même `alarm.ack` vers le cloud, `ref` à l'`id` de l'ordre :

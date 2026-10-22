@@ -214,18 +214,21 @@ func (r *Relay) alertAck(env contract.Envelope) string {
 func (r *Relay) allow(now time.Time) bool { return r.take(now, &r.s.Tokens, &r.s.TokensAt) }
 
 // take takes one from an allowance (what is left, and when it was last refilled),
-// refilled DownPerMinute per minute up to DownBurst.
+// refilled DownPerMinute per minute up to DownBurst. A refusal changes neither: the
+// allowance it found is worked out again at the next message, and a flood over the
+// limit causes no write of the snapshot.
 func (r *Relay) take(now time.Time, tokens *float64, at *time.Time) bool {
+	avail := *tokens
 	if !at.IsZero() && now.After(*at) {
-		*tokens += now.Sub(*at).Minutes() * float64(r.cfg.DownPerMinute)
+		avail += now.Sub(*at).Minutes() * float64(r.cfg.DownPerMinute)
 	}
-	*tokens = min(*tokens, float64(r.cfg.DownBurst))
+	avail = min(avail, float64(r.cfg.DownBurst))
+	if avail < 1 {
+		return false
+	}
+	*tokens = avail - 1
 	if at.IsZero() || now.After(*at) {
 		*at = now
 	}
-	if *tokens < 1 {
-		return false
-	}
-	*tokens--
 	return true
 }

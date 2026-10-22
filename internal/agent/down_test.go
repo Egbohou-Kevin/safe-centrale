@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"bytes"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -82,5 +84,29 @@ func TestAnOrderOverTheLimitIsAnsweredAtOnce(t *testing.T) {
 	h.now = h.now.Add(10 * time.Second)
 	if _, _, acts := send(order); len(of[PublishLocal](acts)) != 1 {
 		t.Fatalf("the orders' allowance did not refill: %+v", acts)
+	}
+}
+
+// A message refused over the limit changes nothing in the snapshot, for both
+// allowances: the driver writes the snapshot (some 60 KB with the ids seen) whenever
+// it changes, and a flood from a broken cloud must not become a flood of writes to
+// the SD card.
+func TestAFloodOverTheLimitWritesNothing(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.DownBurst = 2; c.DownPerMinute = 6 })
+	order := contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp, User: "u_owner"}
+	for range 4 { // the orders' burst, then the answers' burst
+		h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order)
+	}
+	before, _ := json.Marshal(h.r.Snapshot())
+	for range 50 {
+		h.now = h.now.Add(100 * time.Millisecond) // a tenth of a message in all: still under one
+		_, _, a := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order)
+		_, _, b := h.cloud(topic("config", "set"), contract.TypeConfigSet, contract.ConfigSetData{Version: 3})
+		if len(of[Refused](a)) != 1 || len(of[Refused](b)) != 1 {
+			t.Fatalf("not refused: %+v %+v", a, b)
+		}
+	}
+	if after, _ := json.Marshal(h.r.Snapshot()); !bytes.Equal(before, after) {
+		t.Fatalf("a refused message changed the snapshot:\n%s\n%s", before, after)
 	}
 }
