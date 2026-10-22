@@ -40,7 +40,7 @@ func (r *Relay) cloud(c Cloud) []Action {
 		return []Action{late}
 	}
 	if env.Type == contract.TypeAlarmCommand {
-		return r.passOrder(c, env)
+		return r.passOrder(c, env, route)
 	}
 	if reason := r.check(c.Now, env); reason != "" {
 		return refuse(reason)
@@ -53,7 +53,7 @@ func (r *Relay) cloud(c Cloud) []Action {
 		d, _ := contract.DecodeData[contract.ReplayData](env) // checked above
 		return r.replayRange(d)
 	}
-	return []Action{PublishLocal{Topic: c.Topic, Payload: c.Payload}}
+	return []Action{PublishLocal{Topic: c.Topic, Payload: c.Payload, Code: route.code}}
 }
 
 // markSeen keeps the id of a message passed on, to drop it if it comes again.
@@ -132,7 +132,7 @@ func appOrder(env contract.Envelope) (contract.AlarmCommandData, string) {
 // passOrder passes an order from the app on to the hub. One that came too late is
 // answered expired at once, as the engine would answer it: the cloud need not wait
 // for an answer that cannot come. Its code goes nowhere.
-func (r *Relay) passOrder(c Cloud, env contract.Envelope) []Action {
+func (r *Relay) passOrder(c Cloud, env contract.Envelope, route downRoute) []Action {
 	d, why := appOrder(env)
 	if why != "" {
 		return []Action{Refused{Topic: c.Topic, Reason: why}}
@@ -141,7 +141,7 @@ func (r *Relay) passOrder(c Cloud, env contract.Envelope) []Action {
 	if expired(c.Now, d.Exp) {
 		return []Action{AnswerOrder{Ref: env.ID, Status: contract.AckExpired}}
 	}
-	return []Action{PublishLocal{Topic: c.Topic, Payload: c.Payload}}
+	return []Action{PublishLocal{Topic: c.Topic, Payload: c.Payload, Code: route.code}}
 }
 
 // overLimit refuses a message over the cloud's allowance. An order from the app that

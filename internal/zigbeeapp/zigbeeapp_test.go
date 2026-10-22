@@ -175,6 +175,22 @@ func TestAKeypadCodeIsPublishedButNeverLogged(t *testing.T) {
 	r.validateAll()
 }
 
+// A key sequence with the access code goes at QoS 0: the broker keeps none for a hub
+// or an agent away (a restart), neither in memory nor in mosquitto.db. One typed then
+// is lost, and typed again; the hub would let it expire after a minute anyway. The
+// keypad's other events go at QoS 1, like every device event.
+func TestAKeypadCodeIsNeverKeptByTheBroker(t *testing.T) {
+	r := newRig(t, nil)
+	r.pair("dev_kp", "0x03", "KP-1")
+	r.z2m("dev_kp", `{"action":"disarm","action_code":"482915"}`, false)
+	r.z2m("dev_kp", `{"action":"arm_all_zones"}`, false)
+	topic := contract.DeviceEventTopic(site, "dev_kp")
+	drivertest.WaitFor(t, "the keypad events", func() bool { return len(r.broker.On(topic)) == 2 })
+	if got := r.broker.On(topic); got[0].QoS != 0 || got[1].QoS != 1 {
+		t.Fatalf("with the code at QoS %d, without at QoS %d", got[0].QoS, got[1].QoS)
+	}
+}
+
 // Zigbee2MQTT publishes at QoS 1 to the adapter's lasting session: keys pressed while
 // the adapter was down arrive when it comes back. Their event keeps the time the key
 // was heard (last_seen), so the hub lets an old one expire.

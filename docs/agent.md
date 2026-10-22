@@ -185,6 +185,9 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
   dans `contract.md` (« Qualité de service sur le broker du cloud »). Cela suppose que
   le broker du cloud garde `queue_qos0_messages false` (la valeur par défaut de
   Mosquitto, à écrire dans sa configuration) : à `true`, il garderait aussi ces ordres.
+- Un ordre de l'application passe sur la centrale en QoS 0 lui aussi : le broker de
+  la centrale ne le garde pas pour une centrale qui redémarre (voir `systeme.md`,
+  étape 6). Les autres messages du cloud y passent en QoS 1.
 - L'enveloppe doit être valide, avec le bon `site`.
 - Un message déjà vu (même `id`) est ignoré. Un message périmé (`exp` dépassée) est
   refusé.

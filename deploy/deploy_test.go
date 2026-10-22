@@ -296,6 +296,16 @@ func TestOnlyTheHubReloadsOnSIGHUP(t *testing.T) {
 	}
 }
 
+// The messages that carry the access code (an order from the app, a keypad's key
+// sequence) go at QoS 0 so that the hub's broker keeps none for a program away, in
+// memory or in mosquitto.db: it holds only while queue_qos0_messages stays false.
+// Written down rather than left to Mosquitto's default.
+func TestTheBrokerKeepsNoQoS0MessageForAProgramAway(t *testing.T) {
+	if got := directive(t, readLines(t, filepath.Join("mosquitto", "mosquitto.conf")), "queue_qos0_messages"); got != "false" {
+		t.Fatalf("queue_qos0_messages %q, want false", got)
+	}
+}
+
 func TestBrokerListensOnlyOnTheHubWhereEveryoneLooksForIt(t *testing.T) {
 	lines := readLines(t, filepath.Join("mosquitto", "mosquitto.conf"))
 	var listeners []string

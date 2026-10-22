@@ -16,6 +16,7 @@ type sent struct {
 	topic  string
 	env    contract.Envelope
 	raw    []byte // the payload, when it is not an envelope
+	qos    byte
 	retain bool
 }
 
@@ -27,7 +28,7 @@ type broker struct {
 	calls  int
 }
 
-func (b *broker) Publish(_ context.Context, topic string, payload []byte, _ byte, retain bool) error {
+func (b *broker) Publish(_ context.Context, topic string, payload []byte, qos byte, retain bool) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.calls++
@@ -40,10 +41,10 @@ func (b *broker) Publish(_ context.Context, topic string, payload []byte, _ byte
 	}
 	env, err := contract.ParseEnvelope(payload)
 	if err != nil {
-		b.msgs = append(b.msgs, sent{topic: topic, raw: append([]byte{}, payload...), retain: retain})
+		b.msgs = append(b.msgs, sent{topic: topic, raw: append([]byte{}, payload...), qos: qos, retain: retain})
 		return nil
 	}
-	b.msgs = append(b.msgs, sent{topic: topic, env: env, retain: retain})
+	b.msgs = append(b.msgs, sent{topic: topic, env: env, qos: qos, retain: retain})
 	return nil
 }
 
@@ -118,6 +119,20 @@ func TestSendEncodesAtOnceAndLeavesOutWhatCannotBeEncoded(t *testing.T) {
 	o.Flush()
 	g := b.got()
 	if len(g) != 1 || g[0].env.ID != id || id == "" || string(g[0].env.Data) != `{"n":1}` || !g[0].retain || g[0].env.Src != "test" {
+		t.Fatalf("%+v", g)
+	}
+}
+
+// A message with the access code goes at QoS 0, never retained: no broker keeps it
+// for a subscriber away. The others at QoS 1.
+func TestAMessageWithTheCodeGoesAtQoS0(t *testing.T) {
+	b := &broker{}
+	o, _ := newBox(t, b, 10)
+	code := o.SendWithCode("test", "a", contract.TypeDeviceEvent, map[string]string{"code": "482915"}, ts)
+	o.Send("test", "b", contract.TypeHeartbeat, map[string]int{"n": 1}, false, ts)
+	o.Flush()
+	g := b.got()
+	if len(g) != 2 || g[0].env.ID != code || g[0].qos != 0 || g[0].retain || g[1].qos != 1 {
 		t.Fatalf("%+v", g)
 	}
 }

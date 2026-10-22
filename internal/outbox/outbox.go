@@ -150,14 +150,27 @@ func (o *Outbox) Put(it *Item) {
 // that cannot be encoded is logged and left out. Send returns the message's id, empty
 // when it was left out.
 func (o *Outbox) Send(src, topic, typ string, data any, retain bool, ts time.Time) string {
+	return o.send(&Item{Topic: topic, Src: src, Type: typ, QoS: 1, Retain: retain, TS: ts}, data)
+}
+
+// SendWithCode is Send for a message that carries the site's access code (a key
+// sequence from a keypad): at QoS 0 and never retained, so that the broker keeps none
+// for a subscriber that is away, neither in memory nor in its file on the SD card
+// (Mosquitto keeps QoS 0 messages for no one unless queue_qos0_messages is set).
+func (o *Outbox) SendWithCode(src, topic, typ string, data any, ts time.Time) string {
+	return o.send(&Item{Topic: topic, Src: src, Type: typ, QoS: 0, TS: ts}, data)
+}
+
+// send encodes data into it, gives it an id and queues it.
+func (o *Outbox) send(it *Item, data any) string {
 	raw, err := json.Marshal(data)
 	if err != nil {
-		o.log.Error("encoding a message failed", "type", typ, "err", err)
+		o.log.Error("encoding a message failed", "type", it.Type, "err", err)
 		return ""
 	}
-	id := o.newID()
-	o.Put(&Item{Topic: topic, Src: src, Type: typ, Data: raw, QoS: 1, Retain: retain, ID: id, TS: ts})
-	return id
+	it.Data, it.ID = raw, o.newID()
+	o.Put(it)
+	return it.ID
 }
 
 // Depth is the number of messages waiting.

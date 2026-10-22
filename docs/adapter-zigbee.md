@@ -270,7 +270,10 @@ Choix faits au codage :
   moment, jamais plus tard que maintenant, et l'événement publié porte cette heure.
   Une touche gardée par le broker pendant une coupure de l'adaptateur arrive donc
   avec son âge réel, et la centrale la laisse expirer. Sans `last_seen`, c'est l'heure
-  d'arrivée qui compte.
+  d'arrivée qui compte. Ce message de Zigbee2MQTT peut donc attendre dans le broker,
+  code compris (voir `systeme.md`, « Limites connues »). L'adaptateur, lui, publie
+  l'événement du clavier qui porte un code en QoS 0 : le broker ne le garde ni pour la
+  centrale ni pour l'agent absents.
 - **Présence** : l'heure du dernier message n'est pas sauvegardée (elle change à
   chaque message et userait la carte SD). Après un redémarrage, le silence de chaque
   appareil compte à partir de ce moment.

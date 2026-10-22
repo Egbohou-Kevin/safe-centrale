@@ -19,16 +19,19 @@ touche que l'adaptateur (voir `architecture.md`).
   les mêmes topics.
 - **Au moins une fois** : les messages d'événements et de commandes passent en QoS
   1. Un message peut arriver deux fois, donc chaque récepteur déduplique avec
-  `id`. Une exception : sur le broker du cloud, l'agent de liaison lit `alarm/cmd` en
-  QoS 0, pour que le code d'accès n'y attende jamais (voir « Qualité de service sur le
-  broker du cloud »).
+  `id`. Une exception, les messages qui portent le code d'accès, pour qu'il n'attende
+  jamais dans un broker : sur le broker du cloud, l'agent de liaison lit `alarm/cmd` en
+  QoS 0 (voir « Qualité de service sur le broker du cloud ») ; sur celui de la
+  centrale, l'agent republie ces ordres en QoS 0, et l'adaptateur Zigbee publie en
+  QoS 0 un `device.event` de clavier qui porte un code (voir `systeme.md`, étape 6).
 - **Tolérant aux champs inconnus** : un récepteur ignore ce qu'il ne connaît pas.
   Ajouter un champ ne casse rien.
 - **Pas de secret ni de donnée personnelle** dans les événements. Seule exception :
   le code du site, présent dans les événements `keypad` et dans les ordres
   `alarm.disarm` et `alarm.silence`. Il ne circule que sur le broker local et sur
   la liaison TLS vers le site, n'attend jamais sur le broker du cloud (QoS 0, voir
-  plus bas), n'est jamais écrit dans les journaux, n'est jamais renvoyé dans une
+  plus bas) ni, sauf un tronçon à corriger (`systeme.md`, « Limites connues »), sur
+  celui de la centrale, n'est jamais écrit dans les journaux, n'est jamais renvoyé dans une
   réponse et n'est jamais transmis au cloud par l'agent de liaison dans un événement.
 
 ## Enveloppe commune
@@ -726,7 +729,9 @@ Changements depuis la v1 validée, sans changement de `v` :
   `alarm/cmd` en QoS 0 sur le broker du cloud, qui ne garde donc plus pour un agent
   absent un ordre portant le code ; un ordre donné pendant une coupure n'est plus
   exécuté au retour, le téléphone le voit `expired` (voir « Qualité de service sur le
-  broker du cloud »). Les autres topics descendants restent en QoS 1.
+  broker du cloud »). Les autres topics descendants restent en QoS 1. Sur le broker de
+  la centrale aussi, un ordre de l'application et un `device.event` de clavier qui porte
+  un code passent en QoS 0 (voir « Principes »).
 
 ## Prévu pour la phase fermée
 

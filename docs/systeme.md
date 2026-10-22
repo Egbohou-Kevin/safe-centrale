@@ -191,6 +191,18 @@ sudo systemctl restart mosquitto
 Le fichier remplace celui de Debian : un seul point d'écoute, sur la centrale, et les
 messages retenus sauvegardés sur la partition de données toutes les 5 minutes.
 
+**Le code d'accès n'attend pas dans le broker.** Les programmes gardent leur session
+un jour : en QoS 1, Mosquitto garde pour un programme absent (un redémarrage pour une
+nouvelle configuration, un plantage) ce qui arrive pour lui, et l'écrit dans
+`mosquitto.db` à la sauvegarde suivante ou à son propre arrêt. Les deux messages de
+la centrale qui portent le code en clair partent donc en QoS 0, et le broker n'en
+garde aucun : l'ordre de l'application que l'agent republie sur `alarm/cmd`, et la
+séquence d'un clavier avec son code sur `device/+/event` (les autres événements du
+clavier, comme l'armement, restent en QoS 1). Le prix : un code tapé ou envoyé
+pendant les quelques secondes où la centrale redémarre est perdu, et se redonne ; il
+aurait expiré au bout d'une minute de toute façon. `queue_qos0_messages false` est
+écrit dans le fichier (c'est la valeur par défaut) et vérifié par `go test ./deploy`.
+
 ### 7. Utilisateur et programmes safeHome
 
 Sur l'ordinateur (voir `operations.md`) :
@@ -506,6 +518,17 @@ se changent à tout moment.
   (`zigbee_down`).
 - L'agrandissement de la racine, l'option `recurse=0` et le module RTC sont **à
   valider** sur le kit d'essai.
+- Le code d'un clavier peut encore attendre dans `mosquitto.db` sur un tronçon : de
+  Zigbee2MQTT à l'adaptateur Zigbee. Zigbee2MQTT publie les messages des appareils en
+  QoS 1 (`device_options` de `deploy/zigbee2mqtt/configuration.yaml`), pour qu'une
+  porte ouverte pendant un redémarrage de l'adaptateur ne soit pas perdue ; le
+  message du clavier (`action_code`) est gardé de même. Le passer en QoS 0 pour tous
+  les appareils perdrait ces ouvertures. La parade recommandée : un réglage par
+  appareil, `qos: 0` pour les claviers seulement, que l'adaptateur poserait à
+  l'appairage par l'API de Zigbee2MQTT (`bridge/request/device/options`). **À faire et
+  à valider** sur le kit d'essai avec un vrai clavier ; d'ici là, l'exposition se
+  limite à un code tapé pendant un arrêt de l'adaptateur Zigbee, sur la carte SD de
+  la centrale elle-même.
 - La console locale n'a pas encore tourné sur un vrai Pi. À vérifier : NetworkManager
   et `dnsmasq-base` (mode « partagé ») présents sur Raspberry Pi OS Lite, la règle
   polkit, la portée du réseau.

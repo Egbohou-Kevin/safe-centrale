@@ -282,6 +282,14 @@ func TestOrdersFromTheCloudReachTheHubUnchanged(t *testing.T) {
 	if len(orders) != 1 || !bytes.Equal(orders[0].Payload, order) {
 		t.Fatalf("%d orders reached the hub: %+v", len(orders), orders)
 	}
+	// An order may carry the access code: at QoS 0 on the hub's broker too, which
+	// keeps none for a hub away (a restart), neither in memory nor in mosquitto.db.
+	// The rest at QoS 1.
+	r.fromCloud(topic("config", "set"), contract.TypeConfigSet, contract.ConfigSetData{Version: 3})
+	drivertest.WaitFor(t, "the configuration", func() bool { return len(r.local.On(topic("config", "set"))) == 1 })
+	if orders[0].QoS != 0 || r.local.On(topic("config", "set"))[0].QoS != 1 {
+		t.Fatalf("order at QoS %d, configuration at QoS %d", orders[0].QoS, r.local.On(topic("config", "set"))[0].QoS)
+	}
 }
 
 func TestTheQueueSurvivesARestartOfTheAgent(t *testing.T) {

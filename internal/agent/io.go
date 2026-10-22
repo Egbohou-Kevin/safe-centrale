@@ -70,9 +70,12 @@ func (i Tick) at() time.Time     { return i.Now }
 type Action interface{ isAction() }
 
 // PublishLocal: publish this message from the cloud on the hub's broker, as it came.
+// Code says it may carry the site's access code (downRoute.code): it goes at QoS 0,
+// so that the hub's broker keeps none for a hub away either.
 type PublishLocal struct {
 	Topic   string
 	Payload []byte
+	Code    bool
 }
 
 // FailAlert: tell the hub that an alert for a cloud channel will not get through

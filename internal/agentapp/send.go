@@ -20,15 +20,13 @@ var ErrRefused = errors.New("agentapp: refused by the cloud's broker")
 func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action) error {
 	for _, act := range actions {
 		switch v := act.(type) {
-		case agent.PublishLocal:
-			a.out.Put(&outbox.Item{Topic: v.Topic, Data: v.Payload, QoS: 1, Raw: true})
+		case agent.PublishLocal, agent.AnswerOrder, agent.Refused, agent.Late:
+			a.dispatchDown(now, act)
 		case agent.FailAlert:
 			a.log.Warn("an alert for the app could not reach the cloud: the hub turns to the GSM", "ref", v.Ref)
 			a.publishOwn(now, contract.AlertResultTopic(a.cfg.Site), contract.TypeAlertResult, contract.AlertResultData{
 				Ref: v.Ref, Status: contract.ResultFailed, Reason: contract.ReasonNoUplink,
 			}, false)
-		case agent.AnswerOrder:
-			a.answer(now, v)
 		case agent.StatusChanged:
 			if v.Status.Up {
 				a.log.Info("connected to the cloud", "transport", v.Status.Transport, "queued", v.Status.Queued)
@@ -40,11 +38,6 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action)
 			// retry's wait short.
 			signal(a.relink)
 			a.publishStatus(now, v.Status)
-		case agent.Refused:
-			a.log.Warn("refused a message from the cloud", "topic", v.Topic, "reason", v.Reason)
-		case agent.Late:
-			a.log.Info("the cloud's word on an alert came after the hub turned to the GSM: dropped",
-				"ref", v.Ref, "status", v.Status)
 		case agent.Dropped:
 			a.log.Error("messages for the cloud were dropped", "count", v.Count, "reason", v.Reason)
 		case agent.Replayed:
@@ -65,6 +58,28 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action)
 	}
 	a.poke()
 	return nil
+}
+
+// dispatchDown carries out what the core decided about a message from the cloud: pass
+// it on to the hub, answer it, or drop it. A message that may carry the access code
+// goes at QoS 0: the hub's broker keeps none for a hub away (a restart), neither in
+// memory nor in its file on the SD card.
+func (a *App) dispatchDown(now time.Time, act agent.Action) {
+	switch v := act.(type) {
+	case agent.PublishLocal:
+		qos := byte(1)
+		if v.Code {
+			qos = 0
+		}
+		a.out.Put(&outbox.Item{Topic: v.Topic, Data: v.Payload, QoS: qos, Raw: true})
+	case agent.AnswerOrder:
+		a.answer(now, v)
+	case agent.Refused:
+		a.log.Warn("refused a message from the cloud", "topic", v.Topic, "reason", v.Reason)
+	case agent.Late:
+		a.log.Info("the cloud's word on an alert came after the hub turned to the GSM: dropped",
+			"ref", v.Ref, "status", v.Status)
+	}
 }
 
 // poke wakes the sender: something may be ready for the cloud.

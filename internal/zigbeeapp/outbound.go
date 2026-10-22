@@ -104,7 +104,12 @@ func (a *App) publishRegistryNews(now time.Time, act zigbee.Action) error {
 
 func (a *App) publishDevice(now time.Time, d wire.Device) {
 	if d.Event != nil {
-		a.out.Send(src, contract.DeviceEventTopic(a.cfg.Site, d.Event.DeviceID), contract.TypeDeviceEvent, *d.Event, false, now)
+		topic := contract.DeviceEventTopic(a.cfg.Site, d.Event.DeviceID)
+		if d.Event.Code != "" {
+			a.out.SendWithCode(src, topic, contract.TypeDeviceEvent, *d.Event, now) // kept by no broker
+		} else {
+			a.out.Send(src, topic, contract.TypeDeviceEvent, *d.Event, false, now)
+		}
 	}
 	if d.State != nil {
 		a.out.Send(src, contract.DeviceStateTopic(a.cfg.Site, d.State.DeviceID, d.State.Capability), contract.TypeDeviceState, *d.State, true, now)
