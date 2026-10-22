@@ -122,6 +122,15 @@ pendant que l'agent est absent, même brièvement (coupure d'internet, ou les qu
 Personne ne répond : le téléphone le voit `expired` (au bout de 70 s dans le cloud).
 Redonner l'ordre une fois le site revenu est un geste de la personne.
 
+**Exigence pour le broker du cloud** : `queue_qos0_messages` doit rester à `false`, la
+valeur par défaut de Mosquitto. À `true`, Mosquitto garderait aussi pour une session
+absente les messages remis en QoS 0, code compris, et tout ce qui précède tomberait. Le
+cloud écrit ce réglage dans son `mosquitto.conf` plutôt que de compter sur la valeur
+par défaut : le test de bout en bout de l'agent tourne sur un Mosquitto aux réglages
+par défaut et ne prouve rien de la configuration du cloud. Côté centrale, un test
+(`internal/agent`) vérifie que les topics lus en QoS 0 sont exactement ceux dont les
+schémas ont un champ `code` (aujourd'hui `alarm/cmd`).
+
 ## Appareils et capacités
 
 Le moteur raisonne sur des capacités, pas sur des modèles. Chaque appareil

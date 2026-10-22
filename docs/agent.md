@@ -182,7 +182,9 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
   et le téléphone le voit `expired`. Les jetons de `video/cmd` et de `photo/cmd` sont
   ceux du cloud, pour une session ou une photo : ils restent en QoS 1, pour qu'un
   `video.stop` ou une adresse d'envoi arrivent encore après une coupure. Le tableau est
-  dans `contract.md` (« Qualité de service sur le broker du cloud »).
+  dans `contract.md` (« Qualité de service sur le broker du cloud »). Cela suppose que
+  le broker du cloud garde `queue_qos0_messages false` (la valeur par défaut de
+  Mosquitto, à écrire dans sa configuration) : à `true`, il garderait aussi ces ordres.
 - L'enveloppe doit être valide, avec le bon `site`.
 - Un message déjà vu (même `id`) est ignoré. Un message périmé (`exp` dépassée) est
   refusé.
