@@ -217,8 +217,11 @@ alors la box : l'agent garde ses messages et le GSM reste là. Le câble est con
 
 - **Appairer** : elle ouvre le réseau Zigbee 2 minutes. Les appareils ajoutés ou
   refusés s'affichent au fur et à mesure.
-- **Zones** : un nom (32 caractères au plus) et un type. La page ne propose que les
-  types que l'appareil peut servir.
+- **Zones** : un nom (32 caractères au plus, sans caractère de contrôle ni caractère
+  invisible comme un saut de ligne ou une marque de sens d'écriture) et un type. La
+  page ne propose que les types que l'appareil peut servir. La centrale applique la
+  même règle aux noms d'un `hub.json` modifié à la main : elle refuse de démarrer
+  avec un nom fautif, et l'erreur nomme la zone.
 - **Sirènes** : ajouter ou retirer une sirène. La dernière ne peut pas partir.
 - **Retirer un appareil** du réseau Zigbee. Un retrait que la centrale refuserait
   (la dernière sirène) est refusé avant que rien ne parte.

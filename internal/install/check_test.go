@@ -56,6 +56,8 @@ func TestValidName(t *testing.T) {
 		"":                                      ErrEmptyName,
 		"   ":                                   ErrEmptyName,
 		"Vitrine\n":                             errAny,
+		"Porte\u202eArriere":                    errAny, // bidi override: shows the name backwards
+		"Porte\u200bArriere":                    errAny, // zero-width space
 		strings.Repeat("a", MaxNameLength):      nil,
 		strings.Repeat("\u00e9", MaxNameLength): nil,
 		strings.Repeat("a", MaxNameLength+1):    ErrNameTooLong,

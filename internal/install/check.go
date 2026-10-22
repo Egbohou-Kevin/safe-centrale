@@ -96,18 +96,22 @@ func CanServe(kind string, capabilities []string) error {
 // the device in the alarm events (device_name).
 const MaxNameLength = contract.MaxDeviceName
 
-// ValidName checks a zone name.
+// ValidName checks a zone name. It refuses control characters (a line break) and
+// invisible format characters (a bidi override would show the name backwards in an
+// SMS or on the phone).
 func ValidName(name string) error {
 	switch {
 	case strings.TrimSpace(name) == "":
 		return ErrEmptyName
 	case utf8.RuneCountInString(name) > MaxNameLength:
 		return fmt.Errorf("zone name %q is %w", name, ErrNameTooLong)
-	case strings.IndexFunc(name, unicode.IsControl) >= 0:
-		return fmt.Errorf("zone name %q contains a control character", name)
+	case strings.IndexFunc(name, invisible) >= 0:
+		return fmt.Errorf("zone name %q contains a control or invisible character", name)
 	}
 	return nil
 }
+
+func invisible(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }
 
 // Check compares the site with the registry of paired devices.
 func Check(site Site, devices []contract.RegistryDevice) []Finding {

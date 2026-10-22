@@ -17,6 +17,7 @@ import (
 	"safehome/internal/escalation"
 	escwire "safehome/internal/escalation/wire"
 	"safehome/internal/health"
+	"safehome/internal/install"
 )
 
 // parse reads and checks a configuration given as bytes.
@@ -256,6 +257,19 @@ func TestZones(t *testing.T) {
 	z := r.Hub.Engine.Zones
 	if len(z) != 2 || z["dev_door"] != (engine.Zone{Name: "Entree", Kind: engine.ZoneEntry}) || z["dev_smoke"].Kind != engine.ZoneFire {
 		t.Fatalf("%v", z)
+	}
+}
+
+// A zone name goes into SMS, voice messages and the alarm events (device_name): a
+// hand-edited file follows the installer's rule (install.ValidName), and the error
+// names the zone.
+func TestAZoneNameFollowsTheInstallersRule(t *testing.T) {
+	for _, name := range []string{`Porte\nArriere`, `Porte\u202eArriere`, `Porte\u200bArriere`, `   `, strings.Repeat("a", install.MaxNameLength+1)} {
+		body := base + `,"zones":{"dev_back":{"name":"` + name + `","kind":"entry"}}}`
+		_, err := parse([]byte(body))
+		if err == nil || !strings.Contains(err.Error(), `"dev_back"`) {
+			t.Errorf("zone name %s: %v", name, err)
+		}
 	}
 }
 
