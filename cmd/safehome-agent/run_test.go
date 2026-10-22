@@ -172,6 +172,17 @@ func (s *side) has(typ, id string) bool {
 	return false
 }
 
+// answered tells whether an alarm.ack answers the order whose id is ref: an ack has
+// an id of its own, and names the order in ref.
+func (s *side) answered(ref string) bool {
+	for _, env := range s.of(contract.TypeAlarmAck) {
+		if d, err := contract.DecodeData[contract.AlarmAckData](env); err == nil && d.Ref == ref {
+			return true
+		}
+	}
+	return false
+}
+
 // internet stands between the agent and the cloud's broker: cut drops the
 // connections and refuses new ones, as a dead link would, while the broker and the
 // test's own cloud client go on.
@@ -316,7 +327,10 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	now := cloud.publish(contract.AlarmCmdTopic(site), "cloud", contract.TypeAlarmCommand,
 		contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp, User: "u_owner"})
 	drivertest.WaitFor(t, "the order given once back on the hub", func() bool { return hub.has(contract.TypeAlarmCommand, now) })
-	if hub.has(contract.TypeAlarmCommand, missed) || cloud.has(contract.TypeAlarmAck, missed) {
+	stale := cloud.publish(contract.AlarmCmdTopic(site), "cloud", contract.TypeAlarmCommand, contract.AlarmCommandData{
+		Command: contract.CmdArm, Origin: contract.OriginApp, User: "u_owner", Exp: new(contract.TS(time.Now().Add(-time.Minute)))})
+	drivertest.WaitFor(t, "a stale order answered expired by the agent", func() bool { return cloud.answered(stale) })
+	if hub.has(contract.TypeAlarmCommand, missed) || cloud.answered(missed) {
 		t.Fatal("the cloud's broker kept the order with the code for the absent agent")
 	}
 
