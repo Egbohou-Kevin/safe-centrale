@@ -124,7 +124,7 @@ zone qu'il ne peut pas déclencher.
 | `triggered` | ordre de désarmement | `disarmed` | `siren.off`, publie `alarm.cleared` et `alarm.disarmed` ; termine l'escalade de l'alarme en cours (et de celles de l'armement arrêtées seules), toutes nommées dans `incidents` d'`alarm.disarmed` |
 | `triggered` | `alarm.silence`, code valide | état d'avant l'alarme | `siren.off`, `alarm.cleared` ; termine l'escalade de l'alarme en cours |
 | `arming` | ordre `arm_now` | `armed` | termine le délai de sortie, publie `alarm.armed` |
-| `triggered` | cycle de sirène écoulé, rien acquitté, cycles restants | `triggered` | `siren.off`, pause, puis `siren.on` au cycle suivant |
+| `triggered` | cycle de sirène écoulé, cycles restants | `triggered` | `siren.off`, pause, puis `siren.on` au cycle suivant ; un acquittement (« Je gère », SMS « 1 ») n'y change rien, seuls le code et le désarmement arrêtent la sirène |
 | `triggered` | cycles de sirène épuisés | état d'avant l'alarme (`armed`, ou `disarmed` pour un feu déclenché désarmé) | `siren.off`, publie `alarm.cleared` |
 | tout état | fumée | `triggered` (cause fumée) | sirène et alerte |
 | tout état | panique | inchangé | alerte urgente, sans sirène par défaut (réglable par site) |
