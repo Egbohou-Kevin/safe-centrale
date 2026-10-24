@@ -3,3 +3,5 @@
 /dist/
 *.test
 .DS_Store
+# IDE settings (IntelliJ, Android Studio): personal, never shared
+.idea/
