@@ -1,7 +1,9 @@
 # Adaptateur Zigbee
 
-Statut : v1 codée et testée sans matériel (voir « Ce qui est codé » à la fin). Les noms
-de Zigbee2MQTT et les profils restent à vérifier sur les vrais appareils.
+Statut : v1 codée et testée sans matériel (voir « Ce qui est codé » à la fin), puis
+essayée sur le vrai matériel le 24 octobre 2026 avec la clé et le détecteur d'ouverture
+(voir « Constaté sur le matériel »). Les autres profils restent à vérifier sur les vrais
+appareils.
 
 L'adaptateur Zigbee est le programme en Go qui traduit entre Zigbee2MQTT et notre
 contrat. C'est la seule partie de la centrale qui connaît le matériel du commerce
@@ -131,7 +133,10 @@ l'outil d'installation le lisent au démarrage.
    254 secondes au plus, chacun demandé 10 secondes avant la fin du précédent, pour
    que le réseau ne se referme jamais entre deux.
 2. L'installateur active l'appareil (appui long sur un bouton, retrait de la
-   languette de pile…).
+   languette de pile…). Un appareil sur pile qui s'endort vite doit être tenu éveillé
+   pendant l'interrogation : l'Aqara MCCGQ11LM demande, après l'appui long de 5 s, un
+   appui bref toutes les 2 à 3 secondes pendant environ 30 s (voir « Constaté sur le
+   matériel »).
 3. Zigbee2MQTT signale l'arrivée et termine l'interrogation de l'appareil.
 4. L'adaptateur cherche un profil pour ce modèle :
    - **profil trouvé** : il crée le `device_id`, renomme l'appareil, enregistre
@@ -321,12 +326,31 @@ Choix faits au codage :
   3 minutes après le début de la panne : 3 minutes pour un pont arrêté, 6 pour un
   adaptateur muet.
 
+Constaté sur le matériel (essai du 24 octobre 2026, Zigbee2MQTT 2.14.2 sur Node.js 24) :
+
+- **Node.js** : 22 ou 24 seulement. Avec Node.js 26.5 (hors de ce que Zigbee2MQTT 2.14.2
+  déclare), le port série s'ouvrait mais aucune écriture n'atteignait la clé : elle
+  répondait à la réinitialisation (`RSTACK`), puis chaque trame EZSP attendait jusqu'à
+  l'échec. Avec 24.22.1, tout a marché aussitôt. L'installation fixe la ligne 24 et
+  `deploy/install.sh` refuse une autre version (`systeme.md`, étape 8).
+- **Clé Sonoff ZBDongle-E** : USB `10c4:ea60`, « Sonoff Zigbee 3.0 USB Dongle Plus V2 » ;
+  micrologiciel EmberZNet 7.4.4 (EZSP 13) ; adaptateur `ember` à 115200 bauds, sans
+  contrôle de flux matériel (`rtscts: false`), comme dans
+  `deploy/zigbee2mqtt/configuration.yaml`.
+- **Aqara MCCGQ11LM** : il ne s'appaire que si, après l'appui long de 5 s sur son
+  bouton, on appuie brièvement dessus toutes les 2 à 3 secondes pendant l'interrogation
+  (environ 30 s) : sinon il s'endort avant la fin et l'interrogation échoue. Il rapporte
+  `contact` à `true` (fermé) et `false` (ouvert), comme le dit son profil.
+- **`permit_join`** : Zigbee2MQTT refuse plus de 254 secondes d'une seule demande
+  (voir « Appairage »).
+
 À vérifier sur le matériel :
 
 - Les noms des sujets et des champs de la version de Zigbee2MQTT installée, en
   particulier le format de `bridge/state`. `permit_join` (l'adaptateur envoie `value`
   et `time` pour couvrir les versions 1 et 2) est vérifié avec la version 2.14.2 : elle
   lit `time` et refuse plus de 254 secondes.
-- Chaque profil de `config/profiles/` : modèles, champs, valeurs (notamment les touches
-  du clavier et la commande de la sirène, qui ne rapporte peut-être pas son état).
+- Chaque profil de `config/profiles/` hors MCCGQ11LM : modèles, champs, valeurs
+  (notamment les touches du clavier et la commande de la sirène, qui ne rapporte
+  peut-être pas son état).
 - La durée réelle entre deux messages de chaque capteur, pour régler `offline_after`.

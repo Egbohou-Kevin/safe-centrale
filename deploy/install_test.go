@@ -359,10 +359,43 @@ func TestASiteWithTheConsoleGetsItsPassphraseOnce(t *testing.T) {
 	}
 }
 
+// installZigbee2MQTT stands for step 8 of docs/systeme.md: Zigbee2MQTT in /opt and the
+// node of its service, which says $FAKE_NODE (v24.11.0 by default).
+func (r *rig) installZigbee2MQTT() {
+	mkdir(r.t, r.path("opt/zigbee2mqtt"))
+	writeScript(r.t, r.path("usr/bin/node"), `echo "${FAKE_NODE:-v24.11.0}"`)
+}
+
+// The trial on real hardware: with Node 26.5, Zigbee2MQTT 2.14.2 opened the stick's
+// port but nothing it wrote reached it. Only the LTS lines it supports are let through.
+func TestZigbee2MQTTRunsOnlyOnANodeItSupports(t *testing.T) {
+	r := newRig(t)
+	r.minimalSite()
+	r.installZigbee2MQTT()
+	for _, v := range []string{"v26.5.0", "v20.19.1", "v23.0.0", "v2.4.0", "nonsense"} {
+		out, cmds, err := r.run("FAKE_NODE=" + v)
+		if err == nil || !strings.Contains(out, "Node.js "+v+" is not one Zigbee2MQTT runs on") || !strings.Contains(out, "step 8") {
+			t.Errorf("%s: %v\n%s", v, err, out)
+		}
+		for _, c := range cmds {
+			if strings.HasPrefix(c, "apt-get") || strings.HasPrefix(c, "systemctl") || strings.HasPrefix(c, "useradd") {
+				t.Errorf("%s: ran %q: nothing must change", v, c)
+			}
+		}
+	}
+	for _, v := range []string{"v22.12.0", "v24.22.1"} {
+		r.mustRun("FAKE_NODE=" + v)
+	}
+	os.Remove(r.path("usr/bin/node"))
+	if out, _, err := r.run(); err == nil || !strings.Contains(out, "not /usr/bin/node") {
+		t.Errorf("without node: %v\n%s", err, out)
+	}
+}
+
 func TestZigbee2MQTTStartsOnlyOnceItsStickIsSet(t *testing.T) {
 	r := newRig(t)
 	r.minimalSite()
-	mkdir(t, r.path("opt/zigbee2mqtt"))
+	r.installZigbee2MQTT()
 	out, cmds, err := r.run()
 	if err != nil {
 		t.Fatalf("install.sh: %v\n%s", err, out)

@@ -263,13 +263,42 @@ le lire, pas le modifier, et les autres utilisateurs ne le voient pas.
 
 ### 8. Zigbee2MQTT
 
-Installer Node.js et Zigbee2MQTT (version 2.x) dans `/opt/zigbee2mqtt` en suivant le
-guide officiel « Linux » de Zigbee2MQTT, avec deux différences :
+**Node.js : la version 24 (LTS), pas une autre.** Zigbee2MQTT ne tourne que sur les
+versions de Node.js qu'il déclare (2.14.2 : `^22.2.0 || ^24 || <=26.2`), et la
+dernière version de Node.js n'en fait pas forcément partie. Constaté à l'essai sur le
+matériel du 24 octobre 2026 : avec Node.js 26.5, Zigbee2MQTT ouvrait le port série de
+la clé, mais rien de ce qu'il écrivait ne lui parvenait (la clé répondait à la
+réinitialisation, `RSTACK`, puis chaque trame EZSP attendait jusqu'à l'échec) ; avec
+Node.js 24.22.1, tout a marché aussitôt. On installe donc Node.js depuis le dépôt de
+NodeSource **de la ligne 24 seulement** (`node_24.x`) : les mises à jour du système y
+prennent les correctifs de la 24, jamais une autre version majeure. Pas le dépôt
+`lts` ni `current`, qui changent de version majeure d'eux-mêmes, ni le `nodejs` de
+Debian, trop vieux.
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_24.x -o nodesource_setup.sh
+less nodesource_setup.sh                 # le lire avant de le lancer
+sudo bash nodesource_setup.sh
+sudo apt-get install -y nodejs
+/usr/bin/node --version                  # v24.x : celui que lance notre service
+```
+
+`deploy/install.sh` vérifie `/usr/bin/node` dès que Zigbee2MQTT est installé, et
+refuse d'aller plus loin si ce n'est pas une version 22 ou 24, avec la raison.
+
+Installer ensuite Zigbee2MQTT (version 2.x ; 2.14.2 est celle de l'essai) dans
+`/opt/zigbee2mqtt` en suivant le guide officiel « Linux » de Zigbee2MQTT, avec deux
+différences :
 
 - le dossier de données est `/var/lib/zigbee2mqtt` (variable `ZIGBEE2MQTT_DATA` dans
   notre service), pas `/opt/zigbee2mqtt/data` ;
 - on utilise notre service `deploy/systemd/zigbee2mqtt.service` (utilisateur
-  `safehome`).
+  `safehome`), qui lance `/usr/bin/node`.
+
+La clé Sonoff ZBDongle-E se présente en USB `10c4:ea60` (« Sonoff Zigbee 3.0 USB Dongle
+Plus V2 ») ; à l'essai, son micrologiciel était EmberZNet 7.4.4 (EZSP 13), piloté par
+l'adaptateur `ember` à 115200 bauds sans contrôle de flux matériel (`rtscts: false`),
+ce que dit `deploy/zigbee2mqtt/configuration.yaml`.
 
 ```bash
 ls /dev/serial/by-id/                    # le nom stable de la clé Zigbee
@@ -414,6 +443,8 @@ sudo ./safehome/deploy/install.sh
 Avant de changer quoi que ce soit, le script refuse de tourner si :
 
 - ce n'est pas un Pi 64 bits ;
+- Zigbee2MQTT est installé mais `/usr/bin/node` manque ou n'est pas une version 22 ou
+  24 de Node.js (étape 8) ;
 - le système est en lecture seule ;
 - `/data` et ses trois dossiers ne sont pas montés ;
 - une configuration obligatoire manque ;
@@ -455,7 +486,7 @@ SSH, Bluetooth), les codes d'accès, les appareils (étape 10) et le passage en 
 seule (étape 12).
 
 `go test ./deploy` fait tourner le script sur un faux système : fichiers posés,
-relance, mauvaise configuration, refus, caméras, Zigbee2MQTT.
+relance, mauvaise configuration, refus, caméras, Zigbee2MQTT et sa version de Node.js.
 
 ## Maintenance
 

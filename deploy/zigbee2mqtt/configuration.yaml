@@ -1,13 +1,19 @@
 # Zigbee2MQTT for the safeHome hub: /var/lib/zigbee2mqtt/configuration.yaml
-# Written for Zigbee2MQTT 2.x and the Sonoff ZBDongle-E. To check against the installed
-# version before the first site (see docs/systeme.md).
+# Written for Zigbee2MQTT 2.x and the Sonoff ZBDongle-E, and run as it is with
+# Zigbee2MQTT 2.14.2 on Node.js 24 (trial on real hardware, 24 October 2026; see
+# docs/systeme.md, step 8, and docs/adapter-zigbee.md).
 mqtt:
   server: mqtt://127.0.0.1:1883
   base_topic: zigbee2mqtt   # must match base_topic in /etc/safehome/zigbee.json
   client_id: zigbee2mqtt
+# The ZBDongle-E shows as USB 10c4:ea60 "Sonoff Zigbee 3.0 USB Dongle Plus V2"; its
+# firmware on the trial: EmberZNet 7.4.4 (EZSP 13), at 115200 bauds without hardware
+# flow control.
 serial:
   port: /dev/serial/by-id/CHANGE-ME   # the stick, by its stable name (ls /dev/serial/by-id)
   adapter: ember                       # ZBDongle-E (EFR32); "zstack" for a ZBDongle-P
+  baudrate: 115200
+  rtscts: false
 advanced:
   network_key: GENERATE   # created at the first start, then saved: back it up (docs/systeme.md)
   pan_id: GENERATE

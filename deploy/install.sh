@@ -15,6 +15,12 @@ set -euo pipefail
 # Tests only: a folder that stands for / (commands are faked through PATH).
 ROOT="${SAFEHOME_ROOT:-}"
 
+# The Node.js lines Zigbee2MQTT runs on here: its LTS lines. Zigbee2MQTT 2.14.2 declares
+# "^22.2.0 || ^24 || <=26.2", and with Node 26.5 the stick's serial port opened but
+# nothing written reached it (trial on real hardware, 24 October 2026; docs/systeme.md,
+# step 8). A version outside them stops the script before it changes anything.
+NODE_MAJORS="22 24"
+
 # The services under cmd/, and the tools run by hand (deploy_test.go checks both lists).
 PROGRAMS="hub gsm zigbee agent video maint console power"
 TOOLS="install"
@@ -50,6 +56,17 @@ done
 for p in $PROGRAMS $TOOLS; do
 	[ -x "$BUNDLE/bin/safehome-$p" ] || fail "the bundle has no bin/safehome-$p: make it with deploy/bundle.sh"
 done
+if [ -d "$ROOT/opt/zigbee2mqtt" ]; then
+	# The node of zigbee2mqtt.service, whatever else is on the PATH.
+	node_version="$("$ROOT/usr/bin/node" --version 2>/dev/null)" ||
+		fail "Zigbee2MQTT is installed but not /usr/bin/node: install Node.js 24 as step 8 of docs/systeme.md says"
+	node_major="${node_version#v}"
+	node_major="${node_major%%.*}"
+	case " $NODE_MAJORS " in
+	*" $node_major "*) ;;
+	*) fail "Node.js $node_version is not one Zigbee2MQTT runs on here (majors: $NODE_MAJORS); with 26.5 the Zigbee stick never answered: install Node.js 24 as step 8 of docs/systeme.md says" ;;
+	esac
+fi
 
 enabled=""
 missing=""

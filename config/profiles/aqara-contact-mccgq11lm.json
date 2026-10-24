@@ -1,7 +1,7 @@
 {
   "name": "aqara.contact.mccgq11lm",
   "models": ["MCCGQ11LM"],
-  "note": "Aqara door and window sensor. Field names from the Zigbee2MQTT documentation: to check on the real device.",
+  "note": "Aqara door and window sensor. Paired and read on the real device (24 October 2026, Zigbee2MQTT 2.14.2): contact is false when the door opens, true when it closes. Pairing: hold the button 5 s, then press it briefly every 2 to 3 s during the interview (about 30 s). battery and linkquality: names from the Zigbee2MQTT documentation.",
   "capabilities": {
     "contact": { "from": "contact", "map": { "true": "closed", "false": "open" } },
     "battery": { "from": "battery" },

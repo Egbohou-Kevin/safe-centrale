@@ -347,6 +347,18 @@ func TestZigbee2MQTTAndTheAdapterShareTheBaseTopic(t *testing.T) {
 	}
 }
 
+// The stick as the trial on real hardware found it (24 October 2026): a ZBDongle-E
+// with EmberZNet 7.4.4, driven by the ember adapter at 115200 bauds, without hardware
+// flow control.
+func TestZigbee2MQTTTalksToTheStickAsOnTheTrial(t *testing.T) {
+	z2m := rawLines(t, filepath.Join("zigbee2mqtt", "configuration.yaml"))
+	for key, want := range map[string]string{"adapter": "ember", "baudrate": "115200", "rtscts": "false"} {
+		if got := yamlValue(t, z2m, "serial", key); got != want {
+			t.Errorf("zigbee2mqtt serial.%s = %q, want %q", key, got, want)
+		}
+	}
+}
+
 // Zigbee2MQTT publishes the devices' messages at QoS 1: with the adapter's persistent
 // session, the broker keeps them while the adapter restarts, instead of dropping a
 // door that opened meanwhile. They are not retained: the adapter keeps the states
