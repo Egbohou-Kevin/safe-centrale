@@ -82,6 +82,7 @@ func TestSchemasMatchGoTypes(t *testing.T) {
 		"alarm-entry-delay.json":        reflect.TypeOf(EntryDelayData{}),
 		"alarm-triggered.json":          reflect.TypeOf(TriggeredData{}),
 		"alarm-siren-cycle.json":        reflect.TypeOf(SirenCycleData{}),
+		"alarm-siren-failed.json":       reflect.TypeOf(SirenFailedData{}),
 		"alarm-cleared.json":            reflect.TypeOf(ClearedData{}),
 		"alarm-auth-failed.json":        reflect.TypeOf(AuthFailedData{}),
 		"alarm-state.json":              reflect.TypeOf(AlarmStateData{}),
@@ -187,7 +188,7 @@ func TestSchemaEnumsMatchConstants(t *testing.T) {
 	check("envelope.json", "type", []string{
 		TypeDeviceEvent, TypeDeviceState, TypeCommand, TypeCommandAck,
 		TypeAlarmCommand, TypeAlarmAck, TypeAlarmArming, TypeAlarmArmed, TypeAlarmDisarmed,
-		TypeAlarmEntryDelay, TypeAlarmTriggered, TypeAlarmSirenCycle, TypeAlarmCleared,
+		TypeAlarmEntryDelay, TypeAlarmTriggered, TypeAlarmSirenCycle, TypeAlarmSirenFailed, TypeAlarmCleared,
 		TypeAlarmArmingScheduled, TypeAlarmPostponed, TypeAlarmAuthFailed, TypeAlarmState,
 		TypeAlertRequest, TypeAlertResult, TypeAlertAck,
 		TypeRegistryPair, TypeRegistryRemove, TypeRegistrySnapshot, TypeRegistryDeviceAdded,
@@ -294,6 +295,7 @@ func TestSchemasAcceptValidMessages(t *testing.T) {
 		"alert-ack.json":              AlertAckData{Incident: "i", Contact: "c", Via: "sms"},
 		"alarm-arming-scheduled.json": ArmingScheduledData{ScheduledFor: TS(ends)},
 		"alarm-postponed.json":        PostponedData{ScheduledFor: TS(ends), Count: 1, Max: 3},
+		"alarm-siren-failed.json":     SirenFailedData{Incident: "i", DeviceID: "dev_siren1"},
 		"device-command.json":         DeviceCommandData{DeviceID: "dev_s3x9", Command: CmdSirenOn, Args: DeviceCommandArgs{DurationS: 300}, Exp: TSPtr(ends)},
 		"device-command-ack.json":     CommandAckData{Ref: "r", Status: CmdDone},
 		"system-heartbeat.json":       HeartbeatData{BootID: "b", UptimeS: 86412, Engine: StateArmed, FW: map[string]string{"engine": "0.1.0"}},
@@ -428,6 +430,42 @@ func TestSchemasRejectInvalidMessages(t *testing.T) {
 	// The reference envelope itself must be valid, or the cases above prove nothing.
 	if err := schematest.Check("envelope.json", []byte(okEnvelope)); err != nil {
 		t.Fatalf("the reference envelope must be valid: %v", err)
+	}
+}
+
+// An alert that is part of an alarm names it (alarm_incident), and only an alert
+// that names its alarm may say that alarm is handled (dependentRequired): a handled
+// flag without its alarm would quiet the phones about nothing they can tie it to.
+func TestAnAlertSaysItsAlarmIsHandledOnlyWithThatAlarm(t *testing.T) {
+	at := TS(time.Date(2026, 10, 24, 16, 15, 0, 0, time.UTC))
+	loud := AlertRequestData{Incident: "y", IncidentAt: at, Zone: "Africa/Lome", Kind: AlertSirenFailed,
+		Urgency: UrgencyHigh, Contact: "u_guard", Channel: ChannelSMS, AlarmIncident: "x"}
+	quiet := loud
+	quiet.Urgency, quiet.AlarmHandled = UrgencyLow, true
+	schematest.Validate(t, "alert-request.json", loud)
+	schematest.Validate(t, "alert-request.json", quiet)
+
+	const ok = `{"incident":"y","incident_at":"2026-10-24T16:15:00.000Z","zone":"Africa/Lome","kind":"siren_failed","urgency":"low","alarm_incident":"x","alarm_handled":true}`
+	if err := schematest.Check("alert-request.json", []byte(ok)); err != nil {
+		t.Fatalf("the reference alert must be valid: %v", err)
+	}
+	for name, raw := range map[string]string{
+		"handled without its alarm": strings.Replace(ok, `"alarm_incident":"x",`, "", 1),
+		"an empty alarm":            strings.Replace(ok, `"alarm_incident":"x"`, `"alarm_incident":""`, 1),
+		"handled said in words":     strings.Replace(ok, `"alarm_handled":true`, `"alarm_handled":"true"`, 1),
+	} {
+		if err := schematest.Check("alert-request.json", []byte(raw)); err == nil {
+			t.Errorf("%s: accepted %s", name, raw)
+		}
+	}
+	for name, raw := range map[string]string{
+		"without its siren": `{"incident":"x"}`,
+		"without its alarm": `{"device_id":"dev_siren1"}`,
+		"of an empty alarm": `{"incident":"","device_id":"dev_siren1"}`,
+	} {
+		if err := schematest.Check("alarm-siren-failed.json", []byte(raw)); err == nil {
+			t.Errorf("a silent siren %s: accepted", name)
+		}
 	}
 }
 

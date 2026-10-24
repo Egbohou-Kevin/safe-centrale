@@ -257,7 +257,7 @@ func (r *rig) validateAll() {
 		contract.TypeAlarmAck: "alarm-ack.json", contract.TypeAlarmState: "alarm-state.json",
 		contract.TypeAlertRequest: "alert-request.json", contract.TypeCommand: "device-command.json",
 		contract.TypeHeartbeat: "system-heartbeat.json", contract.TypeHealth: "system-health.json",
-		contract.TypeInstallMode: "install-mode.json",
+		contract.TypeInstallMode: "install-mode.json", contract.TypeAlarmSirenFailed: "alarm-siren-failed.json",
 	}
 	for _, m := range r.broker.All() {
 		file, ok := files[m.Env.Type]

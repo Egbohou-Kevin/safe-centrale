@@ -21,6 +21,7 @@ const (
 	TypeAlarmEntryDelay      = "alarm.entry_delay"
 	TypeAlarmTriggered       = "alarm.triggered"
 	TypeAlarmSirenCycle      = "alarm.siren_cycle"
+	TypeAlarmSirenFailed     = "alarm.siren_failed"
 	TypeAlarmCleared         = "alarm.cleared"
 	TypeAlarmArmingScheduled = "alarm.arming_scheduled"
 	TypeAlarmPostponed       = "alarm.postponed"

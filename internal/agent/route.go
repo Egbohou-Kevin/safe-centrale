@@ -30,7 +30,7 @@ var upCapabilities = []string{contract.CapSmoke, contract.CapPanic, contract.Cap
 
 var alarmEvents = []string{
 	contract.TypeAlarmArming, contract.TypeAlarmArmed, contract.TypeAlarmDisarmed, contract.TypeAlarmEntryDelay,
-	contract.TypeAlarmTriggered, contract.TypeAlarmSirenCycle, contract.TypeAlarmCleared,
+	contract.TypeAlarmTriggered, contract.TypeAlarmSirenCycle, contract.TypeAlarmSirenFailed, contract.TypeAlarmCleared,
 	contract.TypeAlarmArmingScheduled, contract.TypeAlarmPostponed, contract.TypeAlarmAuthFailed,
 }
 

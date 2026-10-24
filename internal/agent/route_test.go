@@ -80,3 +80,21 @@ func TestTheTopicsReadAtQoS0AreThoseThatMayCarryTheCode(t *testing.T) {
 		t.Fatalf("the rule caught %v", got)
 	}
 }
+
+// A siren silent during an alarm goes up with the alarm's events, first in line: the
+// owner's history says the shop was silent. Said on another topic, it stays here.
+func TestASilentSirenGoesUpWithTheAlarmsEvents(t *testing.T) {
+	h := newHarness(t)
+	h.local(topic("system", "health"), contract.TypeHealth, health)
+	silent := contract.SirenFailedData{Incident: "inc1", DeviceID: "dev_siren1"}
+	id, _ := h.local(topic("alarm", "event"), contract.TypeAlarmSirenFailed, silent)
+	h.local(topic("alert", "request"), contract.TypeAlarmSirenFailed, silent)
+	h.local(topic("alarm", "state"), contract.TypeAlarmSirenFailed, silent)
+
+	if got := h.queued(); !slices.Equal(got, []string{"system/health", "alarm/event"}) {
+		t.Fatalf("queued %v", got)
+	}
+	if it, ok := h.next(); !ok || it.ID != id || it.Prio != PriorityAlarm {
+		t.Fatalf("the silent siren does not leave first as an alarm: %+v", it)
+	}
+}

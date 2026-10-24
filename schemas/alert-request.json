@@ -75,6 +75,15 @@
     },
     "text": {
       "type": "string"
+    },
+    "alarm_incident": {
+      "type": "string",
+      "minLength": 1,
+      "description": "L'incident de l'alarme en cours dont cette alerte fait partie, jamais celui de l'alerte elle-même : aujourd'hui, seule une siren_failed levée pendant une alarme le porte"
+    },
+    "alarm_handled": {
+      "type": "boolean",
+      "description": "Présent et vrai quand cette alarme est déjà prise en charge (acquittée, ou arrêtée avec un code) : l'alerte se dit sans faire sonner, ni appel, ni sonnerie, ni son sur iPhone. urgency vaut alors low, ce qui le décrit sans rien décider. Seulement avec alarm_incident"
     }
   },
   "required": [
@@ -83,5 +92,10 @@
     "zone",
     "kind",
     "urgency"
-  ]
+  ],
+  "dependentRequired": {
+    "alarm_handled": [
+      "alarm_incident"
+    ]
+  }
 }

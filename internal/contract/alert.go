@@ -17,6 +17,14 @@ type AlertRequestData struct {
 	Contact string   `json:"contact,omitempty"`
 	Channel string   `json:"channel,omitempty"`
 	Text    string   `json:"text,omitempty"`
+	// AlarmIncident names the alarm under way this alert is part of, never the
+	// alert's own incident: today only a siren_failed raised during an alarm says it.
+	AlarmIncident string `json:"alarm_incident,omitempty"`
+	// AlarmHandled: that alarm is already handled (acknowledged, or stopped with a
+	// code). The alert is told without ringing: no call, no ring tone, no sound on an
+	// iPhone. Its urgency is then low, which says so but decides nothing. Only with
+	// AlarmIncident (the schema's dependentRequired).
+	AlarmHandled bool `json:"alarm_handled,omitempty"`
 }
 
 // AlertResultData: alert.result.

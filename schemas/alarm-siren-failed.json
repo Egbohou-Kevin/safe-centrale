@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alarm-siren-failed.json",
+  "title": "alarm.siren_failed",
+  "description": "Une sirène a refusé de sonner pendant une alarme, renvois compris : dit une fois par sirène et par alarme, pour l'historique. L'alerte aux contacts est un alert.request siren_failed, sous un incident à elle.",
+  "type": "object",
+  "properties": {
+    "incident": {
+      "type": "string",
+      "minLength": 1,
+      "description": "L'incident de l'alarme pour laquelle la sirène devait sonner"
+    },
+    "device_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "La sirène muette"
+    }
+  },
+  "required": [
+    "incident",
+    "device_id"
+  ]
+}

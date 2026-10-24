@@ -248,7 +248,9 @@ appareil est retiré, l'adaptateur efface ses états retenus (message vide).
 - Les commandes sont idempotentes : recevoir deux fois `siren.on` ne change rien.
 - Un `siren.on` répondu `failed` ou `expired` pendant que l'alarme sonne est renvoyé
   par la centrale ; si la sirène refuse encore, les contacts reçoivent l'alerte
-  `siren_failed` (voir `adapter-zigbee.md`).
+  `siren_failed`, sous un incident à elle qui nomme l'alarme (`alarm_incident`), et la
+  centrale publie `alarm.siren_failed` pour l'historique (voir « Événements d'alarme »,
+  « Alertes » et `adapter-zigbee.md`).
 
 Commandes de la v1 : `siren.on`, `siren.off`. `device.identify` (faire clignoter
 ou biper un appareil pour le repérer) est réservée : rien ne l'envoie, aucun profil ne
@@ -343,6 +345,7 @@ le planning arme dans le moteur.
 | `alarm.entry_delay` | Un détecteur d'entrée s'est ouvert | `ends_at`, `device_id`, `device_name` |
 | `alarm.triggered` | L'alarme se déclenche | `incident`, cause : `device_id`, `device_name`, `capability`, `zone` |
 | `alarm.siren_cycle` | Un cycle de sirène démarre | `incident`, `cycle`, `of` |
+| `alarm.siren_failed` | Une sirène refuse de sonner pendant une alarme, renvois compris (une fois par sirène et par alarme) | `incident` (l'alarme), `device_id` (la sirène) |
 | `alarm.cleared` | L'alarme est arrêtée | `incident`, `origin` (`user` ou `timeout`), `user`, `duration_s` |
 | `alarm.arming_scheduled` | Annonce de l'armement automatique | `scheduled_for` |
 | `alarm.postponed` | L'armement automatique est reporté | `scheduled_for`, `count`, `max` |
@@ -355,6 +358,14 @@ La configuration nomme un appareil par sa zone : dans `alarm.triggered`, `zone` 
 aujourd'hui le même nom, mais c'est `device_name` qui dit l'appareil. Les listes
 d'appareils (`bypassed`, `offline`, `low_battery` de `alarm.arming`) restent des
 `device_id`.
+
+`alarm.siren_failed` va à l'historique : l'alarme `incident` sonne sans cette sirène,
+le magasin est peut-être silencieux. Il ne termine aucun incident et ne fait sonner
+aucun téléphone : l'alerte aux contacts est l'`alert.request` `siren_failed`, sous un
+incident à elle, qui nomme l'alarme dans `alarm_incident` (voir « Alertes »). Une sirène
+n'a pas de nom dans la configuration du site, d'où l'absence de `device_name`. Après un
+redémarrage de la centrale en pleine alarme, l'événement peut repartir une fois : un
+lecteur range les pannes d'une alarme par sirène.
 
 `incidents` d'`alarm.disarmed` (toujours présent) nomme les incidents que le
 désarmement termine : l'alarme qui sonne (dont l'`alarm.cleared` d'origine `user` part
@@ -382,6 +393,17 @@ automatique).
   gerez.`), l'application et WhatsApp ont leur propre bouton. `devices` (liste d'appareils, facultatif) est rempli quand l'alerte en concerne
   plusieurs, par exemple `arming_bypassed`, et `percent` (0 à 100) le niveau de
   batterie pour les alertes de batterie.
+  `alarm_incident` (facultatif) nomme l'alarme en cours dont l'alerte fait partie,
+  jamais l'incident de l'alerte elle-même : aujourd'hui, seule une `siren_failed` levée
+  pendant une alarme le porte. Elle garde son propre `incident` (son acquittement, ses
+  messages en attente à la passerelle GSM et son `incident_at` ne sont qu'à elle), et
+  nomme l'alarme pour qu'un téléphone qui sonne déjà pour celle-ci l'y ajoute au lieu de
+  sonner une deuxième fois. `alarm_handled` (facultatif, présent seulement à `true` et
+  seulement avec `alarm_incident`) dit que cette alarme est déjà prise en charge : un
+  contact l'a acquittée, ou une personne l'a arrêtée avec un code (désarmement, sirène
+  coupée). L'alerte se dit alors sans faire sonner : jamais d'appel, pas de sonnerie
+  dans l'application, pas de son sur un iPhone. Son `urgency` vaut alors `low`, ce qui
+  le décrit sans rien décider : seul `alarm_handled` décide du bruit.
   `incident_at` (obligatoire) est l'heure où l'incident a été levé, en UTC à la
   milliseconde comme le `ts` de l'enveloppe : la même à chaque vague et à chaque
   relance de l'incident, alors que `ts` est l'heure de la demande (une deuxième vague
@@ -738,6 +760,15 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **24 octobre 2026, la sirène muette** : `alert.request` porte deux champs
+  facultatifs, `alarm_incident` (l'alarme en cours dont l'alerte fait partie) et
+  `alarm_handled` (cette alarme est déjà prise en charge : l'alerte se dit sans faire
+  sonner), le second seulement avec le premier (`dependentRequired` dans le schéma, voir
+  « Alertes »). Nouvel événement `alarm.siren_failed` (`incident`, `device_id`) sur
+  `alarm/event`, relayé au cloud par l'agent, pour l'historique (voir « Événements
+  d'alarme »). À l'essai, une sirène muette après l'acquittement d'une intrusion faisait
+  sonner les téléphones une deuxième fois. Un cloud qui ne connaît pas encore
+  `alarm.siren_failed` le refuse : il est mis à jour avant la centrale.
 - **24 octobre 2026** : `alert.request` porte `incident_at` (l'heure de l'incident,
   la même à chaque vague) et `zone` (le fuseau IANA du site), tous deux obligatoires
   (voir « Alertes »). À l'essai, un téléphone à Paris montrait pour la deuxième vague

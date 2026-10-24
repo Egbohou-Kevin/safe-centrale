@@ -47,6 +47,7 @@
         "alarm.entry_delay",
         "alarm.triggered",
         "alarm.siren_cycle",
+        "alarm.siren_failed",
         "alarm.cleared",
         "alarm.arming_scheduled",
         "alarm.postponed",

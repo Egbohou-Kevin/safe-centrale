@@ -141,6 +141,14 @@ type SirenCycleData struct {
 	Of       int    `json:"of"`
 }
 
+// SirenFailedData: alarm.siren_failed, a siren refused to sound during an alarm,
+// resends included. Said once per siren and per alarm, for the history; the
+// contacts' alert is an alert.request siren_failed under an incident of its own.
+type SirenFailedData struct {
+	Incident string `json:"incident"`  // the alarm the siren should have sounded for
+	DeviceID string `json:"device_id"` // the silent siren
+}
+
 // ClearedData: alarm.cleared.
 type ClearedData struct {
 	Incident  string `json:"incident"`
