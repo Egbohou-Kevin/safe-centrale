@@ -55,13 +55,101 @@ func TestADeviceDrivenAsASirenIsASiren(t *testing.T) {
 
 func TestPairingIsBoundedAndCanBeClosed(t *testing.T) {
 	h := newHarness(t)
-	if out := h.do(Pair{Now: h.now, Ref: "p", For: time.Hour}); out[0] != (PermitJoin{Seconds: 600}) {
+	if out := h.do(Pair{Now: h.now, Ref: "p", For: time.Hour}); out[0] != (PermitJoin{Seconds: 254}) {
 		t.Fatalf("%+v", out)
+	}
+	if !h.n.Snapshot().PairUntil.Equal(t0.Add(10 * time.Minute)) {
+		t.Fatalf("bounded to PairMax: %v", h.n.Snapshot().PairUntil)
 	}
 	if out := h.do(Pair{Now: h.now, Ref: "p"}); len(out) != 1 || out[0] != (PermitJoin{}) || h.n.Status().Pairing {
 		t.Fatalf("%+v", out)
 	}
 	none(t, h.advance(time.Hour))
+}
+
+// The trial on real hardware: -for 5m asked Zigbee2MQTT for 300 s at once, which it
+// refuses (254 s at most), and the network never opened. A window longer than one
+// request is opened in pieces, each asked before the previous one ends.
+func TestALongWindowIsOpenedInPieces(t *testing.T) {
+	for _, tc := range []struct {
+		For    time.Duration
+		pieces []int // seconds asked, in order
+		at     []time.Duration
+	}{
+		{For: 5 * time.Minute, pieces: []int{254, 56}, at: []time.Duration{0, 244 * time.Second}},
+		{For: 10 * time.Minute, pieces: []int{254, 254, 112}, at: []time.Duration{0, 244 * time.Second, 488 * time.Second}},
+		{For: 254 * time.Second, pieces: []int{254}, at: []time.Duration{0}},
+	} {
+		t.Run(tc.For.String(), func(t *testing.T) {
+			h := newHarness(t)
+			got := []int{h.do(Pair{Now: h.now, Ref: "p", For: tc.For})[0].(PermitJoin).Seconds}
+			at := []time.Duration{0}
+			for {
+				wake := h.n.NextWake()
+				if wake.IsZero() {
+					t.Fatal("the window must close by itself")
+				}
+				out := h.advance(wake.Sub(h.now))
+				pj, ok := find[PermitJoin](out)
+				if !ok {
+					t.Fatalf("woken for nothing: %+v", out)
+				}
+				if pj.Seconds == 0 {
+					break
+				}
+				got = append(got, pj.Seconds)
+				at = append(at, h.now.Sub(t0))
+				if !h.n.Status().Pairing {
+					t.Fatal("open all along")
+				}
+			}
+			if !reflect.DeepEqual(got, tc.pieces) || !reflect.DeepEqual(at, tc.at) {
+				t.Fatalf("asked %v at %v, want %v at %v", got, at, tc.pieces, tc.at)
+			}
+			if h.now.Sub(t0) != tc.For || h.n.Status().Pairing {
+				t.Fatalf("closed at %v", h.now.Sub(t0))
+			}
+		})
+	}
+}
+
+func TestAWindowGoesOnAfterARestart(t *testing.T) {
+	h := newHarness(t)
+	h.do(Pair{Now: h.now, Ref: "p", For: 5 * time.Minute})
+	snap := h.n.Snapshot()
+	// The adapter closed the network as it stopped: the next input opens it again,
+	// for what is left of the window.
+	h.n.Restore(snap)
+	if pj, ok := find[PermitJoin](h.advance(30 * time.Second)); !ok || pj.Seconds != 254 {
+		t.Fatalf("%+v", pj)
+	}
+	if !h.n.NextWake().Equal(h.now.Add(244 * time.Second)) {
+		t.Fatalf("next piece at %v", h.n.NextWake())
+	}
+	// Down past the renewal: the rest at once.
+	h.n.Restore(h.n.Snapshot())
+	if pj, ok := find[PermitJoin](h.advance(220 * time.Second)); !ok || pj.Seconds != 50 {
+		t.Fatalf("%+v", pj)
+	}
+	// Down past the end: closed for good.
+	h.n.Restore(h.n.Snapshot())
+	if out := h.advance(time.Hour); len(out) != 1 || out[0] != (PermitJoin{}) || h.n.Status().Pairing {
+		t.Fatalf("%+v", out)
+	}
+}
+
+func TestARefusedOpeningEndsTheWindow(t *testing.T) {
+	h := newHarness(t)
+	h.do(Pair{Now: h.now, Ref: "p1", For: 5 * time.Minute})
+	out := h.do(PairRefused{Now: h.now, Reason: "Cannot permit join for more than 254 seconds."})
+	want := []Action{PermitJoin{}, PairFailed{Ref: "p1", Reason: "Cannot permit join for more than 254 seconds."}}
+	if !reflect.DeepEqual(out, want) || h.n.Status().Pairing {
+		t.Fatalf("%+v", out)
+	}
+	none(t, h.advance(time.Hour)) // no piece asked any more
+	if _, ok := find[Ignored](h.do(PairRefused{Now: h.now, Reason: "x"})); !ok {
+		t.Fatal("a refusal while closed changes nothing")
+	}
 }
 
 func TestDevicesWeCannotWatchAreRefused(t *testing.T) {

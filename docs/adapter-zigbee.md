@@ -125,7 +125,11 @@ l'outil d'installation le lisent au démarrage.
 ## Appairage
 
 1. L'installateur démarre le mode appairage (`registry.pair`, durée par défaut 120
-   secondes). L'adaptateur ouvre le réseau Zigbee à de nouveaux appareils.
+   secondes, 10 minutes au plus). L'adaptateur ouvre le réseau Zigbee à de nouveaux
+   appareils. Zigbee n'ouvre pas le réseau plus de 254 secondes d'une seule demande
+   (Zigbee2MQTT refuse au-delà) : une fenêtre plus longue est ouverte par morceaux de
+   254 secondes au plus, chacun demandé 10 secondes avant la fin du précédent, pour
+   que le réseau ne se referme jamais entre deux.
 2. L'installateur active l'appareil (appui long sur un bouton, retrait de la
    languette de pile…).
 3. Zigbee2MQTT signale l'arrivée et termine l'interrogation de l'appareil.
@@ -138,6 +142,19 @@ l'outil d'installation le lisent au démarrage.
 5. L'installateur donne le nom et la zone (configuration), puis fait un **test** :
    déclencher l'appareil et vérifier que son événement arrive.
 6. À la fin du délai, ou sur ordre, l'adaptateur referme le réseau.
+
+Si Zigbee2MQTT refuse d'ouvrir le réseau (ou de le garder ouvert), l'adaptateur
+journalise son refus, met fin à la fenêtre et publie `registry.pair_failed` avec l'`id`
+de l'ordre et la raison donnée par Zigbee2MQTT : l'outil d'installation l'affiche et
+s'arrête en erreur, au lieu d'attendre devant un réseau fermé (trouvé à l'essai sur le
+matériel du 24 octobre 2026 : `-for 5m` demandait 300 secondes d'un coup, Zigbee2MQTT
+2.14.2 répondait « Cannot permit join for more than 254 seconds. » et l'outil attendait
+comme si le réseau était ouvert).
+
+Quand l'adaptateur s'arrête pendant une fenêtre, il referme le réseau : un appareil qui
+entrerait sans lui resterait dans le réseau de Zigbee2MQTT, hors du registre, sans
+surveillance. Au redémarrage, si la fenêtre court encore, il le rouvre pour ce qui en
+reste.
 
 Le **retrait** d'un appareil (`registry.remove`) l'enlève de Zigbee2MQTT et du
 registre. Son `device_id` est retiré définitivement.
@@ -282,9 +299,17 @@ Choix faits au codage :
   renvoyée, 3 fois en tout, puis `failed` (`no_confirmation`). Une commande périmée
   répond `expired`. Les commandes visent l'adresse Zigbee, qui ne change pas, même si
   le renommage a échoué.
-- **Appairage** : borné à 10 minutes. Un appareil entré hors d'une fenêtre
+- **Appairage** : borné à 10 minutes, ouvert par morceaux de 254 secondes au plus
+  (voir « Appairage »). Un appareil entré hors d'une fenêtre
   d'appairage, illisible ou sans profil est retiré du réseau et signalé. Un identifiant
   n'est jamais redonné, même après un retrait.
+- **Abonnements** : l'adaptateur ne s'abonne qu'à ce qu'il lit de Zigbee2MQTT : les
+  messages des appareils (un niveau sous le sujet de base, `zigbee2mqtt/+`),
+  `bridge/state`, `bridge/event` et les réponses à ses demandes (`bridge/response/#`).
+  Le reste de `bridge/` reste sur le broker : `bridge/definitions` (tous les modèles
+  que Zigbee2MQTT connaît, retenu, 228 ko avec la version 2.14.2, au-delà de la limite
+  de 64 ko de l'adaptateur, qui le jetait avec un avertissement à chaque démarrage) et
+  `bridge/devices` (qui grossit avec le réseau) ne seraient lus que pour être jetés.
 - **Retrait** : les états retenus de l'appareil sont effacés, pour qu'une porte
   retirée laissée « ouverte » ne bloque pas l'armement.
 - **États retenus** : un sujet par capacité (`device/{id}/state/{capacité}`), correction
@@ -299,8 +324,9 @@ Choix faits au codage :
 À vérifier sur le matériel :
 
 - Les noms des sujets et des champs de la version de Zigbee2MQTT installée, en
-  particulier `permit_join` (l'adaptateur envoie `value` et `time` pour couvrir les
-  versions 1 et 2) et le format de `bridge/state`.
+  particulier le format de `bridge/state`. `permit_join` (l'adaptateur envoie `value`
+  et `time` pour couvrir les versions 1 et 2) est vérifié avec la version 2.14.2 : elle
+  lit `time` et refuse plus de 254 secondes.
 - Chaque profil de `config/profiles/` : modèles, champs, valeurs (notamment les touches
   du clavier et la commande de la sirène, qui ne rapporte peut-être pas son état).
 - La durée réelle entre deux messages de chaque capteur, pour régler `offline_after`.

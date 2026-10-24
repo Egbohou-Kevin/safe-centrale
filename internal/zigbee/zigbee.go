@@ -104,7 +104,8 @@ type Snapshot struct {
 	Retired   map[string]bool             `json:"retired"` // ids never given again
 	Pending   map[string]Pending          `json:"pending"` // by device: one command at a time
 	Bridge    bool                        `json:"bridge"`
-	PairUntil time.Time                   `json:"pair_until"` // zero while closed
+	PairUntil time.Time                   `json:"pair_until"`          // zero while closed
+	PairRenew time.Time                   `json:"pair_renew,omitzero"` // next request to keep it open, zero if none
 	PairRef   string                      `json:"pair_ref"`
 }
 
@@ -180,6 +181,12 @@ func (n *Network) Restore(s Snapshot) {
 	if s.Pending == nil {
 		s.Pending = map[string]Pending{}
 	}
+	// The adapter closes the network when it stops (no one would vet the devices
+	// joining meanwhile): a window still running is opened again at the next input,
+	// for what is left of it, or closed for good if it is over.
+	if !s.PairUntil.IsZero() {
+		s.PairRenew = time.Unix(0, 0)
+	}
 	// What a device is comes from its profile, which may have changed since it was
 	// paired (a reading added, a fix): the saved list is not kept.
 	for id, d := range s.Devices {
@@ -222,6 +229,9 @@ func (n *Network) NextWake() time.Time {
 	if !n.s.PairUntil.IsZero() {
 		add(n.s.PairUntil)
 	}
+	if !n.s.PairRenew.IsZero() {
+		add(n.s.PairRenew)
+	}
 	for _, p := range n.s.Pending {
 		add(p.Deadline)
 	}
@@ -259,6 +269,8 @@ func (n *Network) Handle(in Input) []Action {
 		out = n.left(v)
 	case Pair:
 		out = n.pair(v)
+	case PairRefused:
+		out = n.pairRefused(v)
 	case Remove:
 		out = n.remove(v)
 	case Command:
@@ -267,14 +279,10 @@ func (n *Network) Handle(in Input) []Action {
 	return append(out, n.due(now)...)
 }
 
-// due runs what the clock has made due: the end of a pairing window, commands not
-// confirmed in time, devices silent for too long.
+// due runs what the clock has made due: the end of a pairing window or its next
+// piece, commands not confirmed in time, devices silent for too long.
 func (n *Network) due(now time.Time) []Action {
-	var out []Action
-	if !n.s.PairUntil.IsZero() && !now.Before(n.s.PairUntil) {
-		n.s.PairUntil, n.s.PairRef = time.Time{}, ""
-		out = append(out, PermitJoin{})
-	}
+	out := n.pairingDue(now)
 	out = append(out, n.retryPending(now)...)
 	return append(out, n.markSilent(now)...)
 }

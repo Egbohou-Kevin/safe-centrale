@@ -23,6 +23,9 @@ var (
 	ErrNoAnswer = errors.New("the Zigbee adapter did not answer: is safehome-zigbee running?")
 	// ErrNotPaired: the device to remove is not in the registry.
 	ErrNotPaired = errors.New("no such device in the registry")
+	// ErrPairRefused: Zigbee2MQTT would not open the network, or keep it open; the
+	// window is over.
+	ErrPairRefused = errors.New("the network could not be opened, Zigbee2MQTT refused")
 )
 
 // Publisher sends one message to the broker. The program gives the MQTT client.
@@ -178,7 +181,8 @@ type PairNews struct {
 
 // Pair opens the network for d (whole seconds, at least one) and reports each device
 // added or refused until the window closes. If ctx ends first (Ctrl-C), it closes the
-// network at once. It returns ErrNoAnswer if the adapter does not confirm the opening.
+// network at once. It returns ErrNoAnswer if the adapter does not confirm the opening,
+// and ErrPairRefused, with Zigbee2MQTT's reason, if the network would not open.
 func (s *Session) Pair(ctx context.Context, d time.Duration, report func(PairNews)) error {
 	seconds := int(d / time.Second)
 	if seconds < 1 {
@@ -209,7 +213,7 @@ func (s *Session) Pair(ctx context.Context, d time.Duration, report func(PairNew
 			return nil // the window is over
 		}
 		if w.read(r) {
-			return nil // the adapter closed the network: the window is over
+			return w.err // the adapter closed the network: the window is over
 		}
 	}
 }
@@ -218,7 +222,8 @@ func (s *Session) Pair(ctx context.Context, d time.Duration, report func(PairNew
 type pairWindow struct {
 	ref       string
 	report    func(PairNews)
-	confirmed bool // the adapter opened the network for this order
+	confirmed bool  // the adapter opened the network for this order
+	err       error // why the window ended early, nil if it did not
 }
 
 // read takes one message and reports whether the adapter closed the network.
@@ -241,6 +246,11 @@ func (w *pairWindow) read(r received) (closed bool) {
 		if a, err := contract.DecodeData[contract.RegistryDeviceAddedData](r.env); err == nil && a.Ref == w.ref {
 			w.confirmed = true
 			w.report(PairNews{Added: &a})
+		}
+	case contract.TypeRegistryPairFailed:
+		if f, err := contract.DecodeData[contract.RegistryPairFailedData](r.env); err == nil && f.Ref == w.ref {
+			w.err = fmt.Errorf("%w: %s", ErrPairRefused, f.Reason)
+			return true
 		}
 	case contract.TypeRegistryDeviceRejected:
 		// A refusal outside any window has no ref: report it too, it tells the

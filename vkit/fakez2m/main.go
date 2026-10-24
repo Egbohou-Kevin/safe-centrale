@@ -106,8 +106,16 @@ func (z *bridge) answer(req string, payload []byte) {
 		From string `json:"from"`
 		To   string `json:"to"`
 		ID   string `json:"id"`
+		Time int    `json:"time"`
 	}
 	json.Unmarshal(payload, &body)
+	if req == "permit_join" && body.Time > 254 {
+		// Zigbee2MQTT 2.14.2's own answer, seen on the real hardware.
+		log.Printf("request %s %s refused", req, payload)
+		z.publish("bridge/response/"+req, map[string]any{"status": "error", "data": map[string]any{},
+			"error": "Cannot permit join for more than 254 seconds."}, false)
+		return
+	}
 	z.mu.Lock()
 	switch req {
 	case "device/rename":

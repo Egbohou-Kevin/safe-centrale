@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/registry-pair-failed.json",
+  "title": "registry.pair_failed",
+  "description": "Le réseau n'a pas pu être ouvert (ou gardé ouvert) pour un ordre d'appairage : la fenêtre est finie.",
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "id de l'ordre d'appairage"
+    },
+    "reason": {
+      "type": "string",
+      "description": "Les mots de Zigbee2MQTT"
+    }
+  },
+  "required": [
+    "ref",
+    "reason"
+  ]
+}

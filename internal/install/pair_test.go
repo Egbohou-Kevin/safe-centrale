@@ -3,6 +3,7 @@ package install
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,6 +64,25 @@ func TestPairReportsWhatJoinsThenEndsWithTheWindow(t *testing.T) {
 	}
 	if err := schematest.Check("registry-pair.json", o.env.Data); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The trial on real hardware: Zigbee2MQTT refused to open the network and the tool
+// went on waiting as if it were open.
+func TestARefusedOpeningEndsThePairingWithAnError(t *testing.T) {
+	s, _ := newTestSession(t, func(a *fakeAdapter, m sent) {
+		a.deliver(contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus, status(true), false)
+		ev := contract.RegistryEventTopic(site)
+		a.deliver(ev, contract.TypeRegistryPairFailed, contract.RegistryPairFailedData{Ref: "01OTHERORDER0000000000000", Reason: "not ours"}, false)
+		a.deliver(ev, contract.TypeRegistryPairFailed, contract.RegistryPairFailedData{Ref: m.env.ID, Reason: "Cannot permit join for more than 254 seconds."}, false)
+	})
+	start := time.Now()
+	err := s.Pair(testCtx(t), 5*time.Minute, func(PairNews) { t.Error("no news from a closed network") })
+	if !errors.Is(err, ErrPairRefused) || !strings.Contains(err.Error(), "Cannot permit join for more than 254 seconds.") {
+		t.Fatalf("err %v", err)
+	}
+	if time.Since(start) > time.Minute {
+		t.Fatal("the tool must not wait for the end of a window that never opened")
 	}
 }
 

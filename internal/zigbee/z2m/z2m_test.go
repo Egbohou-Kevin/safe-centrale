@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,7 +75,7 @@ func TestInterviewsAndDeparturesFromTheBridge(t *testing.T) {
 func TestWhatTheCoreDoesNotNeedIsLeftOut(t *testing.T) {
 	for _, topic := range []string{
 		"zigbee2mqtt/bridge/devices", "zigbee2mqtt/bridge/info", "zigbee2mqtt/bridge/logging",
-		"zigbee2mqtt/bridge/response/permit_join", "zigbee2mqtt/bridge/request/permit_join",
+		"zigbee2mqtt/bridge/response/device/rename", "zigbee2mqtt/bridge/request/permit_join",
 		"zigbee2mqtt/dev_x/availability", "zigbee2mqtt/dev_x/set", "zigbee2mqtt/bridge",
 		"zigbee2mqtt/", "zigbee2mqtt", "other/dev_x", "zigbee2mqttx/dev_x",
 	} {
@@ -111,8 +113,54 @@ func TestAnotherBaseTopic(t *testing.T) {
 	if err != nil || !ok || in.(zigbee.Report).Name != "dev_x" {
 		t.Fatalf("%+v %v", in, err)
 	}
-	if Filter("z2m-shop") != "z2m-shop/#" {
-		t.Fatal(Filter("z2m-shop"))
+}
+
+func TestOnlyWhatTheCoreReadsIsSubscribedTo(t *testing.T) {
+	filters := Filters("z2m-shop")
+	matches := func(topic string) bool {
+		return slices.ContainsFunc(filters, func(f string) bool { return topicMatches(f, topic) })
+	}
+	for _, topic := range []string{"z2m-shop/dev_x", "z2m-shop/0x00158d0001000001", "z2m-shop/bridge/state",
+		"z2m-shop/bridge/event", "z2m-shop/bridge/response/permit_join", "z2m-shop/bridge/response/device/rename"} {
+		if !matches(topic) {
+			t.Errorf("%s: not received", topic)
+		}
+	}
+	// Large retained messages the core has no use for (bridge/definitions was 228 kB
+	// on the trial's Zigbee2MQTT 2.14.2, over the adapter's limit).
+	for _, topic := range []string{"z2m-shop/bridge/definitions", "z2m-shop/bridge/devices", "z2m-shop/bridge/info",
+		"z2m-shop/bridge/logging", "z2m-shop/dev_x/availability", "z2m-shop/dev_x/set", "zigbee2mqtt/dev_x"} {
+		if matches(topic) {
+			t.Errorf("%s: received for nothing", topic)
+		}
+	}
+}
+
+// topicMatches is MQTT's filter matching, enough for these filters.
+func topicMatches(filter, topic string) bool {
+	f, tp := strings.Split(filter, "/"), strings.Split(topic, "/")
+	for i, part := range f {
+		switch {
+		case part == "#":
+			return true
+		case i >= len(tp):
+			return false
+		case part != "+" && part != tp[i]:
+			return false
+		}
+	}
+	return len(f) == len(tp)
+}
+
+// Zigbee2MQTT 2.14.2 on the trial: asked for 300 s, it refused.
+func TestARefusalToOpenTheNetworkReachesTheCore(t *testing.T) {
+	in, ok := parse(t, "zigbee2mqtt/bridge/response/permit_join",
+		`{"data":{},"status":"error","error":"Cannot permit join for more than 254 seconds."}`, false)
+	if !ok || in != (zigbee.PairRefused{Now: now, Reason: "Cannot permit join for more than 254 seconds."}) {
+		t.Fatalf("%+v", in)
+	}
+	if _, ok := parse(t, "zigbee2mqtt/bridge/response/permit_join", `{"data":{"time":254},"status":"ok"}`, false); ok {
+		t.Error("an opening that went well changes nothing")
 	}
 }
 

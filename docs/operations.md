@@ -271,7 +271,8 @@ Configuration (`config/zigbee.example.json`), stricte :
   propres messages comme des appareils.
 - `confirm_wait` (3 s) et `attempts` (3) : attente de la confirmation d'une commande
   et nombre d'envois ; `offline_after` (4 h) : silence avant « hors ligne » pour les
-  profils qui ne disent rien ; `pair_max` (10 min) : durée maximale d'appairage ;
+  profils qui ne disent rien ; `pair_max` (10 min) : durée maximale d'appairage (ouverte par morceaux de 254 s,
+  le plus que Zigbee2MQTT accepte d'une demande) ;
   `step` (5) : écart minimal pour annoncer une pile ou un lien ; `status_every` (1 min).
 
 Il garde son registre et ses états dans le même dossier d'état (fichiers

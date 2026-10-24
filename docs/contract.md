@@ -405,9 +405,15 @@ Les ordres arrivent sur `registry/cmd` et ne viennent jamais du cloud.
 | `registry.device_added` | Appareil accepté | `device_id`, `model`, `capabilities` |
 | `registry.device_rejected` | Modèle sans profil, refusé | `model` |
 | `registry.device_removed` | Appareil retiré | `device_id` |
+| `registry.pair_failed` | Le réseau n'a pas pu être ouvert, la fenêtre est finie | `ref`, `reason` |
 
 - `registry.pair` : `duration_s` à 0 referme le réseau. L'adaptateur borne la durée
-  (10 minutes par défaut).
+  (10 minutes par défaut) et l'obtient de Zigbee2MQTT par morceaux de 254 secondes au
+  plus.
+- `registry.pair_failed` : Zigbee2MQTT a refusé d'ouvrir le réseau (ou de le garder
+  ouvert) pour l'ordre `ref` ; `reason` reprend ses mots. La fenêtre est finie
+  (`zigbee.status` repasse `pairing` à faux) : l'outil d'installation s'arrête en
+  erreur.
 - `registry.device_added`, `registry.device_rejected` et `registry.device_removed`
   portent `ref`, l'`id` de l'ordre qui les a causés (absent pour un appareil refusé
   hors appairage).

@@ -61,6 +61,7 @@
         "registry.device_added",
         "registry.device_rejected",
         "registry.device_removed",
+        "registry.pair_failed",
         "system.heartbeat",
         "system.health",
         "gsm.status",

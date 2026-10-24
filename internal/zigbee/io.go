@@ -54,6 +54,13 @@ type Pair struct {
 	For time.Duration
 }
 
+// PairRefused says that Zigbee2MQTT refused a request to open the network, with
+// its reason.
+type PairRefused struct {
+	Now    time.Time
+	Reason string
+}
+
 // Remove takes a device out of the network and the registry.
 type Remove struct {
 	Now      time.Time
@@ -77,6 +84,7 @@ func (b Bridge) at() time.Time      { return b.Now }
 func (i Interviewed) at() time.Time { return i.Now }
 func (l Left) at() time.Time        { return l.Now }
 func (p Pair) at() time.Time        { return p.Now }
+func (p PairRefused) at() time.Time { return p.Now }
 func (r Remove) at() time.Time      { return r.Now }
 func (c Command) at() time.Time     { return c.Now }
 
@@ -140,6 +148,13 @@ type Rejected struct {
 	Reason string // RejectUnknownModel, RejectNotPairing, RejectInterviewFailed
 }
 
+// PairFailed: the network could not be opened (or kept open) for a pairing order;
+// the window is over.
+type PairFailed struct {
+	Ref    string // the pairing order
+	Reason string // Zigbee2MQTT's words
+}
+
 // Removed: a device left the registry. Its retained states are to be cleared.
 type Removed struct {
 	Ref    string
@@ -161,6 +176,7 @@ func (Expel) isAction()           {}
 func (Ack) isAction()             {}
 func (Added) isAction()           {}
 func (Rejected) isAction()        {}
+func (PairFailed) isAction()      {}
 func (Removed) isAction()         {}
 func (RegistryChanged) isAction() {}
 func (Ignored) isAction()         {}

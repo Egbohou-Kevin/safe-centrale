@@ -65,6 +65,14 @@ type RegistryDeviceRemovedData struct {
 	DeviceID string `json:"device_id"`
 }
 
+// RegistryPairFailedData: registry.pair_failed, the network could not be opened (or
+// kept open) for the pairing order Ref, and the window is over. Reason is
+// Zigbee2MQTT's own words.
+type RegistryPairFailedData struct {
+	Ref    string `json:"ref"`
+	Reason string `json:"reason"`
+}
+
 // ZigbeeStatusData is the payload of zigbee.status: the Zigbee network, published
 // retained at every change and repeated every minute. The hub turns it into the
 // zigbee link of system.health.

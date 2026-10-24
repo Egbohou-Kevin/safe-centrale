@@ -163,6 +163,11 @@ func Removed(r zigbee.Removed) contract.RegistryDeviceRemovedData {
 	return contract.RegistryDeviceRemovedData{Ref: r.Ref, DeviceID: r.Device.ID}
 }
 
+// PairFailed builds registry.pair_failed.
+func PairFailed(f zigbee.PairFailed) contract.RegistryPairFailedData {
+	return contract.RegistryPairFailedData{Ref: f.Ref, Reason: f.Reason}
+}
+
 // Status builds zigbee.status.
 func Status(s zigbee.Status) contract.ZigbeeStatusData {
 	bridge := contract.BridgeOffline

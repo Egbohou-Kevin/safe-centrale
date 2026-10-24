@@ -38,9 +38,10 @@ func (a *App) HandleMessage(m inbox.Message) {
 // cannot be read without queuing it, then again on the loop with the time of the
 // moment.
 func (a *App) fromBridge(m inbox.Message) {
+	// A refusal is logged whatever the request; the core reads those it acts on (a
+	// network that would not open).
 	if req, reason, failed := z2m.ResponseError(a.cfg.Base, m.Topic, m.Payload); failed {
 		a.log.Error("Zigbee2MQTT refused a request", "request", req, "err", reason)
-		return
 	}
 	if _, ok, err := z2m.Parse(a.cfg.Base, m.Topic, m.Payload, m.Retain, time.Time{}); err != nil || !ok {
 		if err != nil {

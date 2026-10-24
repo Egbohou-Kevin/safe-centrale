@@ -69,6 +69,49 @@ func TestPairingADevice(t *testing.T) {
 	r.validateAll()
 }
 
+// The trial on real hardware: Zigbee2MQTT refused to open the network and the
+// installer's tool went on waiting. The refusal now ends the window and is published.
+func TestARefusedOpeningIsPublished(t *testing.T) {
+	r := newRig(t, nil)
+	ref := r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 120})
+	drivertest.WaitFor(t, "the window open", func() bool { return r.status().Pairing })
+	r.z2m("bridge/response/permit_join", `{"data":{},"status":"error","error":"Coordinator is not started"}`, false)
+	drivertest.WaitFor(t, "the failure", func() bool { return len(r.broker.OfType(contract.TypeRegistryPairFailed)) == 1 })
+	r.settle()
+	m := r.broker.OfType(contract.TypeRegistryPairFailed)[0]
+	d, _ := contract.DecodeData[contract.RegistryPairFailedData](m.Env)
+	if m.Topic != contract.RegistryEventTopic(site) || d.Ref != ref || d.Reason != "Coordinator is not started" {
+		t.Fatalf("%s %+v", m.Topic, d)
+	}
+	if r.status().Pairing {
+		t.Fatal("the window is over")
+	}
+	if !strings.Contains(r.logs.String(), "Zigbee2MQTT refused a request") {
+		t.Fatalf("the refusal is logged:\n%s", r.logs.String())
+	}
+	r.validateAll()
+}
+
+func TestAStopClosesTheNetworkAndAStartOpensItAgain(t *testing.T) {
+	store := drivertest.NewMemStore()
+	r := newRig(t, store)
+	r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 300})
+	drivertest.WaitFor(t, "the window open", func() bool { return r.status().Pairing })
+	r.settle()
+	r.stop()
+	pj := r.rawOn("bridge/request/permit_join")
+	if len(pj) != 2 || pj[0]["time"] != 254.0 || pj[1]["time"] != 0.0 {
+		t.Fatalf("opened for 254 s, then closed at the stop: %+v", pj)
+	}
+
+	again := newRig(t, store)
+	again.clock.Advance(time.Minute)
+	drivertest.WaitFor(t, "the network open again", func() bool { return len(again.rawOn("bridge/request/permit_join")) == 1 })
+	if pj := again.rawOn("bridge/request/permit_join"); pj[0]["time"] != 254.0 {
+		t.Fatalf("%+v", pj)
+	}
+}
+
 func TestDeviceMessagesBecomeEventsAndStates(t *testing.T) {
 	r := newRig(t, nil)
 	r.pair("dev_door", "0x01", "MCCGQ11LM")
@@ -297,7 +340,8 @@ func TestConfigurationAndDependenciesAreChecked(t *testing.T) {
 		t.Error("device ids are required")
 	}
 	a, _ := New(good, deps)
-	want := []string{"zigbee2mqtt/#", "safehome/" + site + "/device/+/cmd", "safehome/" + site + "/registry/cmd"}
+	want := []string{"zigbee2mqtt/+", "zigbee2mqtt/bridge/state", "zigbee2mqtt/bridge/event", "zigbee2mqtt/bridge/response/#",
+		"safehome/" + site + "/device/+/cmd", "safehome/" + site + "/registry/cmd"}
 	var got []string
 	for _, s := range a.Subscriptions() {
 		got = append(got, s.Filter)

@@ -37,6 +37,7 @@ const (
 	TypeRegistryDeviceAdded    = "registry.device_added"
 	TypeRegistryDeviceRejected = "registry.device_rejected"
 	TypeRegistryDeviceRemoved  = "registry.device_removed"
+	TypeRegistryPairFailed     = "registry.pair_failed"
 
 	TypeHeartbeat = "system.heartbeat"
 	TypeHealth    = "system.health"

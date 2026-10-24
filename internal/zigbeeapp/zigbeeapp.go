@@ -148,11 +148,14 @@ func New(cfg Config, deps Deps) (*App, error) {
 
 // Subscriptions lists what the adapter listens to.
 func (a *App) Subscriptions() []inbox.Subscription {
-	return []inbox.Subscription{
-		{Filter: z2m.Filter(a.cfg.Base), QoS: 1},
-		{Filter: contract.Topic(a.cfg.Site, "device", "+", "cmd"), QoS: 1},
-		{Filter: contract.RegistryCmdTopic(a.cfg.Site), QoS: 1},
+	var subs []inbox.Subscription
+	for _, f := range z2m.Filters(a.cfg.Base) {
+		subs = append(subs, inbox.Subscription{Filter: f, QoS: 1})
 	}
+	return append(subs,
+		inbox.Subscription{Filter: contract.Topic(a.cfg.Site, "device", "+", "cmd"), QoS: 1},
+		inbox.Subscription{Filter: contract.RegistryCmdTopic(a.cfg.Site), QoS: 1},
+	)
 }
 
 // Alive returns once the core's loop has taken what was queued for it: it is not
@@ -186,8 +189,23 @@ func (a *App) Run(ctx context.Context) error {
 		return nil
 	})
 	wg.Wait()
+	a.closeNetwork()
 	a.out.Flush()
 	return nil
+}
+
+// closeNetwork closes a network left open for pairing as the adapter stops: a device
+// joining while no adapter listens would stay in Zigbee2MQTT's network, outside the
+// registry, unwatched. The window is kept: the next start opens it again for what is
+// left. It runs once the loop is over, so the core is no longer in use.
+func (a *App) closeNetwork() {
+	if !a.core.Status().Pairing {
+		return
+	}
+	if msg, ok, err := z2m.Build(a.cfg.Base, zigbee.PermitJoin{}); err == nil && ok {
+		a.log.Info("closing the network for pairing until the adapter is back")
+		a.out.Put(&outbox.Item{Topic: msg.Topic, Data: msg.Payload, QoS: 1, Raw: true})
+	}
 }
 
 // repeatStatus publishes zigbee.status again, through the core's loop.

@@ -178,6 +178,7 @@ var schemaOf = map[string]string{
 	contract.TypeCommandAck: "device-command-ack.json", contract.TypeRegistrySnapshot: "registry-snapshot.json",
 	contract.TypeRegistryDeviceAdded: "registry-device-added.json", contract.TypeRegistryDeviceRejected: "registry-device-rejected.json",
 	contract.TypeRegistryDeviceRemoved: "registry-device-removed.json", contract.TypeZigbeeStatus: "zigbee-status.json",
+	contract.TypeRegistryPairFailed: "registry-pair-failed.json",
 }
 
 // validateAll checks every contract message against its schema.

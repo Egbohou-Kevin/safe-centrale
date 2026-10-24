@@ -67,6 +67,7 @@ type fakeAdapter struct {
 	mu      sync.Mutex
 	devices []contract.RegistryDevice
 	join    []contract.RegistryDevice // devices that join at the next pairing
+	refuse  string                    // Zigbee2MQTT's refusal of the next pairing, if any
 	seq     uint64
 }
 
@@ -150,12 +151,17 @@ func (a *fakeAdapter) order(ctx context.Context, m mqtt.Message) {
 			return
 		}
 		a.mu.Lock()
-		join := a.join
-		a.join = nil
+		join, refuse := a.join, a.refuse
+		a.join, a.refuse = nil, ""
 		a.devices = append(a.devices, join...)
 		n := len(a.devices)
 		a.mu.Unlock()
 		a.publish(ctx, contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus, status(n, true), true)
+		if refuse != "" {
+			a.publish(ctx, ev, contract.TypeRegistryPairFailed, contract.RegistryPairFailedData{Ref: env.ID, Reason: refuse}, false)
+			a.publish(ctx, contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus, status(n, false), true)
+			return
+		}
 		for _, j := range join {
 			a.publish(ctx, ev, contract.TypeRegistryDeviceAdded, contract.RegistryDeviceAddedData{Ref: env.ID, DeviceID: j.DeviceID, Model: j.Model, Capabilities: j.Capabilities}, false)
 		}
@@ -267,6 +273,14 @@ func TestAnInstallation(t *testing.T) {
 		if code != 0 || !strings.Contains(out, want) {
 			t.Fatalf("pair: missing %q in %d %q %q", want, code, out, errb)
 		}
+	}
+	// Zigbee2MQTT refuses to open the network: the tool says so and fails.
+	a.mu.Lock()
+	a.refuse = "Coordinator is not started"
+	a.mu.Unlock()
+	code, _, errb = cli(ctx, "pair", "-config", path, "-for", "5m")
+	if code != 1 || !strings.Contains(errb, "the network could not be opened, Zigbee2MQTT refused: Coordinator is not started") {
+		t.Fatalf("a refused opening: %d %q", code, errb)
 	}
 	if code, _, errb := cli(ctx, "pair", "-config", path, "-for", "11m"); code != 1 || !strings.Contains(errb, "-for") {
 		t.Fatalf("pair beyond the bound: %d %q", code, errb)

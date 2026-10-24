@@ -46,7 +46,7 @@ func (a *App) dispatchOne(now time.Time, act zigbee.Action) error {
 		a.publishDevice(now, wire.Presence(v))
 	case zigbee.Ack:
 		return a.publishAck(now, v)
-	case zigbee.Added, zigbee.Rejected, zigbee.Removed, zigbee.RegistryChanged:
+	case zigbee.Added, zigbee.Rejected, zigbee.Removed, zigbee.RegistryChanged, zigbee.PairFailed:
 		return a.publishRegistryNews(now, act)
 	case zigbee.Ignored:
 		a.log.Debug("ignored", "what", v.What)
@@ -88,6 +88,9 @@ func (a *App) publishRegistryNews(now time.Time, act zigbee.Action) error {
 		}
 		a.log.Warn("device refused", "model", v.Model, "reason", v.Reason)
 		a.out.Send(src, contract.RegistryEventTopic(site), contract.TypeRegistryDeviceRejected, r, false, now)
+	case zigbee.PairFailed:
+		a.log.Error("the network could not be opened for pairing", "reason", v.Reason)
+		a.out.Send(src, contract.RegistryEventTopic(site), contract.TypeRegistryPairFailed, wire.PairFailed(v), false, now)
 	case zigbee.Removed:
 		a.log.Info("device removed", "device", v.Device.ID)
 		a.out.Send(src, contract.RegistryEventTopic(site), contract.TypeRegistryDeviceRemoved, wire.Removed(v), false, now)

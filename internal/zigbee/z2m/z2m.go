@@ -23,8 +23,15 @@ import (
 // DefaultBase is Zigbee2MQTT's default base topic.
 const DefaultBase = "zigbee2mqtt"
 
-// Filter is the subscription that receives everything Zigbee2MQTT publishes.
-func Filter(base string) string { return base + "/#" }
+// Filters are the subscriptions that receive what the core needs from Zigbee2MQTT:
+// the devices' messages (one level under the base: a device is named by our id or
+// its address, never with a slash), the bridge's state and events, and its answers
+// to our requests. The rest of bridge/ is left on the broker: bridge/definitions
+// (every model Zigbee2MQTT knows, more than 200 kB, retained) and bridge/devices
+// (which grows with the network) would only be read to be thrown away.
+func Filters(base string) []string {
+	return []string{base + "/+", base + "/bridge/state", base + "/bridge/event", base + "/bridge/response/#"}
+}
 
 // Message is a message to publish to Zigbee2MQTT.
 type Message struct {
@@ -49,6 +56,8 @@ func Parse(base, topic string, payload []byte, retained bool, now time.Time) (in
 			return parseState(payload, now)
 		case "event":
 			return parseEvent(payload, now)
+		case "response/permit_join":
+			return parsePermitJoin(base, topic, payload, now)
 		}
 		return nil, false, nil
 	}
@@ -143,6 +152,15 @@ func parseEvent(payload []byte, now time.Time) (zigbee.Input, bool, error) {
 		return zigbee.Left{Now: now, IEEE: e.Data.IEEE}, true, nil
 	}
 	return nil, false, nil // device_joined, device_announce, interview started...
+}
+
+// parsePermitJoin reads Zigbee2MQTT's answer to a request to open or close the
+// network: only a refusal matters to the core.
+func parsePermitJoin(base, topic string, payload []byte, now time.Time) (zigbee.Input, bool, error) {
+	if _, reason, failed := ResponseError(base, topic, payload); failed {
+		return zigbee.PairRefused{Now: now, Reason: reason}, true, nil
+	}
+	return nil, false, nil
 }
 
 // ResponseError reads Zigbee2MQTT's answer to one of our requests: when it reports
