@@ -120,8 +120,8 @@ zone qu'il ne peut pas déclencher.
 | `entry_delay` | ordre de désarmement valide | `disarmed` | arrête les délais, publie `alarm.disarmed` |
 | `entry_delay` | délai d'entrée écoulé | `triggered` | idem déclenchement |
 | `entry_delay` | zone `instant` | `triggered` | idem déclenchement |
-| `armed` | ordre de désarmement | `disarmed` | publie `alarm.disarmed` ; termine l'escalade des intrusions et sabotages de cet armement dont la sirène s'est arrêtée seule |
-| `triggered` | ordre de désarmement | `disarmed` | `siren.off`, publie `alarm.cleared` et `alarm.disarmed` ; termine l'escalade de l'alarme en cours (et de celles de l'armement arrêtées seules) |
+| `armed` | ordre de désarmement | `disarmed` | publie `alarm.disarmed` ; termine l'escalade des intrusions et sabotages de cet armement dont la sirène s'est arrêtée seule, que `alarm.disarmed` nomme dans `incidents` |
+| `triggered` | ordre de désarmement | `disarmed` | `siren.off`, publie `alarm.cleared` et `alarm.disarmed` ; termine l'escalade de l'alarme en cours (et de celles de l'armement arrêtées seules), toutes nommées dans `incidents` d'`alarm.disarmed` |
 | `triggered` | `alarm.silence`, code valide | état d'avant l'alarme | `siren.off`, `alarm.cleared` ; termine l'escalade de l'alarme en cours |
 | `arming` | ordre `arm_now` | `armed` | termine le délai de sortie, publie `alarm.armed` |
 | `triggered` | cycle de sirène écoulé, rien acquitté, cycles restants | `triggered` | `siren.off`, pause, puis `siren.on` au cycle suivant |

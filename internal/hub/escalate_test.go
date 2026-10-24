@@ -210,6 +210,60 @@ func TestADisarmAfterTheSirenRanOutEndsTheEscalation(t *testing.T) {
 	}
 }
 
+// The trial on real hardware (24 October 2026) again: the intrusion was raised at
+// 16:15:31 in Lome and its second wave left two minutes later. A phone in Paris
+// showed the second wave's time, 18:17 there, as the alarm's. Every request of the
+// incident now carries when it was raised and the site's zone.
+func TestEveryWaveCarriesTheIncidentTimeAndTheSiteZone(t *testing.T) {
+	lome, err := time.LoadLocation("Africa/Lome")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raised := time.Date(2026, 10, 24, 16, 15, 31, 0, time.UTC)
+	start := raised.Add(-(30 + 28 + 15) * time.Second) // the exit delay, the wait, the entry delay
+	r := newRigAt(t, start, nil, func(c *Config) {
+		c.Engine.ExitDelay, c.Engine.EntryDelay = 30*time.Second, 15*time.Second
+		c.Engine.SirenCycle, c.Engine.SirenPause, c.Engine.SirenCycles = 20*time.Second, 10*time.Second, 2
+		c.Engine.Location = lome
+		c.Escalation = escalation.DefaultConfig("Boutique Essai", []escalation.Contact{
+			{ID: "u_kevin", Name: "Kevin", Role: escalation.RoleOwner, Channels: []escalation.Channel{escalation.ChannelApp}},
+		})
+		c.Escalation.Location = lome
+	})
+	r.start()
+	r.setCode("u_kevin", "482915")
+	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_kevin")
+	r.mustBe(engine.ModeArming)
+	r.clock.Advance(30 * time.Second)
+	r.mustBe(engine.ModeArmed)
+	r.clock.Advance(28 * time.Second)
+	r.device(devDoor, contract.CapContact, "open")
+	r.mustBe(engine.ModeEntryDelay)
+	r.clock.Advance(15 * time.Second)
+	r.mustBe(engine.ModeTriggered)
+	r.settle()
+
+	// The siren runs out (50 s), then the second wave is due 2 minutes after the alarm.
+	for range 6 {
+		r.clock.Advance(20 * time.Second)
+		r.settle()
+	}
+	r.clock.Advance(time.Second)
+	drivertest.WaitFor(t, "the second wave", func() bool { r.settle(); return len(requested(t, r)) == 2 })
+
+	msgs := eventsOf(r, contract.TypeAlertRequest)
+	wantSent := []time.Time{raised, raised.Add(2 * time.Minute)}
+	for i, m := range msgs {
+		d := dataOf[contract.AlertRequestData](t, m)
+		if d.Wave != i+1 || !m.Env.TS.Equal(wantSent[i]) {
+			t.Errorf("request %d: wave %d asked at %v, want wave %d at %v", i, d.Wave, m.Env.TS.Time, i+1, wantSent[i])
+		}
+		if !d.IncidentAt.Equal(raised) || d.Zone != "Africa/Lome" {
+			t.Errorf("wave %d: incident_at %v zone %q, want %v Africa/Lome", d.Wave, d.IncidentAt.Time, d.Zone, raised)
+		}
+	}
+}
+
 func agentStatus(r *rig, uplink string) {
 	r.send(contract.AgentStatusTopic(site), contract.TypeAgentStatus, contract.AgentStatusData{Uplink: uplink})
 }

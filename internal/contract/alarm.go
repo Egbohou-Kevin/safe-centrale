@@ -98,6 +98,10 @@ type ArmedData struct {
 type DisarmedData struct {
 	Origin string `json:"origin"`
 	User   string `json:"user,omitempty"`
+	// Incidents are the incidents this disarm ended (the alarm ringing, and the
+	// intrusions and tampers of the arming whose siren already ran out); empty when
+	// it ended none. Their messages have no reason to go any more.
+	Incidents []string `json:"incidents"`
 }
 
 // EntryDelayData: alarm.entry_delay.

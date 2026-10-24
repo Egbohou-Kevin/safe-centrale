@@ -170,7 +170,9 @@ func translateEvent(e engine.Event) (Event, error) {
 	case engine.Armed:
 		return Event{contract.TypeAlarmArmed, contract.ArmedData{Origin: string(v.Origin), User: v.User}}, nil
 	case engine.Disarmed:
-		return Event{contract.TypeAlarmDisarmed, contract.DisarmedData{Origin: string(v.Origin), User: v.User}}, nil
+		// Always a list, empty when the disarm ended no incident.
+		incidents := append([]string{}, v.Incidents...)
+		return Event{contract.TypeAlarmDisarmed, contract.DisarmedData{Origin: string(v.Origin), User: v.User, Incidents: incidents}}, nil
 	case engine.EntryDelayStarted:
 		// The site configuration names a device by its zone (device id -> name, kind).
 		return Event{contract.TypeAlarmEntryDelay, contract.EntryDelayData{

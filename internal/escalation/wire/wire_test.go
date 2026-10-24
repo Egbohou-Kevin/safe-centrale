@@ -2,6 +2,7 @@ package wire
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,9 +18,9 @@ func TestEveryKindUrgencyAndChannelTranslatesToAValidRequest(t *testing.T) {
 		for _, ch := range []escalation.Channel{escalation.ChannelApp, escalation.ChannelWhatsApp, escalation.ChannelSMS, escalation.ChannelCall} {
 			for _, u := range []escalation.Urgency{escalation.UrgencyCritical, escalation.UrgencyHigh, escalation.UrgencyLow} {
 				d, err := Request(escalation.Send{
-					Incident: "inc1", Kind: kind, Urgency: u, Wave: 2, Contact: "owner", Channel: ch,
+					Incident: "inc1", RaisedAt: now, Kind: kind, Urgency: u, Wave: 2, Contact: "owner", Channel: ch,
 					Devices: []string{"dev_a"}, Percent: 40, Text: "ALARME Boutique",
-				})
+				}, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -44,9 +45,33 @@ func TestRequestRefusesWhatTheContractDoesNotKnow(t *testing.T) {
 	} {
 		s := ok
 		mutate(&s)
-		if _, err := Request(s); err == nil {
+		if _, err := Request(s, nil); err == nil {
 			t.Errorf("%s accepted", name)
 		}
+	}
+}
+
+// The request says when the incident was raised and in which zone the site lives,
+// so that a phone in another zone can still say the site's hour.
+func TestARequestCarriesTheIncidentTimeAndTheSiteZone(t *testing.T) {
+	lome, err := time.LoadLocation("Africa/Lome")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raised := time.Date(2026, 10, 24, 16, 15, 31, 0, time.UTC)
+	d, err := Request(escalation.Send{
+		Incident: "inc1", RaisedAt: raised, Kind: escalation.KindIntrusion, Urgency: escalation.UrgencyCritical,
+		Wave: 2, Contact: "owner", Channel: escalation.ChannelApp,
+	}, lome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(d)
+	if !strings.Contains(string(raw), `"incident_at":"2026-10-24T16:15:31.000Z","zone":"Africa/Lome"`) {
+		t.Fatalf("%s", raw)
+	}
+	if got := Zone(nil); got != "UTC" {
+		t.Fatalf("no zone is UTC, got %q", got)
 	}
 }
 

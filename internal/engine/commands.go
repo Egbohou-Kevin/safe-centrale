@@ -154,16 +154,19 @@ func (e *Engine) disarmOrSilence(c Command) []Action {
 		return done(c)
 	}
 	var out []Action
-	if e.s.Mode == ModeTriggered {
+	var ended []string
+	if e.s.Mode == ModeTriggered && e.s.Incident != nil {
+		ended = append(ended, e.s.Incident.ID)
 		out = e.clearIncident(c.Now, user)
 	}
 	// The alarms of this arming whose siren already ran out end with it: the person
 	// who disarms is back in charge, whatever the siren did in between.
 	if len(e.s.TimedOut) > 0 {
+		ended = append(ended, e.s.TimedOut...)
 		out = append(out, Ended{Incidents: slices.Clone(e.s.TimedOut)})
 	}
 	e.disarm(c.Now)
-	return append(out, Emit{Disarmed{Origin: c.Origin, User: user}}, reply(c, StatusDone, ""))
+	return append(out, Emit{Disarmed{Origin: c.Origin, User: user, Incidents: ended}}, reply(c, StatusDone, ""))
 }
 
 // silence stops the siren: the incident ends and the alarm stays armed.

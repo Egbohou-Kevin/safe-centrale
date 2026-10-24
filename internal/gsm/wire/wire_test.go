@@ -83,6 +83,14 @@ func TestCancel(t *testing.T) {
 	if _, ok := Cleared(contract.ClearedData{Origin: contract.OriginUser}); ok {
 		t.Fatal("no incident")
 	}
+	// A disarm ends what it names, the intrusion whose siren already ran out included.
+	if got := Disarmed(contract.DisarmedData{Origin: contract.OriginApp, Incidents: []string{"i", "", "j"}}); len(got) != 2 ||
+		got[0].Incident != "i" || got[1].Incident != "j" {
+		t.Fatalf("disarmed: %+v", got)
+	}
+	if got := Disarmed(contract.DisarmedData{Origin: contract.OriginKeypad, Incidents: []string{}}); len(got) != 0 {
+		t.Fatalf("a disarm that ended nothing: %+v", got)
+	}
 	if c, ok := Acked(contract.AlertAckData{Incident: "i", Contact: "owner", Via: contract.ChannelApp}); !ok || c.Incident != "i" {
 		t.Fatalf("acknowledged: %+v %v", c, ok)
 	}

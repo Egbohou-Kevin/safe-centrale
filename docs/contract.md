@@ -339,7 +339,7 @@ le planning arme dans le moteur.
 |---|---|---|
 | `alarm.arming` | Le délai de sortie démarre | `origin`, `user`, `ends_at`, `forced`, `bypassed` (appareils contournés) ; `offline`, `low_battery` si des appareils sont muets ou ont une pile faible (avertissement) |
 | `alarm.armed` | Le délai est terminé, ou `arm_now` | `origin`, `user` ; `mode` optionnel, absent en v1 |
-| `alarm.disarmed` | Le système est désarmé | `origin`, `user` |
+| `alarm.disarmed` | Le système est désarmé | `origin`, `user`, `incidents` (les incidents que ce désarmement termine, liste vide s'il n'en termine aucun) |
 | `alarm.entry_delay` | Un détecteur d'entrée s'est ouvert | `ends_at`, `device_id`, `device_name` |
 | `alarm.triggered` | L'alarme se déclenche | `incident`, cause : `device_id`, `device_name`, `capability`, `zone` |
 | `alarm.siren_cycle` | Un cycle de sirène démarre | `incident`, `cycle`, `of` |
@@ -356,6 +356,15 @@ aujourd'hui le même nom, mais c'est `device_name` qui dit l'appareil. Les liste
 d'appareils (`bypassed`, `offline`, `low_battery` de `alarm.arming`) restent des
 `device_id`.
 
+`incidents` d'`alarm.disarmed` (toujours présent) nomme les incidents que le
+désarmement termine : l'alarme qui sonne (dont l'`alarm.cleared` d'origine `user` part
+juste avant), et les intrusions et sabotages de l'armement dont la sirène s'est déjà
+arrêtée seule (leur `alarm.cleared` disait `timeout`, leur escalade continuait jusqu'à
+ce désarmement, voir `engine.md`). Un feu ou une panique dont la sirène s'est arrêtée
+seule n'y est pas : leur escalade va jusqu'à l'acquittement. Ceux qui portent les
+messages de l'alarme (la passerelle GSM) apprennent ainsi qu'ils n'ont plus de raison
+de partir.
+
 `alarm.state` (retenu) contient l'état courant : `disarmed`, `arming`, `armed`,
 `entry_delay`, `triggered`. Il porte aussi `since`, et selon l'état :
 `ends_at` (arming, entry_delay), `cycle` et `of` (triggered), `locked_until`
@@ -368,11 +377,19 @@ automatique).
   (une demande par contact et par canal, voir `escalation.md`). Champs : `incident`,
   `kind` (`intrusion`, `fire`, `panic`, `tamper`, `auth_failed`,
   `arming_bypassed`, `battery_low_hub`, `mains_restored`, `device_offline`, `battery_low`, `gsm_degraded`, `zigbee_down`, `siren_failed`), `urgency` (`critical`, `high`, `low`),
-  `wave`, `contact`, `channel` (`app`, `whatsapp`, `sms`, `call`) et `text`, écrit
+  `incident_at`, `zone`, `wave`, `contact`, `channel` (`app`, `whatsapp`, `sms`, `call`) et `text`, écrit
   pour son canal : seul le texte d'un SMS dit comment acquitter (`Repondre 1 si vous
   gerez.`), l'application et WhatsApp ont leur propre bouton. `devices` (liste d'appareils, facultatif) est rempli quand l'alerte en concerne
   plusieurs, par exemple `arming_bypassed`, et `percent` (0 à 100) le niveau de
   batterie pour les alertes de batterie.
+  `incident_at` (obligatoire) est l'heure où l'incident a été levé, en UTC à la
+  milliseconde comme le `ts` de l'enveloppe : la même à chaque vague et à chaque
+  relance de l'incident, alors que `ts` est l'heure de la demande (une deuxième vague
+  part 2 minutes après l'intrusion). `zone` (obligatoire) est le fuseau horaire IANA du
+  site, celui de la configuration de la centrale (`timezone`, `Africa/Lome`), `UTC`
+  quand elle n'en donne pas. Avec les deux, un téléphone dans un autre fuseau peut dire
+  l'heure de l'incident à l'heure du site. `wave` vaut 1 pour la première vague, puis
+  croît (vagues suivantes, puis relances).
 - `alert.result` : le canal répond. Champs : `ref` (l'`id` du `alert.request`),
   `status` (`queued`, `sent`, `delivered`, `failed`) et `reason` en cas d'échec
   (`no_network`, `no_credit`, `modem_error`, `timeout`, `busy`, `unreachable`,
@@ -389,8 +406,9 @@ automatique).
 - `alert.ack` : un contact acquitte. Champs : `incident`, `contact`, `via` (`sms`
   ou `app`). Il arrête l'escalade vers les autres contacts.
 - La passerelle GSM (`safehome-gsm`) lit aussi `alert/ack` et `alarm/event` (les
-  `alarm.cleared` d'origine `user` seulement) : elle abandonne alors les messages de
-  l'incident encore en attente (voir `gsm-gateway.md`).
+  `alarm.cleared` d'origine `user`, et les `incidents` d'`alarm.disarmed`) : elle
+  abandonne alors les messages de ces incidents encore en attente (voir
+  `gsm-gateway.md`).
 
 Le détail de l'escalade est dans `escalation.md`.
 
@@ -719,6 +737,15 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **24 octobre 2026** : `alert.request` porte `incident_at` (l'heure de l'incident,
+  la même à chaque vague) et `zone` (le fuseau IANA du site), tous deux obligatoires
+  (voir « Alertes »). À l'essai, un téléphone à Paris montrait pour la deuxième vague
+  d'une intrusion de 16:15 à Lomé « 18:17 » : l'heure de la demande, à l'heure du
+  téléphone. `alarm.disarmed` porte `incidents`, obligatoire, les incidents que le
+  désarmement termine (voir « Événements d'alarme ») : la passerelle GSM abandonne
+  aussi les messages d'une intrusion dont la sirène s'était arrêtée seule avant le
+  désarmement (avant, ils partaient encore). La centrale refuse `timezone` à `Local`,
+  qui n'est pas un nom IANA.
 - **22 octobre 2026** : l'agent de liaison redit au cloud le dernier `alarm.state` et le
   dernier `system.health` à chaque connexion, avec un nouvel `id` (voir « Ce qui part
   vers le cloud »). `alarm.entry_delay` et `alarm.triggered` portent `device_name`,

@@ -27,7 +27,7 @@ ordre reçu par SMS dans la v1.
 | Entrée | Source |
 |---|---|
 | `alert.request` avec `channel` = `sms` ou `call` | moteur d'alarme |
-| `alarm.cleared` et `alert.ack` (fin d'un incident) | moteur d'alarme, passerelle elle-même, application |
+| `alarm.cleared`, `alarm.disarmed` et `alert.ack` (fin d'un incident) | moteur d'alarme, passerelle elle-même, application |
 | SMS entrants, état du réseau | modem |
 
 | Sortie | Destination |
@@ -203,8 +203,13 @@ Là où le document laissait un doute :
   était arrêtée part en échec `timeout` dès son arrivée si elle est trop vieille, sans
   être envoyée. Un `ts` dans le futur compte depuis la réception.
 - **Fin d'incident** : la passerelle écoute `alarm.cleared` (origine `user` seulement :
-  une alarme dont les cycles de sirène se sont épuisés continue son escalade) et
+  une alarme dont les cycles de sirène se sont épuisés continue son escalade),
+  `alarm.disarmed` (chaque incident de sa liste `incidents` : ceux que le désarmement
+  termine, y compris une intrusion dont la sirène s'était arrêtée seule avant) et
   `alert.ack` (y compris un « 1 » reçu par elle-même, pris en compte tout de suite).
+  Constaté à l'essai du 24 octobre 2026 : déclenchement, sirène arrêtée au bout de ses
+  cycles, désarmement depuis l'application ; l'escalade s'arrêtait, mais les SMS déjà
+  dans la file de la passerelle partaient encore.
   Les messages de l'incident encore en attente sont abandonnés sans résultat publié
   (l'escalade ne les attend plus), un message en cours au modem n'est pas réessayé,
   et une demande de cet incident arrivée plus tard est ignorée. Un `alert.ack` ne

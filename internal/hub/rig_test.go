@@ -85,7 +85,13 @@ func testConfig() Config {
 
 func newRig(t *testing.T, store *drivertest.MemStore, mutate ...func(*Config)) *rig {
 	t.Helper()
-	r := &rig{t: t, clock: drivertest.NewFakeClock(t0), store: store, broker: &outboxtest.Broker{}, logs: drivertest.Logs(t)}
+	return newRigAt(t, t0, store, mutate...)
+}
+
+// newRigAt is newRig with its clock set at start.
+func newRigAt(t *testing.T, start time.Time, store *drivertest.MemStore, mutate ...func(*Config)) *rig {
+	t.Helper()
+	r := &rig{t: t, clock: drivertest.NewFakeClock(start), store: store, broker: &outboxtest.Broker{}, logs: drivertest.Logs(t)}
 	if store == nil {
 		r.store = drivertest.NewMemStore()
 	}

@@ -62,9 +62,20 @@ var channels = map[escalation.Channel]string{
 	escalation.ChannelCall:     contract.ChannelCall,
 }
 
+// Zone names the site's time zone for the contract: its IANA name, as the hub's
+// configuration gave it ("Africa/Lome"). No zone (nil) is UTC, the hub's default.
+func Zone(loc *time.Location) string {
+	if loc == nil {
+		return time.UTC.String()
+	}
+	return loc.String()
+}
+
 // Request turns a message to send into an alert.request payload, addressed to one
-// contact through one channel.
-func Request(s escalation.Send) (contract.AlertRequestData, error) {
+// contact through one channel. loc is the site's time zone, nil for UTC: with the
+// time the incident was raised, it lets whoever shows the message say the site's
+// own hour.
+func Request(s escalation.Send, loc *time.Location) (contract.AlertRequestData, error) {
 	kind, ok := kinds[s.Kind]
 	if !ok {
 		return contract.AlertRequestData{}, fmt.Errorf("wire: unknown alert kind %q", s.Kind)
@@ -78,7 +89,7 @@ func Request(s escalation.Send) (contract.AlertRequestData, error) {
 		return contract.AlertRequestData{}, fmt.Errorf("wire: unknown channel %q", s.Channel)
 	}
 	return contract.AlertRequestData{
-		Incident: s.Incident, Kind: kind, Urgency: urgency, Percent: s.Percent, Devices: s.Devices,
+		Incident: s.Incident, IncidentAt: contract.TS(s.RaisedAt), Zone: Zone(loc), Kind: kind, Urgency: urgency, Percent: s.Percent, Devices: s.Devices,
 		Wave: s.Wave, Contact: s.Contact, Channel: channel, Text: s.Text,
 	}, nil
 }

@@ -148,6 +148,7 @@ type Action interface{ isAction() }
 type Send struct {
 	Key      uint64
 	Incident string
+	RaisedAt time.Time // when the incident was raised: the same on every wave and reminder
 	Kind     AlertKind
 	Urgency  Urgency
 	Wave     int // 1 for the first people told, then growing

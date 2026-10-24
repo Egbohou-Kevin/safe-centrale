@@ -8,6 +8,16 @@
       "type": "string",
       "minLength": 1
     },
+    "incident_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Heure de l'incident (UTC, à la milliseconde), la même à chaque vague et à chaque relance ; le ts de l'enveloppe est l'heure de la demande"
+    },
+    "zone": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Fuseau horaire IANA du site (Africa/Lome), pour lire incident_at à l'heure du site"
+    },
     "kind": {
       "type": "string",
       "enum": [
@@ -69,6 +79,8 @@
   },
   "required": [
     "incident",
+    "incident_at",
+    "zone",
     "kind",
     "urgency"
   ]

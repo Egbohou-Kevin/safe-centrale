@@ -14,9 +14,18 @@
     },
     "user": {
       "type": "string"
+    },
+    "incidents": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Les incidents que ce désarmement termine : l'alarme qui sonne, et les intrusions et sabotages de l'armement dont la sirène s'est déjà arrêtée seule ; vide s'il n'en termine aucun"
     }
   },
   "required": [
-    "origin"
+    "origin",
+    "incidents"
   ]
 }

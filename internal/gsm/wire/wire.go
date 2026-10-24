@@ -37,6 +37,19 @@ func Cleared(d contract.ClearedData) (gsm.Cancel, bool) {
 	return gsm.Cancel{Incident: d.Incident}, d.Origin == contract.OriginUser && d.Incident != ""
 }
 
+// Disarmed turns an alarm.disarmed into gateway inputs, without their Now: one per
+// incident the disarm ended, including an intrusion whose siren had already run out
+// (its alarm.cleared said timeout, and the escalation went on until this disarm).
+func Disarmed(d contract.DisarmedData) []gsm.Cancel {
+	var out []gsm.Cancel
+	for _, inc := range d.Incidents {
+		if inc != "" {
+			out = append(out, gsm.Cancel{Incident: inc})
+		}
+	}
+	return out
+}
+
 // Acked turns an alert.ack into a gateway input, without its Now: a contact took
 // the incident in hand and its escalation is over.
 func Acked(d contract.AlertAckData) (gsm.Cancel, bool) {

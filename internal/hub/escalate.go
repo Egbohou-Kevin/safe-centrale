@@ -106,7 +106,7 @@ func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []esc
 	for _, a := range actions {
 		switch v := a.(type) {
 		case escalation.Send:
-			data, err := escwire.Request(v)
+			data, err := escwire.Request(v, h.cfg.Escalation.Location)
 			if err != nil {
 				h.log.Error("building an alert request failed", "err", err)
 				continue

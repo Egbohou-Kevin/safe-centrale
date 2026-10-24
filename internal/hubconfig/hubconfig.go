@@ -156,6 +156,11 @@ func hubConfig(f file) (hub.Config, error) {
 	cfg := hub.DefaultConfig(f.Site, f.HubDeviceID, f.SirenIDs...)
 	cfg.Versions = f.Versions
 	if f.Timezone != "" {
+		// "Local" would be the hub's own setting, unknown elsewhere: the zone goes in
+		// the alerts (alert.request), where it must be an IANA name.
+		if f.Timezone == "Local" {
+			return hub.Config{}, fmt.Errorf("timezone %q: give the site's IANA name, such as Africa/Lome", f.Timezone)
+		}
 		loc, err := time.LoadLocation(f.Timezone)
 		if err != nil {
 			return hub.Config{}, fmt.Errorf("timezone %q: %w", f.Timezone, err)

@@ -53,9 +53,12 @@ func TestADisarmAfterTheSirenRanOutEndsTheIntrusion(t *testing.T) {
 
 	as := h.cmd(CmdDisarm, goodCode("u_kevin"), func(c *Command) { c.Origin = OriginApp })
 	h.mustBe(ModeDisarmed)
-	onlyEvent[Disarmed](t, as)
 	if got := endedOf(as); !slices.Equal(got, []string{inc}) {
 		t.Fatalf("the disarm must end the intrusion %s: %v", inc, got)
+	}
+	// The disarm says it too, for those who carry the alarm's messages.
+	if got := onlyEvent[Disarmed](t, as).Incidents; !slices.Equal(got, []string{inc}) {
+		t.Fatalf("alarm.disarmed must name the intrusion %s: %v", inc, got)
 	}
 	if len(eventsOf[Cleared](as)) != 0 {
 		t.Fatalf("the alarm already said it was cleared: %v", as)
@@ -88,6 +91,9 @@ func TestADisarmEndsEveryAlarmOfItsArmingThatRanOut(t *testing.T) {
 	if got := endedOf(as); !sameItems(got, []string{first, second}) {
 		t.Fatalf("both alarms of the arming end: %v, want %s and %s", got, first, second)
 	}
+	if got := onlyEvent[Disarmed](t, as).Incidents; !sameItems(got, []string{first, second}) {
+		t.Fatalf("the disarm names both alarms: %v, want %s and %s", got, first, second)
+	}
 }
 
 func TestADisarmLeavesAFireThatRanOutToItsContacts(t *testing.T) {
@@ -96,8 +102,12 @@ func TestADisarmLeavesAFireThatRanOutToItsContacts(t *testing.T) {
 	h.signal(smoke, SensorSmoke, true)
 	h.advance(time.Minute)
 	h.mustBe(ModeArmed)
-	if got := endedOf(h.cmd(CmdDisarm, goodCode("u_owner"))); len(got) != 0 {
+	as := h.cmd(CmdDisarm, goodCode("u_owner"))
+	if got := endedOf(as); len(got) != 0 {
 		t.Fatalf("a fire runs until a contact answers: %v", got)
+	}
+	if got := onlyEvent[Disarmed](t, as).Incidents; len(got) != 0 {
+		t.Fatalf("the disarm ended no incident: %v", got)
 	}
 }
 

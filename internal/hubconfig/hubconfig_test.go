@@ -300,6 +300,7 @@ func TestMistakesAreRefused(t *testing.T) {
 		"bad zone kind":              `{"site":"tg-lom-0001","state_dir":"/x","hub_device_id":"h","siren_ids":["s"],"zones":{"d":{"name":"x","kind":"garage"}}}`,
 		"zone without a name":        `{"site":"tg-lom-0001","state_dir":"/x","hub_device_id":"h","siren_ids":["s"],"zones":{"d":{"kind":"entry"}}}`,
 		"bad timezone":               `{"site":"tg-lom-0001","state_dir":"/x","hub_device_id":"h","siren_ids":["s"],"timezone":"Mars/Olympus"}`,
+		"local timezone":             `{"site":"tg-lom-0001","state_dir":"/x","hub_device_id":"h","siren_ids":["s"],"timezone":"Local"}`,
 		"bad log level":              `{"site":"tg-lom-0001","state_dir":"/x","hub_device_id":"h","siren_ids":["s"],"log_level":"loud"}`,
 		"inverted battery levels":    `{"site":"tg-lom-0001","state_dir":"/x","hub_device_id":"h","siren_ids":["s"],"health":{"hub_battery_critical":50}}`,
 		"too few hash iterations":    `{"site":"tg-lom-0001","state_dir":"/x","hub_device_id":"h","siren_ids":["s"],"access":{"iterations":100}}`,

@@ -284,6 +284,24 @@ func TestADisarmDropsTheWaitingMessages(t *testing.T) {
 	noSMSAfterRetry(r)
 }
 
+// The trial on real hardware (24 October 2026): the alarm went off, its siren ran
+// out (alarm.cleared, origin timeout), then the owner disarmed from the app. The
+// disarm ended the intrusion: its messages still waiting must not go.
+func TestADisarmAfterTheSirenRanOutDropsTheWaitingMessages(t *testing.T) {
+	r := newRig(t, nil)
+	failingRequest(r)
+	r.publish(contract.AlarmEventTopic(site), r.ids.New(), t0, contract.TypeAlarmCleared,
+		contract.ClearedData{Incident: "inc1", Origin: contract.OriginTimeout, DurationS: 50})
+	stillWaits(r)
+	// A disarm that ended other incidents leaves this one alone.
+	r.publish(contract.AlarmEventTopic(site), r.ids.New(), t0, contract.TypeAlarmDisarmed,
+		contract.DisarmedData{Origin: contract.OriginApp, User: "u_owner", Incidents: []string{"inc0"}})
+	stillWaits(r)
+	r.publish(contract.AlarmEventTopic(site), r.ids.New(), t0, contract.TypeAlarmDisarmed,
+		contract.DisarmedData{Origin: contract.OriginApp, User: "u_owner", Incidents: []string{"inc1"}})
+	noSMSAfterRetry(r)
+}
+
 func TestAnAcknowledgementDropsTheWaitingMessages(t *testing.T) {
 	r := newRig(t, nil)
 	failingRequest(r)

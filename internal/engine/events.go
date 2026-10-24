@@ -21,10 +21,14 @@ type Armed struct {
 	User   string
 }
 
-// Disarmed: the system is disarmed.
+// Disarmed: the system is disarmed. Incidents are those the disarm ended, as Ended
+// says them to the escalation: the alarm ringing, and the intrusions and tampers of
+// the arming whose siren already ran out. Those who carry the alarm's messages (the
+// GSM gateway) learn from it that they have no reason to go.
 type Disarmed struct {
-	Origin Origin
-	User   string
+	Origin    Origin
+	User      string
+	Incidents []string
 }
 
 // EntryDelayStarted: an entry door opened while armed, the disarm delay is running.

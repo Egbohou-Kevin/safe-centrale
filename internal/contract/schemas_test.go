@@ -289,7 +289,7 @@ func TestSchemasAcceptValidMessages(t *testing.T) {
 		"alarm-ack.json":              AlarmAckData{Ref: "x", Status: AckRefused, Reason: ReasonZoneOpen, Detail: map[string]any{"devices": []string{"d"}}},
 		"alarm-arming.json":           ArmingData{Origin: OriginKeypad, EndsAt: TS(ends), Bypassed: []string{}},
 		"alarm-state.json":            AlarmStateData{State: StateArming, Since: TS(ends), EndsAt: TSPtr(ends)},
-		"alert-request.json":          AlertRequestData{Incident: "i", Kind: AlertFire, Urgency: UrgencyCritical, Channel: ChannelSMS},
+		"alert-request.json":          AlertRequestData{Incident: "i", IncidentAt: TS(ends), Zone: "Africa/Lome", Kind: AlertFire, Urgency: UrgencyCritical, Channel: ChannelSMS},
 		"alert-result.json":           AlertResultData{Ref: "r", Status: ResultSent},
 		"alert-ack.json":              AlertAckData{Incident: "i", Contact: "c", Via: "sms"},
 		"alarm-arming-scheduled.json": ArmingScheduledData{ScheduledFor: TS(ends)},

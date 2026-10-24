@@ -45,19 +45,39 @@ func (g *Gateway) alertRequest(m inbox.Message) {
 	g.submit(func(now time.Time) gsm.Input { r.Now = now; return r })
 }
 
-// alarmEvent ends the incident of an alarm a user stopped. The other alarm events
-// are not the gateway's business. Ending an incident twice changes nothing: no
-// duplicate to drop.
+// alarmEvent ends the incidents a person ended: the alarm stopped with a code
+// (alarm.cleared of origin user), and every incident a disarm ended (alarm.disarmed),
+// among them those whose siren had already run out. The other alarm events are not
+// the gateway's business. Ending an incident twice changes nothing: no duplicate to
+// drop.
 func (g *Gateway) alarmEvent(m inbox.Message) {
-	env, d, err := inbox.Open[contract.ClearedData](m, g.cfg.Site, contract.TypeAlarmCleared)
+	env, err := inbox.Envelope(m, g.cfg.Site, contract.TypeAlarmCleared, contract.TypeAlarmDisarmed)
 	if errors.Is(err, inbox.ErrWrongType) {
 		return
 	}
 	if err != nil {
-		g.log.Warn("ignoring an invalid alarm.cleared", "id", env.ID, "err", err)
+		g.log.Warn("ignoring an invalid alarm event", "id", env.ID, "err", err)
 		return
 	}
-	if c, ok := gsmwire.Cleared(d); ok {
+	var cancels []gsm.Cancel
+	if env.Type == contract.TypeAlarmCleared {
+		d, err := contract.ValidData[contract.ClearedData](env)
+		if err != nil {
+			g.log.Warn("ignoring an invalid alarm.cleared", "id", env.ID, "err", err)
+			return
+		}
+		if c, ok := gsmwire.Cleared(d); ok {
+			cancels = append(cancels, c)
+		}
+	} else {
+		d, err := contract.ValidData[contract.DisarmedData](env)
+		if err != nil {
+			g.log.Warn("ignoring an invalid alarm.disarmed", "id", env.ID, "err", err)
+			return
+		}
+		cancels = gsmwire.Disarmed(d)
+	}
+	for _, c := range cancels {
 		g.cancel(c)
 	}
 }

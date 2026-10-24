@@ -240,8 +240,9 @@ c'est la centrale qui est muette.
 
 Ajouts à reporter dans `contract.md` :
 
-- `alert.request` : `incident`, `kind`, `urgency`, `wave`, `contact`, `channel`
-  (`app`, `whatsapp`, `sms`, `call`), `text`.
+- `alert.request` : `incident`, `incident_at` (l'heure où l'incident a été levé, la
+  même à chaque vague et relance), `zone` (le fuseau IANA du site), `kind`, `urgency`,
+  `wave`, `contact`, `channel` (`app`, `whatsapp`, `sms`, `call`), `text`.
 - `alert.result` : `ref` (le `alert.request`), `status` (`queued`, `sent`,
   `delivered`, `failed`), `reason` si échec. Pour `app` et `whatsapp`, `sent` veut
   dire que le cloud a pris le message, `delivered` qu'il est arrivé sur le
@@ -280,7 +281,12 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
 
 - **Une demande par contact et par canal.** Les alertes brutes du moteur ne sont plus
   publiées telles quelles : l'escalade les transforme en `alert.request` précis (`contact`,
-  `channel`, `wave`, `text`). Un canal n'a qu'à envoyer ce qu'on lui demande.
+  `channel`, `wave`, `text`). Un canal n'a qu'à envoyer ce qu'on lui demande. Chaque
+  demande porte aussi l'heure de l'incident (`incident_at`, celle de sa levée, gardée
+  dans l'état sauvegardé : la même à chaque vague et relance, même après un
+  redémarrage) et le fuseau du site (`zone`) : l'application dit ainsi « intrusion à
+  16:15 (heure de la boutique) » pour une deuxième vague partie à 16:17, même sur un
+  téléphone dans un autre fuseau.
 - **Plans en données.** Chaque type d'alerte a un plan (vagues, relances, internet
   seulement ou non) modifiable ; les valeurs par défaut sont celles de ce document.
   Les contacts, les réglages et les plans sont dans le fichier de la centrale
