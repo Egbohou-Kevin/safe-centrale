@@ -53,7 +53,9 @@ func (h *Hub) escalate(in escalation.Input) {
 }
 
 // escalateEngine feeds the engine's alerts to the escalation, and ends the
-// escalation of an incident that a person ended (the alarm was disarmed).
+// escalation of the incidents that a person ended (the alarm was disarmed, or the
+// siren stopped with a code; a disarm also ends the intrusions of its arming whose
+// siren already ran out).
 func (h *Hub) escalateEngine(now time.Time, actions []engine.Action) {
 	for _, a := range actions {
 		switch v := a.(type) {
@@ -69,9 +71,9 @@ func (h *Hub) escalateEngine(now time.Time, actions []engine.Action) {
 				devices = []string{v.Cause.DeviceID}
 			}
 			h.escalate(escalation.Raise{Now: now, Incident: v.Incident, Kind: kind, Urgency: urgency, Devices: devices})
-		case engine.Emit:
-			if c, ok := v.Event.(engine.Cleared); ok && c.By == engine.ClearedByUser {
-				h.escalate(escalation.Close{Now: now, Incident: c.Incident})
+		case engine.Ended:
+			for _, id := range v.Incidents {
+				h.escalate(escalation.Close{Now: now, Incident: id})
 			}
 		}
 	}

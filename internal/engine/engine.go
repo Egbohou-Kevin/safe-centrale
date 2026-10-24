@@ -265,7 +265,7 @@ func (e *Engine) setMode(m Mode, at time.Time) {
 // disarm goes back to disarmed from any mode: no incident, no delay, no bypass. The
 // deadline becomes that of the next automatic arming.
 func (e *Engine) disarm(at time.Time) {
-	e.s.Incident, e.s.EntryCause = nil, nil
+	e.s.Incident, e.s.EntryCause, e.s.TimedOut = nil, nil, nil
 	e.s.Bypassed = map[string]bool{}
 	e.setMode(ModeDisarmed, at)
 }

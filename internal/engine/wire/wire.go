@@ -130,7 +130,7 @@ func Translate(actions []engine.Action) (Out, error) {
 				return Out{}, err
 			}
 			out.Acks = append(out.Acks, ack)
-		case engine.Alert:
+		case engine.Alert, engine.Ended:
 			// left to the escalation
 		case engine.SirenOn:
 			out.Siren = append(out.Siren, SirenCommand{Command: contract.CmdSirenOn, DurationS: sirenSeconds(v.Duration)})

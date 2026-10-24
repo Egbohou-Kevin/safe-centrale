@@ -75,6 +75,11 @@ type Alert struct {
 	Devices  []string // devices concerned, when the alert is about several
 }
 
+// Ended says that a person ended these incidents: by disarming, or by stopping the
+// siren with a code. Nobody needs to be told about them any more: the escalation
+// closes them. It is not published.
+type Ended struct{ Incidents []string }
+
 // Reply answers an order.
 type Reply struct {
 	Ref    string
@@ -87,4 +92,5 @@ func (Emit) isAction()     {}
 func (SirenOn) isAction()  {}
 func (SirenOff) isAction() {}
 func (Alert) isAction()    {}
+func (Ended) isAction()    {}
 func (Reply) isAction()    {}

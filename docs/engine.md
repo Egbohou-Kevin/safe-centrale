@@ -120,9 +120,9 @@ zone qu'il ne peut pas déclencher.
 | `entry_delay` | ordre de désarmement valide | `disarmed` | arrête les délais, publie `alarm.disarmed` |
 | `entry_delay` | délai d'entrée écoulé | `triggered` | idem déclenchement |
 | `entry_delay` | zone `instant` | `triggered` | idem déclenchement |
-| `armed` | ordre de désarmement | `disarmed` | publie `alarm.disarmed` |
-| `triggered` | ordre de désarmement | `disarmed` | `siren.off`, publie `alarm.cleared` et `alarm.disarmed` |
-| `triggered` | `alarm.silence`, code valide | état d'avant l'alarme | `siren.off`, `alarm.cleared` |
+| `armed` | ordre de désarmement | `disarmed` | publie `alarm.disarmed` ; termine l'escalade des intrusions et sabotages de cet armement dont la sirène s'est arrêtée seule |
+| `triggered` | ordre de désarmement | `disarmed` | `siren.off`, publie `alarm.cleared` et `alarm.disarmed` ; termine l'escalade de l'alarme en cours (et de celles de l'armement arrêtées seules) |
+| `triggered` | `alarm.silence`, code valide | état d'avant l'alarme | `siren.off`, `alarm.cleared` ; termine l'escalade de l'alarme en cours |
 | `arming` | ordre `arm_now` | `armed` | termine le délai de sortie, publie `alarm.armed` |
 | `triggered` | cycle de sirène écoulé, rien acquitté, cycles restants | `triggered` | `siren.off`, pause, puis `siren.on` au cycle suivant |
 | `triggered` | cycles de sirène épuisés | état d'avant l'alarme (`armed`, ou `disarmed` pour un feu déclenché désarmé) | `siren.off`, publie `alarm.cleared` |
@@ -176,6 +176,17 @@ Les alertes continuent de suivre leur escalade pendant ce temps.
 
 Un désarmement ou une coupure de sirène avec un code valide arrête tout
 immédiatement.
+
+Quand la sirène s'arrête seule, l'alarme n'est pas finie pour les contacts : son
+escalade continue. Le moteur retient les intrusions et les sabotages de l'armement
+en cours dont la sirène s'est arrêtée seule (dans son état sauvegardé, donc après un
+redémarrage aussi) ; le désarmement par une personne qui termine cet armement
+termine aussi leur escalade, quoi qu'ait fait la sirène entre-temps. Un feu ou une
+panique ne s'arrêtent pas ainsi : ils sont surveillés jour et nuit, et désarmer la
+boutique plus tard ne dit pas que quelqu'un les a vus ; leur escalade va jusqu'à
+l'acquittement d'un contact (ou au bout de ses relances). Constaté à l'essai sur le
+matériel du 24 octobre 2026 : un désarmement depuis l'application une minute après
+l'arrêt de la sirène laissait partir la vague suivante de l'intrusion.
 
 La centrale vérifie que chaque sirène prend l'ordre : un `siren.on` refusé est renvoyé
 quelques fois, puis les contacts reçoivent l'alerte `siren_failed` (voir

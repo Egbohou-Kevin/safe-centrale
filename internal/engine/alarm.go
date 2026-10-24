@@ -142,6 +142,9 @@ func (e *Engine) sirenStep(ref time.Time) []Action {
 		out := []Action{SirenOff{}}
 		if inc.Cycle >= e.cfg.SirenCycles {
 			out = append(out, Emit{Cleared{Incident: inc.ID, By: ClearedByTimeout, Duration: ref.Sub(inc.StartedAt)}})
+			if endsWithArming(inc.Kind) {
+				e.s.TimedOut = append(e.s.TimedOut, inc.ID)
+			}
 			e.endIncident(ref)
 			return out
 		}
@@ -158,6 +161,16 @@ func (e *Engine) sirenStep(ref time.Time) []Action {
 	}
 }
 
+// endsWithArming tells whether an alarm of this kind belongs to the arming it
+// happened in, so that the disarm ending that arming ends it too, even after its
+// siren ran out. An intrusion and a tamper while armed do: they are what the arming
+// watches for, and the person who disarms is back in charge of the place. A fire and
+// a panic do not: they are watched day and night, and disarming the shop later says
+// nothing of whether someone saw them. Their escalation runs until a contact answers.
+func endsWithArming(kind AlertKind) bool {
+	return kind == AlertIntrusion || kind == AlertTamper
+}
+
 // endIncident closes the incident and goes back to the mode held before it.
 func (e *Engine) endIncident(at time.Time) {
 	if e.s.Incident != nil && e.s.Incident.ReturnTo == ModeDisarmed {
@@ -169,7 +182,8 @@ func (e *Engine) endIncident(at time.Time) {
 	e.setMode(ModeArmed, at)
 }
 
-// clearIncident stops the siren on a user's order.
+// clearIncident stops the siren on a user's order: the person ended the incident,
+// whatever its kind.
 func (e *Engine) clearIncident(at time.Time, user string) []Action {
 	inc := e.s.Incident
 	if inc == nil {
@@ -178,6 +192,7 @@ func (e *Engine) clearIncident(at time.Time, user string) []Action {
 	return []Action{
 		SirenOff{},
 		Emit{Cleared{Incident: inc.ID, By: ClearedByUser, User: user, Duration: at.Sub(inc.StartedAt)}},
+		Ended{Incidents: []string{inc.ID}},
 	}
 }
 

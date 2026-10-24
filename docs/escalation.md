@@ -289,7 +289,14 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
   entier (toutes ses alertes). Un acquittement d'un inconnu est ignoré.
 - **Fin de l'incident.** Un désarmement par une personne, ou l'arrêt de la sirène avec
   un code, arrête l'escalade (`Close`) : il serait absurde de relancer les contacts
-  après coup. L'arrêt de la sirène par expiration ne l'arrête pas.
+  après coup. L'arrêt de la sirène par expiration ne l'arrête pas ; mais le
+  désarmement qui suit, par une personne, arrête alors celle des intrusions et des
+  sabotages de cet armement, quoi qu'ait fait la sirène entre-temps (le moteur les
+  retient, voir `engine.md`, « Reprise de la sirène »). Un feu, une panique ou une
+  sirène en panne (`siren_failed`) dont la sirène s'est déjà arrêtée vont, eux, jusqu'à
+  l'acquittement : le désarmement ne dit pas que quelqu'un a vu le feu, ni réparé la
+  sirène. Pendant que la sirène sonne, le désarmement ou l'arrêt avec un code
+  arrête l'escalade de l'alarme qui sonne, quel que soit son type.
 - **Regroupement.** Un même incident et un même type d'alerte levés plusieurs fois se
   fusionnent : les appareils s'ajoutent, aucun message de plus ne part. Le moteur ne
   lève jamais deux fois la même intrusion (il se tait une fois déclenché) : c'est une

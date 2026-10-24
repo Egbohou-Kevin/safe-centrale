@@ -2,6 +2,7 @@ package hub
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -157,6 +158,55 @@ func TestDisarmingEndsTheEscalation(t *testing.T) {
 	r.settle()
 	if got := requested(t, r); len(got) != n {
 		t.Fatalf("%v: the incident is over, nobody must be told any more", got)
+	}
+}
+
+// The trial on real hardware (24 October 2026): the siren ran out, the system went
+// back to armed, then the owner disarmed from the app. The intrusion's next wave must
+// not leave after that.
+func TestADisarmAfterTheSirenRanOutEndsTheEscalation(t *testing.T) {
+	r := newRig(t, nil, func(c *Config) {
+		c.Engine.ExitDelay, c.Engine.EntryDelay = 30*time.Second, 15*time.Second
+		c.Engine.SirenCycle, c.Engine.SirenPause, c.Engine.SirenCycles = 20*time.Second, 10*time.Second, 2
+		c.Escalation = escalation.DefaultConfig("Boutique Essai", []escalation.Contact{
+			{ID: "u_kevin", Name: "Kevin", Role: escalation.RoleOwner, Channels: []escalation.Channel{escalation.ChannelApp}},
+		})
+	})
+	r.start()
+	r.setCode("u_kevin", "482915")
+	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_kevin")
+	r.mustBe(engine.ModeArming)
+	r.clock.Advance(30 * time.Second)
+	r.mustBe(engine.ModeArmed)
+	r.clock.Advance(28 * time.Second)
+	r.device(devDoor, contract.CapContact, "open")
+	r.mustBe(engine.ModeEntryDelay)
+	r.clock.Advance(15 * time.Second)
+	r.mustBe(engine.ModeTriggered)
+	r.settle()
+	if got := requested(t, r); !slices.Equal(got, []string{"u_kevin/app/1"}) {
+		t.Fatalf("first wave: %v", got)
+	}
+
+	for range 3 { // 20 s of siren, a 10 s pause, 20 s more: back to armed
+		r.clock.Advance(20 * time.Second)
+		r.settle()
+	}
+	r.mustBe(engine.ModeArmed)
+	if len(eventsOf(r, contract.TypeAlarmCleared)) != 1 {
+		t.Fatal("the siren must have run out")
+	}
+
+	r.clock.Advance(20 * time.Second)
+	r.order(contract.CmdDisarm, contract.CommandArgs{Code: "482915"}, contract.OriginApp, "u_kevin")
+	r.mustBe(engine.ModeDisarmed)
+	r.clock.Advance(30 * time.Minute)
+	r.settle()
+	if got := requested(t, r); len(got) != 1 {
+		t.Fatalf("%v: the owner disarmed, nobody must be told any more", got)
+	}
+	if !strings.Contains(r.logs.String(), "outcome=closed") {
+		t.Fatalf("the escalation must end as closed:\n%s", r.logs.String())
 	}
 }
 

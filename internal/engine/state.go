@@ -48,6 +48,10 @@ type Snapshot struct {
 	Open       map[string]bool `json:"open"`        // contacts that are currently open
 	EntryCause *Cause          `json:"entry_cause"` // what started the entry delay
 	Incident   *Incident       `json:"incident"`
+	// TimedOut are the incidents of this arming (intrusions, tampers) whose siren ran
+	// out without anyone ending them. The system went back to armed, but their
+	// escalation goes on: the disarm that ends this arming ends them too.
+	TimedOut []string `json:"timed_out,omitempty"`
 
 	// Devices whose tamper is active and was reported, so that a restart does not
 	// report it again.
@@ -74,6 +78,7 @@ func (s Snapshot) clone() Snapshot {
 	s.Open = maps.Clone(s.Open)
 	s.Tampered = maps.Clone(s.Tampered)
 	s.Failures = slices.Clone(s.Failures)
+	s.TimedOut = slices.Clone(s.TimedOut)
 	s.EntryCause = clonePtr(s.EntryCause)
 	s.Incident = clonePtr(s.Incident)
 	s.LastTrigger = clonePtr(s.LastTrigger)
