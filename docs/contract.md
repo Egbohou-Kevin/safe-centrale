@@ -368,8 +368,9 @@ automatique).
   (une demande par contact et par canal, voir `escalation.md`). Champs : `incident`,
   `kind` (`intrusion`, `fire`, `panic`, `tamper`, `auth_failed`,
   `arming_bypassed`, `battery_low_hub`, `mains_restored`, `device_offline`, `battery_low`, `gsm_degraded`, `zigbee_down`, `siren_failed`), `urgency` (`critical`, `high`, `low`),
-  `wave`, `contact`, `channel` (`app`, `whatsapp`, `sms`, `call`) et `text`.
-  `devices` (liste d'appareils, facultatif) est rempli quand l'alerte en concerne
+  `wave`, `contact`, `channel` (`app`, `whatsapp`, `sms`, `call`) et `text`, écrit
+  pour son canal : seul le texte d'un SMS dit comment acquitter (`Repondre 1 si vous
+  gerez.`), l'application et WhatsApp ont leur propre bouton. `devices` (liste d'appareils, facultatif) est rempli quand l'alerte en concerne
   plusieurs, par exemple `arming_bypassed`, et `percent` (0 à 100) le niveau de
   batterie pour les alertes de batterie.
 - `alert.result` : le canal répond. Champs : `ref` (l'`id` du `alert.request`),

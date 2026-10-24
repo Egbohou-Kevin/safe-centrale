@@ -13,8 +13,19 @@ const (
 	ackHint = " Repondre 1 si vous gerez."
 )
 
-// text builds the message for an alert.
-func (e *Escalation) text(in IncidentSnap) string {
+// text builds the message for an alert sent through a channel. Only an SMS says how
+// to answer, since the answer is a "1" sent back by SMS: the application and WhatsApp
+// carry their own button ("Je gere", "Je m'en occupe"), and a call shows no text.
+func (e *Escalation) text(in IncidentSnap, ch Channel) string {
+	msg, answer := e.message(in)
+	if answer && ch == ChannelSMS {
+		return fit(msg, ackHint)
+	}
+	return fit(msg, "")
+}
+
+// message builds what an alert says, and whether it asks to be answered.
+func (e *Escalation) message(in IncidentSnap) (msg string, answer bool) {
 	site := ascii(e.cfg.SiteName)
 	hour := e.hour(in.RaisedAt)
 	where := e.deviceList(in.Devices)
@@ -22,38 +33,35 @@ func (e *Escalation) text(in IncidentSnap) string {
 		where = " (" + where + ")"
 	}
 
-	var msg string
 	switch in.Kind {
 	case KindIntrusion:
-		msg = fmt.Sprintf("ALARME %s: intrusion%s a %s.%s", site, where, hour, ackHint)
+		return fmt.Sprintf("ALARME %s: intrusion%s a %s.", site, where, hour), true
 	case KindFire:
-		msg = fmt.Sprintf("ALARME INCENDIE %s: fumee detectee%s a %s.%s", site, where, hour, ackHint)
+		return fmt.Sprintf("ALARME INCENDIE %s: fumee detectee%s a %s.", site, where, hour), true
 	case KindPanic:
-		msg = fmt.Sprintf("ALARME PANIQUE %s: bouton panique%s a %s.%s", site, where, hour, ackHint)
+		return fmt.Sprintf("ALARME PANIQUE %s: bouton panique%s a %s.", site, where, hour), true
 	case KindTamper:
-		msg = fmt.Sprintf("ALERTE %s: sabotage%s a %s.%s", site, where, hour, ackHint)
+		return fmt.Sprintf("ALERTE %s: sabotage%s a %s.", site, where, hour), true
 	case KindAuthFailed:
-		msg = fmt.Sprintf("ALERTE %s: codes faux repetes a %s.%s", site, hour, ackHint)
+		return fmt.Sprintf("ALERTE %s: codes faux repetes a %s.", site, hour), true
 	case KindArmingBypassed:
-		msg = fmt.Sprintf("ALERTE %s: alarme armee a %s avec une zone ouverte%s, non protegee.%s", site, hour, where, ackHint)
+		return fmt.Sprintf("ALERTE %s: alarme armee a %s avec une zone ouverte%s, non protegee.", site, hour, where), true
 	case KindHubBatteryLow:
-		msg = fmt.Sprintf("ALERTE %s: centrale sur batterie, %d%% restant (%s).%s", site, in.Percent, hour, ackHint)
+		return fmt.Sprintf("ALERTE %s: centrale sur batterie, %d%% restant (%s).", site, in.Percent, hour), true
 	case KindMainsRestored:
-		msg = fmt.Sprintf("%s: le courant est revenu, batterie de la centrale a %d%%.", site, in.Percent)
+		return fmt.Sprintf("%s: le courant est revenu, batterie de la centrale a %d%%.", site, in.Percent), false
 	case KindDeviceOffline:
-		msg = fmt.Sprintf("%s: appareils muets%s.", site, where)
+		return fmt.Sprintf("%s: appareils muets%s.", site, where), false
 	case KindBatteryLow:
-		msg = fmt.Sprintf("%s: piles faibles%s.", site, where)
+		return fmt.Sprintf("%s: piles faibles%s.", site, where), false
 	case KindZigbeeDown:
-		msg = fmt.Sprintf("ALERTE %s: capteurs injoignables depuis %s, l'alarme ne detecte plus rien. Verifiez la centrale.%s", site, hour, ackHint)
+		return fmt.Sprintf("ALERTE %s: capteurs injoignables depuis %s, l'alarme ne detecte plus rien. Verifiez la centrale.", site, hour), true
 	case KindSirenFailed:
-		msg = fmt.Sprintf("ALERTE %s: la sirene%s ne repond pas a %s, l'alarme est silencieuse.%s", site, where, hour, ackHint)
+		return fmt.Sprintf("ALERTE %s: la sirene%s ne repond pas a %s, l'alarme est silencieuse.", site, where, hour), true
 	case KindGSMDegraded:
-		msg = fmt.Sprintf("%s: protection degradee, SMS indisponible: verifiez la SIM.", site)
-	default:
-		msg = fmt.Sprintf("%s: alerte %s a %s.", site, in.Kind, hour)
+		return fmt.Sprintf("%s: protection degradee, SMS indisponible: verifiez la SIM.", site), false
 	}
-	return fit(msg)
+	return fmt.Sprintf("%s: alerte %s a %s.", site, in.Kind, hour), false
 }
 
 func (e *Escalation) hour(t time.Time) string {
@@ -76,19 +84,14 @@ func (e *Escalation) deviceList(ids []string) string {
 	return strings.Join(names, ", ")
 }
 
-// fit cuts a message to one SMS, keeping its end (the way to answer) when it can.
-func fit(msg string) string {
-	if len(msg) <= maxText {
-		return msg
+// fit cuts a message to one SMS with its tail (the way to answer) whole: what is cut
+// is the message, never the tail.
+func fit(msg, tail string) string {
+	if len(msg)+len(tail) <= maxText {
+		return msg + tail
 	}
-	if strings.HasSuffix(msg, ackHint) {
-		head := msg[:len(msg)-len(ackHint)]
-		room := maxText - len(ackHint) - 3
-		if room > 0 {
-			return strings.TrimRight(head[:min(room, len(head))], " ,:(") + "..." + ackHint
-		}
-	}
-	return msg[:maxText-3] + "..."
+	room := maxText - len(tail) - 3
+	return strings.TrimRight(msg[:room], " ,:(") + "..." + tail
 }
 
 var accents = strings.NewReplacer(

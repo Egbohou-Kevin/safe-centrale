@@ -181,6 +181,18 @@ ALARME Boutique Lome: intrusion (Entree) a 21:04. Repondre 1 si vous gerez.
 Il contient : le site, ce qui s'est passé et où (zone), l'heure, comment acquitter. Les messages WhatsApp et de l'application peuvent ajouter les photos et
 les détails.
 
+Le texte est écrit pour son canal. « Répondre 1 » ne vaut que pour un SMS : la
+notification de l'application a son bouton « Je gère », le message WhatsApp son bouton
+« Je m'en occupe », et un appel ne montre aucun texte. Pour ces canaux, le même texte
+sans la phrase de réponse :
+
+```
+ALARME Boutique Lome: intrusion (Entree) a 21:04.
+```
+
+Trouvé à l'essai sur le matériel du 24 octobre 2026 : l'application affichait la
+consigne du SMS à côté de son propre bouton.
+
 ## Échecs et repli
 
 - **Internet inutilisable** : l'escalade envoie directement par GSM, sans attendre
@@ -307,8 +319,8 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
   seulement. Si internet est coupé elles attendent son retour. Le retour du courant peut
   partir par GSM après une heure sans internet.
 - **Textes.** En français, en ASCII simple, 160 caractères au plus (le nom du site et des
-  zones sont nettoyés de leurs accents) ; la manière de répondre (`Repondre 1 si vous
-  gerez.`) est gardée quand le texte est coupé.
+  zones sont nettoyés de leurs accents) ; un texte par canal : seul le SMS porte la
+  manière de répondre (`Repondre 1 si vous gerez.`), gardée quand le texte est coupé.
 - **Reprise.** L'état est sauvegardé : après un redémarrage, les vagues et les délais
   en retard sont rejoués dans l'ordre, à leur heure.
 

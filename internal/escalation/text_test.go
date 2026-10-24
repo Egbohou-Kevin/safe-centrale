@@ -12,18 +12,48 @@ import (
 func TestTextsAreShortPlainASCIIAndSayWhatToDo(t *testing.T) {
 	e := newEsc(t, func(c *Config) { c.Location = time.FixedZone("UTC+1", 3600) })
 	out := raise(e, t0, KindIntrusion, "dev_back")
-	var text string
-	for _, a := range out {
-		if s, ok := a.(Send); ok {
-			text = s.Text
-		}
-	}
+	text := textOf(t, out, ChannelSMS)
 	for _, part := range []string{"ALARME", "Boutique Lome", "Porte arriere", "22:04", "Repondre 1"} {
 		if !strings.Contains(text, part) {
 			t.Errorf("%q misses %q", text, part)
 		}
 	}
 	checkText(t, text)
+}
+
+// textOf returns the text of the first message sent through a channel.
+func textOf(t *testing.T, out []Action, ch Channel) string {
+	t.Helper()
+	for _, a := range out {
+		if s, ok := a.(Send); ok && s.Channel == ch {
+			return s.Text
+		}
+	}
+	t.Fatalf("nothing sent by %s: %v", ch, sends(out))
+	return ""
+}
+
+// The trial on real hardware: the application showed "Repondre 1 si vous gerez.", an
+// SMS instruction, next to its own "Je gere" button. Only an SMS says how to answer.
+func TestOnlyAnSMSSaysToAnswerBySMS(t *testing.T) {
+	e := newEsc(t)
+	in := IncidentSnap{ID: "x", Kind: KindIntrusion, RaisedAt: t0, Devices: []string{"dev_back"}}
+	want := "ALARME Boutique Lome: intrusion (Porte arriere) a 21:04."
+	for ch, text := range map[Channel]string{
+		ChannelSMS: want + " Repondre 1 si vous gerez.", ChannelApp: want, ChannelWhatsApp: want, ChannelCall: want,
+	} {
+		if got := e.text(in, ch); got != text {
+			t.Errorf("%s: %q, want %q", ch, got, text)
+		}
+	}
+	// Through the escalation too: a fire tells by the application and SMS at once.
+	out := e.Handle(Raise{Now: t0, Incident: "f", Kind: KindFire, Urgency: UrgencyCritical, Devices: []string{"dev_back"}})
+	if app := textOf(t, out, ChannelApp); strings.Contains(app, "Repondre") {
+		t.Errorf("app: %q", app)
+	}
+	if sms := textOf(t, out, ChannelSMS); !strings.HasSuffix(sms, "Repondre 1 si vous gerez.") {
+		t.Errorf("sms: %q", sms)
+	}
 }
 
 func checkText(t *testing.T, text string) {
@@ -51,7 +81,8 @@ func TestEveryKindHasASuitableText(t *testing.T) {
 					t.Errorf("%s: %q does not name the site", kind, s.Text)
 				}
 				ack := strings.Contains(s.Text, "Repondre 1")
-				wantAck := kind != KindMainsRestored && kind != KindDeviceOffline && kind != KindBatteryLow && kind != KindGSMDegraded
+				wantAck := s.Channel == ChannelSMS &&
+					kind != KindMainsRestored && kind != KindDeviceOffline && kind != KindBatteryLow && kind != KindGSMDegraded
 				if ack != wantAck {
 					t.Errorf("%s: answer hint present=%v, want %v: %q", kind, ack, wantAck, s.Text)
 				}
@@ -70,13 +101,16 @@ func TestALongTextIsCutButKeepsTheWayToAnswer(t *testing.T) {
 		long[i] = fmt.Sprintf("dev_%d", i)
 	}
 	out := raise(e, t0, KindIntrusion, long...)
-	for _, a := range out {
-		if s, ok := a.(Send); ok {
-			checkText(t, s.Text)
-			if !strings.HasSuffix(s.Text, "Repondre 1 si vous gerez.") || !strings.Contains(s.Text, "...") {
-				t.Fatalf("%q", s.Text)
-			}
-		}
+	sms := textOf(t, out, ChannelSMS)
+	checkText(t, sms)
+	if !strings.HasSuffix(sms, "Repondre 1 si vous gerez.") || !strings.Contains(sms, "...") {
+		t.Fatalf("%q", sms)
+	}
+	e = newEsc(t, func(c *Config) { c.SiteName = strings.Repeat("Grande Boutique ", 8) })
+	app := textOf(t, raise(e, t0, KindIntrusion, long...), ChannelApp)
+	checkText(t, app)
+	if strings.Contains(app, "Repondre") || !strings.HasSuffix(app, "...") {
+		t.Fatalf("%q", app)
 	}
 }
 
@@ -120,10 +154,13 @@ func TestTheSirenTextNamesTheSirenAndSaysTheAlarmIsSilent(t *testing.T) {
 			if !ok {
 				continue
 			}
-			for _, part := range []string{"ALERTE", "sirene", name, "silencieuse", "Repondre 1"} {
+			for _, part := range []string{"ALERTE", "sirene", name, "silencieuse"} {
 				if !strings.Contains(s.Text, part) {
 					t.Errorf("%q misses %q", s.Text, part)
 				}
+			}
+			if s.Channel == ChannelSMS && !strings.Contains(s.Text, "Repondre 1") {
+				t.Errorf("%q: an SMS says how to answer", s.Text)
 			}
 			checkText(t, s.Text)
 		}

@@ -97,7 +97,7 @@ func (e *Escalation) send(in *IncidentSnap, ct Contact, ch Channel, round *Round
 	return []Action{Send{
 		Key: key, Incident: in.ID, Kind: in.Kind, Urgency: in.Urgency, Wave: round.Step + 1,
 		Contact: ct.ID, Channel: ch, Devices: slices.Clone(in.Devices), Percent: in.Percent,
-		Text: e.text(*in),
+		Text: e.text(*in, ch),
 	}}
 }
 
