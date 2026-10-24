@@ -194,6 +194,63 @@ func TestADisarmCountsAsHandled(t *testing.T) {
 	}
 }
 
+// onlyTheOwner leaves one contact, the owner, who has the app, the SMS and the call.
+func onlyTheOwner(c *Config) {
+	c.Contacts = []Contact{{ID: "owner", Role: RoleOwner, Channels: []Channel{ChannelApp, ChannelSMS, ChannelCall}}}
+}
+
+// The order of the real hub: a disarm, or the siren stopped with a code, turns the
+// siren off, so no failure can be reported after it. A disarm only handles a siren's
+// alert already under way, and quietens it: its doubling is an SMS, never a call.
+func TestADisarmAfterTheSirenFailedQuietsIt(t *testing.T) {
+	e := newEsc(t, onlyTheOwner)
+	intrusion(e, t0, "x")
+	loud := sirenFails(e, t0.Add(5*time.Second), "y", "x")
+	for _, s := range sendsOf(loud, "y") {
+		if s.Urgency != UrgencyHigh || s.AlarmHandled {
+			t.Fatalf("nobody handled the alarm yet: %+v", s)
+		}
+	}
+	e.Handle(Result{Now: t0.Add(6 * time.Second), Key: keyOf(loud, "owner", ChannelApp), Status: ResultSent})
+
+	closed := e.Handle(Close{Now: t0.Add(20 * time.Second), Incident: "x"})
+	if c := concluded(closed); len(sendsOf(closed, "y")) != 0 || len(c) != 1 || c[0].Incident != "x" || c[0].Outcome != OutcomeClosed {
+		t.Fatalf("only the alarm is concluded: %+v", closed)
+	}
+	// At the doubling, the owner's phone never said it got the message: an SMS, no call.
+	later := tick(e, t0.Add(5*time.Second+time.Minute))
+	want(t, "the doubling", sends(later), "owner/sms/1")
+	mustBeQuiet(t, sendsOf(later, "y"), "x")
+	if text := sendsOf(later, "y")[0].Text; !strings.HasSuffix(text, "L'alarme a ete arretee.") {
+		t.Fatalf("%q", text)
+	}
+	want(t, "withheld", withheld(later), "owner/call")
+	if outcomeOf(t, later, "y") != OutcomeInformed {
+		t.Fatalf("%+v", later)
+	}
+}
+
+// An acknowledgement from a contact the hub does not know (a cloud member missing
+// from the hub's list) handles nothing: the siren's alert stays loud for everyone.
+func TestAnAcknowledgementFromNobodyKnownLeavesTheSirenAlertLoud(t *testing.T) {
+	e := newEsc(t)
+	intrusion(e, t0, "x")
+	e.Handle(Ack{Now: t0.Add(5 * time.Second), Incident: "x", Contact: "stranger"})
+	out := sirenFails(e, t0.Add(10*time.Second), "y", "x")
+	ys := sendsOf(out, "y")
+	if !slices.ContainsFunc(ys, func(s Send) bool { return s.Contact == "guard" && s.Channel == ChannelCall }) {
+		t.Fatalf("the guard is called for the siren: %+v", ys)
+	}
+	for _, s := range ys {
+		if s.Urgency != UrgencyHigh || s.AlarmHandled {
+			t.Fatalf("not a loud message: %+v", s)
+		}
+	}
+	if _, running := e.s.Incidents["x/intrusion"]; !running || len(e.s.Handled) != 0 {
+		t.Fatalf("the alarm goes on, handled by nobody: %+v %+v", e.s.Incidents, e.s.Handled)
+	}
+}
+
 // After the alarm is handled, the fact still reaches each phone the internet missed,
 // by SMS: a message that failed, one the cloud did not take in time, one it took but
 // the phone never said it got. Never a call.
@@ -205,9 +262,7 @@ func TestTheQuietFactStillReachesWhoTheInternetMissed(t *testing.T) {
 		"failed": {ResultFailed, time.Second}, "unconfirmed": {"", 10 * time.Second},
 		"sent": {ResultSent, time.Minute}, "delivered": {ResultDelivered, 0},
 	} {
-		e := newEsc(t, func(c *Config) {
-			c.Contacts = []Contact{{ID: "owner", Role: RoleOwner, Channels: []Channel{ChannelApp, ChannelSMS, ChannelCall}}}
-		})
+		e := newEsc(t, onlyTheOwner)
 		intrusion(e, t0, "x")
 		ackBy(e, t0, "x", "owner")
 		out := sirenFails(e, t0, "y", "x")
@@ -319,6 +374,27 @@ func TestAQuietAlertIsToldOnce(t *testing.T) {
 	}
 	if outcomeOf(t, rest, "y1") != OutcomeInformed || outcomeOf(t, rest, "y2") != OutcomeInformed {
 		t.Fatalf("%+v", concluded(rest))
+	}
+
+	// A first wave that waits keeps its time once the alert turns quiet: it told nobody
+	// yet, the fact that the shop is silent must not be lost.
+	late := DefaultPlans()
+	late[KindSirenFailed] = Plan{Waves: []Wave{{After: 2 * time.Minute, To: []Audience{AudienceFirst}}}}
+	e = newEsc(t, func(c *Config) { c.Plans = late })
+	intrusion(e, t0, "x")
+	sirenFails(e, t0, "y", "x")
+	acked := ackBy(e, t0.Add(time.Minute), "x", "owner")
+	if slices.ContainsFunc(concluded(acked), func(c Concluded) bool { return c.Incident == "y" }) {
+		t.Fatalf("the siren's alert ended before it told anyone: %+v", acked)
+	}
+	due := tick(e, t0.Add(2*time.Minute))
+	want(t, "the first wave", sends(due), "deputy/app/1")
+	mustBeQuiet(t, sendsOf(due, "y"), "x")
+	if c := concluded(due); len(c) != 0 {
+		t.Fatalf("the internet confirmation is still awaited: %+v", c)
+	}
+	if after := tick(e, t0.Add(time.Hour)); outcomeOf(t, after, "y") != OutcomeInformed {
+		t.Fatalf("%+v", after)
 	}
 }
 

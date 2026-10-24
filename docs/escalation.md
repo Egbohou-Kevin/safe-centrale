@@ -172,8 +172,8 @@ garde 24 heures les alarmes prises en charge, même une fois leur escalade finie
 | Urgence | `high` | `low`, et `alarm_handled` |
 | Texte | `ALERTE Boutique Lome: la sirene (dev_siren1) ne repond pas a 21:04, l'alarme est silencieuse.`, et la manière de répondre par SMS | `Boutique Lome: la sirene (dev_siren1) n'a pas sonne a 21:04. L'alarme est deja prise en charge.` (`L'alarme a ete arretee.` après un code), sans manière de répondre |
 | Internet | D'abord | D'abord |
-| SMS | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ; en doublon à +1 min | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ; à +1 min si le téléphone du contact n'a pas dit l'avoir reçue (`delivered`, pas seulement `sent`) |
-| Appel | En doublon à +1 min, tout de suite sans internet | Jamais. L'appel refusé est journalisé |
+| SMS | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ou en cas d'échec ; en doublon à +1 min | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ou en cas d'échec ; à +1 min si le téléphone du contact n'a pas dit l'avoir reçue (`delivered`, pas seulement `sent`) |
+| Appel | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ou en cas d'échec ; en doublon à +1 min | Jamais. L'appel refusé est journalisé |
 | Limite par heure | Exemptée | Exemptée |
 | Fin de l'escalade | `unanswered` (sans réponse) | `informed` (informé) |
 
