@@ -190,7 +190,9 @@ l'arrêt de la sirène laissait partir la vague suivante de l'intrusion.
 
 La centrale vérifie que chaque sirène prend l'ordre : un `siren.on` refusé est renvoyé
 quelques fois, puis les contacts reçoivent l'alerte `siren_failed` (voir
-`adapter-zigbee.md`).
+`adapter-zigbee.md`). Elle nomme l'alarme qui sonne, et part discrète si cette alarme est
+déjà prise en charge (voir `escalation.md`, « Sirène muette pendant une alarme »). Le
+moteur n'en sait rien : il continue ses cycles.
 
 ## Sources d'armement et de désarmement
 
@@ -363,10 +365,10 @@ compte à rebours) et `alarm.armed` quand le système est réellement armé.
 Le moteur lève des alertes d'un genre (`intrusion`, `fire`, `panic`, `tamper`,
 `auth_failed`, `arming_bypassed`) ; la supervision lève les siennes (appareil muet,
 pile faible, passerelles) ; la centrale lève `siren_failed` pour une sirène qui ne
-prend pas l'ordre de sonner. L'escalade, dans la centrale, en fait les `alert.request` :
-qui est prévenu, dans quel ordre et après combien de temps sans réponse est décrit
-dans le document d'escalade. Cette logique reste sur le site pour fonctionner sans
-internet.
+prend pas l'ordre de sonner, rattachée à l'alarme qui sonne. L'escalade, dans la
+centrale, en fait les `alert.request` : qui est prévenu, dans quel ordre et après
+combien de temps sans réponse est décrit dans le document d'escalade. Cette logique
+reste sur le site pour fonctionner sans internet.
 
 ## Tests
 

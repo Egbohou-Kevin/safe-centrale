@@ -99,6 +99,10 @@ type Raise struct {
 	Urgency  Urgency
 	Devices  []string // devices concerned
 	Percent  int      // battery level, when it applies
+	// Alarm names the alarm under way this alert is part of, never Incident itself:
+	// a siren that does not sound during an alarm. Once that alarm is handled, the
+	// alert is told without ringing (see Send.AlarmHandled).
+	Alarm string
 }
 
 // Result is a channel's report about a message sent with Send. Ref, when set, is
@@ -112,7 +116,8 @@ type Result struct {
 }
 
 // Ack is a contact saying "I have seen it, I am dealing with it": it ends the
-// escalation of the incident. It does not disarm the alarm or silence the siren.
+// escalation of the incident, which is handled from then on (see Raise.Alarm). It
+// does not disarm the alarm or silence the siren.
 type Ack struct {
 	Now      time.Time
 	Incident string
@@ -126,8 +131,9 @@ type Uplink struct {
 	Up  bool
 }
 
-// Close ends the escalation of an incident that is over (the alarm was disarmed):
-// nobody needs to be told any more.
+// Close ends the escalation of an incident that a person ended with a code (the
+// alarm was disarmed, or its siren stopped): nobody needs to be told any more, and
+// the incident is handled (see Raise.Alarm).
 type Close struct {
 	Now      time.Time
 	Incident string
@@ -157,12 +163,28 @@ type Send struct {
 	Devices  []string
 	Percent  int
 	Text     string
+	// Alarm is the alarm under way the alert is part of (Raise.Alarm), "" for most.
+	Alarm string
+	// AlarmHandled: that alarm is already handled, a contact acknowledged it or a
+	// person stopped it with a code. The alert is told without ringing: never by
+	// call, at urgency low, without a way to answer.
+	AlarmHandled bool
 }
 
 // Throttled reports a message that was not sent because the contact already got the
-// maximum per hour. Fire and panic are never throttled.
+// maximum per hour. Fire, panic and a silent siren are never throttled.
 type Throttled struct {
 	Incident string
+	Contact  string
+	Channel  Channel
+}
+
+// Withheld reports a call that was not placed because the alarm the alert is part
+// of is already handled: such an alert is told without ringing. A contact who only
+// accepts calls is not told at all, which the driver logs.
+type Withheld struct {
+	Incident string
+	Alarm    string
 	Contact  string
 	Channel  Channel
 }
@@ -174,6 +196,9 @@ const (
 	OutcomeAcknowledged Outcome = "acknowledged" // a contact answered
 	OutcomeUnanswered   Outcome = "unanswered"   // every step ran and nobody answered
 	OutcomeClosed       Outcome = "closed"       // the incident ended by itself
+	// OutcomeInformed: an alert of an alarm already handled said what it had to say;
+	// it asked for no answer, so it is not "unanswered".
+	OutcomeInformed Outcome = "informed"
 )
 
 // Concluded reports the end of an incident's escalation.
@@ -186,4 +211,5 @@ type Concluded struct {
 
 func (Send) isAction()      {}
 func (Throttled) isAction() {}
+func (Withheld) isAction()  {}
 func (Concluded) isAction() {}

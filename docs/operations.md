@@ -97,6 +97,9 @@ pour chaque type d'alerte. L'exemple les écrit tous, avec les valeurs par défa
   réponse).
 - `repeat` : les relances après la dernière vague (`every`, `times`).
 - `internet_only` : jamais par GSM ; `gsm_after` : sauf après ce délai sans internet.
+- Le plan de `siren_failed` ne vaut que tant que l'alarme n'est pas prise en charge.
+  Ensuite, l'alerte est discrète quel que soit le plan : une seule étape, jamais
+  d'appel (voir `escalation.md`, « Sirène muette pendant une alarme »).
 
 Une erreur dit où elle est (`escalation.plans.fire.waves[2].after`).
 

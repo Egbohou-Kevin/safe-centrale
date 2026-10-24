@@ -112,23 +112,30 @@ func pullForwardIfAllUnreachable(in *IncidentSnap, now time.Time) {
 	in.NextAt = now
 }
 
+// ack ends the escalation of an incident a known contact answered, and remembers
+// that it is handled, even when its escalation was already over (a late "1"): an
+// alert that names it as its alarm is then told without ringing.
 func (e *Escalation) ack(a Ack) []Action {
 	if _, ok := e.cfg.contact(a.Contact); !ok {
 		return nil
 	}
+	e.handled(a.Incident, a.Now, false)
 	var out []Action
 	for _, key := range e.keysOf(a.Incident) {
 		out = append(out, e.conclude(key, OutcomeAcknowledged, a.Contact)...)
 	}
-	return out
+	return append(out, e.settle()...)
 }
 
+// close ends the escalation of an incident a person stopped with a code, which
+// handles it too.
 func (e *Escalation) close(c Close) []Action {
+	e.handled(c.Incident, c.Now, true)
 	var out []Action
 	for _, key := range e.keysOf(c.Incident) {
 		out = append(out, e.conclude(key, OutcomeClosed, "")...)
 	}
-	return out
+	return append(out, e.settle()...)
 }
 
 // keysOf returns the keys of every kind of alert under an incident, sorted.

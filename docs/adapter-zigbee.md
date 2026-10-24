@@ -235,11 +235,15 @@ alors que l'alarme sonne encore est renvoyé pour le temps qui reste du cycle, 3
 plus par sirène et par ordre. Si le dernier envoi échoue aussi, la centrale journalise
 une erreur et lève l'alerte `siren_failed` (urgence `high`, l'appareil dans `devices`) :
 le magasin est silencieux pendant l'alarme. Elle part une seule fois par sirène et par
-alarme, même si la sirène refuse encore aux cycles suivants. C'est un incident à part,
-comme un sabotage : acquitter l'intrusion ne l'arrête pas, et le désarmement non plus
-(la sirène reste à réparer). Un échec qui arrive dans la dernière seconde du cycle
-n'est ni renvoyé ni compté : le cycle suivant renvoie l'ordre, avec ses propres
-tentatives.
+alarme, même si la sirène refuse encore aux cycles suivants, et même après un
+redémarrage de la centrale. C'est un incident à part, comme un sabotage, qui nomme
+l'alarme (`alarm_incident`) : acquitter l'intrusion ne l'arrête pas, et le désarmement
+non plus (la sirène reste à réparer). Une fois l'alarme prise en charge (acquittée, ou
+arrêtée avec un code), l'alerte part discrète, sans appel ni sonnerie (voir
+`escalation.md`, « Sirène muette pendant une alarme »). La centrale publie aussi
+`alarm.siren_failed` (l'alarme et la sirène) pour l'historique (voir `contract.md`).
+Un échec qui arrive dans la dernière seconde du cycle n'est ni renvoyé ni compté : le
+cycle suivant renvoie l'ordre, avec ses propres tentatives.
 
 ## État de la liaison
 

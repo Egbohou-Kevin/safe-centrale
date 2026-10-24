@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -121,6 +122,143 @@ func TestASilentSirenIsReportedOncePerAlarm(t *testing.T) {
 	for _, a := range sirenAlerts(r) {
 		if a.Incident != incident {
 			t.Fatalf("a second siren alert in the same alarm: %+v", a)
+		}
+	}
+	// The history says it once too: the alarm sounded without this siren.
+	alarm := dataOf[contract.TriggeredData](t, eventsOf(r, contract.TypeAlarmTriggered)[0]).Incident
+	history := eventsOf(r, contract.TypeAlarmSirenFailed)
+	if len(history) != 1 || history[0].Topic != contract.AlarmEventTopic(site) ||
+		dataOf[contract.SirenFailedData](t, history[0]) != (contract.SirenFailedData{Incident: alarm, DeviceID: devSiren}) {
+		t.Fatalf("%+v", history)
+	}
+	r.validateAll()
+}
+
+// alarmOf is the incident of the alarm under way, as its first alert request says it.
+func alarmOf(r *rig) string {
+	return dataOf[contract.AlertRequestData](r.t, eventsOf(r, contract.TypeAlertRequest)[0]).Incident
+}
+
+// sirenAsked lists the siren's alert requests as "contact/channel", after checking
+// that each names the alarm, under an incident of its own, and says whether that
+// alarm is handled as handled says.
+func sirenAsked(r *rig, alarm string, handled bool) []string {
+	r.t.Helper()
+	var out []string
+	for _, a := range sirenAlerts(r) {
+		urgency := contract.UrgencyHigh
+		if handled {
+			urgency = contract.UrgencyLow
+		}
+		if a.Incident == alarm || a.AlarmIncident != alarm || a.AlarmHandled != handled || a.Urgency != urgency {
+			r.t.Fatalf("%+v", a)
+		}
+		out = append(out, a.Contact+"/"+a.Channel)
+	}
+	return out
+}
+
+// Before anyone answered the alarm, the siren's alert goes as it always did, and the
+// alarm's own escalation goes on.
+func TestASirenThatFailsBeforeAnyAcknowledgementAlertsAsToday(t *testing.T) {
+	r := newRig(t, nil, withContacts)
+	r.start()
+	trigger(r)
+	alarm := alarmOf(r)
+	failEveryOrder(r)
+	drivertest.WaitFor(t, "the alert", func() bool { r.settle(); return len(sirenAlerts(r)) == 3 })
+	if got := sirenAsked(r, alarm, false); !sameSet(got, []string{"u_owner/app", "u_guard/sms", "u_guard/call"}) {
+		t.Fatalf("%v", got)
+	}
+	r.clock.Advance(2 * time.Minute)
+	drivertest.WaitFor(t, "the alarm's second wave", func() bool { r.settle(); return contains(requested(t, r), "u_owner/app/2") })
+	r.validateAll()
+}
+
+// The trial of 24 October 2026: the owner pressed "Je gere", then the siren failed,
+// and its alert rang the phones like a new alarm. It is now told without ringing:
+// no call, urgency low, the alarm named and said handled, once.
+func TestASirenThatFailsAfterTheAlarmWasAcknowledgedDoesNotRingAgain(t *testing.T) {
+	r := newRig(t, nil, withContacts)
+	r.start()
+	trigger(r)
+	alarm := alarmOf(r)
+	r.send(contract.AlertAckTopic(site), contract.TypeAlertAck, contract.AlertAckData{Incident: alarm, Contact: "u_owner", Via: "app"})
+	r.settle()
+	before := len(requested(t, r))
+	failEveryOrder(r)
+	drivertest.WaitFor(t, "the alert", func() bool { r.settle(); return len(sirenAlerts(r)) == 2 })
+	if got := sirenAsked(r, alarm, true); !sameSet(got, []string{"u_owner/app", "u_guard/sms"}) {
+		t.Fatalf("%v", got)
+	}
+	// The owner's phone says it got it: nothing more for anyone, never a call.
+	app := requestIDs(t, r)["u_owner/app"]
+	r.send(contract.AlertResultTopic(site), contract.TypeAlertResult, contract.AlertResultData{Ref: app, Status: contract.ResultDelivered})
+	r.settle()
+	for range 4 {
+		r.clock.Advance(30 * time.Second)
+		r.settle()
+	}
+	if got := requested(t, r); len(got) != before+2 {
+		t.Fatalf("%v: only the siren's two messages may follow the acknowledgement", got)
+	}
+	logs := r.logs.String()
+	if !strings.Contains(logs, "a call was not placed") || !strings.Contains(logs, "outcome=informed") {
+		t.Fatalf("the withheld call and the outcome must be logged:\n%s", logs)
+	}
+	if len(eventsOf(r, contract.TypeAlarmSirenFailed)) != 1 {
+		t.Fatal("the history says it once")
+	}
+	r.mustBe(engine.ModeTriggered)
+	r.validateAll()
+}
+
+// Outside an alarm (one day a siren test or an arming beep), a silent siren is a loud
+// alert of its own, as before, and nothing goes to the history.
+func TestASilentSirenOutsideAnAlarmKeepsItsOwnAlert(t *testing.T) {
+	r := newRig(t, nil, withContacts)
+	r.start()
+	err := r.hub.alarm.loop.Do(context.Background(), func(now time.Time) []engine.Action {
+		r.hub.reportSilentSiren(now, devSiren)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drivertest.WaitFor(t, "the alert", func() bool { r.settle(); return len(sirenAlerts(r)) == 3 })
+	if got := sirenAsked(r, "", false); !sameSet(got, []string{"u_owner/app", "u_guard/sms", "u_guard/call"}) {
+		t.Fatalf("%v", got)
+	}
+	if len(eventsOf(r, contract.TypeAlarmSirenFailed)) != 0 {
+		t.Fatal("no alarm, no history")
+	}
+	r.validateAll()
+}
+
+// A hub restarted during the alarm forgets that it reported the siren, and the siren
+// still refuses: the history may say it again, the phones are not told again.
+func TestASilentSirenIsNotToldAgainAfterARestart(t *testing.T) {
+	first := newRig(t, nil, withContacts)
+	first.start()
+	trigger(first) // at t0+2m: cycle 1 until +7m, pause until +9m, cycle 2 until +14m
+	failEveryOrder(first)
+	drivertest.WaitFor(t, "the alert", func() bool { first.settle(); return len(sirenAlerts(first)) == 3 })
+	reported := sirenAlerts(first)[0].Incident
+	first.stop()
+
+	second := newRig(t, first.store, withContacts)
+	second.clock.Advance(10 * time.Minute) // in cycle 2: the siren is told again
+	second.start()
+	drivertest.WaitFor(t, "the siren resumed", func() bool { second.settle(); return len(sirenOrders(second)) > 0 })
+	failEveryOrder(second)
+	drivertest.WaitFor(t, "the history", func() bool {
+		second.settle()
+		return len(eventsOf(second, contract.TypeAlarmSirenFailed)) == 1
+	})
+	second.settle()
+	for _, a := range sirenAlerts(second) {
+		if a.Incident != reported {
+			t.Fatalf("the siren is told again after the restart: %+v", a)
 		}
 	}
 }

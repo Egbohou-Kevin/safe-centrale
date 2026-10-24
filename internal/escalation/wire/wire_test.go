@@ -118,3 +118,35 @@ func TestEveryPlanHasAContractNameAndBack(t *testing.T) {
 		t.Error("an unknown kind was found")
 	}
 }
+
+// An alert that is part of an alarm names it, and says when it is handled; it never
+// says handled without naming the alarm, which the schema refuses.
+func TestARequestNamesItsAlarmAndSaysWhenItIsHandled(t *testing.T) {
+	base := escalation.Send{Incident: "y", RaisedAt: now, Kind: escalation.KindSirenFailed, Urgency: escalation.UrgencyLow,
+		Wave: 1, Contact: "owner", Channel: escalation.ChannelSMS, Text: "la sirene"}
+	for name, c := range map[string]struct {
+		alarm         string
+		handled       bool
+		incident, ack string // what the request must and must not carry
+	}{
+		"handled": {"x", true, `"alarm_incident":"x"`, `"alarm_handled":true`},
+		"loud":    {"x", false, `"alarm_incident":"x"`, ""},
+		"alone":   {"", true, "", ""},
+	} {
+		s := base
+		s.Alarm, s.AlarmHandled = c.alarm, c.handled
+		d, err := Request(s, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(d)
+		if err := schematest.Check("alert-request.json", raw); err != nil {
+			t.Errorf("%s: %v\n%s", name, err, raw)
+		}
+		for key, want := range map[string]string{"alarm_incident": c.incident, "alarm_handled": c.ack} {
+			if got := strings.Contains(string(raw), key); got != (want != "") || !strings.Contains(string(raw), want) {
+				t.Errorf("%s: %s, want %s", name, raw, want)
+			}
+		}
+	}
+}

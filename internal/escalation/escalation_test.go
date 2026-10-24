@@ -319,11 +319,19 @@ func TestFireTellsEveryoneAndSendsTheSMSWithTheInternet(t *testing.T) {
 
 // --- siren failed ------------------------------------------------------------------------
 
+// Outside an alarm (a siren test or an arming beep, one day), a silent siren is an
+// alert of its own and a loud one: it names no alarm and nothing makes it quiet.
 func TestASilentSirenTellsTheFirstContactAndTheGuardOnce(t *testing.T) {
 	e := newEsc(t)
-	first := raise(e, t0, KindSirenFailed, "dev_siren1")
+	first := e.Handle(Raise{Now: t0, Incident: "inc1", Kind: KindSirenFailed, Urgency: UrgencyHigh, Devices: []string{"dev_siren1"}})
 	want(t, "wave 1", sends(first), "deputy/app/1", "guard/sms/1", "guard/call/1")
-	want(t, "internet not confirmed", sends(tick(e, t0.Add(10*time.Second))), "deputy/sms/1")
+	again := tick(e, t0.Add(10*time.Second))
+	want(t, "internet not confirmed", sends(again), "deputy/sms/1")
+	for _, a := range append(first, again...) {
+		if s, ok := a.(Send); ok && (s.Urgency != UrgencyHigh || s.Alarm != "" || s.AlarmHandled) {
+			t.Fatalf("%+v", s)
+		}
+	}
 	// No reminder of its own: the alarm's plan already insists.
 	end := tick(e, t0.Add(30*time.Minute))
 	if c := concluded(end); len(sends(end)) != 0 || len(c) != 1 || c[0].Outcome != OutcomeUnanswered || c[0].Kind != KindSirenFailed {

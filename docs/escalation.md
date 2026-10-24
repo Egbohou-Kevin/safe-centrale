@@ -85,7 +85,8 @@ Moyens d'acquitter :
 - **Bouton dans l'application** ou la notification.
 
 Un acquittement est enregistré dans un événement `alert.ack` avec le contact et le
-moyen utilisé.
+moyen utilisé. Il rend aussi discrète l'alerte d'une sirène muette pendant cette
+alarme (voir « Sirène muette pendant une alarme »).
 
 ## Plans par type d'alerte
 
@@ -103,7 +104,7 @@ moyen utilisé.
 | `device_offline`, `battery_low` | appareil muet, pile faible | Résumé quotidien au propriétaire, tous les jours tant que le défaut dure (liste dans `devices`) |
 | `gsm_degraded` | secours SMS inutilisable depuis 10 minutes ; une passerelle GSM muette compte comme en panne après 3 minutes, l'alerte part donc 13 minutes après son dernier message | Propriétaire, par internet seulement |
 | `zigbee_down` | capteurs injoignables depuis 3 minutes (Zigbee2MQTT ou sa clé arrêtés) ; un adaptateur muet compte comme en panne après 3 minutes, l'alerte part donc après 6 minutes : l'alarme est aveugle | Premier contact (responsable ou propriétaire) tout de suite, doublé par SMS et appel ; « 1 » pour acquitter |
-| `siren_failed` | pendant une alarme, une sirène refuse l'ordre de sonner, renvois compris (voir `adapter-zigbee.md`) ; une fois par sirène et par alarme, urgence `high`, la sirène dans `devices` | Premier contact (responsable ou propriétaire) **et** gardien tout de suite, doublé par SMS et appel, sans relance : le plan de l'alarme insiste déjà ; « 1 » pour acquitter |
+| `siren_failed` | pendant une alarme, une sirène refuse l'ordre de sonner, renvois compris (voir `adapter-zigbee.md`) ; une fois par sirène et par alarme, urgence `high`, la sirène dans `devices`, sous un incident à elle qui nomme l'alarme (`alarm_incident`) | Premier contact (responsable ou propriétaire) **et** gardien tout de suite, doublé par SMS et appel, sans relance : le plan de l'alarme insiste déjà ; « 1 » pour acquitter. Une fois l'alarme prise en charge, discrète : sans appel ni sonnerie (voir « Sirène muette pendant une alarme ») |
 
 ### Intrusion : vagues
 
@@ -125,6 +126,103 @@ Au bout des relances, l'escalade arrête l'escalade et note l'incident comme « 
 réponse ». La sirène suit son propre calendrier (voir `engine.md`).
 
 Tous les délais sont réglables par site.
+
+## Sirène muette pendant une alarme
+
+Décidé le 24 octobre 2026, après l'essai du même jour : le propriétaire avait appuyé
+sur « Je gère », puis la sirène a refusé de sonner, et l'alerte `siren_failed` a fait
+sonner les téléphones comme une deuxième alarme.
+
+Une sirène qui refuse l'ordre de sonner, renvois compris, lève `siren_failed` (voir
+`adapter-zigbee.md`). Les alarmes qui font sonner la sirène sont l'intrusion,
+l'incendie, le sabotage pendant l'armement, et la panique seulement si `panic_siren`
+est vrai. Pendant une de ces alarmes, l'alerte de la sirène :
+
+- **garde son propre incident**. Ainsi, l'acquittement ou l'arrêt de l'alarme ne la
+  termine pas, la passerelle GSM ne jette pas ses SMS à la fin de l'alarme, son
+  `incident_at` est le sien, et le cloud ne la prend pas pour un renvoi de l'alarme ;
+- **nomme l'alarme** dans `alarm_incident`. Un téléphone qui sonne déjà pour l'alarme
+  y ajoute l'alerte de la sirène au lieu de sonner une deuxième fois ;
+- **part une seule fois par sirène et par alarme**, même après un redémarrage de la
+  centrale : la garde est dans l'état sauvegardé de l'escalade ;
+- est **bruyante ou discrète**, selon ce que décide l'escalade. C'est elle qui voit
+  toutes les réponses (application, « 1 » par SMS, WhatsApp, désarmement), et son état
+  est sauvegardé.
+
+### Quand l'alerte est-elle discrète ?
+
+Quand deux conditions sont réunies :
+
+1. **L'alarme est prise en charge.** Un contact connu l'a acquittée (« Je gère »,
+   « 1 », bouton WhatsApp), ou une personne l'a arrêtée avec un code (désarmement, ou
+   sirène coupée). La fin de la sirène au bout de ses cycles ne compte pas : personne
+   n'a rien fait.
+2. **Aucun feu ni aucune panique du site n'attend de réponse.** Un feu ou une panique
+   attend une réponse tant que son escalade est en cours. Un feu levé pendant une
+   intrusion n'a pas de sirène à lui, et ses occupants comptent peut-être sur la sirène
+   muette.
+
+Le résultat ne dépend que des réponses des personnes, jamais de l'horloge. L'escalade
+garde 24 heures les alarmes prises en charge, même une fois leur escalade finie : un
+« 1 » qui arrive tard compte aussi.
+
+| | Bruyante : personne n'a pris l'alarme en charge | Discrète : l'alarme est prise en charge |
+|---|---|---|
+| Qui | Le premier contact et le gardien | Les mêmes |
+| Urgence | `high` | `low`, et `alarm_handled` |
+| Texte | `ALERTE Boutique Lome: la sirene (dev_siren1) ne repond pas a 21:04, l'alarme est silencieuse.`, et la manière de répondre par SMS | `Boutique Lome: la sirene (dev_siren1) n'a pas sonne a 21:04. L'alarme est deja prise en charge.` (`L'alarme a ete arretee.` après un code), sans manière de répondre |
+| Internet | D'abord | D'abord |
+| SMS | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ; en doublon à +1 min | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ; à +1 min si le téléphone du contact n'a pas dit l'avoir reçue (`delivered`, pas seulement `sent`) |
+| Appel | En doublon à +1 min, tout de suite sans internet | Jamais. L'appel refusé est journalisé |
+| Limite par heure | Exemptée | Exemptée |
+| Fin de l'escalade | `unanswered` (sans réponse) | `informed` (informé) |
+
+Le SMS à +1 min de l'alerte discrète remplace l'appel du doublon : `sent` veut seulement
+dire que le cloud a pris le message. Un téléphone Tecno ou Infinix qui dort, ou dont
+l'application a été arrêtée, ne doit pas perdre le fait.
+
+**Avant toute prise en charge, rien ne change.** L'alerte part comme avant, et
+l'escalade de l'alarme continue sans être touchée. Par GSM, le premier contact et le
+gardien peuvent donc recevoir deux appels à +1 min, celui de l'alarme et celui de la
+sirène, et un gardien sans internet deux appels tout de suite (décidé le 24 octobre
+2026).
+
+**Une prise en charge qui arrive après la panne** rend discrète l'alerte déjà partie :
+plus d'étape, le doublon devient un SMS seul et seulement si le téléphone n'a pas dit
+l'avoir reçue, l'appel est refusé. Le secours SMS d'un message internet que le cloud
+n'a pas confirmé reste dû. Ce qui est déjà parti n'est pas retiré (un appel déjà dans
+la file de la passerelle part encore), et aucun autre incident n'est terminé. Si un feu
+ou une panique attend encore une réponse, l'alerte reste bruyante, puis devient
+discrète quand il est pris en charge à son tour.
+
+**Incendie et panique.** Si l'alarme est elle-même un incendie (ou une panique avec
+`panic_siren`), la même règle s'applique : une fois l'incendie pris en charge, la
+sirène ne fait plus appeler le gardien, elle passe par l'application ou par SMS
+(décidé le 24 octobre 2026). Un feu levé pendant une intrusion ne change pas l'alarme
+de la sirène : c'est l'intrusion. Il garde l'alerte bruyante tant qu'il n'est pas pris
+en charge, et son escalade n'est jamais touchée.
+
+**Sabotage.** Son escalade (le premier contact, une vague) finit d'habitude « sans
+réponse » : personne ne l'a pris en charge, l'alerte de la sirène reste bruyante.
+
+**Ce qui ne change pas.**
+
+- Acquitter l'alerte de la sirène (« 1 » ou « Je gère » sur elle) ne termine qu'elle, pas
+  l'alarme, qui sonne peut-être encore chez d'autres (décidé le 24 octobre 2026).
+- Un désarmement ne termine pas `siren_failed` : il la rend discrète. La sirène reste à
+  réparer, et le fait arrive quand même.
+- Un contact qui n'accepte que l'appel ne reçoit pas l'alerte discrète. C'est journalisé,
+  et l'escalade de l'alarme l'a déjà appelé.
+- Hors alarme (un futur test de sirène, ou le bip d'armement), `siren_failed` reste une
+  alerte à part et bruyante, sans `alarm_incident` (décidé le 24 octobre 2026).
+
+La centrale publie aussi `alarm.siren_failed` (l'alarme et la sirène) pour l'historique,
+une fois par sirène et par alarme. Après un redémarrage en pleine alarme, cet événement
+peut repartir une fois, mais pas l'alerte (voir `contract.md`).
+
+Pas fait, décidé le 24 octobre 2026 : un nom par sirène dans la configuration
+d'installation (le texte dit son identifiant, par exemple `dev_siren1`), et une phrase
+dans le texte d'un feu levé après qu'une panne a été dite discrètement.
 
 ## Coupures de courant
 
@@ -226,7 +324,10 @@ consigne du SMS à côté de son propre bouton.
   rien pour les détecteurs suivants : l'incident ne connaît que le premier. Un feu ou
   une panique pendant une intrusion part quand même, comme une alerte à part.
 - Un maximum de messages par contact et par heure limite le coût et le bruit. Les
-  alertes de type `fire` et `panic` ne sont jamais bridées.
+  alertes de type `fire`, `panic` et `siren_failed` ne sont jamais bridées. Pour la
+  sirène, c'est le seul message qui dit que le magasin est silencieux : il ne doit pas
+  être retenu après les vagues et les relances de l'alarme. Son volume est borné
+  autrement : une vague sans relance, une fois par sirène et par alarme.
 - Un incident a un identifiant, repris dans tous ses messages et événements.
 
 ## Côté cloud
@@ -242,7 +343,9 @@ Ajouts à reporter dans `contract.md` :
 
 - `alert.request` : `incident`, `incident_at` (l'heure où l'incident a été levé, la
   même à chaque vague et relance), `zone` (le fuseau IANA du site), `kind`, `urgency`,
-  `wave`, `contact`, `channel` (`app`, `whatsapp`, `sms`, `call`), `text`.
+  `wave`, `contact`, `channel` (`app`, `whatsapp`, `sms`, `call`), `text`, et pour
+  l'alerte d'une sirène muette pendant une alarme `alarm_incident` (l'alarme) et
+  `alarm_handled` (l'alarme est déjà prise en charge : l'alerte est discrète).
 - `alert.result` : `ref` (le `alert.request`), `status` (`queued`, `sent`,
   `delivered`, `failed`), `reason` si échec. Pour `app` et `whatsapp`, `sent` veut
   dire que le cloud a pris le message, `delivered` qu'il est arrivé sur le
@@ -304,23 +407,28 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
   vague dont tous les contacts sont injoignables (messages en échec) fait avancer la
   suivante sans attendre son délai.
 - **Acquittement.** Un acquittement d'un contact connu arrête l'escalade de l'incident
-  entier (toutes ses alertes). Un acquittement d'un inconnu est ignoré.
+  entier (toutes ses alertes). Un acquittement d'un inconnu est ignoré. L'escalade
+  retient 24 heures que l'incident est pris en charge, même si l'acquittement arrive
+  après la fin de son escalade : l'alerte d'une sirène muette qui le nomme est alors
+  discrète (voir « Sirène muette pendant une alarme »).
 - **Fin de l'incident.** Un désarmement par une personne, ou l'arrêt de la sirène avec
   un code, arrête l'escalade (`Close`) : il serait absurde de relancer les contacts
   après coup. L'arrêt de la sirène par expiration ne l'arrête pas ; mais le
   désarmement qui suit, par une personne, arrête alors celle des intrusions et des
   sabotages de cet armement, quoi qu'ait fait la sirène entre-temps (le moteur les
-  retient, voir `engine.md`, « Reprise de la sirène »). Un feu, une panique ou une
-  sirène en panne (`siren_failed`) dont la sirène s'est déjà arrêtée vont, eux, jusqu'à
-  l'acquittement : le désarmement ne dit pas que quelqu'un a vu le feu, ni réparé la
-  sirène. Pendant que la sirène sonne, le désarmement ou l'arrêt avec un code
-  arrête l'escalade de l'alarme qui sonne, quel que soit son type.
+  retient, voir `engine.md`, « Reprise de la sirène »). Un feu ou une panique dont la
+  sirène s'est déjà arrêtée vont, eux, jusqu'à l'acquittement : le désarmement ne dit
+  pas que quelqu'un a vu le feu. Pendant que la sirène sonne, le désarmement ou l'arrêt
+  avec un code arrête l'escalade de l'alarme qui sonne, quel que soit son type, et
+  compte comme sa prise en charge, retenue 24 heures. Un désarmement ne termine pas
+  l'alerte d'une sirène en panne (`siren_failed`) : la sirène reste à réparer. Il la
+  rend discrète (voir « Sirène muette pendant une alarme »).
 - **Regroupement.** Un même incident et un même type d'alerte levés plusieurs fois se
   fusionnent : les appareils s'ajoutent, aucun message de plus ne part. Le moteur ne
   lève jamais deux fois la même intrusion (il se tait une fois déclenché) : c'est une
   sécurité, qui ne sert pas aujourd'hui pour les intrusions.
-- **Limite par heure.** 20 messages par contact et par heure (réglable), sauf fire et panic.
-  Un message retenu est journalisé.
+- **Limite par heure.** 20 messages par contact et par heure (réglable), sauf fire, panic
+  et siren_failed. Un message retenu est journalisé.
 - **Alertes non urgentes** (résumés, retour du courant, protection dégradée) : internet
   seulement. Si internet est coupé elles attendent son retour. Le retour du courant peut
   partir par GSM après une heure sans internet.
@@ -328,7 +436,9 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
   zones sont nettoyés de leurs accents) ; un texte par canal : seul le SMS porte la
   manière de répondre (`Repondre 1 si vous gerez.`), gardée quand le texte est coupé.
 - **Reprise.** L'état est sauvegardé : après un redémarrage, les vagues et les délais
-  en retard sont rejoués dans l'ordre, à leur heure.
+  en retard sont rejoués dans l'ordre, à leur heure. Les alarmes prises en charge et
+  les sirènes déjà signalées y sont aussi, 24 heures (un état écrit avant elles se
+  relit).
 
 La passerelle GSM (`safehome-gsm`) exécute les demandes `sms` et `call`, connaît les
 numéros des contacts et publie `alert.ack` pour une réponse « 1 ». Les canaux

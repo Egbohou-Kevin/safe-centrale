@@ -1,6 +1,7 @@
 package gsm
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -113,5 +114,23 @@ func TestAContactAnswering1DropsTheIncidentsWaitingMessages(t *testing.T) {
 	out := g.Handle(Incoming{Now: t0.Add(3 * time.Second), Line: "line1", From: "+22890123456", Text: "1"})
 	if len(of[Acknowledge](out)) != 1 || len(of[Dropped](out)) != 1 || g.Queued() != 0 {
 		t.Fatalf("the call to the guard must not ring any more: %+v", out)
+	}
+}
+
+// A silent siren is an incident of its own that names its alarm: the alarm's end
+// (a disarm, or an acknowledgement) does not drop the SMS that says the shop was
+// silent.
+func TestASilentSirensSMSOutlivesItsAlarm(t *testing.T) {
+	g := newGW(t, 1)
+	noNetwork(g, t0)
+	g.Handle(Request{Now: t0, ID: "r1", Incident: "alarm", Contact: "owner", Channel: ChannelSMS, Priority: PriorityIntrusion, Text: "ALARME intrusion"})
+	g.Handle(Request{Now: t0, ID: "r2", Incident: "siren", Contact: "guard", Channel: ChannelSMS, Priority: PriorityIntrusion,
+		Text: "Boutique: la sirene n'a pas sonne a 21:00. L'alarme est deja prise en charge."})
+	if d := of[Dropped](g.Handle(Cancel{Now: t0.Add(time.Second), Incident: "alarm"})); len(d) != 1 || d[0].Jobs != 1 {
+		t.Fatalf("%+v", d)
+	}
+	ex := of[Execute](network(g, t0.Add(2*time.Second)))
+	if len(ex) != 1 || !strings.Contains(ex[0].Text, "sirene") {
+		t.Fatalf("the siren's SMS still goes: %+v", ex)
 	}
 }

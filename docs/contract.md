@@ -403,7 +403,10 @@ automatique).
   contact l'a acquittée, ou une personne l'a arrêtée avec un code (désarmement, sirène
   coupée). L'alerte se dit alors sans faire sonner : jamais d'appel, pas de sonnerie
   dans l'application, pas de son sur un iPhone. Son `urgency` vaut alors `low`, ce qui
-  le décrit sans rien décider : seul `alarm_handled` décide du bruit.
+  le décrit sans rien décider : seul `alarm_handled` décide du bruit. Tant qu'un feu ou
+  une panique du site attend encore une réponse, la centrale ne le met pas, même si
+  l'alarme est prise en charge : l'alerte reste bruyante (voir `escalation.md`, « Sirène
+  muette pendant une alarme »).
   `incident_at` (obligatoire) est l'heure où l'incident a été levé, en UTC à la
   milliseconde comme le `ts` de l'enveloppe : la même à chaque vague et à chaque
   relance de l'incident, alors que `ts` est l'heure de la demande (une deuxième vague

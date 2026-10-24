@@ -108,17 +108,24 @@ func TestAnOldRoundsResultDoesNotMoveTheCurrentOne(t *testing.T) {
 }
 
 func TestDeterminism(t *testing.T) {
-	play := func() []string {
+	play := func() []Action {
 		e := newEsc(t)
-		var all []string
-		all = append(all, sends(raise(e, t0, KindIntrusion, "dev_back"))...)
+		var all []Action
+		all = append(all, raise(e, t0, KindIntrusion, "dev_back")...)
+		all = append(all, e.Handle(Raise{Now: t0, Incident: "f", Kind: KindFire, Urgency: UrgencyCritical})...)
+		for _, siren := range []string{"dev_siren1", "dev_siren2"} {
+			all = append(all, e.Handle(Raise{Now: t0.Add(5 * time.Second), Incident: siren, Kind: KindSirenFailed,
+				Urgency: UrgencyHigh, Devices: []string{siren}, Alarm: "inc1"})...)
+		}
+		all = append(all, e.Handle(Ack{Now: t0.Add(20 * time.Second), Incident: "inc1", Contact: "owner"})...)
+		all = append(all, e.Handle(Ack{Now: t0.Add(30 * time.Second), Incident: "f", Contact: "guard"})...)
 		for _, d := range []time.Duration{10 * time.Second, 70 * time.Second, 2 * time.Minute, 6 * time.Minute, time.Hour} {
-			all = append(all, sends(tick(e, t0.Add(d)))...)
+			all = append(all, tick(e, t0.Add(d))...)
 		}
 		return all
 	}
-	if a, b := play(), play(); !slices.Equal(a, b) {
-		t.Fatalf("two identical runs differ:\n%v\n%v", a, b)
+	if a, b := play(), play(); !reflect.DeepEqual(a, b) {
+		t.Fatalf("two identical runs differ:\n%+v\n%+v", a, b)
 	}
 }
 

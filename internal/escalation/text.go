@@ -16,9 +16,16 @@ const (
 // text builds the message for an alert sent through a channel. Only an SMS says how
 // to answer, since the answer is a "1" sent back by SMS: the application and WhatsApp
 // carry their own button ("Je gere", "Je m'en occupe"), and a call shows no text.
+// An alert of an alarm already handled asks for no answer: it says the alarm is
+// handled instead, a sentence kept whole when the text is cut.
 func (e *Escalation) text(in IncidentSnap, ch Channel) string {
 	msg, answer := e.message(in)
-	if answer && ch == ChannelSMS {
+	switch {
+	case in.Quiet && e.s.Handled[in.Alarm].Closed:
+		return fit(msg, " L'alarme a ete arretee.")
+	case in.Quiet:
+		return fit(msg, " L'alarme est deja prise en charge.")
+	case answer && ch == ChannelSMS:
 		return fit(msg, ackHint)
 	}
 	return fit(msg, "")
@@ -57,6 +64,9 @@ func (e *Escalation) message(in IncidentSnap) (msg string, answer bool) {
 	case KindZigbeeDown:
 		return fmt.Sprintf("ALERTE %s: capteurs injoignables depuis %s, l'alarme ne detecte plus rien. Verifiez la centrale.", site, hour), true
 	case KindSirenFailed:
+		if in.Quiet {
+			return fmt.Sprintf("%s: la sirene%s n'a pas sonne a %s.", site, where, hour), false
+		}
 		return fmt.Sprintf("ALERTE %s: la sirene%s ne repond pas a %s, l'alarme est silencieuse.", site, where, hour), true
 	case KindGSMDegraded:
 		return fmt.Sprintf("%s: protection degradee, SMS indisponible: verifiez la SIM.", site), false

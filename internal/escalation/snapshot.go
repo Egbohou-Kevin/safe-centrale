@@ -14,6 +14,20 @@ type Snapshot struct {
 	Incidents  map[string]IncidentSnap `json:"incidents"` // keyed by incident and kind
 	// Recent holds when each contact was last sent a message, for the hourly limit.
 	Recent map[string][]time.Time `json:"recent"`
+	// Handled holds the incidents a contact acknowledged or a person stopped with a
+	// code, for a day: the escalation forgets an incident once it is over, but an
+	// alert that names it as its alarm must still know it was handled.
+	Handled map[string]HandledAlarm `json:"handled,omitempty"`
+	// SirenReported holds, for a day, when each silent siren was reported for each
+	// alarm ("alarm/siren"): a siren is reported once per alarm, after a restart too.
+	SirenReported map[string]time.Time `json:"siren_reported,omitempty"`
+}
+
+// HandledAlarm is how an incident was handled. Closed: a person stopped it with a
+// code (a disarm, or the siren stopped), rather than a contact acknowledging it.
+type HandledAlarm struct {
+	At     time.Time `json:"at"`
+	Closed bool      `json:"closed,omitempty"`
 }
 
 // IncidentSnap is the state of one alert being escalated.
@@ -24,6 +38,10 @@ type IncidentSnap struct {
 	Devices  []string  `json:"devices"`
 	Percent  int       `json:"percent"`
 	RaisedAt time.Time `json:"raised_at"`
+	// Alarm is the alarm under way the alert is part of (Raise.Alarm). Quiet: that
+	// alarm is handled, the alert is told without ringing (see quieten).
+	Alarm string `json:"alarm,omitempty"`
+	Quiet bool   `json:"quiet,omitempty"`
 
 	Step         int                 `json:"step"`          // steps already run
 	NextAt       time.Time           `json:"next_at"`       // when the next step is due, zero if none
@@ -65,6 +83,16 @@ func (s Snapshot) clone() Snapshot {
 	out.Recent = make(map[string][]time.Time, len(s.Recent))
 	for c, ts := range s.Recent {
 		out.Recent[c] = slices.Clone(ts)
+	}
+	// A state saved before these maps existed has none: they are made here, so the
+	// first write after Restore does not panic.
+	out.Handled = maps.Clone(s.Handled)
+	if out.Handled == nil {
+		out.Handled = map[string]HandledAlarm{}
+	}
+	out.SirenReported = maps.Clone(s.SirenReported)
+	if out.SirenReported == nil {
+		out.SirenReported = map[string]time.Time{}
 	}
 	return out
 }

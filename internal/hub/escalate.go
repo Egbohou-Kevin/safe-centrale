@@ -117,6 +117,10 @@ func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []esc
 		case escalation.Throttled:
 			h.log.Warn("a message was held back: the contact already got the hourly maximum",
 				"incident", v.Incident, "contact", v.Contact, "channel", v.Channel)
+		case escalation.Withheld:
+			// A contact who only accepts calls gets nothing of such an alert: the trace.
+			h.log.Info("a call was not placed: the alarm is already handled",
+				"incident", v.Incident, "alarm", v.Alarm, "contact", v.Contact, "channel", v.Channel)
 		case escalation.Concluded:
 			h.log.Info("escalation over", "incident", v.Incident, "kind", v.Kind, "outcome", v.Outcome, "by", v.By)
 		}

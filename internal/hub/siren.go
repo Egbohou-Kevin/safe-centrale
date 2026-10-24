@@ -16,7 +16,8 @@ import (
 // never confirmed it, would leave the siren silent for the whole cycle: the hub sends
 // it again for what is left of the sounding, a few times at most per order. A siren
 // that still does not take it is reported to the contacts (siren_failed): the shop is
-// silent during an alarm.
+// silent during an alarm. The alert names that alarm, and the history says it too
+// (alarm.siren_failed).
 
 // sirenRetries is how many times one siren is sent the same order again.
 const sirenRetries = 3
@@ -114,8 +115,15 @@ func (h *Hub) retrySiren(now time.Time, sirenID string, ack contract.CommandAckD
 // the engine's loop.
 //
 // The alert is an incident of its own, like a tamper, not a part of the alarm's: an
-// acknowledgement of the intrusion must not end it, and the GSM gateway drops the
-// messages of an incident already acknowledged.
+// acknowledgement of the alarm must not end it, the GSM gateway drops the messages
+// of an incident already over, the cloud must not take it for a resend of the
+// alarm's first wave, and its incident_at is its own. It names the alarm it belongs
+// to, so that a phone already ringing for that alarm adds it there instead of
+// ringing again, and the escalation tells it without ringing once that alarm is
+// handled (docs/escalation.md, "Sirene muette pendant une alarme").
+//
+// The guard here is in memory: after a restart, the history's event may leave once
+// more, but the alert does not (the escalation keeps its own guard, saved).
 func (h *Hub) reportSilentSiren(now time.Time, sirenID string) {
 	alarm := ""
 	if inc := h.alarm.eng.Snapshot().Incident; inc != nil {
@@ -128,8 +136,12 @@ func (h *Hub) reportSilentSiren(now time.Time, sirenID string) {
 		h.alarm.sirenFailed = map[string]string{}
 	}
 	h.alarm.sirenFailed[sirenID] = alarm
+	if alarm != "" {
+		h.out.Send(srcEngine, contract.AlarmEventTopic(h.cfg.Site), contract.TypeAlarmSirenFailed,
+			contract.SirenFailedData{Incident: alarm, DeviceID: sirenID}, false, now)
+	}
 	h.escalate(escalation.Raise{
 		Now: now, Incident: h.deps.NewID(), Kind: escalation.KindSirenFailed,
-		Urgency: escalation.UrgencyHigh, Devices: []string{sirenID},
+		Urgency: escalation.UrgencyHigh, Devices: []string{sirenID}, Alarm: alarm,
 	})
 }

@@ -83,8 +83,16 @@ func (e *Escalation) resend(in *IncidentSnap, ct Contact, ch Channel, round *Rou
 	return e.send(in, ct, ch, round, at)
 }
 
-// send builds one message, unless the contact already got the hourly maximum.
+// send builds one message, unless the contact already got the hourly maximum. An
+// alert of an alarm already handled never rings anyone: its call is withheld, and
+// counts as used for the round so that it is reported once.
 func (e *Escalation) send(in *IncidentSnap, ct Contact, ch Channel, round *Round, at time.Time) []Action {
+	if in.Quiet && ch == ChannelCall {
+		if !slices.Contains(round.Sent, ch) {
+			round.Sent = append(round.Sent, ch)
+		}
+		return []Action{Withheld{Incident: in.ID, Alarm: in.Alarm, Contact: ct.ID, Channel: ch}}
+	}
 	if !e.allow(in.Kind, ct.ID, at) {
 		return []Action{Throttled{Incident: in.ID, Contact: ct.ID, Channel: ch}}
 	}
@@ -94,17 +102,24 @@ func (e *Escalation) send(in *IncidentSnap, ct Contact, ch Channel, round *Round
 	if !slices.Contains(round.Sent, ch) {
 		round.Sent = append(round.Sent, ch)
 	}
+	urgency := in.Urgency
+	if in.Quiet {
+		urgency = UrgencyLow // nothing is urgent any more; it decides nothing either
+	}
 	return []Action{Send{
-		Key: key, Incident: in.ID, RaisedAt: in.RaisedAt, Kind: in.Kind, Urgency: in.Urgency, Wave: round.Step + 1,
+		Key: key, Incident: in.ID, RaisedAt: in.RaisedAt, Kind: in.Kind, Urgency: urgency, Wave: round.Step + 1,
 		Contact: ct.ID, Channel: ch, Devices: slices.Clone(in.Devices), Percent: in.Percent,
-		Text: e.text(*in, ch),
+		Text: e.text(*in, ch), Alarm: in.Alarm, AlarmHandled: in.Quiet,
 	}}
 }
 
 // allow applies the hourly limit of one contact and counts the message when it
-// may go. Fire and panic are never held back, and do not count.
+// may go. Fire and panic are never held back, and do not count. Nor is a silent
+// siren: it is the one message that says the shop is silent, it must not be held
+// back by the alarm's own waves and reminders, and it is bounded on its own (one
+// wave, once per siren and per alarm).
 func (e *Escalation) allow(kind AlertKind, contact string, at time.Time) bool {
-	if kind == KindFire || kind == KindPanic {
+	if kind == KindFire || kind == KindPanic || kind == KindSirenFailed {
 		return true
 	}
 	var recent []time.Time

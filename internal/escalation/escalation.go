@@ -33,9 +33,7 @@ func New(cfg Config) (*Escalation, error) {
 	plans := DefaultPlans()
 	maps.Copy(plans, cfg.Plans)
 	cfg.Plans = plans
-	return &Escalation{cfg: cfg, s: Snapshot{
-		Incidents: map[string]IncidentSnap{}, Recent: map[string][]time.Time{},
-	}}, nil
+	return &Escalation{cfg: cfg, s: Snapshot{}.clone()}, nil
 }
 
 // Snapshot returns a copy of the current state.

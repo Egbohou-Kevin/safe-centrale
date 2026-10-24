@@ -216,6 +216,11 @@ Là où le document laissait un doute :
   compte que s'il vient d'un contact du site, comme pour l'escalade : tous ceux de la
   configuration venue du cloud, même sans numéro ; à défaut, ceux qui ont un numéro.
   Un acquittement d'un inconnu ne coupe pas le secours SMS.
+  L'alerte d'une sirène muette (`siren_failed`) a son propre incident : la fin de
+  l'alarme qu'elle nomme (`alarm_incident`) ne jette pas ses messages. Une fois l'alarme
+  prise en charge, l'escalade ne demande plus pour elle que des SMS, jamais d'appel
+  (`alarm_handled`, voir `escalation.md`, « Sirène muette pendant une alarme ») : la
+  passerelle n'a rien de plus à faire, et sa priorité vient toujours du genre.
 - **Une ligne en échec** : on essaie l'autre ligne avant de signaler l'échec. Pas de
   crédit (`no_credit`) marque la ligne `credit: "empty"` jusqu'au prochain envoi réussi ;
   pas de réseau la marque non enregistrée jusqu'à la vérification suivante.

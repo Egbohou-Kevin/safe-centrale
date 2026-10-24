@@ -166,3 +166,34 @@ func TestTheSirenTextNamesTheSirenAndSaysTheAlarmIsSilent(t *testing.T) {
 		}
 	}
 }
+
+// Once the alarm is handled, the siren's alert says what happened and that the alarm
+// is handled (or was stopped), and asks for nothing: no "Repondre 1", even by SMS.
+// That sentence is kept whole when the text is cut.
+func TestTheQuietSirenTextSaysTheAlarmIsHandled(t *testing.T) {
+	for _, long := range []bool{false, true} {
+		for ending, handle := range map[string]Input{
+			"L'alarme est deja prise en charge.": Ack{Now: t0, Incident: "x", Contact: "owner"},
+			"L'alarme a ete arretee.":            Close{Now: t0, Incident: "x"},
+		} {
+			e := newEsc(t, func(c *Config) {
+				if long {
+					c.SiteName = strings.Repeat("Grande Boutique ", 8)
+				}
+			})
+			e.Handle(handle)
+			out := e.Handle(Raise{Now: t0, Incident: "y", Kind: KindSirenFailed, Urgency: UrgencyHigh, Devices: []string{"dev_siren1"}, Alarm: "x"})
+			out = append(out, tick(e, t0.Add(time.Hour))...)
+			for _, ch := range []Channel{ChannelApp, ChannelSMS} {
+				text := textOf(t, out, ch)
+				checkText(t, text)
+				if !strings.HasSuffix(text, " "+ending) || strings.Contains(text, "Repondre") || strings.Contains(text, "ALERTE") {
+					t.Errorf("%s: %q", ch, text)
+				}
+				if !long && !strings.Contains(text, "la sirene (dev_siren1) n'a pas sonne a 21:04.") {
+					t.Errorf("%s: %q does not name the siren", ch, text)
+				}
+			}
+		}
+	}
+}

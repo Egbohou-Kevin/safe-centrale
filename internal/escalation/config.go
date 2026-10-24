@@ -105,7 +105,7 @@ type Config struct {
 	// message.
 	GSMDelay time.Duration
 	// MaxPerHour is the most messages one contact gets per hour, to limit cost and
-	// noise. Fire and panic are exempt.
+	// noise. Fire, panic and a silent siren are exempt.
 	MaxPerHour int
 }
 
@@ -146,7 +146,10 @@ func DefaultPlans() map[AlertKind]Plan {
 		// The sensors cannot be heard: the alarm is blind, the SMS still works.
 		KindZigbeeDown: oneFirst,
 		// The siren is silent during an alarm: the guard, who can go and look, is
-		// told with the first contact. The alarm's own plan goes on beside it.
+		// told with the first contact, once, under an incident of its own that names
+		// the alarm. Before anyone handles the alarm, it is doubled by SMS and call
+		// like the alarm, whose own plan goes on beside it and insists. Once the
+		// alarm is handled, it is told without ringing (see quiet.go).
 		KindSirenFailed: {Waves: []Wave{{To: []Audience{AudienceFirst, AudienceGuard}, Double: true}}},
 	}
 }

@@ -74,7 +74,8 @@ func Zone(loc *time.Location) string {
 // Request turns a message to send into an alert.request payload, addressed to one
 // contact through one channel. loc is the site's time zone, nil for UTC: with the
 // time the incident was raised, it lets whoever shows the message say the site's
-// own hour.
+// own hour. An alert that is part of an alarm under way names it, and says when
+// that alarm is already handled (never without naming it, as the schema requires).
 func Request(s escalation.Send, loc *time.Location) (contract.AlertRequestData, error) {
 	kind, ok := kinds[s.Kind]
 	if !ok {
@@ -91,6 +92,7 @@ func Request(s escalation.Send, loc *time.Location) (contract.AlertRequestData, 
 	return contract.AlertRequestData{
 		Incident: s.Incident, IncidentAt: contract.TS(s.RaisedAt), Zone: Zone(loc), Kind: kind, Urgency: urgency, Percent: s.Percent, Devices: s.Devices,
 		Wave: s.Wave, Contact: s.Contact, Channel: channel, Text: s.Text,
+		AlarmIncident: s.Alarm, AlarmHandled: s.AlarmHandled && s.Alarm != "",
 	}, nil
 }
 

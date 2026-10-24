@@ -16,9 +16,16 @@ func (e *Escalation) raise(r Raise) {
 		e.s.Incidents[key] = in
 		return
 	}
+	if r.Alarm != "" {
+		e.forget(r.Now)
+		if r.Kind == KindSirenFailed && !e.firstReport(r) {
+			return
+		}
+	}
 	e.s.Incidents[key] = IncidentSnap{
 		ID: r.Incident, Kind: r.Kind, Urgency: r.Urgency,
 		Devices: unionSorted(nil, r.Devices), Percent: r.Percent, RaisedAt: r.Now,
+		Alarm: r.Alarm, Quiet: e.quietFor(r.Alarm),
 		NextAt: r.Now.Add(e.cfg.Plans[r.Kind].stepAt(0)),
 		Rounds: map[string]Round{}, Deliveries: map[uint64]Delivery{},
 	}
@@ -94,6 +101,12 @@ func (e *Escalation) run(in *IncidentSnap, ev event) []Action {
 	case evGSM:
 		r.GSMDue = time.Time{}
 		useGSM = !e.plan(*in).InternetOnly || !r.NetOK
+		if in.Quiet {
+			// Nobody is insisted on for an alarm already handled: the GSM only carries
+			// the fact to a phone that did not say it got it ("sent" is only the cloud
+			// handing it over).
+			useGSM = !roundDelivered(*in, ev.contact, r.Step)
+		}
 	}
 	in.Rounds[ev.contact] = r
 	if !useGSM {
@@ -147,6 +160,9 @@ func (e *Escalation) runStep(in *IncidentSnap, at time.Time) []Action {
 			in.WaveContacts = append(in.WaveContacts, ct.ID)
 			out = append(out, e.notify(in, ct, step, wave, at)...)
 		}
+		if in.Quiet {
+			in.NextAt = time.Time{} // told once: no wave after it, no reminder
+		}
 		return out
 	}
 	return nil
@@ -181,6 +197,9 @@ func (e *Escalation) finishIfDone(key string) []Action {
 		if !r.NetDeadline.IsZero() || !r.GSMDue.IsZero() || r.NetHeld {
 			return nil
 		}
+	}
+	if in.Quiet {
+		return e.conclude(key, OutcomeInformed, "")
 	}
 	return e.conclude(key, OutcomeUnanswered, "")
 }
