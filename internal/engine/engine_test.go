@@ -192,6 +192,69 @@ func TestState(t *testing.T) {
 	}
 }
 
+// sirenAt is where the published state of a triggered alarm says the siren schedule
+// stands: cycle, in a cycle or in the pause, and when that ends (since the alarm).
+type sirenAt struct {
+	cycle  int
+	on     bool
+	endsAt time.Duration
+}
+
+// mustRing checks that the state names the incident and stands where want says.
+func (h *harness) mustRing(inc string, start time.Time, want sirenAt) {
+	h.t.Helper()
+	s := h.e.State(h.now)
+	if s.Mode != ModeTriggered || s.Incident != inc || s.Cycle != want.cycle || s.Of != h.cfg.SirenCycles ||
+		s.SirenOn != want.on || !s.EndsAt.Equal(start.Add(want.endsAt)) {
+		h.t.Fatalf("%v after the alarm, want %+v of %s: %+v", h.now.Sub(start), want, inc, s)
+	}
+}
+
+// While triggered, the published state names the incident that is ringing, says
+// whether the siren is in a cycle or in the pause between two, and until when: the
+// schedule's own times, which a late tick does not move.
+func TestStateFollowsTheSirenSchedule(t *testing.T) {
+	h := newHarness(t)
+	h.armed()
+	start := h.now
+	inc := onlyEvent[Triggered](t, h.breakWindow()).Incident
+	for _, s := range []struct {
+		after time.Duration // since the alarm
+		want  sirenAt
+	}{
+		{0, sirenAt{1, true, 5 * time.Minute}},
+		{4 * time.Minute, sirenAt{1, true, 5 * time.Minute}},
+		{5*time.Minute + 30*time.Second, sirenAt{1, false, 7 * time.Minute}}, // a late tick: the pause still ends at 7
+		{7 * time.Minute, sirenAt{2, true, 12 * time.Minute}},
+		{12 * time.Minute, sirenAt{2, false, 14 * time.Minute}},
+		{14 * time.Minute, sirenAt{3, true, 19 * time.Minute}}, // the last cycle
+	} {
+		h.now = start.Add(s.after)
+		h.e.Handle(Tick{Now: h.now})
+		h.mustRing(inc, start, s.want)
+	}
+
+	// The last cycle over, so is the incident: the state says nothing of it any more.
+	h.advance(5 * time.Minute)
+	if s := h.e.State(h.now); s.Mode != ModeArmed || s.Incident != "" || s.SirenOn || s.Cycle != 0 || !s.EndsAt.IsZero() {
+		t.Fatalf("after the last cycle: %+v", s)
+	}
+}
+
+// A person ending the alarm ends what the state says of it, in the pause too.
+func TestStateForgetsTheSirenOnceTheAlarmIsStopped(t *testing.T) {
+	for _, name := range []CommandName{CmdDisarm, CmdSilence} {
+		h := newHarness(t)
+		h.armed()
+		h.breakWindow()
+		h.advance(6 * time.Minute) // in the pause
+		h.cmd(name, goodCode("u_owner"))
+		if s := h.e.State(h.now); s.Mode == ModeTriggered || s.Incident != "" || s.SirenOn || s.Cycle != 0 || !s.EndsAt.IsZero() {
+			t.Fatalf("%s: %+v", name, s)
+		}
+	}
+}
+
 // --- configuration ---------------------------------------------------------
 
 func TestConfigValidation(t *testing.T) {

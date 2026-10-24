@@ -177,6 +177,12 @@ Les alertes continuent de suivre leur escalade pendant ce temps.
 Un désarmement ou une coupure de sirène avec un code valide arrête tout
 immédiatement.
 
+L'état publié (`alarm.state`) suit ce programme : en `triggered`, il nomme l'incident
+qui sonne, dit si la sirène est dans un cycle (`siren` à `on`) ou dans la pause
+(`paused`), et jusqu'à quand (`ends_at`, voir `contract.md`). Ce sont les heures du
+programme : un tic en retard ne les décale pas, et un redémarrage non plus (l'échéance
+est dans l'état sauvegardé, et `Boot` rejoue à leur heure les étapes manquées).
+
 Quand la sirène s'arrête seule, l'alarme n'est pas finie pour les contacts : son
 escalade continue. Le moteur retient les intrusions et les sabotages de l'armement
 en cours dont la sirène s'est arrêtée seule (dans son état sauvegardé, donc après un

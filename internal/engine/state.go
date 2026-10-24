@@ -101,10 +101,18 @@ func newSnapshot(now time.Time) Snapshot {
 
 // State is the public summary of the engine, meant to be published.
 type State struct {
-	Mode        Mode
-	Since       time.Time
-	EndsAt      time.Time // end of the exit or entry delay, zero otherwise
-	Cycle       int       // current siren cycle while triggered
+	Mode  Mode
+	Since time.Time
+	// EndsAt is the end of the exit or entry delay, or while triggered the end of the
+	// siren cycle or of the pause under way; zero otherwise.
+	EndsAt time.Time
+	// While triggered: the incident that is ringing, and where its siren schedule
+	// stands. SirenOn is the schedule, not the siren itself: false during the pause
+	// between two cycles, and true for a silent siren too (the engine knows nothing
+	// of it).
+	Incident    string
+	SirenOn     bool
+	Cycle       int       // current siren cycle, starting at 1
 	Of          int       // number of siren cycles
 	LockedUntil time.Time // zero unless disarming is locked
 
