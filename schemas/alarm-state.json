@@ -23,7 +23,20 @@
     "ends_at": {
       "type": "string",
       "format": "date-time",
-      "description": "UTC, à la milliseconde"
+      "description": "UTC, à la milliseconde. Fin du délai (arming, entry_delay) ; triggered : fin du cycle de sirène si siren est on, fin de la pause si paused"
+    },
+    "incident": {
+      "type": "string",
+      "minLength": 1,
+      "description": "triggered : l'incident qui sonne, celui d'alarm.triggered et d'alert.request"
+    },
+    "siren": {
+      "type": "string",
+      "enum": [
+        "on",
+        "paused"
+      ],
+      "description": "triggered : on pendant un cycle de sirène, paused pendant la pause entre deux cycles. Le programme du moteur, pas la sirène elle-même : une sirène muette se dit par alarm.siren_failed"
     },
     "cycle": {
       "type": "integer"
@@ -45,5 +58,18 @@
   "required": [
     "state",
     "since"
+  ],
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "const": "triggered" } } },
+      "then": {
+        "dependentRequired": {
+          "incident": ["siren", "ends_at"],
+          "siren": ["incident", "ends_at"],
+          "ends_at": ["incident", "siren"]
+        }
+      },
+      "else": { "not": { "anyOf": [ { "required": ["incident"] }, { "required": ["siren"] } ] } }
+    }
   ]
 }

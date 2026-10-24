@@ -178,3 +178,43 @@ func TestANewBootGetsANewBootID(t *testing.T) {
 		t.Fatal("a restart is a new boot: the cloud tells restarts apart from silence by it")
 	}
 }
+
+// --- the retained alarm state ------------------------------------------------------
+
+// stateOf is the last retained alarm state the hub published.
+func stateOf(r *rig) contract.AlarmStateData {
+	st := r.broker.On(contract.AlarmStateTopic(site))
+	return dataOf[contract.AlarmStateData](r.t, st[len(st)-1])
+}
+
+// The retained state follows the siren's schedule, into the pause between two cycles
+// too: the app says from it where the alarm stands. A restart says it again, on the
+// same schedule.
+func TestTheRetainedStateFollowsTheSiren(t *testing.T) {
+	first := newRig(t, nil)
+	first.start()
+	trigger(first) // at t0+2m: cycle 1 until +7m, pause until +9m, cycle 2 until +14m
+	alarm := dataOf[contract.TriggeredData](t, eventsOf(first, contract.TypeAlarmTriggered)[0]).Incident
+	at := func(r *rig, siren string, cycle int, ends time.Duration) {
+		t.Helper()
+		drivertest.WaitFor(t, "the state "+siren+" in cycle "+itoa(cycle), func() bool {
+			r.settle()
+			d := stateOf(r)
+			return d.Siren == siren && d.Cycle == cycle
+		})
+		if d := stateOf(r); d.State != contract.StateTriggered || d.Incident != alarm || d.Of != 3 || d.EndsAt == nil || !d.EndsAt.Equal(t0.Add(ends)) {
+			t.Fatalf("%+v", d)
+		}
+	}
+	at(first, contract.SirenOn, 1, 7*time.Minute)
+	first.clock.Advance(5 * time.Minute)
+	at(first, contract.SirenPaused, 1, 9*time.Minute)
+	first.validateAll()
+	first.stop()
+
+	second := newRig(t, first.store)
+	second.clock.Advance(10 * time.Minute) // in cycle 2
+	second.start()
+	at(second, contract.SirenOn, 2, 14*time.Minute)
+	second.validateAll()
+}

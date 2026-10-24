@@ -378,9 +378,22 @@ de partir.
 
 `alarm.state` (retenu) contient l'état courant : `disarmed`, `arming`, `armed`,
 `entry_delay`, `triggered`. Il porte aussi `since`, et selon l'état :
-`ends_at` (arming, entry_delay), `cycle` et `of` (triggered), `locked_until`
-(si le désarmement est verrouillé), `next_scheduled` (prochain armement
-automatique).
+`ends_at` (arming, entry_delay, triggered), `cycle` et `of` (triggered),
+`incident` et `siren` (triggered), `locked_until` (si le désarmement est
+verrouillé), `next_scheduled` (prochain armement automatique).
+
+En `triggered`, l'état dit où en est l'alarme qui sonne : `incident` (l'incident qui
+sonne, celui d'`alarm.triggered` et d'`alert.request`), `siren` (`on` pendant un cycle
+de sirène, `paused` pendant la pause entre deux cycles) et `ends_at` (la fin du cycle
+en cours si `siren` est `on`, la fin de la pause si `paused`). Les trois vont ensemble,
+et seulement en `triggered` (`allOf` dans le schéma) ; une centrale antérieure au
+25 octobre 2026 n'en envoie aucun. Chaque étape du programme (fin d'un cycle, fin
+d'une pause) republie `alarm.state` : l'application dit « La sirène sonne (2/3) » ou
+« En pause, reprend à 16:20 » sans autre événement. `siren` est le programme du
+moteur, pas la sirène elle-même : une sirène muette se dit par `alarm.siren_failed`,
+et `siren` reste `on`. Les heures sont celles du programme : un redémarrage de la
+centrale en pleine alarme ne les décale pas (l'échéance est sauvegardée avec l'état du
+moteur, voir `engine.md`).
 
 ### Alertes (`alert.*`)
 
@@ -763,6 +776,16 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **25 octobre 2026, la sirène dans l'état** : `alarm.state` en `triggered` porte
+  trois champs facultatifs, tous ou aucun : `incident` (l'incident qui sonne), `siren`
+  (`on` pendant un cycle, `paused` pendant la pause) et `ends_at` (la fin du cycle ou
+  de la pause en cours), jamais dans un autre état (`allOf` dans le schéma, voir
+  « Événements d'alarme »). Pour la carte d'alarme de l'application : « La sirène
+  sonne (2/3) », « En pause, reprend à 16:20 ». Aucun nouvel événement : chaque étape
+  du programme de la sirène republiait déjà `alarm.state`. Un cloud qui ne connaît
+  pas encore ces champs les accepte (un champ inconnu est permis), et un cloud à jour
+  accepte l'état d'une centrale antérieure, qui n'en porte aucun : l'ordre de mise à
+  jour est libre.
 - **24 octobre 2026, la sirène muette** : `alert.request` porte deux champs
   facultatifs, `alarm_incident` (l'alarme en cours dont l'alerte fait partie) et
   `alarm_handled` (cette alarme est déjà prise en charge : l'alerte se dit sans faire

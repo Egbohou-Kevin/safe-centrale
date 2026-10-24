@@ -112,10 +112,22 @@ func TestStateData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if locked.Cycle != 2 || locked.Of != 3 || locked.LockedUntil == nil {
+	if locked.Cycle != 2 || locked.Of != 3 || locked.LockedUntil == nil || locked.Incident != "" || locked.Siren != "" {
 		t.Fatalf("%+v", locked)
 	}
 	schematest.Validate(t, "alarm-state.json", locked)
+
+	// A ringing alarm says its incident, and whether its siren is in a cycle or paused.
+	for on, siren := range map[bool]string{true: contract.SirenOn, false: contract.SirenPaused} {
+		got, err := StateData(engine.State{Mode: engine.ModeTriggered, Since: t0, EndsAt: ends, Incident: "inc-1", SirenOn: on, Cycle: 1, Of: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Incident != "inc-1" || got.Siren != siren || got.EndsAt == nil || !got.EndsAt.Equal(ends) {
+			t.Fatalf("%+v", got)
+		}
+		schematest.Validate(t, "alarm-state.json", got)
+	}
 
 	if _, err := StateData(engine.State{Mode: "asleep"}); err == nil {
 		t.Fatal("an unknown mode must be an error")

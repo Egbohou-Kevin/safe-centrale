@@ -176,11 +176,17 @@ type PostponedData struct {
 	Max          int       `json:"max"`
 }
 
-// AlarmStateData: alarm.state, published retained.
+// AlarmStateData: alarm.state, published retained. While triggered, Incident names
+// the incident that is ringing, Siren says whether its schedule is in a cycle
+// (SirenOn) or in the pause between two (SirenPaused), and EndsAt when that cycle or
+// pause ends. Siren is the engine's schedule, not the siren itself: a silent siren is
+// told by alarm.siren_failed.
 type AlarmStateData struct {
 	State         string     `json:"state"`
 	Since         Timestamp  `json:"since"`
 	EndsAt        *Timestamp `json:"ends_at,omitempty"`
+	Incident      string     `json:"incident,omitempty"`
+	Siren         string     `json:"siren,omitempty"`
 	Cycle         int        `json:"cycle,omitempty"`
 	Of            int        `json:"of,omitempty"`
 	LockedUntil   *Timestamp `json:"locked_until,omitempty"`
