@@ -211,6 +211,10 @@ func Build(base string, a zigbee.Action) (Message, bool, error) {
 			req["transaction"] = v.Txn
 		}
 		topic, body = base+"/bridge/request/permit_join", req
+	case zigbee.CarriesCode:
+		// A device option, kept by Zigbee2MQTT in its configuration and read at each
+		// message: its messages go out at QoS 0, over device_options' QoS 1.
+		topic, body = base+"/bridge/request/device/options", map[string]any{"id": v.IEEE, "options": map[string]any{"qos": 0}}
 	case zigbee.Rename:
 		topic, body = base+"/bridge/request/device/rename", map[string]any{"from": v.IEEE, "to": v.To}
 	case zigbee.Expel:

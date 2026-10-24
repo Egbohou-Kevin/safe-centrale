@@ -276,7 +276,7 @@ retenu par capacité.
   démarrage (aucun événement), appareil muet puis de retour, commande de sirène
   confirmée, non confirmée avec nouvelles tentatives, appairage réussi, appairage
   d'un modèle inconnu, ouverture refusée, réponse d'une autre demande ignorée,
-  ouverture jamais confirmée, retrait, pont arrêté.
+  ouverture jamais confirmée, clavier passé en QoS 0, retrait, pont arrêté.
 - Ensuite, tests avec les vrais appareils du kit, pour valider chaque profil.
 
 ## Décidé
@@ -316,10 +316,32 @@ Choix faits au codage :
   moment, jamais plus tard que maintenant, et l'événement publié porte cette heure.
   Une touche gardée par le broker pendant une coupure de l'adaptateur arrive donc
   avec son âge réel, et la centrale la laisse expirer. Sans `last_seen`, c'est l'heure
-  d'arrivée qui compte. Ce message de Zigbee2MQTT peut donc attendre dans le broker,
-  code compris (voir `systeme.md`, « Limites connues »). L'adaptateur, lui, publie
-  l'événement du clavier qui porte un code en QoS 0 : le broker ne le garde ni pour la
-  centrale ni pour l'agent absents.
+  d'arrivée qui compte. Les claviers font exception : Zigbee2MQTT publie leurs
+  messages en QoS 0 (voir « Clavier : QoS 0 »), et le broker n'en garde aucun.
+  L'adaptateur, lui, publie l'événement du clavier qui porte un code en QoS 0 : le
+  broker ne le garde ni pour la centrale ni pour l'agent absents.
+- **Clavier : QoS 0** : les séquences d'un clavier portent le code d'accès en clair
+  (`action_code`). En QoS 1, Mosquitto garderait pour l'adaptateur absent (un
+  redémarrage) le message de Zigbee2MQTT, code compris, et pourrait l'écrire dans
+  `mosquitto.db`. Zigbee2MQTT publie donc les messages des claviers en QoS 0 : à
+  l'appairage d'un appareil dont le profil lit un code (une capacité avec `code_from`),
+  l'adaptateur lui pose l'option d'appareil `qos: 0` par
+  `bridge/request/device/options` (`{"id": "<adresse>", "options": {"qos": 0}}`).
+  Zigbee2MQTT la garde dans sa configuration (section `devices:`), elle passe devant
+  `device_options` (`qos: 1`) et vaut dès le message suivant, sans redémarrage.
+  L'adaptateur la redemande à chaque fois que Zigbee2MQTT passe en ligne, donc aussi à chaque
+  démarrage : un clavier appairé avant, ou une configuration de Zigbee2MQTT restaurée
+  d'une sauvegarde, la retrouve. Un refus est journalisé (« Zigbee2MQTT refused a
+  request », `device/options`).
+  Pourquoi ainsi : une section `devices:` écrite à la main dans
+  `deploy/zigbee2mqtt/configuration.yaml` demanderait l'adresse du clavier avant son
+  appairage, et un oubli ne se verrait pas ; `qos: 0` pour tous les appareils perdrait
+  une porte ouverte pendant un redémarrage de l'adaptateur. Le profil le dit par
+  `code_from`, déjà là, plutôt que par un drapeau à part qui pourrait le contredire.
+  Le prix : tout message du clavier est en QoS 0, pas seulement les codes. Une touche,
+  un sabotage ou un appui sur « urgence » du clavier pendant les quelques secondes où
+  l'adaptateur redémarre est perdu (comme un code envoyé à la centrale qui redémarre,
+  `systeme.md`) ; l'état du sabotage revient au message suivant du clavier.
 - **Présence** : l'heure du dernier message n'est pas sauvegardée (elle change à
   chaque message et userait la carte SD). Après un redémarrage, le silence de chaque
   appareil compte à partir de ce moment.
@@ -374,8 +396,12 @@ Constaté sur le matériel (essai du 24 octobre 2026, Zigbee2MQTT 2.14.2 sur Nod
   particulier le format de `bridge/state`. `permit_join` (l'adaptateur envoie `value`
   et `time` pour couvrir les versions 1 et 2) est vérifié avec la version 2.14.2 : elle
   lit `time` et refuse plus de 254 secondes. La `transaction` recopiée dans la réponse
-  (ok ou erreur) est lue dans le code de Zigbee2MQTT 2.x (`lib/util/utils.ts`,
-  `lib/extension/bridge.ts`), pas encore vue sur le kit.
+  (ok ou erreur) et l'option d'appareil `qos` (lue à chaque message, sans redémarrage)
+  sont lues dans le code de Zigbee2MQTT 2.x (`lib/util/utils.ts`,
+  `lib/extension/bridge.ts`, `lib/controller.ts`), pas encore vues sur le kit : à
+  vérifier avec un vrai clavier (après l'appairage, la section `devices:` de la
+  configuration de Zigbee2MQTT porte `qos: 0`, et
+  `mosquitto_sub -d -q 1 -t 'zigbee2mqtt/<id du clavier>'` montre ses messages en `q0`).
 - Chaque profil de `config/profiles/` hors MCCGQ11LM : modèles, champs, valeurs
   (notamment les touches du clavier et la commande de la sirène, qui ne rapporte
   peut-être pas son état).

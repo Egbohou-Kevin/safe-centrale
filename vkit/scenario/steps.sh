@@ -66,6 +66,10 @@ step_install() {
 	zigbee send $SMOKE '{"smoke":false,"tamper":false,"battery":95,"linkquality":200}'
 	zigbee send $KEYPAD '{"tamper":false,"battery":95,"linkquality":200}'
 	sleep 2
+	# The keypad's messages carry the code: Zigbee2MQTT sends them at QoS 0.
+	expect vkit-z2m 'request device/options .*"qos":0' 5 "the keypad is set to QoS 0 in Zigbee2MQTT"
+	expect vkit-z2m "REPORT $(device_id develco.keypad) qos 0" 5 "the keypad reports at QoS 0"
+
 	say "pairing while Zigbee2MQTT answers nothing"
 	zigbee answers off
 	if $INSTALL pair $HUBCONF -for 20s >/tmp/vkit-pair-stuck.log 2>&1; then

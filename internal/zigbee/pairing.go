@@ -132,7 +132,11 @@ func (n *Network) interviewed(i Interviewed) []Action {
 	d := Device{ID: id, IEEE: i.IEEE, Model: i.Model, Profile: p.Name, Capabilities: p.capabilities()}
 	n.s.Devices[id] = d
 	n.seen[id] = i.Now
-	return []Action{Rename{IEEE: i.IEEE, To: id}, Added{Ref: n.s.PairRef, Device: d}, RegistryChanged{Devices: n.Devices()}}
+	out := []Action{Rename{IEEE: i.IEEE, To: id}}
+	if p.carriesCode() {
+		out = append(out, CarriesCode{IEEE: i.IEEE})
+	}
+	return append(out, Added{Ref: n.s.PairRef, Device: d}, RegistryChanged{Devices: n.Devices()})
 }
 
 // freshID asks newID for an id never given before, a bounded number of times.

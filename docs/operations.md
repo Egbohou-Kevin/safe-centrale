@@ -285,7 +285,9 @@ Zigbee2MQTT doit dater chaque message (`last_seen: ISO_8601` sous `advanced:`, d
 dans `deploy/zigbee2mqtt/configuration.yaml`). Sans cela, une touche du clavier gardée
 par le broker pendant une coupure de l'adaptateur est datée de son arrivée, et peut
 encore désarmer (`adapter-zigbee.md`, « QoS »). `deploy/install.sh` ne pose ce fichier
-que la première fois.
+que la première fois. Zigbee2MQTT y ajoute lui-même, sous `devices:`, `qos: 0` pour
+chaque clavier : c'est l'adaptateur qui le lui demande (`adapter-zigbee.md`,
+« Clavier : QoS 0 »), il ne faut pas l'enlever.
 
 Appairer un appareil se fait localement, par un message `registry.pair` sur
 `safehome/{site}/registry/cmd` (le cloud ne peut pas y écrire) : c'est le rôle de

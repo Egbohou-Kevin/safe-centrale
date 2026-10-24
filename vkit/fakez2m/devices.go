@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"strings"
 	"time"
 )
@@ -59,10 +60,15 @@ func (z *bridge) report(ieee, raw string) error {
 	fields["last_seen"] = time.Now().UTC().Format(time.RFC3339)
 	z.mu.Lock()
 	name, ok := z.names[ieee]
+	qos, set := z.qos[ieee]
 	z.mu.Unlock()
 	if !ok {
 		name = ieee // not renamed (yet): Zigbee2MQTT uses the address
 	}
-	z.publish(name, fields, false)
+	if !set {
+		qos = 1 // device_options
+	}
+	log.Printf("REPORT %s qos %d", name, qos)
+	z.publishQoS(name, fields, qos, false)
 	return nil
 }

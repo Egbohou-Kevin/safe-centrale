@@ -200,8 +200,12 @@ garde aucun : l'ordre de l'application que l'agent republie sur `alarm/cmd`, et 
 séquence d'un clavier avec son code sur `device/+/event` (les autres événements du
 clavier, comme l'armement, restent en QoS 1). Le prix : un code tapé ou envoyé
 pendant les quelques secondes où la centrale redémarre est perdu, et se redonne ; il
-aurait expiré au bout d'une minute de toute façon. `queue_qos0_messages false` est
-écrit dans le fichier (c'est la valeur par défaut) et vérifié par `go test ./deploy`.
+aurait expiré au bout d'une minute de toute façon. En amont, Zigbee2MQTT publie lui
+aussi les messages des claviers en QoS 0 : l'adaptateur Zigbee lui pose l'option
+d'appareil `qos: 0` à l'appairage de chaque clavier, et de nouveau à chaque démarrage
+(`adapter-zigbee.md`, « Clavier : QoS 0 ») ; les autres appareils restent en QoS 1.
+`queue_qos0_messages false` est écrit dans le fichier (c'est la valeur par défaut) et
+vérifié par `go test ./deploy`.
 
 ### 7. Utilisateur et programmes safeHome
 
@@ -549,17 +553,15 @@ se changent à tout moment.
   (`zigbee_down`).
 - L'agrandissement de la racine, l'option `recurse=0` et le module RTC sont **à
   valider** sur le kit d'essai.
-- Le code d'un clavier peut encore attendre dans `mosquitto.db` sur un tronçon : de
-  Zigbee2MQTT à l'adaptateur Zigbee. Zigbee2MQTT publie les messages des appareils en
-  QoS 1 (`device_options` de `deploy/zigbee2mqtt/configuration.yaml`), pour qu'une
-  porte ouverte pendant un redémarrage de l'adaptateur ne soit pas perdue ; le
-  message du clavier (`action_code`) est gardé de même. Le passer en QoS 0 pour tous
-  les appareils perdrait ces ouvertures. La parade recommandée : un réglage par
-  appareil, `qos: 0` pour les claviers seulement, que l'adaptateur poserait à
-  l'appairage par l'API de Zigbee2MQTT (`bridge/request/device/options`). **À faire et
-  à valider** sur le kit d'essai avec un vrai clavier ; d'ici là, l'exposition se
-  limite à un code tapé pendant un arrêt de l'adaptateur Zigbee, sur la carte SD de
-  la centrale elle-même.
+- Les messages d'un clavier partent de Zigbee2MQTT en QoS 0 (option d'appareil
+  posée par l'adaptateur, `adapter-zigbee.md`, « Clavier : QoS 0 ») : une touche, un
+  sabotage ou un appui sur « urgence » du clavier pendant les quelques secondes où
+  l'adaptateur Zigbee redémarre est perdu. Les autres appareils restent en QoS 1.
+  Codé et vérifié avec le faux Zigbee2MQTT du kit virtuel ; **à valider** sur le kit
+  d'essai avec un vrai clavier. Si Zigbee2MQTT refusait l'option (journal de
+  `safehome-zigbee` : « Zigbee2MQTT refused a request », `device/options`), le code
+  d'un clavier pourrait encore attendre dans `mosquitto.db`, sur la carte SD de la
+  centrale elle-même, le temps d'un arrêt de l'adaptateur.
 - La console locale n'a pas encore tourné sur un vrai Pi. À vérifier : NetworkManager
   et `dnsmasq-base` (mode « partagé ») présents sur Raspberry Pi OS Lite, la règle
   polkit, la portée du réseau.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -132,6 +133,25 @@ func TestAnOpeningZigbee2MQTTNeverConfirmsIsAFailure(t *testing.T) {
 		}
 	}
 	r.validateAll()
+}
+
+// A keypad's key sequences carry the access code: Zigbee2MQTT is asked to publish
+// its messages at QoS 0 (a device option), so that the broker keeps none for the
+// adapter away. Asked at pairing, and again each time Zigbee2MQTT comes online.
+func TestAKeypadIsPublishedAtQoS0ByZigbee2MQTT(t *testing.T) {
+	r := newRig(t, nil)
+	r.pair("dev_door", "0x01", "MCCGQ11LM")
+	r.pair("dev_kp", "0x03", "KP-1")
+	r.settle()
+	want := []map[string]any{{"id": "0x03", "options": map[string]any{"qos": 0.0}}}
+	if got := r.rawOn("bridge/request/device/options"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%+v", got)
+	}
+	r.z2m("bridge/state", `{"state":"online"}`, true)
+	drivertest.WaitFor(t, "asked again", func() bool { return len(r.rawOn("bridge/request/device/options")) == 2 })
+	if got := r.rawOn("bridge/request/device/options")[1]; !reflect.DeepEqual(got, want[0]) {
+		t.Fatalf("%+v", got)
+	}
 }
 
 func TestAStopClosesTheNetworkAndAStartOpensItAgain(t *testing.T) {

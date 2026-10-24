@@ -152,6 +152,9 @@ type Network struct {
 	byModel map[string]Profile
 	s       Snapshot
 	seen    map[string]time.Time // when each device last spoke
+	// coded: Zigbee2MQTT was told, since it last came online, which devices carry
+	// a code. Not saved: it is told again after each start.
+	coded bool
 }
 
 // New creates the core. newID proposes device ids (for example "dev_k7p2"); one
@@ -211,6 +214,7 @@ func (n *Network) Restore(s Snapshot) {
 	}
 	n.s = s
 	n.seen = map[string]time.Time{}
+	n.coded = false
 }
 
 // Devices lists the registry, sorted by id.
@@ -279,7 +283,7 @@ func (n *Network) Handle(in Input) []Action {
 	case Report:
 		out = n.report(v)
 	case Bridge:
-		n.s.Bridge = v.Online
+		out = n.bridge(v)
 	case Interviewed:
 		out = n.interviewed(v)
 	case Left:
@@ -302,6 +306,28 @@ func (n *Network) due(now time.Time) []Action {
 	out := n.pairingDue(now)
 	out = append(out, n.retryPending(now)...)
 	return append(out, n.markSilent(now)...)
+}
+
+// bridge follows Zigbee2MQTT's state. Each time it comes online, it is told again
+// which devices carry a code: a keypad paired before, or a configuration of
+// Zigbee2MQTT restored from a backup, gets its setting back.
+func (n *Network) bridge(b Bridge) []Action {
+	n.s.Bridge = b.Online
+	if !b.Online {
+		n.coded = false
+		return nil
+	}
+	if n.coded {
+		return nil
+	}
+	n.coded = true
+	var out []Action
+	for _, d := range n.Devices() {
+		if n.byName[d.Profile].carriesCode() {
+			out = append(out, CarriesCode{IEEE: d.IEEE})
+		}
+	}
+	return out
 }
 
 // resolve finds a device by its name in Zigbee2MQTT: its id once renamed, its IEEE

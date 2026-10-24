@@ -50,6 +50,9 @@ func (a *App) dispatchOne(now time.Time, act zigbee.Action) error {
 		return a.publishRegistryNews(now, act)
 	case zigbee.Ignored:
 		a.log.Debug("ignored", "what", v.What)
+	case zigbee.CarriesCode:
+		a.log.Info("a device carrying a code: Zigbee2MQTT is asked to publish its messages at QoS 0")
+		return a.toBridge(act)
 	default:
 		return a.toBridge(act)
 	}

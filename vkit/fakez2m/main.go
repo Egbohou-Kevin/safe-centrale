@@ -1,9 +1,10 @@
 // Command fakez2m is the Zigbee2MQTT of the virtual kit (docs/kit-virtuel.md): it
 // speaks on the broker as Zigbee2MQTT does, without a Zigbee stick, so the real
 // safehome-zigbee runs unchanged. Devices join, report and leave on orders from a
-// named pipe; requests (permit join, rename, remove) are answered with their
-// transaction, as Zigbee2MQTT 2.x does; commands sent to a device (a siren) are
-// printed.
+// named pipe; requests (permit join, rename, remove, device options) are answered
+// with their transaction, as Zigbee2MQTT 2.x does; commands sent to a device (a
+// siren) are printed. A device given the option qos 0 (a keypad) reports at QoS 0,
+// the others at QoS 1 (device_options of deploy/zigbee2mqtt/configuration.yaml).
 //
 //	fakez2m -broker mqtt://127.0.0.1:1883 -control /run/vkit/zigbee
 //	echo 'pair MCCGQ11LM 0x00158d0000000001' > /run/vkit/zigbee
@@ -35,7 +36,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	z := &bridge{base: *base, names: map[string]string{}, answers: true, requests: make(chan mqtt.Message, 64)}
+	z := &bridge{base: *base, names: map[string]string{}, qos: map[string]byte{}, answers: true, requests: make(chan mqtt.Message, 64)}
 	client, err := mqtt.Dial(ctx, mqtt.Options{
 		BrokerURL:     *broker,
 		ClientID:      "vkit-fakez2m",
@@ -66,6 +67,7 @@ type bridge struct {
 
 	mu      sync.Mutex
 	names   map[string]string // ieee -> friendly name
+	qos     map[string]byte   // ieee -> the QoS of its messages, when set by device options
 	answers bool              // false: requests go unanswered, as with a Zigbee2MQTT stuck
 }
 
@@ -108,11 +110,12 @@ func (z *bridge) handle(m mqtt.Message) {
 
 // request is what the fake reads of a request.
 type request struct {
-	From        string `json:"from"`
-	To          string `json:"to"`
-	ID          string `json:"id"`
-	Time        int    `json:"time"`
-	Transaction any    `json:"transaction"`
+	From        string         `json:"from"`
+	To          string         `json:"to"`
+	ID          string         `json:"id"`
+	Time        int            `json:"time"`
+	Options     map[string]any `json:"options"`
+	Transaction any            `json:"transaction"`
 }
 
 // answer does what a request asks and replies on bridge/response/, as Zigbee2MQTT
@@ -157,11 +160,21 @@ func (z *bridge) apply(req string, body request, payload []byte) any {
 		z.names[body.From] = body.To
 	case "device/remove":
 		delete(z.names, body.ID)
+	case "device/options":
+		// Only qos plays a part here; the device is named by its address.
+		if q, ok := body.Options["qos"].(float64); ok {
+			z.qos[body.ID] = byte(q)
+		}
+		return map[string]any{"id": body.ID, "from": map[string]any{}, "to": body.Options, "restart_required": false}
 	}
 	return json.RawMessage(payload)
 }
 
 func (z *bridge) publish(topic string, body any, retain bool) {
+	z.publishQoS(topic, body, 1, retain)
+}
+
+func (z *bridge) publishQoS(topic string, body any, qos byte, retain bool) {
 	b, err := json.Marshal(body)
 	if err != nil {
 		log.Printf("%s: %v", topic, err)
@@ -169,7 +182,7 @@ func (z *bridge) publish(topic string, body any, retain bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	m := mqtt.Message{Topic: z.base + "/" + topic, Payload: b, QoS: 1, Retain: retain}
+	m := mqtt.Message{Topic: z.base + "/" + topic, Payload: b, QoS: qos, Retain: retain}
 	if err := z.client.Publish(ctx, m); err != nil {
 		log.Printf("publishing on %s: %v", m.Topic, err)
 	}

@@ -218,6 +218,10 @@ func TestActionsBecomeRequests(t *testing.T) {
 	if _, txn := body["transaction"]; body["value"] != false || body["time"] != 0.0 || txn {
 		t.Fatalf("closing: %v", body)
 	}
+	topic, body = build(t, zigbee.CarriesCode{IEEE: "0x04"})
+	if topic != "zigbee2mqtt/bridge/request/device/options" || body["id"] != "0x04" || !reflect.DeepEqual(body["options"], map[string]any{"qos": 0.0}) {
+		t.Fatalf("%s %v", topic, body)
+	}
 	topic, body = build(t, zigbee.Rename{IEEE: "0x01", To: "dev_k7p2"})
 	if topic != "zigbee2mqtt/bridge/request/device/rename" || body["from"] != "0x01" || body["to"] != "dev_k7p2" {
 		t.Fatalf("%s %v", topic, body)

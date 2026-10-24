@@ -36,7 +36,7 @@ func (r *recorder) last(t *testing.T) (mqtt.Message, map[string]any) {
 
 func newFake() (*bridge, *recorder) {
 	r := &recorder{}
-	return &bridge{base: "zigbee2mqtt", client: r, names: map[string]string{}, answers: true}, r
+	return &bridge{base: "zigbee2mqtt", client: r, names: map[string]string{}, qos: map[string]byte{}, answers: true}, r
 }
 
 func ask(z *bridge, req, payload string) {
@@ -65,5 +65,26 @@ func TestAnswersCarryTheTransaction(t *testing.T) {
 	ask(z, "permit_join", `{"value":true,"time":120,"transaction":"p2.1"}`)
 	if len(r.sent) != before {
 		t.Fatal("a stuck Zigbee2MQTT answers nothing")
+	}
+}
+
+// A keypad given the option qos 0 reports at QoS 0, the other devices at QoS 1.
+func TestADeviceOptionSetsTheQoSOfItsReports(t *testing.T) {
+	z, r := newFake()
+	ask(z, "device/options", `{"id":"0x06","options":{"qos":0}}`)
+	if m, body := r.last(t); m.Topic != "zigbee2mqtt/bridge/response/device/options" || body["status"] != "ok" {
+		t.Fatalf("%s %v", m.Topic, body)
+	}
+	if err := z.report("0x06", `{"action":"disarm","action_code":"1357"}`); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := r.last(t); m.Topic != "zigbee2mqtt/0x06" || m.QoS != 0 {
+		t.Fatalf("%s at QoS %d", m.Topic, m.QoS)
+	}
+	if err := z.report("0x01", `{"contact":false}`); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := r.last(t); m.QoS != 1 {
+		t.Fatalf("a door at QoS %d", m.QoS)
 	}
 }

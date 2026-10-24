@@ -135,6 +135,11 @@ type Rename struct{ IEEE, To string }
 // Expel takes a device out of the Zigbee network.
 type Expel struct{ IEEE string }
 
+// CarriesCode says that a device's messages carry an access code (a keypad):
+// Zigbee2MQTT must publish them at QoS 0, so that the broker never keeps one for a
+// subscriber away.
+type CarriesCode struct{ IEEE string }
+
 // Ack answers a command.
 type Ack struct {
 	Ref      string
@@ -181,6 +186,7 @@ func (Send) isAction()            {}
 func (PermitJoin) isAction()      {}
 func (Rename) isAction()          {}
 func (Expel) isAction()           {}
+func (CarriesCode) isAction()     {}
 func (Ack) isAction()             {}
 func (Added) isAction()           {}
 func (Rejected) isAction()        {}

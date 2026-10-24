@@ -311,3 +311,35 @@ func TestRemovalForgetsTheDevice(t *testing.T) {
 	}
 	none(t, h.advance(5*time.Hour)) // no presence watch, no command left
 }
+
+// A keypad's messages carry the access code: Zigbee2MQTT is told to publish them at
+// QoS 0 when it is paired, and again each time Zigbee2MQTT comes online or the
+// adapter starts, for a keypad paired before or a configuration restored.
+func TestADeviceCarryingACodeIsSaidSoToZigbee2MQTT(t *testing.T) {
+	h := newHarness(t)
+	h.do(Pair{Now: h.now, Ref: "p1", For: time.Minute})
+	h.ids = []string{"dev_kp", "dev_door"}
+	out := h.do(Interviewed{Now: h.now, IEEE: ieeeKeypad, Model: "KP-1", OK: true})
+	if len(out) != 4 || out[0] != (Rename{IEEE: ieeeKeypad, To: "dev_kp"}) || out[1] != (CarriesCode{IEEE: ieeeKeypad}) {
+		t.Fatalf("%+v", out)
+	}
+	if got := all[CarriesCode](h.do(Interviewed{Now: h.now, IEEE: ieeeDoor, Model: "MCCGQ11LM", OK: true})); len(got) != 0 {
+		t.Fatalf("a door carries no code: %+v", got)
+	}
+
+	online := func() []CarriesCode { return all[CarriesCode](h.do(Bridge{Now: h.now, Online: true})) }
+	if got := online(); !reflect.DeepEqual(got, []CarriesCode{{IEEE: ieeeKeypad}}) {
+		t.Fatalf("%+v", got)
+	}
+	if got := online(); len(got) != 0 {
+		t.Fatalf("said once while Zigbee2MQTT stays online: %+v", got)
+	}
+	h.do(Bridge{Now: h.now, Online: false})
+	if got := online(); len(got) != 1 {
+		t.Fatalf("said again when it is back: %+v", got)
+	}
+	h.n.Restore(h.n.Snapshot())
+	if got := online(); len(got) != 1 {
+		t.Fatalf("said again after a start: %+v", got)
+	}
+}

@@ -73,8 +73,8 @@ Les ordres reconnus sont décrits en tête de `vkit/fakemodem/control.go`,
 `vkit/scenario/steps.sh`, une fonction par étape :
 
 1. **Site vierge**, puis **installation** : codes, appairage de cinq appareils (et
-   refus d'un modèle inconnu), zones, sirène, `check` ; un appairage que Zigbee2MQTT
-   ne confirme pas finit en erreur.
+   refus d'un modèle inconnu), zones, sirène, `check` ; le clavier réglé en QoS 0 dans
+   Zigbee2MQTT ; un appairage que Zigbee2MQTT ne confirme pas finit en erreur.
 2. **Armement** depuis l'application, par le cloud et l'agent.
 3. **Intrusion** : délai d'entrée, déclenchement, sirène, alerte au cloud, SMS et appel
    au gardien ; il répond « 1 » ; le propriétaire désarme. Le code n'apparaît dans
