@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -73,9 +74,22 @@ func TestPairingADevice(t *testing.T) {
 // installer's tool went on waiting. The refusal now ends the window and is published.
 func TestARefusedOpeningIsPublished(t *testing.T) {
 	r := newRig(t, nil)
-	ref := r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 120})
+	ref := r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 300})
+	r.answerJoin("")
 	drivertest.WaitFor(t, "the window open", func() bool { return r.status().Pairing })
-	r.z2m("bridge/response/permit_join", `{"data":{},"status":"error","error":"Coordinator is not started"}`, false)
+	// A refusal without the transaction awaited (a closing order's) is not about this
+	// window.
+	r.z2m("bridge/response/permit_join", `{"data":{},"status":"error","error":"Coordinator is busy"}`, false)
+	r.settle()
+	if !r.status().Pairing || len(r.broker.OfType(contract.TypeRegistryPairFailed)) != 0 {
+		t.Fatal("a refusal of another request ended the window")
+	}
+	// Zigbee2MQTT refuses the next piece.
+	r.clock.Advance(244 * time.Second)
+	drivertest.WaitFor(t, "the second piece", func() bool { return len(r.rawOn("bridge/request/permit_join")) == 2 })
+	if req := r.answerJoin("Coordinator is not started"); req["transaction"] != ref+".2" {
+		t.Fatalf("the second piece: %+v", req)
+	}
 	drivertest.WaitFor(t, "the failure", func() bool { return len(r.broker.OfType(contract.TypeRegistryPairFailed)) == 1 })
 	r.settle()
 	m := r.broker.OfType(contract.TypeRegistryPairFailed)[0]
@@ -92,10 +106,59 @@ func TestARefusedOpeningIsPublished(t *testing.T) {
 	r.validateAll()
 }
 
+// Zigbee2MQTT down or stuck answers nothing: the installer's tool trusted the
+// adapter's word that the network was open. The adapter now says so only once
+// Zigbee2MQTT confirmed, asks again, then reports the failure.
+func TestAnOpeningZigbee2MQTTNeverConfirmsIsAFailure(t *testing.T) {
+	r := newRig(t, nil)
+	ref := r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 120})
+	for n := 1; n <= 3; n++ {
+		drivertest.WaitFor(t, "a request", func() bool { return len(r.rawOn("bridge/request/permit_join")) == n })
+		r.settle()
+		r.clock.Advance(3 * time.Second)
+	}
+	drivertest.WaitFor(t, "the failure", func() bool { return len(r.broker.OfType(contract.TypeRegistryPairFailed)) == 1 })
+	r.settle()
+	d, _ := contract.DecodeData[contract.RegistryPairFailedData](r.broker.OfType(contract.TypeRegistryPairFailed)[0].Env)
+	if d.Ref != ref || d.Reason != zigbee.ReasonNoJoinAnswer {
+		t.Fatalf("%+v", d)
+	}
+	pj := r.rawOn("bridge/request/permit_join")
+	if len(pj) != 4 || pj[0]["transaction"] != ref+".1" || pj[2]["transaction"] != ref+".1" || pj[3]["time"] != 0.0 {
+		t.Fatalf("asked 3 times under one transaction, then closed: %+v", pj)
+	}
+	for _, m := range r.broker.OfType(contract.TypeZigbeeStatus) {
+		if st, _ := contract.DecodeData[contract.ZigbeeStatusData](m.Env); st.Pairing {
+			t.Fatal("never said open")
+		}
+	}
+	r.validateAll()
+}
+
+// A keypad's key sequences carry the access code: Zigbee2MQTT is asked to publish
+// its messages at QoS 0 (a device option), so that the broker keeps none for the
+// adapter away. Asked at pairing, and again each time Zigbee2MQTT comes online.
+func TestAKeypadIsPublishedAtQoS0ByZigbee2MQTT(t *testing.T) {
+	r := newRig(t, nil)
+	r.pair("dev_door", "0x01", "MCCGQ11LM")
+	r.pair("dev_kp", "0x03", "KP-1")
+	r.settle()
+	want := []map[string]any{{"id": "0x03", "options": map[string]any{"qos": 0.0}}}
+	if got := r.rawOn("bridge/request/device/options"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%+v", got)
+	}
+	r.z2m("bridge/state", `{"state":"online"}`, true)
+	drivertest.WaitFor(t, "asked again", func() bool { return len(r.rawOn("bridge/request/device/options")) == 2 })
+	if got := r.rawOn("bridge/request/device/options")[1]; !reflect.DeepEqual(got, want[0]) {
+		t.Fatalf("%+v", got)
+	}
+}
+
 func TestAStopClosesTheNetworkAndAStartOpensItAgain(t *testing.T) {
 	store := drivertest.NewMemStore()
 	r := newRig(t, store)
 	r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 300})
+	r.answerJoin("")
 	drivertest.WaitFor(t, "the window open", func() bool { return r.status().Pairing })
 	r.settle()
 	r.stop()

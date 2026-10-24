@@ -60,6 +60,7 @@ sudo vkit-power mains lost                                  # coupure du secteur
 sudo vkit-power battery 3650 38                             # l'accu à 3,65 V, 38 %
 echo 'network off' | sudo tee /run/vkit/modem               # plus de réseau GSM
 echo 'send 0x00158d0000000001 {"contact":false}' | sudo tee /run/vkit/zigbee  # la porte s'ouvre
+echo 'answers off' | sudo tee /run/vkit/zigbee              # Zigbee2MQTT ne répond plus aux demandes
 sudo systemctl stop vkit-cloud                              # coupure d'internet (le cloud tombe)
 journalctl -u vkit-modem -f                                 # les SMS et appels partis
 ```
@@ -72,7 +73,8 @@ Les ordres reconnus sont décrits en tête de `vkit/fakemodem/control.go`,
 `vkit/scenario/steps.sh`, une fonction par étape :
 
 1. **Site vierge**, puis **installation** : codes, appairage de cinq appareils (et
-   refus d'un modèle inconnu), zones, sirène, `check`.
+   refus d'un modèle inconnu), zones, sirène, `check` ; le clavier réglé en QoS 0 dans
+   Zigbee2MQTT ; un appairage que Zigbee2MQTT ne confirme pas finit en erreur.
 2. **Armement** depuis l'application, par le cloud et l'agent.
 3. **Intrusion** : délai d'entrée, déclenchement, sirène, alerte au cloud, SMS et appel
    au gardien ; il répond « 1 » ; le propriétaire désarme. Le code n'apparaît dans

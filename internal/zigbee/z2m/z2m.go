@@ -57,7 +57,7 @@ func Parse(base, topic string, payload []byte, retained bool, now time.Time) (in
 		case "event":
 			return parseEvent(payload, now)
 		case "response/permit_join":
-			return parsePermitJoin(base, topic, payload, now)
+			return parsePermitJoin(payload, now)
 		}
 		return nil, false, nil
 	}
@@ -155,12 +155,27 @@ func parseEvent(payload []byte, now time.Time) (zigbee.Input, bool, error) {
 }
 
 // parsePermitJoin reads Zigbee2MQTT's answer to a request to open or close the
-// network: only a refusal matters to the core.
-func parsePermitJoin(base, topic string, payload []byte, now time.Time) (zigbee.Input, bool, error) {
-	if _, reason, failed := ResponseError(base, topic, payload); failed {
-		return zigbee.PairRefused{Now: now, Reason: reason}, true, nil
+// network: {"data":{"time":254},"status":"ok","transaction":"..."}, or with
+// "status":"error" and "error". Zigbee2MQTT (2.x, lib/util/utils.ts getResponse)
+// echoes the request's transaction in both; the core matches it to its request. A
+// transaction that is not a string is not one of ours: it is left empty.
+func parsePermitJoin(payload []byte, now time.Time) (zigbee.Input, bool, error) {
+	var r struct {
+		Status      string `json:"status"`
+		Error       string `json:"error"`
+		Transaction any    `json:"transaction"`
 	}
-	return nil, false, nil
+	if err := json.Unmarshal(payload, &r); err != nil {
+		return nil, false, fmt.Errorf("%w: permit_join answer: %v", ErrInvalid, err)
+	}
+	txn, _ := r.Transaction.(string)
+	switch r.Status {
+	case "ok":
+		return zigbee.JoinAnswer{Now: now, Txn: txn, OK: true}, true, nil
+	case "error":
+		return zigbee.JoinAnswer{Now: now, Txn: txn, Reason: r.Error}, true, nil
+	}
+	return nil, false, fmt.Errorf("%w: permit_join answer with status %q", ErrInvalid, r.Status)
 }
 
 // ResponseError reads Zigbee2MQTT's answer to one of our requests: when it reports
@@ -189,8 +204,17 @@ func Build(base string, a zigbee.Action) (Message, bool, error) {
 	case zigbee.Send:
 		topic, body = base+"/"+v.IEEE+"/set", v.Payload
 	case zigbee.PermitJoin:
-		// "value" for 1.x, "time" for both; zero closes the network.
-		topic, body = base+"/bridge/request/permit_join", map[string]any{"value": v.Seconds > 0, "time": v.Seconds}
+		// "value" for 1.x, "time" for both; zero closes the network. The
+		// transaction comes back in the answer.
+		req := map[string]any{"value": v.Seconds > 0, "time": v.Seconds}
+		if v.Txn != "" {
+			req["transaction"] = v.Txn
+		}
+		topic, body = base+"/bridge/request/permit_join", req
+	case zigbee.CarriesCode:
+		// A device option, kept by Zigbee2MQTT in its configuration and read at each
+		// message: its messages go out at QoS 0, over device_options' QoS 1.
+		topic, body = base+"/bridge/request/device/options", map[string]any{"id": v.IEEE, "options": map[string]any{"qos": 0}}
 	case zigbee.Rename:
 		topic, body = base+"/bridge/request/device/rename", map[string]any{"from": v.IEEE, "to": v.To}
 	case zigbee.Expel:

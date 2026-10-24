@@ -31,6 +31,10 @@ advanced:
 # door that opened meanwhile). They are not retained: the adapter saves the states
 # itself, a retained message replayed is never an event anyway (docs/adapter-zigbee.md,
 # "Messages retenus"), and it would only add writes to the broker's store.
+# Except the keypads: their messages carry the access code, which the broker must
+# never keep. safehome-zigbee gives each one the device option qos: 0 through
+# bridge/request/device/options, and Zigbee2MQTT writes it in a devices: section
+# here (docs/adapter-zigbee.md, "Clavier : QoS 0"): leave it there.
 device_options:
   qos: 1
   retain: false

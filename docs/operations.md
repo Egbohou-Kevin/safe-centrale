@@ -270,7 +270,8 @@ Configuration (`config/zigbee.example.json`), stricte :
   peut pas être `safehome` ni commencer par `safehome/` : l'adaptateur lirait ses
   propres messages comme des appareils.
 - `confirm_wait` (3 s) et `attempts` (3) : attente de la confirmation d'une commande
-  et nombre d'envois ; `offline_after` (4 h) : silence avant « hors ligne » pour les
+  et nombre d'envois, de même pour la réponse de Zigbee2MQTT à une demande d'ouvrir le
+  réseau (sans réponse au bout de 9 s, l'appairage échoue) ; `offline_after` (4 h) : silence avant « hors ligne » pour les
   profils qui ne disent rien ; `pair_max` (10 min) : durée maximale d'appairage (ouverte par morceaux de 254 s,
   le plus que Zigbee2MQTT accepte d'une demande) ;
   `step` (5) : écart minimal pour annoncer une pile ou un lien ; `status_every` (1 min).
@@ -284,7 +285,9 @@ Zigbee2MQTT doit dater chaque message (`last_seen: ISO_8601` sous `advanced:`, d
 dans `deploy/zigbee2mqtt/configuration.yaml`). Sans cela, une touche du clavier gardée
 par le broker pendant une coupure de l'adaptateur est datée de son arrivée, et peut
 encore désarmer (`adapter-zigbee.md`, « QoS »). `deploy/install.sh` ne pose ce fichier
-que la première fois.
+que la première fois. Zigbee2MQTT y ajoute lui-même, sous `devices:`, `qos: 0` pour
+chaque clavier : c'est l'adaptateur qui le lui demande (`adapter-zigbee.md`,
+« Clavier : QoS 0 »), il ne faut pas l'enlever.
 
 Appairer un appareil se fait localement, par un message `registry.pair` sur
 `safehome/{site}/registry/cmd` (le cloud ne peut pas y écrire) : c'est le rôle de
@@ -459,8 +462,12 @@ Ce que l'outil vérifie avant de toucher à quoi que ce soit :
   la nouvelle. Pour `remove`, cette vérification a lieu **avant** le retrait du réseau,
   qui ne se défait pas.
 - **L'adaptateur répond** : `pair` attend que l'adaptateur Zigbee confirme l'ouverture
-  du réseau (5 s), sinon il dit que `safehome-zigbee` ne tourne pas, au lieu d'attendre
-  deux minutes pour rien.
+  du réseau (15 s), sinon il dit que `safehome-zigbee` ne tourne pas, au lieu d'attendre
+  deux minutes pour rien. L'adaptateur ne la confirme qu'une fois que Zigbee2MQTT l'a
+  confirmée lui-même ; s'il refuse ou ne répond pas, `pair` affiche
+  `the network could not be opened:` suivi de la raison (les mots de Zigbee2MQTT, ou
+  `Zigbee2MQTT did not answer the request to open the network: is it running?`) et
+  s'arrête en erreur.
 
 `check` signale :
 

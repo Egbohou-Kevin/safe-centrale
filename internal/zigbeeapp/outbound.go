@@ -50,14 +50,23 @@ func (a *App) dispatchOne(now time.Time, act zigbee.Action) error {
 		return a.publishRegistryNews(now, act)
 	case zigbee.Ignored:
 		a.log.Debug("ignored", "what", v.What)
+	case zigbee.CarriesCode:
+		a.log.Info("a device carrying a code: Zigbee2MQTT is asked to publish its messages at QoS 0")
+		return a.toBridge(act)
 	default:
-		msg, ok, err := z2m.Build(a.cfg.Base, act)
-		if err != nil {
-			return err
-		}
-		if ok {
-			a.out.Put(&outbox.Item{Topic: msg.Topic, Data: msg.Payload, QoS: 1, Raw: true})
-		}
+		return a.toBridge(act)
+	}
+	return nil
+}
+
+// toBridge sends a request to Zigbee2MQTT, if the action is one.
+func (a *App) toBridge(act zigbee.Action) error {
+	msg, ok, err := z2m.Build(a.cfg.Base, act)
+	if err != nil {
+		return err
+	}
+	if ok {
+		a.out.Put(&outbox.Item{Topic: msg.Topic, Data: msg.Payload, QoS: 1, Raw: true})
 	}
 	return nil
 }

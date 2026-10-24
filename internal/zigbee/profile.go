@@ -151,6 +151,18 @@ func (p Profile) capabilities() []string {
 	return slices.Sorted(maps.Keys(caps))
 }
 
+// carriesCode tells whether the device's messages carry an access code: one of its
+// rules reads a code (a keypad). Derived from the rules, not declared apart, so the
+// two cannot disagree.
+func (p Profile) carriesCode() bool {
+	for _, r := range p.Capabilities {
+		if r.CodeFrom != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (p Profile) validate() error {
 	switch {
 	case p.Name == "":

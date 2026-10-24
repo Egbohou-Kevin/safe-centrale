@@ -107,6 +107,20 @@ type Snapshot struct {
 	PairUntil time.Time                   `json:"pair_until"`          // zero while closed
 	PairRenew time.Time                   `json:"pair_renew,omitzero"` // next request to keep it open, zero if none
 	PairRef   string                      `json:"pair_ref"`
+	// PairOpen: Zigbee2MQTT confirmed the window (its first piece); until then the
+	// network does not count as open.
+	PairOpen bool `json:"pair_open,omitzero"`
+	// PairAsk is the request to open the network that waits for Zigbee2MQTT's answer.
+	PairAsk Asking `json:"pair_ask,omitzero"`
+	PairSeq int    `json:"pair_seq,omitzero"` // requests made for the window, to name them
+}
+
+// Asking is a request to open the network waiting for its answer. Without one by
+// Deadline it is sent again, Config.Attempts times in all, as a device command is.
+type Asking struct {
+	Txn      string    `json:"txn"` // the transaction Zigbee2MQTT echoes in its answer
+	Attempt  int       `json:"attempt"`
+	Deadline time.Time `json:"deadline"`
 }
 
 func (s Snapshot) clone() Snapshot {
@@ -138,6 +152,9 @@ type Network struct {
 	byModel map[string]Profile
 	s       Snapshot
 	seen    map[string]time.Time // when each device last spoke
+	// coded: Zigbee2MQTT was told, since it last came online, which devices carry
+	// a code. Not saved: it is told again after each start.
+	coded bool
 }
 
 // New creates the core. newID proposes device ids (for example "dev_k7p2"); one
@@ -197,6 +214,7 @@ func (n *Network) Restore(s Snapshot) {
 	}
 	n.s = s
 	n.seen = map[string]time.Time{}
+	n.coded = false
 }
 
 // Devices lists the registry, sorted by id.
@@ -214,7 +232,7 @@ func (n *Network) Devices() []Device {
 func (n *Network) Status() Status {
 	return Status{
 		Bridge: n.s.Bridge, Devices: len(n.s.Devices),
-		Offline: slices.Sorted(maps.Keys(n.s.Offline)), Pairing: !n.s.PairUntil.IsZero(),
+		Offline: slices.Sorted(maps.Keys(n.s.Offline)), Pairing: !n.s.PairUntil.IsZero() && n.s.PairOpen,
 	}
 }
 
@@ -231,6 +249,9 @@ func (n *Network) NextWake() time.Time {
 	}
 	if !n.s.PairRenew.IsZero() {
 		add(n.s.PairRenew)
+	}
+	if n.s.PairAsk.Txn != "" {
+		add(n.s.PairAsk.Deadline)
 	}
 	for _, p := range n.s.Pending {
 		add(p.Deadline)
@@ -262,15 +283,15 @@ func (n *Network) Handle(in Input) []Action {
 	case Report:
 		out = n.report(v)
 	case Bridge:
-		n.s.Bridge = v.Online
+		out = n.bridge(v)
 	case Interviewed:
 		out = n.interviewed(v)
 	case Left:
 		out = n.left(v)
 	case Pair:
 		out = n.pair(v)
-	case PairRefused:
-		out = n.pairRefused(v)
+	case JoinAnswer:
+		out = n.joinAnswered(v)
 	case Remove:
 		out = n.remove(v)
 	case Command:
@@ -285,6 +306,28 @@ func (n *Network) due(now time.Time) []Action {
 	out := n.pairingDue(now)
 	out = append(out, n.retryPending(now)...)
 	return append(out, n.markSilent(now)...)
+}
+
+// bridge follows Zigbee2MQTT's state. Each time it comes online, it is told again
+// which devices carry a code: a keypad paired before, or a configuration of
+// Zigbee2MQTT restored from a backup, gets its setting back.
+func (n *Network) bridge(b Bridge) []Action {
+	n.s.Bridge = b.Online
+	if !b.Online {
+		n.coded = false
+		return nil
+	}
+	if n.coded {
+		return nil
+	}
+	n.coded = true
+	var out []Action
+	for _, d := range n.Devices() {
+		if n.byName[d.Profile].carriesCode() {
+			out = append(out, CarriesCode{IEEE: d.IEEE})
+		}
+	}
+	return out
 }
 
 // resolve finds a device by its name in Zigbee2MQTT: its id once renamed, its IEEE

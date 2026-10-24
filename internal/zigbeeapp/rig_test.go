@@ -162,11 +162,34 @@ func (r *rig) rawOn(topic string) []map[string]any {
 	return out
 }
 
+// answerJoin answers the last request to open the network as Zigbee2MQTT 2.x does,
+// echoing its transaction: ok, or refused with reason. It returns the request.
+func (r *rig) answerJoin(reason string) map[string]any {
+	r.t.Helper()
+	var req map[string]any
+	drivertest.WaitFor(r.t, "a request to open the network", func() bool {
+		all := r.rawOn("bridge/request/permit_join")
+		if len(all) == 0 {
+			return false
+		}
+		req = all[len(all)-1]
+		return true
+	})
+	answer := map[string]any{"data": map[string]any{"time": req["time"]}, "status": "ok", "transaction": req["transaction"]}
+	if reason != "" {
+		answer = map[string]any{"data": map[string]any{}, "status": "error", "error": reason, "transaction": req["transaction"]}
+	}
+	b, _ := json.Marshal(answer)
+	r.z2m("bridge/response/permit_join", string(b), false)
+	return req
+}
+
 // pair adds a device through the whole pairing sequence.
 func (r *rig) pair(id, ieee, model string) {
 	r.t.Helper()
 	r.devIDs <- id
 	r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 120})
+	r.answerJoin("")
 	r.z2m("bridge/event", `{"type":"device_interview","data":{"ieee_address":"`+ieee+`","status":"successful","supported":true,"definition":{"model":"`+model+`"}}}`, false)
 	drivertest.WaitFor(r.t, id+" added", func() bool {
 		return slices.ContainsFunc(r.registry().Devices, func(d contract.RegistryDevice) bool { return d.DeviceID == id })

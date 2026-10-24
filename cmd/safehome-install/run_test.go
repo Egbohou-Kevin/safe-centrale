@@ -25,7 +25,7 @@ const site = "tg-lom-0001"
 func init() {
 	connectWait = 2 * time.Second
 	snapshotWait = 500 * time.Millisecond
-	timing = install.Timing{Confirm: time.Second, Grace: 200 * time.Millisecond}
+	timing = install.Timing{Confirm: time.Second, Open: time.Second, Grace: 200 * time.Millisecond}
 }
 
 // writeConfig copies the example configuration, pointed at the test broker.
@@ -156,12 +156,12 @@ func (a *fakeAdapter) order(ctx context.Context, m mqtt.Message) {
 		a.devices = append(a.devices, join...)
 		n := len(a.devices)
 		a.mu.Unlock()
-		a.publish(ctx, contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus, status(n, true), true)
 		if refuse != "" {
+			// As the adapter: never said open, since Zigbee2MQTT did not confirm.
 			a.publish(ctx, ev, contract.TypeRegistryPairFailed, contract.RegistryPairFailedData{Ref: env.ID, Reason: refuse}, false)
-			a.publish(ctx, contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus, status(n, false), true)
 			return
 		}
+		a.publish(ctx, contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus, status(n, true), true)
 		for _, j := range join {
 			a.publish(ctx, ev, contract.TypeRegistryDeviceAdded, contract.RegistryDeviceAddedData{Ref: env.ID, DeviceID: j.DeviceID, Model: j.Model, Capabilities: j.Capabilities}, false)
 		}
@@ -279,8 +279,16 @@ func TestAnInstallation(t *testing.T) {
 	a.refuse = "Coordinator is not started"
 	a.mu.Unlock()
 	code, _, errb = cli(ctx, "pair", "-config", path, "-for", "5m")
-	if code != 1 || !strings.Contains(errb, "the network could not be opened, Zigbee2MQTT refused: Coordinator is not started") {
+	if code != 1 || !strings.Contains(errb, "the network could not be opened: Coordinator is not started") {
 		t.Fatalf("a refused opening: %d %q", code, errb)
+	}
+	// Zigbee2MQTT never answers: the adapter gives up and says so, and so does the tool.
+	a.mu.Lock()
+	a.refuse = "Zigbee2MQTT did not answer the request to open the network: is it running?"
+	a.mu.Unlock()
+	code, _, errb = cli(ctx, "pair", "-config", path, "-for", "1m")
+	if code != 1 || !strings.Contains(errb, "the network could not be opened: Zigbee2MQTT did not answer") {
+		t.Fatalf("an opening never confirmed: %d %q", code, errb)
 	}
 	if code, _, errb := cli(ctx, "pair", "-config", path, "-for", "11m"); code != 1 || !strings.Contains(errb, "-for") {
 		t.Fatalf("pair beyond the bound: %d %q", code, errb)

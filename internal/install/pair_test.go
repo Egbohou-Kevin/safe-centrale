@@ -71,7 +71,6 @@ func TestPairReportsWhatJoinsThenEndsWithTheWindow(t *testing.T) {
 // went on waiting as if it were open.
 func TestARefusedOpeningEndsThePairingWithAnError(t *testing.T) {
 	s, _ := newTestSession(t, func(a *fakeAdapter, m sent) {
-		a.deliver(contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus, status(true), false)
 		ev := contract.RegistryEventTopic(site)
 		a.deliver(ev, contract.TypeRegistryPairFailed, contract.RegistryPairFailedData{Ref: "01OTHERORDER0000000000000", Reason: "not ours"}, false)
 		a.deliver(ev, contract.TypeRegistryPairFailed, contract.RegistryPairFailedData{Ref: m.env.ID, Reason: "Cannot permit join for more than 254 seconds."}, false)
@@ -83,6 +82,22 @@ func TestARefusedOpeningEndsThePairingWithAnError(t *testing.T) {
 	}
 	if time.Since(start) > time.Minute {
 		t.Fatal("the tool must not wait for the end of a window that never opened")
+	}
+}
+
+// Zigbee2MQTT down: the adapter never says the network is open, asks again, then
+// reports that no answer came. The tool waits long enough to hear it.
+func TestAnOpeningZigbee2MQTTNeverConfirmsEndsThePairingWithAnError(t *testing.T) {
+	s, _ := newTestSession(t, func(a *fakeAdapter, m sent) {
+		go func() {
+			time.Sleep(250 * time.Millisecond) // beyond Confirm, within Open
+			a.deliver(contract.RegistryEventTopic(site), contract.TypeRegistryPairFailed,
+				contract.RegistryPairFailedData{Ref: m.env.ID, Reason: "Zigbee2MQTT did not answer the request to open the network: is it running?"}, false)
+		}()
+	})
+	err := s.Pair(testCtx(t), time.Minute, func(PairNews) { t.Error("no news from a closed network") })
+	if !errors.Is(err, ErrPairRefused) || err.Error() != "the network could not be opened: Zigbee2MQTT did not answer the request to open the network: is it running?" {
+		t.Fatalf("err %v", err)
 	}
 }
 

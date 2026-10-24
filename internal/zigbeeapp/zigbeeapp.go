@@ -197,14 +197,15 @@ func (a *App) Run(ctx context.Context) error {
 // closeNetwork closes a network left open for pairing as the adapter stops: a device
 // joining while no adapter listens would stay in Zigbee2MQTT's network, outside the
 // registry, unwatched. The window is kept: the next start opens it again for what is
-// left. It runs once the loop is over, so the core is no longer in use.
+// left. A window Zigbee2MQTT has not confirmed yet is closed too: its answer may
+// only be late. It runs once the loop is over, so the core is no longer in use.
 func (a *App) closeNetwork() {
-	if !a.core.Status().Pairing {
+	if a.core.Snapshot().PairUntil.IsZero() {
 		return
 	}
-	if msg, ok, err := z2m.Build(a.cfg.Base, zigbee.PermitJoin{}); err == nil && ok {
-		a.log.Info("closing the network for pairing until the adapter is back")
-		a.out.Put(&outbox.Item{Topic: msg.Topic, Data: msg.Payload, QoS: 1, Raw: true})
+	a.log.Info("closing the network for pairing until the adapter is back")
+	if err := a.toBridge(zigbee.PermitJoin{}); err != nil {
+		a.log.Error("closing the network failed", "err", err)
 	}
 }
 

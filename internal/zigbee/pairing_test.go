@@ -12,8 +12,12 @@ func TestPairingAcceptsAModelWithAProfile(t *testing.T) {
 	h := newHarness(t)
 	h.ids = []string{"dev_k7p2"}
 	out := h.do(Pair{Now: h.now, Ref: "p1", For: 2 * time.Minute})
-	if len(out) != 1 || out[0] != (PermitJoin{Seconds: 120}) || !h.n.Status().Pairing {
-		t.Fatalf("%+v", out)
+	if len(out) != 1 || out[0] != (PermitJoin{Seconds: 120, Txn: "p1.1"}) || h.n.Status().Pairing {
+		t.Fatalf("not open before Zigbee2MQTT says so: %+v", out)
+	}
+	none(t, h.do(JoinAnswer{Now: h.now, Txn: "p1.1", OK: true}))
+	if !h.n.Status().Pairing {
+		t.Fatal("open once Zigbee2MQTT confirmed")
 	}
 	out = h.do(Interviewed{Now: h.now, IEEE: ieeeDoor, Model: "MCCGQ11LM", OK: true})
 	want := Device{ID: "dev_k7p2", IEEE: ieeeDoor, Model: "MCCGQ11LM", Profile: "aqara.contact.mccgq11lm",
@@ -55,7 +59,7 @@ func TestADeviceDrivenAsASirenIsASiren(t *testing.T) {
 
 func TestPairingIsBoundedAndCanBeClosed(t *testing.T) {
 	h := newHarness(t)
-	if out := h.do(Pair{Now: h.now, Ref: "p", For: time.Hour}); out[0] != (PermitJoin{Seconds: 254}) {
+	if out := h.do(Pair{Now: h.now, Ref: "p", For: time.Hour}); out[0] != (PermitJoin{Seconds: 254, Txn: "p.1"}) {
 		t.Fatalf("%+v", out)
 	}
 	if !h.n.Snapshot().PairUntil.Equal(t0.Add(10 * time.Minute)) {
@@ -82,7 +86,9 @@ func TestALongWindowIsOpenedInPieces(t *testing.T) {
 	} {
 		t.Run(tc.For.String(), func(t *testing.T) {
 			h := newHarness(t)
-			got := []int{h.do(Pair{Now: h.now, Ref: "p", For: tc.For})[0].(PermitJoin).Seconds}
+			first := h.do(Pair{Now: h.now, Ref: "p", For: tc.For})[0].(PermitJoin)
+			h.do(JoinAnswer{Now: h.now, Txn: first.Txn, OK: true})
+			got := []int{first.Seconds}
 			at := []time.Duration{0}
 			for {
 				wake := h.n.NextWake()
@@ -97,6 +103,7 @@ func TestALongWindowIsOpenedInPieces(t *testing.T) {
 				if pj.Seconds == 0 {
 					break
 				}
+				h.do(JoinAnswer{Now: h.now, Txn: pj.Txn, OK: true})
 				got = append(got, pj.Seconds)
 				at = append(at, h.now.Sub(t0))
 				if !h.n.Status().Pairing {
@@ -116,13 +123,19 @@ func TestALongWindowIsOpenedInPieces(t *testing.T) {
 func TestAWindowGoesOnAfterARestart(t *testing.T) {
 	h := newHarness(t)
 	h.do(Pair{Now: h.now, Ref: "p", For: 5 * time.Minute})
+	h.do(JoinAnswer{Now: h.now, Txn: "p.1", OK: true})
 	snap := h.n.Snapshot()
 	// The adapter closed the network as it stopped: the next input opens it again,
 	// for what is left of the window.
 	h.n.Restore(snap)
-	if pj, ok := find[PermitJoin](h.advance(30 * time.Second)); !ok || pj.Seconds != 254 {
+	pj, ok := find[PermitJoin](h.advance(30 * time.Second))
+	if !ok || pj.Seconds != 254 || pj.Txn != "p.2" {
 		t.Fatalf("%+v", pj)
 	}
+	if !h.n.Status().Pairing {
+		t.Fatal("the window goes on while the network opens again")
+	}
+	h.do(JoinAnswer{Now: h.now, Txn: pj.Txn, OK: true})
 	if !h.n.NextWake().Equal(h.now.Add(244 * time.Second)) {
 		t.Fatalf("next piece at %v", h.n.NextWake())
 	}
@@ -130,6 +143,8 @@ func TestAWindowGoesOnAfterARestart(t *testing.T) {
 	h.n.Restore(h.n.Snapshot())
 	if pj, ok := find[PermitJoin](h.advance(220 * time.Second)); !ok || pj.Seconds != 50 {
 		t.Fatalf("%+v", pj)
+	} else {
+		h.do(JoinAnswer{Now: h.now, Txn: pj.Txn, OK: true})
 	}
 	// Down past the end: closed for good.
 	h.n.Restore(h.n.Snapshot())
@@ -141,14 +156,93 @@ func TestAWindowGoesOnAfterARestart(t *testing.T) {
 func TestARefusedOpeningEndsTheWindow(t *testing.T) {
 	h := newHarness(t)
 	h.do(Pair{Now: h.now, Ref: "p1", For: 5 * time.Minute})
-	out := h.do(PairRefused{Now: h.now, Reason: "Cannot permit join for more than 254 seconds."})
+	out := h.do(JoinAnswer{Now: h.now, Txn: "p1.1", Reason: "Cannot permit join for more than 254 seconds."})
 	want := []Action{PermitJoin{}, PairFailed{Ref: "p1", Reason: "Cannot permit join for more than 254 seconds."}}
 	if !reflect.DeepEqual(out, want) || h.n.Status().Pairing {
 		t.Fatalf("%+v", out)
 	}
 	none(t, h.advance(time.Hour)) // no piece asked any more
-	if _, ok := find[Ignored](h.do(PairRefused{Now: h.now, Reason: "x"})); !ok {
+	if _, ok := find[Ignored](h.do(JoinAnswer{Now: h.now, Txn: "p1.1", Reason: "x"})); !ok {
 		t.Fatal("a refusal while closed changes nothing")
+	}
+}
+
+// A refusal is matched to its request by the transaction Zigbee2MQTT echoes: a late
+// refusal of a closing order, or of a window replaced since, must not end the window
+// open now.
+func TestOnlyTheAnswerToTheRequestAwaitedCounts(t *testing.T) {
+	h := newHarness(t)
+	h.do(Pair{Now: h.now, Ref: "p1", For: 2 * time.Minute})
+	h.do(JoinAnswer{Now: h.now, Txn: "p1.1", OK: true})
+	h.do(Pair{Now: h.now, Ref: "p1"}) // closed, Zigbee2MQTT has not answered yet
+	if out := h.do(Pair{Now: h.now, Ref: "p2", For: 2 * time.Minute}); out[0] != (PermitJoin{Seconds: 120, Txn: "p2.1"}) {
+		t.Fatalf("%+v", out)
+	}
+	h.do(JoinAnswer{Now: h.now, Txn: "p2.1", OK: true})
+	for _, late := range []JoinAnswer{
+		{Now: h.now, Reason: "Coordinator is busy"},                    // the closing order: no transaction
+		{Now: h.now, Txn: "p1.1", Reason: "Coordinator is busy"},       // the window before
+		{Now: h.now, Txn: "p2.1", Reason: "answered twice"},            // already answered
+		{Now: h.now, Txn: "someone else's", Reason: "not our request"}, // another client
+	} {
+		if _, ok := find[Ignored](h.do(late)); !ok || !h.n.Status().Pairing {
+			t.Fatalf("%+v ended the window", late)
+		}
+	}
+	// A new order while the network is open is a new window, open once confirmed.
+	if out := h.do(Pair{Now: h.now, Ref: "p3", For: time.Minute}); out[0] != (PermitJoin{Seconds: 60, Txn: "p3.1"}) || h.n.Status().Pairing {
+		t.Fatalf("%+v", out)
+	}
+	if _, ok := find[PairFailed](h.do(JoinAnswer{Now: h.now, Txn: "p3.1", Reason: "refused"})); !ok {
+		t.Fatal("the refusal of the request awaited ends the window")
+	}
+}
+
+// Zigbee2MQTT down or stuck answers nothing: the installer's tool trusted the
+// adapter's own word that the network was open. The request is sent again, as a
+// device command is, then the window fails.
+func TestAWindowZigbee2MQTTNeverConfirmsFails(t *testing.T) {
+	h := newHarness(t)
+	h.do(Pair{Now: h.now, Ref: "p1", For: 2 * time.Minute})
+	if !h.n.NextWake().Equal(t0.Add(3 * time.Second)) {
+		t.Fatalf("next wake %v", h.n.NextWake())
+	}
+	for i, wantSeconds := range []int{117, 114} {
+		out := h.advance(3 * time.Second)
+		if len(out) != 1 || out[0] != (PermitJoin{Seconds: wantSeconds, Txn: "p1.1"}) || h.n.Status().Pairing {
+			t.Fatalf("attempt %d: %+v", i+2, out)
+		}
+	}
+	out := h.advance(3 * time.Second)
+	want := []Action{PermitJoin{}, PairFailed{Ref: "p1", Reason: ReasonNoJoinAnswer}}
+	if !reflect.DeepEqual(out, want) || h.n.Status().Pairing || !h.n.NextWake().IsZero() {
+		t.Fatalf("%+v", out)
+	}
+
+	// A late answer to the first request, sent again under the same transaction,
+	// still opens the window.
+	h.do(Pair{Now: h.now, Ref: "p2", For: 2 * time.Minute})
+	h.advance(3 * time.Second)
+	if out := h.do(JoinAnswer{Now: h.now, Txn: "p2.1", OK: true}); len(out) != 0 || !h.n.Status().Pairing {
+		t.Fatalf("%+v", out)
+	}
+	none(t, h.advance(10*time.Second)) // nothing asked again
+}
+
+// A piece asked to keep the window open is awaited too; the window stays open
+// meanwhile (the previous piece runs), and fails if Zigbee2MQTT stops answering.
+func TestARenewalZigbee2MQTTNeverConfirmsEndsTheWindow(t *testing.T) {
+	h := newHarness(t)
+	h.do(Pair{Now: h.now, Ref: "p", For: 5 * time.Minute})
+	h.do(JoinAnswer{Now: h.now, Txn: "p.1", OK: true})
+	pj, _ := find[PermitJoin](h.advance(244 * time.Second))
+	if pj.Txn != "p.2" || !h.n.Status().Pairing {
+		t.Fatalf("%+v", pj)
+	}
+	h.advance(3 * time.Second)
+	h.advance(3 * time.Second)
+	if f, ok := find[PairFailed](h.advance(3 * time.Second)); !ok || f.Ref != "p" || h.n.Status().Pairing {
+		t.Fatalf("%+v", f)
 	}
 }
 
@@ -216,4 +310,36 @@ func TestRemovalForgetsTheDevice(t *testing.T) {
 		t.Fatal("removed twice")
 	}
 	none(t, h.advance(5*time.Hour)) // no presence watch, no command left
+}
+
+// A keypad's messages carry the access code: Zigbee2MQTT is told to publish them at
+// QoS 0 when it is paired, and again each time Zigbee2MQTT comes online or the
+// adapter starts, for a keypad paired before or a configuration restored.
+func TestADeviceCarryingACodeIsSaidSoToZigbee2MQTT(t *testing.T) {
+	h := newHarness(t)
+	h.do(Pair{Now: h.now, Ref: "p1", For: time.Minute})
+	h.ids = []string{"dev_kp", "dev_door"}
+	out := h.do(Interviewed{Now: h.now, IEEE: ieeeKeypad, Model: "KP-1", OK: true})
+	if len(out) != 4 || out[0] != (Rename{IEEE: ieeeKeypad, To: "dev_kp"}) || out[1] != (CarriesCode{IEEE: ieeeKeypad}) {
+		t.Fatalf("%+v", out)
+	}
+	if got := all[CarriesCode](h.do(Interviewed{Now: h.now, IEEE: ieeeDoor, Model: "MCCGQ11LM", OK: true})); len(got) != 0 {
+		t.Fatalf("a door carries no code: %+v", got)
+	}
+
+	online := func() []CarriesCode { return all[CarriesCode](h.do(Bridge{Now: h.now, Online: true})) }
+	if got := online(); !reflect.DeepEqual(got, []CarriesCode{{IEEE: ieeeKeypad}}) {
+		t.Fatalf("%+v", got)
+	}
+	if got := online(); len(got) != 0 {
+		t.Fatalf("said once while Zigbee2MQTT stays online: %+v", got)
+	}
+	h.do(Bridge{Now: h.now, Online: false})
+	if got := online(); len(got) != 1 {
+		t.Fatalf("said again when it is back: %+v", got)
+	}
+	h.n.Restore(h.n.Snapshot())
+	if got := online(); len(got) != 1 {
+		t.Fatalf("said again after a start: %+v", got)
+	}
 }

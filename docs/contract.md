@@ -430,7 +430,8 @@ Les ordres arrivent sur `registry/cmd` et ne viennent jamais du cloud.
   (10 minutes par défaut) et l'obtient de Zigbee2MQTT par morceaux de 254 secondes au
   plus.
 - `registry.pair_failed` : Zigbee2MQTT a refusé d'ouvrir le réseau (ou de le garder
-  ouvert) pour l'ordre `ref` ; `reason` reprend ses mots. La fenêtre est finie
+  ouvert) pour l'ordre `ref`, ou n'a pas répondu à la demande ; `reason` reprend ses
+  mots, ou dit qu'il n'a pas répondu. La fenêtre est finie
   (`zigbee.status` repasse `pairing` à faux) : l'outil d'installation s'arrête en
   erreur.
 - `registry.device_added`, `registry.device_rejected` et `registry.device_removed`
@@ -457,7 +458,7 @@ vit) :
 
 - `bridge` : `online` quand Zigbee2MQTT et sa clé tournent, `offline` sinon.
 - `devices` : appareils enregistrés ; `offline` : ceux qui ne répondent plus ;
-  `pairing` : le réseau est ouvert aux nouveaux appareils.
+  `pairing` : le réseau est ouvert aux nouveaux appareils, Zigbee2MQTT l'a confirmé.
 - La centrale en déduit le lien `zigbee` de `system.health` : `ok`, `down`, ou
   `silent` si l'adaptateur ne donne plus de nouvelles. Après 3 minutes de panne, le
   responsable (sinon le propriétaire) reçoit l'alerte `zigbee_down` : l'alarme

@@ -195,7 +195,14 @@ func TestTheAdapterEndToEndWithASimulatedZigbee2MQTT(t *testing.T) {
 	pair := func(ieee, model string) string {
 		t.Helper()
 		before := len(f.of(contract.TypeRegistryDeviceAdded))
+		asked := len(f.on("zigbee2mqtt/bridge/request/permit_join"))
 		f.order(t, contract.RegistryCmdTopic(site), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 120})
+		// Zigbee2MQTT 2.x opens the network and echoes the request's transaction.
+		drivertest.WaitFor(t, "the request to open", func() bool { return len(f.on("zigbee2mqtt/bridge/request/permit_join")) > asked })
+		var req map[string]any
+		json.Unmarshal(f.on("zigbee2mqtt/bridge/request/permit_join")[asked].Payload, &req)
+		answer, _ := json.Marshal(map[string]any{"data": map[string]any{"time": req["time"]}, "status": "ok", "transaction": req["transaction"]})
+		f.publish(t, "zigbee2mqtt/bridge/response/permit_join", string(answer), false)
 		drivertest.WaitFor(t, "the network open", func() bool { return status().Pairing })
 		f.publish(t, "zigbee2mqtt/bridge/event", `{"type":"device_interview","data":{"ieee_address":"`+ieee+`","status":"successful","supported":true,"definition":{"model":"`+model+`"}}}`, false)
 		drivertest.WaitFor(t, model+" added", func() bool { return len(f.of(contract.TypeRegistryDeviceAdded)) == before+1 })
