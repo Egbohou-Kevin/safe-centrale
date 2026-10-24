@@ -51,13 +51,19 @@ func (a *App) dispatchOne(now time.Time, act zigbee.Action) error {
 	case zigbee.Ignored:
 		a.log.Debug("ignored", "what", v.What)
 	default:
-		msg, ok, err := z2m.Build(a.cfg.Base, act)
-		if err != nil {
-			return err
-		}
-		if ok {
-			a.out.Put(&outbox.Item{Topic: msg.Topic, Data: msg.Payload, QoS: 1, Raw: true})
-		}
+		return a.toBridge(act)
+	}
+	return nil
+}
+
+// toBridge sends a request to Zigbee2MQTT, if the action is one.
+func (a *App) toBridge(act zigbee.Action) error {
+	msg, ok, err := z2m.Build(a.cfg.Base, act)
+	if err != nil {
+		return err
+	}
+	if ok {
+		a.out.Put(&outbox.Item{Topic: msg.Topic, Data: msg.Payload, QoS: 1, Raw: true})
 	}
 	return nil
 }

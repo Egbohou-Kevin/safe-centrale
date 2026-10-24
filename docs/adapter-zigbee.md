@@ -131,7 +131,9 @@ l'outil d'installation le lisent au démarrage.
    appareils. Zigbee n'ouvre pas le réseau plus de 254 secondes d'une seule demande
    (Zigbee2MQTT refuse au-delà) : une fenêtre plus longue est ouverte par morceaux de
    254 secondes au plus, chacun demandé 10 secondes avant la fin du précédent, pour
-   que le réseau ne se referme jamais entre deux.
+   que le réseau ne se referme jamais entre deux. La fenêtre ne compte comme ouverte
+   (`zigbee.status`, `pairing` à vrai) qu'une fois que Zigbee2MQTT a répondu « ok » à
+   la première demande (voir plus bas).
 2. L'installateur active l'appareil (appui long sur un bouton, retrait de la
    languette de pile…). Un appareil sur pile qui s'endort vite doit être tenu éveillé
    pendant l'interrogation : l'Aqara MCCGQ11LM demande, après l'appui long de 5 s, un
@@ -148,18 +150,39 @@ l'outil d'installation le lisent au démarrage.
    déclencher l'appareil et vérifier que son événement arrive.
 6. À la fin du délai, ou sur ordre, l'adaptateur referme le réseau.
 
-Si Zigbee2MQTT refuse d'ouvrir le réseau (ou de le garder ouvert), l'adaptateur
-journalise son refus, met fin à la fenêtre et publie `registry.pair_failed` avec l'`id`
-de l'ordre et la raison donnée par Zigbee2MQTT : l'outil d'installation l'affiche et
-s'arrête en erreur, au lieu d'attendre devant un réseau fermé (trouvé à l'essai sur le
-matériel du 24 octobre 2026 : `-for 5m` demandait 300 secondes d'un coup, Zigbee2MQTT
-2.14.2 répondait « Cannot permit join for more than 254 seconds. » et l'outil attendait
-comme si le réseau était ouvert).
+**Chaque demande attend sa réponse.** Chaque demande d'ouverture (`permit_join`) porte
+une `transaction` à elle (l'`id` de l'ordre, un point et le numéro de la demande dans
+la fenêtre), que Zigbee2MQTT 2.x recopie dans sa réponse sur
+`bridge/response/permit_join`, qu'elle soit « ok » ou une erreur (`getResponse` dans
+`lib/util/utils.ts`). L'adaptateur ne lit que la réponse à la demande qu'il attend :
+la réponse à une demande de fermeture (qui ne porte pas de transaction), à une fenêtre
+remplacée depuis ou à une demande déjà répondue est journalisée et laissée de côté.
+Sans cela, le refus tardif d'une fermeture arrivé juste après l'ouverture d'une
+nouvelle fenêtre aurait mis fin à cette nouvelle fenêtre.
 
-Quand l'adaptateur s'arrête pendant une fenêtre, il referme le réseau : un appareil qui
-entrerait sans lui resterait dans le réseau de Zigbee2MQTT, hors du registre, sans
-surveillance. Au redémarrage, si la fenêtre court encore, il le rouvre pour ce qui en
-reste.
+- **Réponse « ok »** : la fenêtre est ouverte, `zigbee.status` passe `pairing` à vrai.
+  Pour les morceaux suivants, la fenêtre reste ouverte pendant l'attente (le morceau
+  précédent court encore).
+- **Refus** : l'adaptateur journalise le refus, met fin à la fenêtre (et redemande la
+  fermeture, au cas où un morceau précédent serait encore ouvert) et publie
+  `registry.pair_failed` avec l'`id` de l'ordre et la raison donnée par Zigbee2MQTT.
+  L'outil d'installation l'affiche et s'arrête en erreur, au lieu d'attendre devant un
+  réseau fermé (trouvé à l'essai sur le matériel du 24 octobre 2026 : `-for 5m`
+  demandait 300 secondes d'un coup, Zigbee2MQTT 2.14.2 répondait « Cannot permit join
+  for more than 254 seconds. » et l'outil attendait comme si le réseau était ouvert).
+- **Pas de réponse** (Zigbee2MQTT arrêté ou figé) : comme pour une commande, la
+  demande est renvoyée, avec la même transaction (une réponse tardive à la première
+  compte encore), toutes les `confirm_wait` (3 s), `attempts` (3) fois en tout. Sans
+  réponse au bout du compte (9 s), la fenêtre échoue de même : `registry.pair_failed`
+  avec la raison « Zigbee2MQTT did not answer the request to open the network: is it
+  running? ». L'outil d'installation attend 15 s la confirmation de l'ouverture, plus
+  que l'adaptateur, pour entendre cette raison.
+
+Quand l'adaptateur s'arrête pendant une fenêtre (même pas encore confirmée : la
+réponse peut n'être qu'en retard), il referme le réseau : un appareil qui entrerait
+sans lui resterait dans le réseau de Zigbee2MQTT, hors du registre, sans surveillance.
+Au redémarrage, si la fenêtre court encore, il le rouvre pour ce qui en reste, et
+attend la réponse comme pour un morceau suivant.
 
 Le **retrait** d'un appareil (`registry.remove`) l'enlève de Zigbee2MQTT et du
 registre. Son `device_id` est retiré définitivement.
@@ -252,7 +275,8 @@ retenu par capacité.
 - Scénarios : changement d'état, message répété sans changement, état conservé au
   démarrage (aucun événement), appareil muet puis de retour, commande de sirène
   confirmée, non confirmée avec nouvelles tentatives, appairage réussi, appairage
-  d'un modèle inconnu, retrait, pont arrêté.
+  d'un modèle inconnu, ouverture refusée, réponse d'une autre demande ignorée,
+  ouverture jamais confirmée, retrait, pont arrêté.
 - Ensuite, tests avec les vrais appareils du kit, pour valider chaque profil.
 
 ## Décidé
@@ -349,7 +373,9 @@ Constaté sur le matériel (essai du 24 octobre 2026, Zigbee2MQTT 2.14.2 sur Nod
 - Les noms des sujets et des champs de la version de Zigbee2MQTT installée, en
   particulier le format de `bridge/state`. `permit_join` (l'adaptateur envoie `value`
   et `time` pour couvrir les versions 1 et 2) est vérifié avec la version 2.14.2 : elle
-  lit `time` et refuse plus de 254 secondes.
+  lit `time` et refuse plus de 254 secondes. La `transaction` recopiée dans la réponse
+  (ok ou erreur) est lue dans le code de Zigbee2MQTT 2.x (`lib/util/utils.ts`,
+  `lib/extension/bridge.ts`), pas encore vue sur le kit.
 - Chaque profil de `config/profiles/` hors MCCGQ11LM : modèles, champs, valeurs
   (notamment les touches du clavier et la commande de la sirène, qui ne rapporte
   peut-être pas son état).

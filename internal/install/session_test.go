@@ -83,7 +83,7 @@ func newTestSession(t *testing.T, respond func(a *fakeAdapter, m sent)) (*Sessio
 	a := &fakeAdapter{respond: respond}
 	ids := contract.NewIDGenerator()
 	s, err := NewSession(site, Deps{Publisher: a, Now: func() time.Time { return t0 }, NewID: ids.New},
-		Timing{Confirm: 200 * time.Millisecond, Grace: 100 * time.Millisecond})
+		Timing{Confirm: 200 * time.Millisecond, Open: 300 * time.Millisecond, Grace: 100 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestNewSessionNeedsASiteAndItsDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.timing.Confirm != 5*time.Second || s.timing.Grace != 5*time.Second {
+	if s.timing.Confirm != 5*time.Second || s.timing.Open != 15*time.Second || s.timing.Grace != 5*time.Second {
 		t.Errorf("default timing %+v", s.timing)
 	}
 	want := []string{

@@ -270,7 +270,8 @@ Configuration (`config/zigbee.example.json`), stricte :
   peut pas être `safehome` ni commencer par `safehome/` : l'adaptateur lirait ses
   propres messages comme des appareils.
 - `confirm_wait` (3 s) et `attempts` (3) : attente de la confirmation d'une commande
-  et nombre d'envois ; `offline_after` (4 h) : silence avant « hors ligne » pour les
+  et nombre d'envois, de même pour la réponse de Zigbee2MQTT à une demande d'ouvrir le
+  réseau (sans réponse au bout de 9 s, l'appairage échoue) ; `offline_after` (4 h) : silence avant « hors ligne » pour les
   profils qui ne disent rien ; `pair_max` (10 min) : durée maximale d'appairage (ouverte par morceaux de 254 s,
   le plus que Zigbee2MQTT accepte d'une demande) ;
   `step` (5) : écart minimal pour annoncer une pile ou un lien ; `status_every` (1 min).
@@ -459,8 +460,12 @@ Ce que l'outil vérifie avant de toucher à quoi que ce soit :
   la nouvelle. Pour `remove`, cette vérification a lieu **avant** le retrait du réseau,
   qui ne se défait pas.
 - **L'adaptateur répond** : `pair` attend que l'adaptateur Zigbee confirme l'ouverture
-  du réseau (5 s), sinon il dit que `safehome-zigbee` ne tourne pas, au lieu d'attendre
-  deux minutes pour rien.
+  du réseau (15 s), sinon il dit que `safehome-zigbee` ne tourne pas, au lieu d'attendre
+  deux minutes pour rien. L'adaptateur ne la confirme qu'une fois que Zigbee2MQTT l'a
+  confirmée lui-même ; s'il refuse ou ne répond pas, `pair` affiche
+  `the network could not be opened:` suivi de la raison (les mots de Zigbee2MQTT, ou
+  `Zigbee2MQTT did not answer the request to open the network: is it running?`) et
+  s'arrête en erreur.
 
 `check` signale :
 

@@ -152,15 +152,26 @@ func topicMatches(filter, topic string) bool {
 	return len(f) == len(tp)
 }
 
-// Zigbee2MQTT 2.14.2 on the trial: asked for 300 s, it refused.
-func TestARefusalToOpenTheNetworkReachesTheCore(t *testing.T) {
-	in, ok := parse(t, "zigbee2mqtt/bridge/response/permit_join",
-		`{"data":{},"status":"error","error":"Cannot permit join for more than 254 seconds."}`, false)
-	if !ok || in != (zigbee.PairRefused{Now: now, Reason: "Cannot permit join for more than 254 seconds."}) {
-		t.Fatalf("%+v", in)
+// Zigbee2MQTT 2.14.2 on the trial: asked for 300 s, it refused. Zigbee2MQTT 2.x
+// echoes the request's transaction in its answer, an error or not.
+func TestAnswersToOpenTheNetworkReachTheCoreWithTheirTransaction(t *testing.T) {
+	const topic = "zigbee2mqtt/bridge/response/permit_join"
+	for payload, want := range map[string]zigbee.JoinAnswer{
+		`{"data":{},"status":"error","error":"Cannot permit join for more than 254 seconds.","transaction":"p1.1"}`: {
+			Now: now, Txn: "p1.1", Reason: "Cannot permit join for more than 254 seconds."},
+		`{"data":{"time":254},"status":"ok","transaction":"p1.2"}`: {Now: now, Txn: "p1.2", OK: true},
+		`{"data":{"time":0},"status":"ok"}`:                        {Now: now, OK: true}, // a closing order
+		`{"data":{"time":254},"status":"ok","transaction":23}`:     {Now: now, OK: true}, // not one of ours
+		`{"data":{},"status":"error","error":"Invalid payload"}`:   {Now: now, Reason: "Invalid payload"},
+	} {
+		if in, ok := parse(t, topic, payload, false); !ok || in != want {
+			t.Errorf("%s: %+v", payload, in)
+		}
 	}
-	if _, ok := parse(t, "zigbee2mqtt/bridge/response/permit_join", `{"data":{"time":254},"status":"ok"}`, false); ok {
-		t.Error("an opening that went well changes nothing")
+	for _, payload := range []string{`nope`, `{"status":"maybe"}`} {
+		if _, _, err := Parse(DefaultBase, topic, []byte(payload), false, now); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: %v", payload, err)
+		}
 	}
 }
 
@@ -199,12 +210,12 @@ func TestActionsBecomeRequests(t *testing.T) {
 	if topic != "zigbee2mqtt/0x02/set" || body["warning"].(map[string]any)["duration"] != 300.0 {
 		t.Fatalf("%s %v", topic, body)
 	}
-	topic, body = build(t, zigbee.PermitJoin{Seconds: 120})
-	if topic != "zigbee2mqtt/bridge/request/permit_join" || body["value"] != true || body["time"] != 120.0 {
+	topic, body = build(t, zigbee.PermitJoin{Seconds: 120, Txn: "p1.1"})
+	if topic != "zigbee2mqtt/bridge/request/permit_join" || body["value"] != true || body["time"] != 120.0 || body["transaction"] != "p1.1" {
 		t.Fatalf("%s %v", topic, body)
 	}
 	_, body = build(t, zigbee.PermitJoin{})
-	if body["value"] != false || body["time"] != 0.0 {
+	if _, txn := body["transaction"]; body["value"] != false || body["time"] != 0.0 || txn {
 		t.Fatalf("closing: %v", body)
 	}
 	topic, body = build(t, zigbee.Rename{IEEE: "0x01", To: "dev_k7p2"})

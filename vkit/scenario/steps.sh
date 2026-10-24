@@ -66,6 +66,15 @@ step_install() {
 	zigbee send $SMOKE '{"smoke":false,"tamper":false,"battery":95,"linkquality":200}'
 	zigbee send $KEYPAD '{"tamper":false,"battery":95,"linkquality":200}'
 	sleep 2
+	say "pairing while Zigbee2MQTT answers nothing"
+	zigbee answers off
+	if $INSTALL pair $HUBCONF -for 20s >/tmp/vkit-pair-stuck.log 2>&1; then
+		check_failed "a pairing Zigbee2MQTT never confirms ends in error"
+	else
+		check_passed "a pairing Zigbee2MQTT never confirms ends in error"
+	fi
+	expect_file /tmp/vkit-pair-stuck.log "Zigbee2MQTT did not answer" "the tool says Zigbee2MQTT did not answer"
+	zigbee answers on
 }
 
 device_id() { $INSTALL devices $HUBCONF | awk -v m="$1" 'index($2, m) == 1 { print $1 }'; }

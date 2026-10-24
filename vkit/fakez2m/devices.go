@@ -13,6 +13,7 @@ import (
 //	send IEEE JSON      the device reports (last_seen is added)
 //	leave IEEE          the device leaves the network
 //	bridge online|offline
+//	answers on|off      off: requests go unanswered (a Zigbee2MQTT stuck)
 func (z *bridge) order(f []string) error {
 	if len(f) < 2 {
 		return errors.New("missing value")
@@ -29,6 +30,10 @@ func (z *bridge) order(f []string) error {
 		z.event("device_leave", f[1], "")
 	case "bridge":
 		z.publish("bridge/state", map[string]string{"state": f[1]}, true)
+	case "answers":
+		z.mu.Lock()
+		z.answers = f[1] != "off"
+		z.mu.Unlock()
 	default:
 		return errors.New("unknown order")
 	}

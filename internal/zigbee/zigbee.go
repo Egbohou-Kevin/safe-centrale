@@ -107,6 +107,20 @@ type Snapshot struct {
 	PairUntil time.Time                   `json:"pair_until"`          // zero while closed
 	PairRenew time.Time                   `json:"pair_renew,omitzero"` // next request to keep it open, zero if none
 	PairRef   string                      `json:"pair_ref"`
+	// PairOpen: Zigbee2MQTT confirmed the window (its first piece); until then the
+	// network does not count as open.
+	PairOpen bool `json:"pair_open,omitzero"`
+	// PairAsk is the request to open the network that waits for Zigbee2MQTT's answer.
+	PairAsk Asking `json:"pair_ask,omitzero"`
+	PairSeq int    `json:"pair_seq,omitzero"` // requests made for the window, to name them
+}
+
+// Asking is a request to open the network waiting for its answer. Without one by
+// Deadline it is sent again, Config.Attempts times in all, as a device command is.
+type Asking struct {
+	Txn      string    `json:"txn"` // the transaction Zigbee2MQTT echoes in its answer
+	Attempt  int       `json:"attempt"`
+	Deadline time.Time `json:"deadline"`
 }
 
 func (s Snapshot) clone() Snapshot {
@@ -214,7 +228,7 @@ func (n *Network) Devices() []Device {
 func (n *Network) Status() Status {
 	return Status{
 		Bridge: n.s.Bridge, Devices: len(n.s.Devices),
-		Offline: slices.Sorted(maps.Keys(n.s.Offline)), Pairing: !n.s.PairUntil.IsZero(),
+		Offline: slices.Sorted(maps.Keys(n.s.Offline)), Pairing: !n.s.PairUntil.IsZero() && n.s.PairOpen,
 	}
 }
 
@@ -231,6 +245,9 @@ func (n *Network) NextWake() time.Time {
 	}
 	if !n.s.PairRenew.IsZero() {
 		add(n.s.PairRenew)
+	}
+	if n.s.PairAsk.Txn != "" {
+		add(n.s.PairAsk.Deadline)
 	}
 	for _, p := range n.s.Pending {
 		add(p.Deadline)
@@ -269,8 +286,8 @@ func (n *Network) Handle(in Input) []Action {
 		out = n.left(v)
 	case Pair:
 		out = n.pair(v)
-	case PairRefused:
-		out = n.pairRefused(v)
+	case JoinAnswer:
+		out = n.joinAnswered(v)
 	case Remove:
 		out = n.remove(v)
 	case Command:

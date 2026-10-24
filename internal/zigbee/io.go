@@ -54,10 +54,13 @@ type Pair struct {
 	For time.Duration
 }
 
-// PairRefused says that Zigbee2MQTT refused a request to open the network, with
-// its reason.
-type PairRefused struct {
+// JoinAnswer is Zigbee2MQTT's answer to a request to open the network: OK, or
+// refused with its reason. Txn is the transaction the request carried, which
+// Zigbee2MQTT echoes; empty when the answer has none.
+type JoinAnswer struct {
 	Now    time.Time
+	Txn    string
+	OK     bool
 	Reason string
 }
 
@@ -84,7 +87,7 @@ func (b Bridge) at() time.Time      { return b.Now }
 func (i Interviewed) at() time.Time { return i.Now }
 func (l Left) at() time.Time        { return l.Now }
 func (p Pair) at() time.Time        { return p.Now }
-func (p PairRefused) at() time.Time { return p.Now }
+func (j JoinAnswer) at() time.Time  { return j.Now }
 func (r Remove) at() time.Time      { return r.Now }
 func (c Command) at() time.Time     { return c.Now }
 
@@ -117,8 +120,13 @@ type Send struct {
 	Payload map[string]any
 }
 
-// PermitJoin opens the network for Seconds, or closes it at zero.
-type PermitJoin struct{ Seconds int }
+// PermitJoin opens the network for Seconds, or closes it at zero. Txn, set on a
+// request to open, is echoed in Zigbee2MQTT's answer (JoinAnswer): it ties the
+// answer to its request.
+type PermitJoin struct {
+	Seconds int
+	Txn     string
+}
 
 // Rename gives a new device its id as its name in Zigbee2MQTT: no maker's name in
 // the topics and the logs.
@@ -152,7 +160,7 @@ type Rejected struct {
 // the window is over.
 type PairFailed struct {
 	Ref    string // the pairing order
-	Reason string // Zigbee2MQTT's words
+	Reason string // Zigbee2MQTT's words, or ReasonNoJoinAnswer
 }
 
 // Removed: a device left the registry. Its retained states are to be cleared.
@@ -194,6 +202,10 @@ const (
 	ReasonSuperseded     = "superseded"      // a newer command for the same device came first
 	ReasonRemoved        = "removed"         // the device was removed meanwhile
 )
+
+// ReasonNoJoinAnswer is why a pairing window failed when Zigbee2MQTT never answered
+// the request to open the network.
+const ReasonNoJoinAnswer = "Zigbee2MQTT did not answer the request to open the network: is it running?"
 
 // Why a device was refused at pairing.
 const (

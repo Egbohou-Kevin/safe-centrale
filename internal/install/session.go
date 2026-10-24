@@ -23,9 +23,9 @@ var (
 	ErrNoAnswer = errors.New("the Zigbee adapter did not answer: is safehome-zigbee running?")
 	// ErrNotPaired: the device to remove is not in the registry.
 	ErrNotPaired = errors.New("no such device in the registry")
-	// ErrPairRefused: Zigbee2MQTT would not open the network, or keep it open; the
-	// window is over.
-	ErrPairRefused = errors.New("the network could not be opened, Zigbee2MQTT refused")
+	// ErrPairRefused: Zigbee2MQTT would not open the network, or keep it open, or
+	// never answered the adapter; the window is over.
+	ErrPairRefused = errors.New("the network could not be opened")
 )
 
 // Publisher sends one message to the broker. The program gives the MQTT client.
@@ -43,7 +43,12 @@ type Deps struct {
 // Timing bounds the waits of a session. The zero value means the defaults.
 type Timing struct {
 	Confirm time.Duration // for the adapter to confirm an order (default 5 s)
-	Grace   time.Duration // after the end of a pairing window, for its last news (default 5 s)
+	// Open is for the adapter to confirm that the network is open (default 15 s). The
+	// adapter waits for Zigbee2MQTT's own confirmation, asking again, and reports
+	// that none came (confirm_wait x attempts, 9 s by default): Open must be longer,
+	// for the tool to hear why.
+	Open  time.Duration
+	Grace time.Duration // after the end of a pairing window, for its last news (default 5 s)
 }
 
 // Session is one run of a tool against the broker: it sends orders and reads what the
@@ -70,6 +75,9 @@ func NewSession(site string, d Deps, t Timing) (*Session, error) {
 	}
 	if t.Confirm <= 0 {
 		t.Confirm = 5 * time.Second
+	}
+	if t.Open <= 0 {
+		t.Open = 15 * time.Second
 	}
 	if t.Grace <= 0 {
 		t.Grace = 5 * time.Second
@@ -181,8 +189,9 @@ type PairNews struct {
 
 // Pair opens the network for d (whole seconds, at least one) and reports each device
 // added or refused until the window closes. If ctx ends first (Ctrl-C), it closes the
-// network at once. It returns ErrNoAnswer if the adapter does not confirm the opening,
-// and ErrPairRefused, with Zigbee2MQTT's reason, if the network would not open.
+// network at once. The adapter confirms the opening once Zigbee2MQTT has. It returns
+// ErrNoAnswer if the adapter does not answer, and ErrPairRefused, with the reason
+// (Zigbee2MQTT's words, or that it did not answer), if the network would not open.
 func (s *Session) Pair(ctx context.Context, d time.Duration, report func(PairNews)) error {
 	seconds := int(d / time.Second)
 	if seconds < 1 {
@@ -193,7 +202,7 @@ func (s *Session) Pair(ctx context.Context, d time.Duration, report func(PairNew
 	if err != nil {
 		return err
 	}
-	confirmCtx, stopConfirm := context.WithTimeout(ctx, s.timing.Confirm)
+	confirmCtx, stopConfirm := context.WithTimeout(ctx, s.timing.Open)
 	defer stopConfirm()
 	windowCtx, stopWindow := context.WithTimeout(ctx, time.Duration(seconds)*time.Second+s.timing.Grace)
 	defer stopWindow()

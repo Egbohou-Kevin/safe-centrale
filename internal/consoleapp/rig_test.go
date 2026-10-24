@@ -249,7 +249,7 @@ func newRig(t *testing.T) *rig {
 	}
 	cfg := DefaultConfig(site)
 	cfg.PairFor = time.Second
-	cfg.Timing = install.Timing{Confirm: time.Second, Grace: 100 * time.Millisecond}
+	cfg.Timing = install.Timing{Confirm: time.Second, Open: time.Second, Grace: 100 * time.Millisecond}
 	app, err := New(cfg, Deps{
 		Clock: r.clock, Publisher: r, NewID: r.ids.New, Hotspot: r.hotspot, Sites: r.sites, Codes: r.codes,
 		Serve: func(ctx context.Context) error {

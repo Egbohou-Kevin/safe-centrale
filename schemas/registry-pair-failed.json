@@ -12,7 +12,7 @@
     },
     "reason": {
       "type": "string",
-      "description": "Les mots de Zigbee2MQTT"
+      "description": "Les mots de Zigbee2MQTT, ou le constat qu'il n'a pas répondu"
     }
   },
   "required": [
