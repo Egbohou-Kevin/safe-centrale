@@ -80,6 +80,48 @@ func TestStoredSMSAreReadAtOpenAndAtEachCheck(t *testing.T) {
 	drivertest.WaitFor(t, "the SMS found by the check", func() bool { return len(ev.received()) == 2 })
 }
 
+// A stored SMS is handed on only once deleted: one whose delete failed would be read
+// again at the next check and handed on twice, and a contact's "1" read twice ends a
+// second incident. Kept until its delete succeeds, it is handed on once.
+func TestAStoredSMSIsHandedOnOnceItsDeleteSucceeds(t *testing.T) {
+	s := attest.New()
+	m, ev := openSim(t, s)
+	deletes := func() int {
+		n := 0
+		for _, c := range s.Commands() {
+			if c == "AT+CMGD=1" {
+				n++
+			}
+		}
+		return n
+	}
+	s.Mu.Lock()
+	s.CMGD = "+CMS ERROR: 500"
+	s.Inbox[1] = [2]string{"+22890123456", "1"}
+	s.Mu.Unlock()
+	s.Push(`+CMTI: "SM",1`)
+	drivertest.WaitFor(t, "the delete that fails", func() bool { return deletes() == 1 })
+	if _, err := m.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	drivertest.WaitFor(t, "the second delete that fails", func() bool { return deletes() == 2 })
+	if got := ev.received(); len(got) != 0 {
+		t.Fatalf("nothing is handed on while the SMS stays stored: %q", got)
+	}
+	s.Mu.Lock()
+	s.CMGD = ""
+	s.Mu.Unlock()
+	for range 2 {
+		if _, err := m.Check(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	drivertest.WaitFor(t, "the SMS handed on", func() bool { return len(ev.received()) == 1 })
+	if got := ev.received(); len(got) != 1 {
+		t.Fatalf("handed on once: %q", got)
+	}
+}
+
 // An SMS slower to leave than an ordinary command is not cut off: it would be
 // reported failed and sent again while it left.
 func TestASlowSMSIsNotCutOffAtTheCommandTimeout(t *testing.T) {

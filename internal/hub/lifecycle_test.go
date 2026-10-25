@@ -132,6 +132,41 @@ func TestARestartAfterTheExitDelayReadsTheDoorsFirst(t *testing.T) {
 	}
 }
 
+// After an unclean stop the broker gives back the retained states of its last save,
+// minutes old: the back door, closed before the arming, comes back open. Dated before
+// the closing the engine heard, it is no opening; dated after, while the hub was off,
+// it is one.
+func TestARestartGivesNoCreditToARetainedStateOlderThanTheEngine(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		since time.Duration // from the first rig's start
+		rings bool
+	}{{"stale", 0, false}, {"opened during the outage", 30 * time.Minute, true}} {
+		t.Run(c.name, func(t *testing.T) {
+			first := newRig(t, nil)
+			first.start()
+			first.device(devBack, contract.CapContact, "open")
+			first.clock.Advance(time.Minute)
+			first.device(devBack, contract.CapContact, "closed")
+			first.keypad(contract.ValArm, "")
+			first.keypad(contract.ValArmNow, "")
+			first.mustBe(engine.ModeArmed)
+			first.stop()
+
+			second := newRig(t, first.store, func(c *Config) { c.BootWindow = 50 * time.Millisecond })
+			second.clock.Advance(time.Hour)
+			open := event(devBack, contract.CapContact, "open")
+			open.Since = contract.TSPtr(t0.Add(c.since))
+			second.send(contract.DeviceStateTopic(site, devBack, contract.CapContact), contract.TypeDeviceState, open)
+			second.start()
+			second.settle()
+			if got := len(eventsOf(second, contract.TypeAlarmTriggered)) == 1; got != c.rings {
+				t.Fatalf("alarm %v, want %v", got, c.rings)
+			}
+		})
+	}
+}
+
 func TestSequenceNumbersOnlyGoUpAcrossRestarts(t *testing.T) {
 	first := newRig(t, nil)
 	first.start()

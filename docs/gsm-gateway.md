@@ -180,6 +180,12 @@ avec une ligne dite en état de marche pendant que chaque envoi échouait.
   dont l'annonce (`+CMTI`) s'est perdue ou dont la lecture a échoué reste sur la SIM :
   la passerelle liste les SMS gardés (`AT+CMGL="ALL"`) à chaque ouverture du port et à
   chaque vérification (toutes les 30 s), puis les lit et les efface comme les autres.
+  Un SMS n'est pris qu'une fois effacé : si l'effacement échoue, il reste sur la SIM et
+  sera relu, sans compter deux fois. Un effacement qui n'a pas répondu à temps a pu
+  effacer quand même : ce « 1 » est alors perdu, le côté sûr (l'escalade continue, et
+  le contact peut répondre de nouveau). Corrigé le 25 octobre 2026 après une revue : un
+  « 1 » dont l'effacement échouait était repris à la vérification suivante, et pouvait
+  acquitter un deuxième incident.
   Avant, un tel « 1 » se perdait sans trace, et les SMS laissés remplissaient la SIM
   jusqu'à ce que le réseau n'en livre plus.
 
@@ -299,7 +305,21 @@ Là où le document laissait un doute :
   l'intrusion continue. Se tromper dans ce sens n'ajoute que des messages ; dans
   l'autre, un « 1 » destiné au sabotage arrêtait pour tout le monde les vagues et les
   rappels de l'intrusion, et les demandes en file de la passerelle (corrigé le 25
-  octobre 2026 après une revue).
+  octobre 2026 après une revue). Une relance compte comme un nouvel envoi : un incident
+  dit il y a une heure et relancé il y a une minute est encore de ceux auxquels un « 1 »
+  peut répondre. À urgence égale, l'alerte d'une sirène muette passe avant l'alarme
+  qu'elle accompagne : son acquittement ne termine qu'elle, celui de l'alarme en arrête
+  les vagues pour tous. Corrigé le 25 octobre 2026 après une revue : une relance de
+  l'intrusion ne rouvrait pas l'ambiguïté, et un « 1 » répondu à la sirène muette
+  arrêtait l'escalade de l'alarme.
+- **Heure d'écriture d'un « 1 »** : le SMS porte l'heure où le centre de messagerie de
+  l'opérateur l'a reçu, que la passerelle lit (fuseau compris). Un « 1 » écrit plus de
+  10 minutes avant le premier envoi de l'incident auquel il répondrait (gardé par le
+  réseau pendant que la SIM de la centrale était hors réseau, ou sur la SIM pendant
+  que la passerelle était arrêtée) répond à autre chose : il n'acquitte rien, et c'est
+  journalisé. Les 10 minutes couvrent l'écart entre l'horloge de l'opérateur et celle de
+  la centrale. Corrigé le 25 octobre 2026 après une revue : un « 1 » d'hier, livré au
+  retour du réseau, acquittait l'intrusion du soir.
 - **SMS de test** : envoyé chaque semaine au numéro de contrôle, il ne publie rien vers
   l'escalade ; son résultat va dans l'état de la ligne (`last_test`, `last_test_ok`). Il
   n'est pas réessayé : son rôle est de dire.

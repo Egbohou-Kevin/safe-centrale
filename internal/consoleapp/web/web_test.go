@@ -224,6 +224,37 @@ func TestOrdersAndTheirOutcome(t *testing.T) {
 	}
 }
 
+// A removal sent without an answer from the adapter still takes the device out of the
+// site: the page says so, not only that the adapter did not answer. The device may
+// still be paired and working, no longer watched.
+func TestAnUnconfirmedRemovalSaysTheDeviceLeftTheSite(t *testing.T) {
+	c := &fakeConsole{o: overview(), err: fmt.Errorf("%w: %w", install.ErrUnconfirmed, consoleapp.ErrNoAnswer)}
+	h := newHandler(t, c)
+	loc := post(h, "/remove", url.Values{"id": {"dev_door"}}).Header().Get("Location")
+	if loc != "/?err=unconfirmed&id=dev_door" {
+		t.Fatalf("redirect %s", loc)
+	}
+	body := get(h, loc).Body.String()
+	if !strings.Contains(body, "dev_door quitte la configuration quand m\u00eame") || strings.Contains(body, "n'a pas r\u00e9pondu") {
+		t.Fatalf("%s", body)
+	}
+}
+
+// The zones file is refused: the hub watches other zones than the installer's, and
+// the page does not say that all is in order.
+func TestAnUnreadableZonesFileIsNotInOrder(t *testing.T) {
+	o := overview()
+	o.Findings, o.SiteErr = nil, "site-devices.json: unexpected end of JSON input"
+	body := get(newHandler(t, &fakeConsole{o: o}), "/").Body.String()
+	if !strings.Contains(body, "La configuration des zones est illisible") || strings.Contains(body, "Tout est en ordre") {
+		t.Fatalf("%s", body)
+	}
+	o.SiteErr = ""
+	if body := get(newHandler(t, &fakeConsole{o: o}), "/").Body.String(); !strings.Contains(body, "Tout est en ordre") {
+		t.Fatalf("%s", body)
+	}
+}
+
 func TestOnlyTheHubsAddressAndKnownRoutes(t *testing.T) {
 	h := newHandler(t, &fakeConsole{o: overview()})
 	r := httptest.NewRequest("GET", "/", nil)

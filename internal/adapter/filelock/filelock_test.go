@@ -1,8 +1,13 @@
 package filelock
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -42,4 +47,28 @@ func TestHoldersTakeTurns(t *testing.T) {
 	if _, err := Hold(dir, "codes.lock", 50*time.Millisecond); err == nil {
 		t.Fatal("a held lock taken again")
 	}
+}
+
+// A lock file made by a tool run as another user than the folder's owner (plain sudo)
+// gets the folder's owner: left to root, read-write for root alone, the console could
+// never take it again. Only root can give a file away, so here, for a folder said to
+// be root's, the lock is refused with the reason, and no file is left in the way.
+func TestTheLockFileGetsTheFoldersOwner(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can give the file away")
+	}
+	dir := t.TempDir()
+	_, err := hold(dir, "codes.lock", time.Second, &syscall.Stat_t{Uid: 0, Gid: 0})
+	if err == nil || !strings.Contains(err.Error(), "run the tool as that user") {
+		t.Fatalf("a lock owned by the wrong user was taken: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "codes.lock")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the lock file is left: %v", err)
+	}
+	info, _ := os.Stat(dir)
+	release, err := hold(dir, "codes.lock", time.Second, info.Sys().(*syscall.Stat_t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
 }

@@ -262,3 +262,44 @@ func TestTheEntryDelayGoesOnOnceTheAlarmThatInterruptedItIsSilenced(t *testing.T
 		t.Fatalf("the entry delay that ran out rings the intrusion: %v", as)
 	}
 }
+
+// A fire during a fire, set off once every detector of the one that rings went back
+// to rest, is a new fire: it alerts under its own incident (the first alert may have
+// been answered "only steam in the kitchen") and rings once the first one ends,
+// whatever ends it. While a detector of the ringing fire is still in alarm, another
+// one joins it, without a second alert.
+func TestAFireAfterTheRingingFireClearedIsANewFire(t *testing.T) {
+	for _, end := range []struct {
+		name string
+		do   func(h *harness) []Action
+	}{
+		{"silence", func(h *harness) []Action { return h.cmd(CmdSilence, goodCode("u_1")) }},
+		{"cycles", func(h *harness) []Action { return h.advance(18 * time.Minute) }}, // 19 min after the first
+	} {
+		t.Run(end.name, func(t *testing.T) {
+			h := newHarness(t, withSmoke2)
+			first := onlyEvent[Triggered](t, h.signal(smoke, SensorSmoke, true)).Incident
+			h.signal(smoke, SensorSmoke, false)
+			h.advance(time.Minute)
+			al := alerts(h.signal(smoke2, SensorSmoke, true))
+			if len(al) != 1 || al[0].Kind != AlertFire || al[0].Incident == first || al[0].Cause.DeviceID != smoke2 {
+				t.Fatalf("a fire after the ringing one cleared alerts under a new incident: %v", al)
+			}
+			mustRingFire(t, h, end.do(h), al[0].Incident)
+			h.advance(19 * time.Minute)
+			h.mustBe(ModeDisarmed)
+		})
+	}
+
+	// While the first detector is still in smoke, the second joins its fire.
+	h := newHarness(t, withSmoke2)
+	h.signal(smoke, SensorSmoke, true)
+	if al := alerts(h.signal(smoke2, SensorSmoke, true)); len(al) != 0 {
+		t.Fatalf("one fire alert while the fire rings: %v", al)
+	}
+	// The first one clearing leaves the second in alarm: a third joins too.
+	h.signal(smoke, SensorSmoke, false)
+	if al := alerts(h.signal(smoke, SensorSmoke, true)); len(al) != 0 {
+		t.Fatalf("the fire still rings for the second detector: %v", al)
+	}
+}

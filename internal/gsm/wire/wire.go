@@ -25,7 +25,7 @@ func Request(d contract.AlertRequestData, id string, ts time.Time) (gsm.Request,
 	}
 	return gsm.Request{
 		Asked: ts, ID: id, Incident: d.Incident, Contact: d.Contact, Channel: ch,
-		Priority: priority(d.Kind), Text: d.Text,
+		Priority: priority(d.Kind), Secondary: d.Kind == contract.AlertSirenFailed, Text: d.Text,
 	}, true
 }
 

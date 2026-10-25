@@ -421,6 +421,33 @@ func TestTheStatusGoesOutOnChangeOnly(t *testing.T) {
 	}
 }
 
+// A month of usage saved while the clock ran ahead is taken back at the next tick once
+// NTP vouches for the clock, with the real month's usage from before.
+func TestTheMonthIsTakenBackOnceTheClockIsVouchedFor(t *testing.T) {
+	h := start(t)
+	h.idle()
+	used := func() (n int64) {
+		h.app.loop.Do(context.Background(), func(time.Time) []video.Action { n = h.app.core.State().Used; return nil })
+		return n
+	}
+	ahead := video.Snapshot{Month: "2029-10", Used: 5, Prior: 900, PriorMonth: "2026-10", Reachable: map[string]bool{}}
+	h.app.loop.Do(context.Background(), func(time.Time) []video.Action { h.app.core.Restore(ahead); return nil })
+	h.clock.Advance(5 * time.Minute)
+	h.idle()
+	if n := used(); n != 5 {
+		t.Fatalf("without a word on the clock: used %d", n)
+	}
+	h.app.loop.Do(context.Background(), func(time.Time) []video.Action {
+		h.app.deps.ClockSynced = func() (bool, bool) { return true, true }
+		return nil
+	})
+	h.clock.Advance(5 * time.Minute)
+	h.idle()
+	if n := used(); n != 905 {
+		t.Fatalf("the clock vouched for: used %d", n)
+	}
+}
+
 func TestBadOrdersAreIgnored(t *testing.T) {
 	h := start(t)
 	ok := func(session string) contract.VideoRequestData {
@@ -506,6 +533,22 @@ func TestALateAlarmIsNotPhotographed(t *testing.T) {
 		t.Fatalf("%d pictures, camera opened %d times", frames, opened)
 	}
 	h.alarmAt("inc2", h.clock.Now().Add(-time.Minute)) // a live one is
+	h.idle()
+	if frames, _, _ := h.camera.count(); frames != 2 {
+		t.Fatalf("%d pictures of a live alarm", frames)
+	}
+}
+
+// The system clock is set back (a clock module running fast, corrected by NTP): the
+// service's time stands still until the wall clock catches up, while the engine
+// stamps its alarms on the corrected clock. A live alarm is not taken for a late one.
+func TestALiveAlarmAfterTheClockWasSetBackIsPhotographed(t *testing.T) {
+	h := start(t, func(c *Config) {
+		c.Video.Photos = video.PhotoPolicy{Count: 1, Every: time.Second, Width: 320, PerHour: 6}
+	})
+	h.idle()
+	h.clock.Set(t0.Add(-15 * time.Minute))
+	h.alarm("inc1")
 	h.idle()
 	if frames, _, _ := h.camera.count(); frames != 2 {
 		t.Fatalf("%d pictures of a live alarm", frames)

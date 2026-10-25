@@ -117,6 +117,9 @@ var (
 	ErrNameTooLong = install.ErrNameTooLong
 	ErrCannotServe = install.ErrCannotServe
 	ErrNoAnswer    = install.ErrNoAnswer
+	// ErrUnconfirmed: the removal went out without an answer, and the device left
+	// the site all the same; it wraps why (ErrNoAnswer...).
+	ErrUnconfirmed = install.ErrUnconfirmed
 
 	ErrNotAContact  = errors.New("no such person among the site's contacts")
 	ErrCodeMismatch = errors.New("the two codes differ")

@@ -29,7 +29,11 @@ type Own struct {
 
 // Cloud is a message read on the cloud's broker.
 type Cloud struct {
-	Now     time.Time
+	Now time.Time
+	// Wall is the system clock as it is when the message is taken, zero for Now. After
+	// the clock was set back, Now stands still until the clock catches up (the driver's
+	// guard): an expiry the cloud stamped on the corrected clock is judged on Wall.
+	Wall    time.Time
 	Topic   string
 	Payload []byte
 }

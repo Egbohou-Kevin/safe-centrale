@@ -3,13 +3,20 @@ package attest
 import (
 	"encoding/hex"
 	"strings"
+	"time"
 	"unicode/utf16"
 )
 
-// DeliverPDU encodes an SMS from a number as the modem gives it in PDU mode: an
-// SMS-DELIVER behind its service centre's address. The text goes in the GSM 7-bit
-// alphabet when every character is one ASCII shares with it, in UCS-2 otherwise.
-func DeliverPDU(from, text string) string {
+// DeliverPDU encodes an SMS from a number as the modem gives it in PDU mode, taken by
+// the service centre now (see DeliverPDUAt).
+func DeliverPDU(from, text string) string { return DeliverPDUAt(from, text, time.Now()) }
+
+// DeliverPDUAt encodes an SMS from a number as the modem gives it in PDU mode: an
+// SMS-DELIVER behind its service centre's address, stamped sent (in UTC). The text goes
+// in the GSM 7-bit alphabet when every character is one ASCII shares with it, in UCS-2
+// otherwise.
+func DeliverPDUAt(from, text string, sent time.Time) string {
+	stamp := timeStamp(sent)
 	var b []byte
 	b = append(b, 0x07, 0x91, 0x22, 0x98, 0x00, 0x00, 0x00, 0xf0) // service centre +22890000000
 	b = append(b, 0x04)                                           // SMS-DELIVER, no more messages
@@ -17,19 +24,30 @@ func DeliverPDU(from, text string) string {
 	b = append(b, 0x00) // protocol identifier
 	if septets, ok := gsm7(text); ok {
 		b = append(b, 0x00)
-		b = append(b, 0x62, 0x01, 0x71, 0x12, 0x50, 0x00, 0x00) // time stamp
+		b = append(b, stamp...)
 		b = append(b, byte(len(septets)))
 		b = append(b, pack7(septets)...)
 	} else {
 		units := utf16.Encode([]rune(text))
 		b = append(b, 0x08)
-		b = append(b, 0x62, 0x01, 0x71, 0x12, 0x50, 0x00, 0x00)
+		b = append(b, stamp...)
 		b = append(b, byte(2*len(units)))
 		for _, u := range units {
 			b = append(b, byte(u>>8), byte(u))
 		}
 	}
 	return strings.ToUpper(hex.EncodeToString(b))
+}
+
+// timeStamp encodes a time as the service centre's time stamp, in UTC: each field's
+// two digits in swapped semi-octets, then a zone of zero.
+func timeStamp(t time.Time) []byte {
+	t = t.UTC()
+	out := make([]byte, 0, 7)
+	for _, v := range []int{t.Year() % 100, int(t.Month()), t.Day(), t.Hour(), t.Minute(), t.Second()} {
+		out = append(out, byte(v%10)<<4|byte(v/10))
+	}
+	return append(out, 0x00)
 }
 
 // address encodes a number: its digits in swapped semi-octets, international with a

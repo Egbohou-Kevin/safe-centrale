@@ -20,10 +20,31 @@ const retry = 20 * time.Millisecond
 // it go; release lets it go. The lock is the system's (flock): a holder that dies
 // drops it, and two holders in one process exclude each other too (each opens the
 // file). The file stays: removing it would let a later holder lock another file.
+//
+// The file gets the folder's owner and group, as the state files do: made by a tool
+// run with plain sudo, root's alone, the service that owns the folder could never
+// open it again. Only root can give a file away; anyone else is refused, and the file
+// is removed rather than left in the owner's way.
 func Hold(dir, name string, wait time.Duration) (release func(), err error) {
-	f, err := os.OpenFile(filepath.Join(dir, name), os.O_RDWR|os.O_CREATE, 0o600)
+	info, err := os.Stat(dir)
 	if err != nil {
 		return nil, fmt.Errorf("filelock: %w", err)
+	}
+	owner, _ := info.Sys().(*syscall.Stat_t)
+	return hold(dir, name, wait, owner)
+}
+
+// hold is Hold for a folder owned by owner, nil where the system has none.
+func hold(dir, name string, wait time.Duration, owner *syscall.Stat_t) (release func(), err error) {
+	path := filepath.Join(dir, name)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("filelock: %w", err)
+	}
+	if err := ownedLike(f, owner); err != nil {
+		f.Close()
+		os.Remove(path)
+		return nil, fmt.Errorf("filelock: %s belongs to another user: run the tool as that user (sudo -u safehome): %w", dir, err)
 	}
 	deadline := time.Now().Add(wait)
 	for {
@@ -37,4 +58,19 @@ func Hold(dir, name string, wait time.Duration) (release func(), err error) {
 		}
 		time.Sleep(retry)
 	}
+}
+
+// ownedLike gives the file the owner and group of the folder, unless it has them.
+func ownedLike(f *os.File, owner *syscall.Stat_t) error {
+	if owner == nil {
+		return nil
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if cur, ok := info.Sys().(*syscall.Stat_t); ok && cur.Uid == owner.Uid && cur.Gid == owner.Gid {
+		return nil
+	}
+	return f.Chown(int(owner.Uid), int(owner.Gid))
 }

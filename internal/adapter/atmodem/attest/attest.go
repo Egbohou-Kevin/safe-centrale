@@ -27,6 +27,7 @@ type Sim struct {
 	CSQ    string
 	COPS   string
 	CMGS   string // error line for AT+CMGS, empty for success
+	CMGD   string // error line for AT+CMGD, empty for success
 	// BeforePrompt is a line sent before the SMS prompt, as a late answer to an
 	// earlier command would be.
 	BeforePrompt string
@@ -175,6 +176,10 @@ func (s *Sim) answer(c net.Conn, r *bufio.Reader, cmd string) {
 	case cmd == "AT+CMEE?":
 		s.write(c, "+CMEE: 1", "OK")
 	case strings.HasPrefix(cmd, "AT+CMGD="):
+		if s.CMGD != "" {
+			s.write(c, s.CMGD)
+			return
+		}
 		var i int
 		fmt.Sscanf(cmd, "AT+CMGD=%d", &i)
 		delete(s.Inbox, i)

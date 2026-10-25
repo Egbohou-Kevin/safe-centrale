@@ -184,6 +184,9 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   installation ou message de configuration. `internal/hub` ne fait que répondre à
   `Quiet` (`Hub.Quiet`) : le moteur dit son propre état, après les entrées déjà en
   file, car l'état publié sur `alarm/state` revient par le broker en retard sur lui.
+  La règle de ce qui est calme (`configapp.QuietState` : désarmé ou armé ; pour des
+  zones changées, désarmé ou le délai de sortie) reste dans `configapp`, qui la passe
+  au port : les deux couches application ne s'importent pas.
   Son travail (vérifier et écrire une configuration sur la carte SD, interroger le
   moteur) se fait sur sa propre goroutine, jamais sur celle du client MQTT, qui porte
   tous les messages de la centrale. Un arrêt normal finit ce travail ; un plantage

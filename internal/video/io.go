@@ -46,9 +46,13 @@ type Probe struct {
 
 // Alarm says the alarm went off (alarm.triggered): time for photos. At is when it
 // went off (the message's ts), zero if unknown; Now is when it reached the service.
+// Wall is the system clock as it read then, zero if unknown: At is written on it (the
+// engine follows the clock), while Now stands still after the clock is set back until
+// the clock catches up.
 type Alarm struct {
 	Now      time.Time
 	At       time.Time
+	Wall     time.Time
 	Incident string
 }
 
@@ -59,8 +63,12 @@ type PhotosTaken struct {
 	Bytes int64
 }
 
-// Tick says time has passed.
-type Tick struct{ Now time.Time }
+// Tick says time has passed. Synced says that NTP vouches for the system clock: a
+// month earlier than the saved one is then the right one (see Service.month).
+type Tick struct {
+	Now    time.Time
+	Synced bool
+}
 
 func (i Request) at() time.Time      { return i.Now }
 func (i Stop) at() time.Time         { return i.Now }

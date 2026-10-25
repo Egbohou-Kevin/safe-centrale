@@ -133,9 +133,9 @@ func openModems(cfg gsmconfig.Result, gw *atomic.Pointer[gateway.Gateway], log *
 		m := &lazyModem{opts: atmodem.Options{
 			Open:   func() (io.ReadWriteCloser, error) { return openPort(port) },
 			Logger: log.With("line", l.ID),
-			OnSMS: func(from, text string) {
+			OnSMS: func(from, text string, sent time.Time) {
 				if g := gw.Load(); g != nil {
-					g.Incoming(l.ID, from, text)
+					g.Incoming(l.ID, from, text, sent)
 				}
 			},
 			OnDeliveryReport: func(ref string, ok bool) {

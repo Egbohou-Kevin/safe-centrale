@@ -381,7 +381,7 @@ func (h *Hub) bootWindow(ctx context.Context) error {
 }
 
 // endBootWindow stops collecting retained states and returns what they say to the
-// engine, in a stable order.
+// engine, in a stable order, each dated when it began (see retainedSignal).
 func (h *Hub) endBootWindow() []engine.Signal {
 	h.startup.mu.Lock()
 	h.startup.open = false
@@ -391,7 +391,7 @@ func (h *Hub) endBootWindow() []engine.Signal {
 
 	var signals []engine.Signal
 	for _, key := range slices.Sorted(maps.Keys(states)) {
-		if sig, ok := signalOf(states[key]); ok {
+		if sig, ok := retainedSignal(states[key]); ok {
 			signals = append(signals, sig)
 		}
 	}

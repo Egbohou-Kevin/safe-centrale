@@ -48,7 +48,7 @@ func (g *Gateway) sent(o Outcome) []Action {
 		g.recordTest(o.Line, true, o.Now)
 		return nil
 	}
-	g.told(j.Contact, OpenItem{Incident: j.Incident, At: o.Now, Priority: j.Priority})
+	g.told(j.Contact, OpenItem{Incident: j.Incident, At: o.Now, Priority: j.Priority, Secondary: j.Secondary})
 	if j.Channel == ChannelSMS && o.MsgRef != "" {
 		g.remember(o.Line+"/"+o.MsgRef, j.Ref)
 	}

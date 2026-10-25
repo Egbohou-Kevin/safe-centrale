@@ -12,8 +12,11 @@ type Snapshot struct {
 	NextKey    uint64                  `json:"next_key"`
 	UplinkDown bool                    `json:"uplink_down"`
 	Incidents  map[string]IncidentSnap `json:"incidents"` // keyed by incident and kind
-	// Recent holds when each contact was last sent a message, for the hourly limit.
+	// Recent holds when each contact was last sent a message, for the hourly limit;
+	// Lesser those of them for alerts below an intrusion, which take half of it at
+	// most (see allow).
 	Recent map[string][]time.Time `json:"recent"`
+	Lesser map[string][]time.Time `json:"lesser,omitempty"`
 	// Handled holds the incidents a contact acknowledged or a person stopped with a
 	// code, for a day: the escalation forgets an incident once it is over, but an
 	// alert that names it as its alarm must still know it was handled.
@@ -85,6 +88,10 @@ func (s Snapshot) clone() Snapshot {
 	out.Recent = make(map[string][]time.Time, len(s.Recent))
 	for c, ts := range s.Recent {
 		out.Recent[c] = slices.Clone(ts)
+	}
+	out.Lesser = make(map[string][]time.Time, len(s.Lesser))
+	for c, ts := range s.Lesser {
+		out.Lesser[c] = slices.Clone(ts)
 	}
 	// A state saved before these maps existed has none: they are made here, so the
 	// first write after Restore does not panic.

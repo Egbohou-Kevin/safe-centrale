@@ -26,7 +26,7 @@ type Snapshot struct {
 	Closed   []string            `json:"closed"` // the latest incidents over (Cancel), oldest first
 	NextTest time.Time           `json:"next_test"`
 	// Told is, for each contact, the incidents sent to them within ackAmbiguity, once
-	// each, oldest first: the ones a "1" may be meant for (see ackTarget).
+	// each, first told first: the ones a "1" may be meant for (see ackTarget).
 	Told map[string][]OpenItem `json:"told,omitempty"`
 }
 
@@ -39,6 +39,7 @@ type Job struct {
 	Number    string    `json:"number"`
 	Channel   Channel   `json:"channel"`
 	Priority  Priority  `json:"priority"`
+	Secondary bool      `json:"secondary,omitempty"` // see Request.Secondary
 	Text      string    `json:"text"`
 	Received  time.Time `json:"received"`          // when it was asked, at most when it arrived
 	Attempts  int       `json:"attempts"`          // full rounds over the lines that failed
@@ -79,12 +80,23 @@ func (l *LineState) free() { l.Busy, l.BusyUntil = "", time.Time{} }
 // usable reports whether the line can be given a job.
 func (l LineState) usable() bool { return l.Responding && l.Registered }
 
-// OpenItem is an incident a contact was told about, when (first, in Told) and how
-// urgent.
+// OpenItem is an incident a contact was told about, when (last, and in Told first
+// too), how urgent, and whether it is secondary to an alarm told alongside it (see
+// Request.Secondary).
 type OpenItem struct {
-	Incident string    `json:"incident"`
-	At       time.Time `json:"at"`
-	Priority Priority  `json:"priority"`
+	Incident  string    `json:"incident"`
+	At        time.Time `json:"at"`
+	First     time.Time `json:"first,omitzero"` // zero when saved before it was kept: At
+	Priority  Priority  `json:"priority"`
+	Secondary bool      `json:"secondary,omitempty"`
+}
+
+// first is when the incident was first told to the contact.
+func (o OpenItem) first() time.Time {
+	if o.First.IsZero() {
+		return o.At
+	}
+	return o.First
 }
 
 const (

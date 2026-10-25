@@ -506,3 +506,42 @@ func TestTheScheduleIsPlannedAgainWhenTheTimeGoesBack(t *testing.T) {
 	h.e.Handle(Tick{Now: h.now})
 	h.mustPlan(closing)
 }
+
+// A fire while disarmed that ends after the closing time, by itself or by a silence,
+// does not cancel tonight's arming: forgetting to arm is the very risk the plan
+// removes. Within the plan's limit the shop arms once the alarm is over, with a whole
+// exit delay, as after a missed arming.
+func TestAnAlarmEndingAfterTheClosingTimeStillArms(t *testing.T) {
+	for _, end := range []struct {
+		name string
+		do   func(h *harness) []Action
+	}{
+		{"cycles", func(h *harness) []Action { return h.advance(19 * time.Minute) }},                                     // 22:14
+		{"silence", func(h *harness) []Action { h.advance(7 * time.Minute); return h.cmd(CmdSilence, goodCode("u_1")) }}, // 22:02
+	} {
+		t.Run(end.name, func(t *testing.T) {
+			h := newHarness(t, closes22)
+			h.advance(55 * time.Minute) // 21:55, after the notice
+			h.signal(smoke, SensorSmoke, true)
+			as := append(end.do(h), h.advance(time.Second)...)
+			ev := onlyEvent[ArmingStarted](t, as)
+			if ev.Origin != OriginSchedule || ev.EndsAt.Sub(h.now) < h.cfg.ExitDelay-time.Second {
+				t.Fatalf("the automatic arming starts once the alarm is over, with a whole exit delay: %+v", ev)
+			}
+			h.mustBe(ModeArming)
+			if r := replyOf(t, h.postpone()); r.Status != StatusDone {
+				t.Fatalf("it can still be postponed: %+v", r)
+			}
+		})
+	}
+
+	// A disarm is a person's choice: it plans again from its time, as every disarm.
+	h := newHarness(t, closes22)
+	h.advance(55 * time.Minute)
+	h.signal(smoke, SensorSmoke, true)
+	h.advance(7 * time.Minute)
+	h.cmd(CmdDisarm, goodCode("u_1"))
+	h.advance(time.Second)
+	h.mustBe(ModeDisarmed)
+	h.mustPlan(nextDay)
+}

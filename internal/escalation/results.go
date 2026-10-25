@@ -97,14 +97,16 @@ func roundAllFailedOn(in IncidentSnap, contact string, step int, internetOnly bo
 }
 
 // pullForwardIfAllUnreachable: when no one the last step told can be reached, the
-// next step does not wait for its delay.
+// next step does not wait for its delay. An internet message held while the uplink is
+// down does not hold the wave: the GSM was the only path, and every message of it
+// failed. The held one is still owed, and goes when the uplink returns (retryInternet).
 func pullForwardIfAllUnreachable(in *IncidentSnap, now time.Time) {
 	if in.NextAt.IsZero() || !in.NextAt.After(now) || len(in.WaveContacts) == 0 {
 		return
 	}
 	for _, c := range in.WaveContacts {
 		r, ok := in.Rounds[c]
-		if !ok || r.NetOK || r.NetHeld || !r.NetDeadline.IsZero() || !r.GSMDue.IsZero() ||
+		if !ok || r.NetOK || !r.NetDeadline.IsZero() || !r.GSMDue.IsZero() ||
 			roundHasPending(*in, c, r.Step, false) || !roundAllFailedOn(*in, c, r.Step, false) {
 			return
 		}

@@ -40,6 +40,36 @@ func TestAnOrderThatComesTooLateIsAnsweredAtOnce(t *testing.T) {
 	}
 }
 
+// The clock was set back: the agent's own time stands still until the clock catches
+// up (the driver's guard), and an order the cloud stamped on the corrected clock would
+// look expired for as long as the step. Its expiry is judged on the clock as it is
+// (Wall), as the hub does: a fresh order, a video or a maintenance session, a photo's
+// address are never refused as late.
+func TestAClockSetBackDoesNotExpireFreshOrders(t *testing.T) {
+	h := newHarness(t)
+	h.now = t0.Add(30 * time.Minute) // the agent's time, held since the step
+	wall := t0
+	exp := contract.TS(wall.Add(time.Minute))
+	send := func(tp, typ string, data any) []Action {
+		b, _ := h.msg(typ, data)
+		return h.handle(Cloud{Now: h.now, Wall: wall, Topic: tp, Payload: b})
+	}
+	order := contract.AlarmCommandData{Command: contract.CmdDisarm, Args: contract.CommandArgs{Code: "482915"},
+		Origin: contract.OriginApp, User: "u_owner", Exp: &exp}
+	if acts := send(topic("alarm", "cmd"), contract.TypeAlarmCommand, order); len(of[PublishLocal](acts)) != 1 {
+		t.Fatalf("the order goes to the hub: %+v", acts)
+	}
+	maint := contract.MaintOpenData{Session: "m1", User: "kevin", Reason: "check", DurationS: 3600, Exp: exp}
+	if acts := send(topic("maint", "cmd"), contract.TypeMaintOpen, maint); len(of[PublishLocal](acts)) != 1 {
+		t.Fatalf("the maintenance session goes to the hub: %+v", acts)
+	}
+	// Late on the clock as it is, it is late.
+	wall = wall.Add(2 * time.Minute)
+	if acts := send(topic("alarm", "cmd"), contract.TypeAlarmCommand, order); len(of[AnswerOrder](acts)) != 1 {
+		t.Fatalf("an order late on the clock is answered expired: %+v", acts)
+	}
+}
+
 func TestAnOrderOverTheLimitIsAnsweredAtOnce(t *testing.T) {
 	h := newHarness(t, func(c *Config) { c.DownBurst = 2; c.DownPerMinute = 6 })
 	order := contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp, User: "u_owner"}
@@ -137,6 +167,36 @@ func TestRepliesDoNotCountAgainstTheLimit(t *testing.T) {
 		if limited := len(of[AnswerOrder](acts)) == 1; limited != (i == 2) {
 			t.Fatalf("order %d: %+v", i, acts)
 		}
+	}
+}
+
+// The replies have an allowance of their own, larger than the orders' (replyAllowance
+// times), sized for a large alarm: a broken or hostile cloud that sends them by the
+// thousand, each with a fresh id, cannot rewrite the agent's state and republish on the
+// hub for each one.
+func TestAFloodOfRepliesIsBounded(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.DownBurst = 2; c.DownPerMinute = 6 })
+	h.linkUp()
+	h.local(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered) // incident inc1 goes up
+	ack := contract.AlertAckData{Incident: "inc1", Contact: "u_owner", Via: contract.ChannelApp}
+	passed := 0
+	for range 100 {
+		_, _, acts := h.cloud(topic("alert", "ack"), contract.TypeAlertAck, ack)
+		passed += len(of[PublishLocal](acts))
+	}
+	if want := 2 * replyAllowance; passed != want {
+		t.Fatalf("%d replies passed at once, want the replies' burst of %d", passed, want)
+	}
+	before, _ := json.Marshal(h.r.Snapshot())
+	if _, _, acts := h.cloud(topic("alert", "ack"), contract.TypeAlertAck, ack); len(of[Refused](acts)) != 1 {
+		t.Fatalf("over the replies' allowance: %+v", acts)
+	}
+	if after, _ := json.Marshal(h.r.Snapshot()); !bytes.Equal(before, after) {
+		t.Fatal("a refused reply changed the snapshot")
+	}
+	h.now = h.now.Add(time.Minute)
+	if _, _, acts := h.cloud(topic("alert", "ack"), contract.TypeAlertAck, ack); len(of[PublishLocal](acts)) != 1 {
+		t.Fatalf("the replies' allowance refills: %+v", acts)
 	}
 }
 

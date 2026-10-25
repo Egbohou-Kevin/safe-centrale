@@ -387,6 +387,27 @@ func TestRestartDoesNotRepeatAnAlertAlreadySent(t *testing.T) {
 	}
 }
 
+// The clock ran a year ahead, a summary went out then, and the clock was set right: the
+// next summary is not saved for a year later, quiet about the faults until then.
+func TestASummaryTimeSavedAheadIsNotWaitedFor(t *testing.T) {
+	h := newHarness(t)
+	h.online("dev_back", false)
+	h.now = t0.AddDate(1, 0, 0)
+	one(t, h.advance(0))
+	m, err := New(h.cfg, func() string { h.ids++; return fmt.Sprintf("alert-%d", h.ids) }, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Restore(h.m.Snapshot())
+	h.m, h.now = m, t0
+	if got, want := h.m.NextWake(), time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC); !got.Equal(want) {
+		t.Fatalf("NextWake %v, want %v", got, want)
+	}
+	if a := one(t, h.advance(12*time.Hour)); a.Kind != AlertDeviceOffline {
+		t.Fatalf("%+v", a)
+	}
+}
+
 func TestSnapshotRoundTripAndCopy(t *testing.T) {
 	h := newHarness(t)
 	h.online("dev_back", false)

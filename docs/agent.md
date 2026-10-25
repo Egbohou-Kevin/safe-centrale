@@ -228,7 +228,12 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
   envoyé (`alert.result`, `alert.ack`, `photo.upload`), vérifiées contre ce qu'il a
   envoyé, n'y comptent pas : leur nombre croît avec les contacts et les canaux d'une
   grande alarme (trois résultats par alerte), et une réponse refusée serait perdue
-  pour de bon (un acquittement, une photo jamais envoyée). Une limite sauvegardée avec
+  pour de bon (un acquittement, une photo jamais envoyée). Elles ont leur propre
+  limite, cinq fois plus large (100 d'un coup, 300 par minute par défaut) : chacune
+  passée s'écrit sur la carte SD et part vers la centrale, et un cloud défaillant qui
+  en enverrait des milliers, chacune avec un nouvel `id`, ne doit pas en faire un flot.
+  Corrigé le 25 octobre 2026 après une revue : elles n'avaient aucune limite. Une
+  limite sauvegardée avec
   une heure à venir (l'horloge avançait, puis a reculé, voir « Horloge ») est rendue
   entière, une fois, à partir de maintenant : attendre que l'horloge la rattrape
   refuserait chaque ordre de l'application pendant tout ce temps.
@@ -339,7 +344,11 @@ codes faux, ni ses délais, après un redémarrage comme pendant que la centrale
 (voir `engine.md`). L'agent rend entière une limite de débit datée dans le futur
 (voir plus haut) ; mais pendant qu'il tourne, son temps s'arrête jusqu'à ce que
 l'horloge le rattrape (voir `architecture.md`) : seul ce qui restait de ses limites
-passe pendant ce temps.
+passe pendant ce temps. L'échéance (`exp`) d'un message du cloud est jugée, elle, sur
+l'horloge telle qu'elle est : le cloud la date sur son heure, juste, et le temps
+arrêté de l'agent la croirait dépassée pour tout ce temps (corrigé le 25 octobre 2026
+après une revue : après un recul de l'horloge, chaque ordre de l'application était
+refusé `expired`).
 
 ## Authentification
 

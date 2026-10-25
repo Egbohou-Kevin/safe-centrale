@@ -532,6 +532,8 @@ func TestVideoSchemasRefuseWhatTheContractRefuses(t *testing.T) {
 		"no token":   `{"session":"s","camera":"c","reason":"demand","max_s":60,"push_url":"rtmps://r/x","exp":"2026-10-17T21:06:05.000Z"}`,
 		"bad reason": `{"session":"s","camera":"c","reason":"curious","max_s":60,"push_url":"rtmps://r/x","token":"t","exp":"2026-10-17T21:06:05.000Z"}`,
 		"no exp":     `{"session":"s","camera":"c","reason":"demand","max_s":60,"push_url":"rtmps://r/x","token":"t"}`,
+		"an address": `{"session":"s","camera":"c","reason":"demand","max_s":60,"push_url":"rtmps://203.0.113.10:443/x","token":"t","exp":"2026-10-17T21:06:05.000Z"}`,
+		"an IPv6":    `{"session":"s","camera":"c","reason":"demand","max_s":60,"push_url":"rtmps://[2001:db8::1]/x","token":"t","exp":"2026-10-17T21:06:05.000Z"}`,
 	} {
 		if err := schematest.Check("video-request.json", []byte(raw)); err == nil {
 			t.Errorf("%s: accepted", name)

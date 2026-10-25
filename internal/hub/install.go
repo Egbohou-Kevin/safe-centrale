@@ -8,6 +8,7 @@ import (
 
 	"safehome/internal/contract"
 	"safehome/internal/engine"
+	engwire "safehome/internal/engine/wire"
 	"safehome/internal/inbox"
 )
 
@@ -38,17 +39,18 @@ type installMode struct {
 }
 
 // Quiet says whether the moment is quiet for the hub to restart (a configuration from
-// the cloud to apply): the alarm disarmed or armed, and no installation mode. It is
-// the engine's own state, after the inputs queued before the question: the state on
+// the cloud to apply, zones or sirens changed on site): the alarm's state, as the
+// contract names it, one that quiet accepts, and no installation mode. It is the
+// engine's own state, after the inputs queued before the question: the state on
 // alarm/state comes back through the broker later. False if ctx ends first.
-func (h *Hub) Quiet(ctx context.Context) bool {
-	quiet := false
-	err := h.alarm.loop.Do(ctx, func(time.Time) []engine.Action {
-		m := h.alarm.eng.Mode()
-		quiet = (m == engine.ModeDisarmed || m == engine.ModeArmed) && !h.alarm.inst.open
+func (h *Hub) Quiet(ctx context.Context, quiet func(state string) bool) bool {
+	ok := false
+	err := h.alarm.loop.Do(ctx, func(now time.Time) []engine.Action {
+		st, err := engwire.StateData(h.alarm.eng.State(now))
+		ok = err == nil && quiet(st.State) && !h.alarm.inst.open
 		return nil
 	})
-	return err == nil && quiet
+	return err == nil && ok
 }
 
 // installerCode tells whether a code that is nobody's is the installer's. Only a

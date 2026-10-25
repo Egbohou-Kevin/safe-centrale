@@ -580,7 +580,8 @@ Le détail et les raisons des choix sont dans `video.md`.
 
 - `token` n'est valable que pour cette session et n'apparaît jamais dans un journal. Le
   site l'ajoute à l'adresse en `?token=` au moment d'envoyer ; `push_url` est donc une
-  adresse `rtmps://` sans requête ni identifiants.
+  adresse `rtmps://` sans requête ni identifiants, dont l'hôte est un nom, jamais une
+  adresse IP (go2rtc ne vérifierait pas le certificat du relais, voir `video.md`).
 - En liaison fixe (`uplink` = `fixed`), ni plafond ni durée limite : `max_s` est absent.
   En données mobiles, le client règle `quota_mb` et `max_s`, que le cloud reprend dans
   chaque demande.

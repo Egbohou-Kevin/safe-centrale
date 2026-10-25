@@ -113,10 +113,12 @@ func (g *Gateway) cancel(c gsm.Cancel) {
 	g.submit(func(now time.Time) gsm.Input { c.Now = now; return c })
 }
 
-// Incoming is an SMS a modem received. The composition root wires the modems'
-// notifications to it.
-func (g *Gateway) Incoming(line, from, text string) {
-	g.submit(func(now time.Time) gsm.Input { return gsm.Incoming{Now: now, Line: line, From: from, Text: text} })
+// Incoming is an SMS a modem received, taken by the operator's service centre at sent
+// (zero if unknown). The composition root wires the modems' notifications to it.
+func (g *Gateway) Incoming(line, from, text string, sent time.Time) {
+	g.submit(func(now time.Time) gsm.Input {
+		return gsm.Incoming{Now: now, Line: line, From: from, Text: text, Sent: sent}
+	})
 }
 
 // Delivered is an operator's delivery report for the SMS with reference ref.

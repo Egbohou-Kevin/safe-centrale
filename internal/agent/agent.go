@@ -114,6 +114,8 @@ type Snapshot struct {
 	TokensAt  time.Time            `json:"tokens_at"`
 	Answers   float64              `json:"answers"` // the allowance of answers to orders over the limit (down.go)
 	AnswersAt time.Time            `json:"answers_at"`
+	Replies   float64              `json:"replies"` // the allowance of the cloud's replies (down.go)
+	RepliesAt time.Time            `json:"replies_at"`
 	Photos    map[string]photo     `json:"photos,omitempty"`   // photo id -> its upload
 	Retained  map[string]string    `json:"retained,omitempty"` // retained topic -> id of the hub's last state queued (see up.go)
 }
@@ -190,6 +192,9 @@ func (r *Relay) Restore(s Snapshot) {
 	}
 	if s.TokensAt.IsZero() {
 		s.Tokens = float64(r.cfg.DownBurst)
+	}
+	if s.RepliesAt.IsZero() {
+		s.Replies = float64(replyAllowance * r.cfg.DownBurst)
 	}
 	if s.AnswersAt.IsZero() {
 		s.Answers = float64(r.cfg.DownBurst)

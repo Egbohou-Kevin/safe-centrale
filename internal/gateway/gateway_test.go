@@ -152,8 +152,8 @@ func TestAnSMSAnswer1BecomesAnAcknowledgement(t *testing.T) {
 	r := newRig(t, nil)
 	ref := r.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
 	drivertest.WaitFor(t, "sent", func() bool { return len(r.results(ref)) == 2 })
-	r.gw.Incoming("line1", "+22890123456", "1")
-	r.gw.Incoming("line1", "+22899999999", "1") // a stranger
+	r.gw.Incoming("line1", "+22890123456", "1", time.Time{})
+	r.gw.Incoming("line1", "+22899999999", "1", time.Time{}) // a stranger
 	drivertest.WaitFor(t, "the acknowledgement", func() bool { return len(r.broker.OfType(contract.TypeAlertAck)) == 1 })
 	d, _ := contract.DecodeData[contract.AlertAckData](r.broker.OfType(contract.TypeAlertAck)[0].Env)
 	if d.Incident != "inc1" || d.Contact != "u_owner" || d.Via != "sms" {
@@ -370,7 +370,7 @@ func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 	r.cancel()
 	drivertest.WaitFor(t, "the loop to stop", func() bool { return r.gw.Alive(context.Background()) != nil })
 	r.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
-	r.gw.Incoming("line1", "+22890123456", "1")
+	r.gw.Incoming("line1", "+22890123456", "1", time.Time{})
 	release()
 	<-r.done
 	if strings.Contains(r.logs.String(), "level=ERROR") {

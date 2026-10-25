@@ -39,9 +39,10 @@ type Options struct {
 	// Open opens the port. It is called again after a restart: a USB modem comes
 	// back as a new device.
 	Open func() (io.ReadWriteCloser, error)
-	// OnSMS receives each incoming SMS. It is called from the modem's own goroutine
-	// and must return quickly.
-	OnSMS func(from, text string)
+	// OnSMS receives each incoming SMS, with when the operator's service centre took
+	// it (its time stamp; zero if unreadable). It is called from the modem's own
+	// goroutine and must return quickly.
+	OnSMS func(from, text string, sent time.Time)
 	// OnDeliveryReport receives the operator's report for the SMS with reference ref.
 	OnDeliveryReport func(ref string, ok bool)
 

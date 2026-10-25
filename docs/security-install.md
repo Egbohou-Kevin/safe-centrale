@@ -79,8 +79,8 @@ enregistrée : un contact ajouté pendant le mode installation peut recevoir un 
 tout de suite, un contact retiré ne désarme plus. `safehome-hub codes set` refuse un utilisateur qui n'est pas
 un contact ; `codes list` signale ces codes restants. La console les liste (« Codes
 d'anciens contacts ») et permet de les retirer. Les fichiers d'état écrits par un outil
-lancé avec `sudo` prennent le propriétaire du dossier ; sinon l'outil échoue en le
-disant.
+lancé avec `sudo` prennent le propriétaire du dossier, le verrou des codes
+(`codes.lock`) aussi ; sinon l'outil échoue en le disant.
 Le nombre de tours du hachage (`access.iterations`) doit être réglé sur le
 Raspberry Pi réel : à mesurer à l'installation, il n'a pas encore été chronométré.
 
@@ -264,8 +264,14 @@ est conseillé.
   entre-temps. Un second retrait du même appareil (un double appui, un autre onglet)
   est refusé : la page dit que le retrait est déjà en cours. Un ordre parti sans
   réponse de l'adaptateur peut encore s'exécuter :
-  l'appareil quitte la configuration quand même, et la page le dit.
-- **Vérifier** : la page montre ce qui manque, comme `safehome-install check`. Par
+  l'appareil quitte la configuration quand même, et la page le dit : sans zone ni rôle
+  de sirène, et peut-être encore appairé, il n'est plus surveillé (corrigé le 25
+  octobre 2026 après une revue : la page disait seulement que l'adaptateur n'avait pas
+  répondu).
+- **Vérifier** : la page montre ce qui manque, comme `safehome-install check`. Elle
+  ne dit « Tout est en ordre » que si la configuration des zones se lit : refusée, la
+  centrale surveille d'autres zones que celles de l'installateur (corrigé le 25
+  octobre 2026 après une revue). Par
   exemple un appareil sans usage, ou une zone qui ne pourra jamais se déclencher.
 - **Tests** : les événements des appareils depuis l'ouverture du mode, avec le nom de
   leur zone. La page se met à jour seule, et le code d'un clavier n'y apparaît jamais.
@@ -277,7 +283,9 @@ est conseillé.
   page et `codes set`) sont gardés tous les deux : chaque changement relit la liste,
   calcule quelques secondes et la récrit en entier, sous un verrou
   (`codes.lock` dans le dossier d'état) que la page et l'outil prennent l'un après
-  l'autre. La page ne retire que les codes d'anciens contacts
+  l'autre. Ce verrou prend le propriétaire du dossier comme les fichiers d'état : créé
+  par `sudo safehome-hub codes set` et laissé à root seul, la console ne pourrait plus
+  jamais l'ouvrir (corrigé le 25 octobre 2026 après une revue). La page ne retire que les codes d'anciens contacts
   (« Codes d'anciens contacts ») ; retirer le code d'un contact reste en SSH. Le code
   installateur lui-même ne se règle ni ne se retire depuis la page, même par un ordre
   forgé : celui qui atteindrait la page s'ouvrirait sinon le mode installation. Il se
@@ -305,7 +313,14 @@ l'outil en ligne de commande, et vérifiées comme la centrale les vérifierait.
 À la fermeture du mode (« Terminer », 30 minutes écoulées, ou alarme qui quitte l'état
 désarmé), la centrale redémarre si les zones ou les sirènes ont changé. Elle attend un
 moment calme pour cela, comme pour une configuration du cloud : jamais pendant un
-délai ni une alarme.
+délai d'entrée ni une alarme. Pour des zones ou des sirènes changées, le moment calme
+est la centrale désarmée ou le délai de sortie, pas armée : un armement fait sur les
+anciennes zones n'a jamais vu les nouveaux appareils, et au redémarrage une fenêtre
+d'une nouvelle zone restée ouverte serait prise pour une fenêtre ouverte pendant
+l'arrêt, une sirène dès l'armement. Redémarrée pendant le délai de sortie, la centrale
+le finit sur les nouvelles zones : la fenêtre est contournée et signalée. Les zones
+changées trouvées armées attendent le prochain désarmement (corrigé le 25 octobre 2026
+après une revue).
 
 La partie de la centrale qui applique la configuration (`configapp`) suit
 `install/mode` : aucun redémarrage tant que le mode installation est ouvert ; une
