@@ -19,7 +19,7 @@ func (e *Engine) command(c Command) []Action {
 		return e.bypass(c)
 	case CmdPostpone:
 		return e.postpone(c)
-	case CmdDisarm, CmdSilence:
+	case CmdDisarm, CmdSilence, CmdEnd:
 		return e.disarmOrSilence(c)
 	}
 	return []Action{reply(c, StatusFailed, ReasonUnknownCommand)}
@@ -147,8 +147,11 @@ func (e *Engine) disarmOrSilence(c Command) []Action {
 	if refusal != nil {
 		return refusal
 	}
-	if c.Name == CmdSilence {
+	switch c.Name {
+	case CmdSilence:
 		return e.silence(c, user)
+	case CmdEnd:
+		return e.end(c, user)
 	}
 	if e.s.Mode == ModeDisarmed {
 		return done(c)
@@ -157,7 +160,7 @@ func (e *Engine) disarmOrSilence(c Command) []Action {
 	var ended []string
 	if e.s.Mode == ModeTriggered && e.s.Incident != nil {
 		ended = append(ended, e.s.Incident.ID)
-		out = e.clearIncident(c.Now, user)
+		out = e.clearIncident(c.Now, user, false)
 	}
 	// The alarms of this arming whose siren already ran out end with it: the person
 	// who disarms is back in charge, whatever the siren did in between.
@@ -177,8 +180,32 @@ func (e *Engine) silence(c Command, user string) []Action {
 	if e.s.Mode != ModeTriggered {
 		return refused(c, ReasonWrongState)
 	}
-	out := e.clearIncident(c.Now, user)
+	out := e.clearIncident(c.Now, user, false)
 	out = append(out, e.endIncident(c.Now)...)
+	out = append(out, reply(c, StatusDone, ""))
+	return append(out, e.wake(c.Now)...)
+}
+
+// end ends every alarm of this arming without disarming: the one that rings, as
+// silence does, and those whose siren already ran out (TimedOut), which only a disarm
+// ended before. The alarm stays armed: the person is back in charge, the shop still
+// watched. Each alarm ended is said cleared by its user and ended, so that the cloud and
+// the GSM gateway close it as they close a siren stopped with a code, and say it was
+// ended rather than its siren cut. Nothing under way, the
+// order is done: what the person wanted holds.
+func (e *Engine) end(c Command, user string) []Action {
+	var out []Action
+	if e.s.Mode == ModeTriggered {
+		out = e.clearIncident(c.Now, user, true)
+		out = append(out, e.endIncident(c.Now)...)
+	}
+	if len(e.s.TimedOut) > 0 {
+		for _, id := range e.s.TimedOut {
+			out = append(out, Emit{Cleared{Incident: id, By: ClearedByUser, User: user, Ended: true}})
+		}
+		out = append(out, Ended{Incidents: slices.Clone(e.s.TimedOut)})
+		e.s.TimedOut = nil
+	}
 	out = append(out, reply(c, StatusDone, ""))
 	return append(out, e.wake(c.Now)...)
 }

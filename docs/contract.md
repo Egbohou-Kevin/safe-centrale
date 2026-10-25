@@ -28,7 +28,7 @@ touche que l'adaptateur (voir `architecture.md`).
   Ajouter un champ ne casse rien.
 - **Pas de secret ni de donnée personnelle** dans les événements. Seule exception :
   le code du site, présent dans les événements `keypad` et dans les ordres
-  `alarm.disarm` et `alarm.silence`. Il ne circule que sur le broker local et sur
+  `alarm.disarm`, `alarm.silence` et `alarm.end`. Il ne circule que sur le broker local et sur
   la liaison TLS vers le site, n'attend jamais sur le broker du cloud (QoS 0, voir
   plus bas) ni, sauf un tronçon à corriger (`systeme.md`, « Limites connues »), sur
   celui de la centrale, n'est jamais écrit dans les journaux, n'est jamais renvoyé dans une
@@ -114,7 +114,7 @@ MQTT 5 limite la remise, pas la garde). Pour un abonnement en QoS 0, il ne garde
 
 | Topic (cloud vers site) | QoS de l'abonnement | Pourquoi |
 |---|---|---|
-| `alarm/cmd` | 0 | Porte le code d'accès (`alarm.disarm`, `alarm.silence`), que le cloud ne garde jamais : le broker ne doit pas le garder non plus. Un ordre ne vaut qu'une minute (`exp`) |
+| `alarm/cmd` | 0 | Porte le code d'accès (`alarm.disarm`, `alarm.silence`, `alarm.end`), que le cloud ne garde jamais : le broker ne doit pas le garder non plus. Un ordre ne vaut qu'une minute (`exp`) |
 | `video/cmd` | 1 | Le jeton est celui du cloud, pour une session ; un `video.stop` vaut encore après une coupure, une demande périmée est refusée par l'agent |
 | `photo/cmd` | 1 | Le jeton est celui du cloud, pour une photo ; l'adresse vaut jusqu'à son `exp` et la photo est une preuve de l'alarme |
 | `config/set`, `maint/cmd`, `agent/cmd`, `alert/result`, `alert/ack` | 1 | Pas de secret ; ils valent encore au retour de l'agent (un `maint.open` périmé est refusé) |
@@ -305,6 +305,7 @@ le planning arme dans le moteur.
 | `alarm.arm_now` | Termine le délai de sortie et arme tout de suite | |
 | `alarm.disarm` | Désarme | `code` |
 | `alarm.silence` | Coupe la sirène sans désarmer | `code` |
+| `alarm.end` | Termine l'alarme sans désarmer : celle qui sonne, et celles de l'armement dont la sirène s'est arrêtée seule (« Terminer l'alarme ») | `code` |
 | `alarm.bypass` | Contourne des zones pour la période d'armement | `devices` (liste) |
 | `alarm.postpone` | Reporte l'armement automatique | |
 
@@ -371,7 +372,7 @@ le planning arme dans le moteur.
 | `alarm.triggered` | L'alarme se déclenche | `incident`, cause : `device_id`, `device_name`, `capability`, `zone` |
 | `alarm.siren_cycle` | Un cycle de sirène démarre | `incident`, `cycle`, `of` |
 | `alarm.siren_failed` | Une sirène refuse de sonner pendant une alarme, renvois compris (une fois par sirène et par alarme) | `incident` (l'alarme), `device_id` (la sirène) |
-| `alarm.cleared` | L'alarme est arrêtée | `incident`, `origin` (`user` ou `timeout`), `user`, `duration_s` |
+| `alarm.cleared` | L'alarme est arrêtée | `incident`, `origin` (`user` ou `timeout`), `user`, `duration_s` ; `ended` (vrai) quand une personne l'a terminée avec `alarm.end` |
 | `alarm.arming_scheduled` | Annonce de l'armement automatique | `scheduled_for` |
 | `alarm.postponed` | L'armement automatique est reporté | `scheduled_for`, `count`, `max` |
 | `alarm.auth_failed` | Code faux | `origin`, `attempts` (codes faux des 10 dernières minutes, celui-ci compris, clavier et application ensemble), `locked_until` (si verrouillé) |
@@ -925,6 +926,12 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **25 octobre 2026, « Terminer l'alarme »** : nouvel ordre `alarm.end` (avec `code`). Il termine
+  l'alarme sans désarmer : celle qui sonne, comme `alarm.silence`, et celles de l'armement dont la
+  sirène s'est arrêtée seule, que seul un désarmement terminait (voir « Ordres »). Chacune est dite
+  par un `alarm.cleared` d'origine `user` qui porte `ended` (facultatif, vrai) ; pour une alarme
+  arrêtée seule avant, `duration_s` vaut 0. Un cloud qui ne connaît pas `ended` l'ignore et dit la
+  sirène coupée ; un cloud qui ne connaît pas `alarm.end` ne l'envoie pas.
 - **25 octobre 2026, la zone dans l'alerte** : `alert.request` porte `zone_name`
   (facultatif), le nom de la zone de la cause (« Entrée »), pour que l'écran de
   l'alarme le dise même ouvert depuis la notification (voir « Alertes »). `zone` reste

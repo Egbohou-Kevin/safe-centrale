@@ -65,7 +65,7 @@ func (d AlarmCommandData) Validate() error {
 }
 
 // NeedsCode reports whether the command requires a valid code.
-func NeedsCode(name string) bool { return name == CmdDisarm || name == CmdSilence }
+func NeedsCode(name string) bool { return name == CmdDisarm || name == CmdSilence || name == CmdEnd }
 
 // AlarmAckData is the payload of alarm.ack. It never contains the code.
 type AlarmAckData struct {
@@ -155,6 +155,9 @@ type ClearedData struct {
 	Origin    string `json:"origin"` // "user" or "timeout"
 	User      string `json:"user,omitempty"`
 	DurationS int    `json:"duration_s"`
+	// Ended: the alarm was ended with alarm.end, the shop still armed, whether its
+	// siren still rang or had run out; absent otherwise.
+	Ended bool `json:"ended,omitempty"`
 }
 
 // AuthFailedData: alarm.auth_failed.

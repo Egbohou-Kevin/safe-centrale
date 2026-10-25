@@ -21,6 +21,10 @@
     "duration_s": {
       "type": "integer",
       "minimum": 0
+    },
+    "ended": {
+      "type": "boolean",
+      "description": "Présent et vrai quand une personne a terminé l'alarme avec alarm.end, le local toujours armé, que sa sirène sonne encore ou se soit déjà arrêtée seule (duration_s vaut alors 0 : sa durée a été dite quand elle s'est arrêtée)"
     }
   },
   "required": [

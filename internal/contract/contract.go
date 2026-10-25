@@ -140,6 +140,7 @@ const (
 	CmdArmNow   = "alarm.arm_now"
 	CmdDisarm   = "alarm.disarm"
 	CmdSilence  = "alarm.silence"
+	CmdEnd      = "alarm.end"
 	CmdBypass   = "alarm.bypass"
 	CmdPostpone = "alarm.postpone"
 )

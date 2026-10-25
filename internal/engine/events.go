@@ -57,6 +57,10 @@ type Cleared struct {
 	By       ClearedBy
 	User     string
 	Duration time.Duration
+	// Ended: a person ended the alarm with the order alarm.end, without disarming,
+	// whether its siren still rang or had run out (then Duration is 0: its time was
+	// said when it ran out).
+	Ended bool
 }
 
 // AuthFailed: a wrong code was entered.

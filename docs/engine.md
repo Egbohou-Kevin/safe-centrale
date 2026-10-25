@@ -125,6 +125,8 @@ zone qu'il ne peut pas déclencher.
 | `armed` | ordre de désarmement | `disarmed` | publie `alarm.disarmed` ; termine l'escalade des intrusions et sabotages de cet armement dont la sirène s'est arrêtée seule, que `alarm.disarmed` nomme dans `incidents` |
 | `triggered` | ordre de désarmement | `disarmed` | `siren.off`, publie `alarm.cleared` et `alarm.disarmed` ; termine l'escalade de l'alarme en cours (et de celles de l'armement arrêtées seules), toutes nommées dans `incidents` d'`alarm.disarmed` |
 | `triggered` | `alarm.silence`, code valide | état d'avant l'alarme | `siren.off`, `alarm.cleared` ; termine l'escalade de l'alarme en cours ; un délai de sortie repart en entier |
+| `triggered` | `alarm.end`, code valide | état d'avant l'alarme | comme `alarm.silence`, et termine aussi les alarmes de l'armement dont la sirène s'est arrêtée seule ; chaque `alarm.cleared` porte `ended` |
+| `armed` | `alarm.end`, code valide | `armed` | termine l'escalade des intrusions et sabotages de cet armement dont la sirène s'est arrêtée seule, sans désarmer : un `alarm.cleared` (`user`, `ended`, `duration_s` 0) pour chacun ; rien en cours, l'ordre est fait et ne change rien |
 | `arming` | ordre `arm_now` | `armed` | termine le délai de sortie, publie `alarm.armed` |
 | `triggered` | cycle de sirène écoulé, cycles restants | `triggered` | `siren.off`, pause, puis `siren.on` au cycle suivant ; un acquittement (« Je gère », SMS « 1 ») n'y change rien, seuls le code et le désarmement arrêtent la sirène |
 | `triggered` | cycles de sirène épuisés | état d'avant l'alarme (`armed`, `disarmed` pour un feu déclenché désarmé, `arming` pendant le délai de sortie) | `siren.off`, publie `alarm.cleared` ; un délai de sortie repart en entier |

@@ -130,3 +130,75 @@ func sameItems(a, b []string) bool {
 	slices.Sort(b)
 	return slices.Equal(a, b)
 }
+
+// Kevin's decision of 25 October 2026 (the mockup AccueilAlarmeSireneArretee): the
+// siren ran out, the system went back to armed, the intrusion is still open. "Terminer
+// l'alarme" (alarm.end, with the code) ends it and leaves the shop armed: it is said
+// cleared by the person and ended, and the disarm that follows has nothing left to end.
+func TestEndingAnAlarmWhoseSirenRanOutLeavesTheShopArmed(t *testing.T) {
+	h := newHarness(t, trialTimings)
+	h.armed()
+	h.open(door)
+	inc := onlyEvent[Triggered](t, h.advance(15*time.Second)).Incident
+	for range 4 {
+		h.advance(25 * time.Second)
+	}
+	h.mustBe(ModeArmed)
+
+	as := h.cmd(CmdEnd, goodCode("u_kevin"), func(c *Command) { c.Origin = OriginApp })
+	h.mustBe(ModeArmed)
+	if r := replyOf(t, as); r.Status != StatusDone {
+		t.Fatalf("reply %+v", r)
+	}
+	if got := endedOf(as); !slices.Equal(got, []string{inc}) {
+		t.Fatalf("the end must end the intrusion %s: %v", inc, got)
+	}
+	cl := onlyEvent[Cleared](t, as)
+	if cl.Incident != inc || cl.By != ClearedByUser || cl.User != "u_kevin" || !cl.Ended || cl.Duration != 0 {
+		t.Fatalf("cleared: %+v", cl)
+	}
+	if len(eventsOf[Disarmed](as)) != 0 || count[SirenOn](as) != 0 {
+		t.Fatalf("the end disarms nothing and sounds nothing: %v", as)
+	}
+	if got := onlyEvent[Disarmed](t, h.cmd(CmdDisarm, goodCode("u_kevin"))).Incidents; len(got) != 0 {
+		t.Fatalf("a later disarm ends nothing more: %v", got)
+	}
+}
+
+// An alarm that still rings ends as a silence does, the shop still armed and its
+// zones watching, said ended rather than its siren cut.
+func TestEndingTheAlarmThatRingsLeavesTheShopArmedAndWatching(t *testing.T) {
+	h := newHarness(t)
+	h.armed()
+	h.breakWindow()
+
+	as := h.cmd(CmdEnd, goodCode("u_guard"))
+	h.mustBe(ModeArmed)
+	if cl := onlyEvent[Cleared](t, as); count[SirenOff](as) != 1 || !cl.Ended || cl.By != ClearedByUser {
+		t.Fatalf("end: %v", as)
+	}
+	noActions(t, h.advance(time.Hour))
+	h.moves()
+	h.mustBe(ModeTriggered)
+}
+
+// The end wants the code, as a disarm does: a wrong one ends nothing and counts. With
+// nothing under way, it is done and changes nothing.
+func TestEndingWantsTheCodeAndEndsNothingWithoutAnAlarm(t *testing.T) {
+	h := newHarness(t)
+	h.armed()
+	h.breakWindow()
+	as := h.cmd(CmdEnd, badCode)
+	if r := replyOf(t, as); r.Status != StatusRefused || r.Reason != ReasonBadCode || len(endedOf(as)) != 0 {
+		t.Fatalf("a wrong code: %v", as)
+	}
+	h.mustBe(ModeTriggered)
+
+	q := newHarness(t)
+	q.armed()
+	as = q.cmd(CmdEnd, goodCode("u_guard"))
+	if r := replyOf(t, as); r.Status != StatusDone || len(eventsOf[Cleared](as)) != 0 || len(endedOf(as)) != 0 {
+		t.Fatalf("nothing under way: %v", as)
+	}
+	q.mustBe(ModeArmed)
+}

@@ -47,6 +47,7 @@ const (
 	CmdArmNow   CommandName = "arm_now"
 	CmdDisarm   CommandName = "disarm"
 	CmdSilence  CommandName = "silence"
+	CmdEnd      CommandName = "end"
 	CmdBypass   CommandName = "bypass"
 	CmdPostpone CommandName = "postpone"
 )

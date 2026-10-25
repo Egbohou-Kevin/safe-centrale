@@ -268,15 +268,15 @@ func (e *Engine) lateEntry(at time.Time) []Action {
 }
 
 // clearIncident stops the siren on a user's order: the person ended the incident,
-// whatever its kind.
-func (e *Engine) clearIncident(at time.Time, user string) []Action {
+// whatever its kind; ended says the order was alarm.end (see end).
+func (e *Engine) clearIncident(at time.Time, user string, ended bool) []Action {
 	inc := e.s.Incident
 	if inc == nil {
 		return []Action{SirenOff{}}
 	}
 	return []Action{
 		SirenOff{},
-		Emit{Cleared{Incident: inc.ID, By: ClearedByUser, User: user, Duration: at.Sub(inc.StartedAt)}},
+		Emit{Cleared{Incident: inc.ID, By: ClearedByUser, User: user, Duration: at.Sub(inc.StartedAt), Ended: ended}},
 		Ended{Incidents: []string{inc.ID}},
 	}
 }
