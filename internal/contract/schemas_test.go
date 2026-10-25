@@ -435,6 +435,25 @@ func TestSchemasRejectInvalidMessages(t *testing.T) {
 	}
 }
 
+// zone_name is the zone of the cause, never empty and as long as a device name at
+// most: a phone can show it as it comes.
+func TestAnAlertNamesItsZoneWithinBounds(t *testing.T) {
+	const ok = `{"incident":"x","incident_at":"2026-10-24T16:15:00.000Z","zone":"Africa/Lome","kind":"intrusion","urgency":"critical","zone_name":"Entr\u00e9e"}`
+	if err := schematest.Check("alert-request.json", []byte(ok)); err != nil {
+		t.Fatalf("the reference alert must be valid: %v", err)
+	}
+	for name, zone := range map[string]string{
+		"empty":    `""`,
+		"too long": `"` + strings.Repeat("a", MaxDeviceName+1) + `"`,
+		"a number": `3`,
+	} {
+		raw := strings.Replace(ok, `"Entr\u00e9e"`, zone, 1)
+		if err := schematest.Check("alert-request.json", []byte(raw)); err == nil {
+			t.Errorf("%s: accepted %s", name, raw)
+		}
+	}
+}
+
 // An alert that is part of an alarm names it (alarm_incident), and only an alert
 // that names its alarm may say that alarm is handled (dependentRequired): a handled
 // flag without its alarm would quiet the phones about nothing they can tie it to.

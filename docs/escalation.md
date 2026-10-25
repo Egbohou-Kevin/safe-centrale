@@ -439,7 +439,9 @@ Ajouts à reporter dans `contract.md` :
   même à chaque vague et relance), `zone` (le fuseau IANA du site), `kind`, `urgency`,
   `wave`, `contact`, `channel` (`app`, `whatsapp`, `sms`, `call`), `text`, et pour
   l'alerte d'une sirène muette pendant une alarme `alarm_incident` (l'alarme) et
-  `alarm_handled` (l'alarme est déjà prise en charge : l'alerte est discrète).
+  `alarm_handled` (l'alarme est déjà prise en charge : l'alerte est discrète) ;
+  `zone_name`, le nom de la zone de la cause (« Entrée »), quand un seul appareil d'une
+  zone a levé une intrusion, un incendie, une panique ou un sabotage.
 - `alert.result` : `ref` (le `alert.request`), `status` (`queued`, `sent`,
   `delivered`, `failed`), `reason` si échec. Pour `app` et `whatsapp`, `sent` veut
   dire que le cloud a pris le message, `delivered` qu'il est arrivé sur le

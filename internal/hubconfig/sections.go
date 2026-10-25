@@ -186,8 +186,10 @@ func applyEscalation(cfg *hub.Config, f file) error {
 	}
 	e.Location = cfg.Engine.Location
 	e.DeviceNames = make(map[string]string, len(cfg.Engine.Zones)+len(f.SirenIDs))
+	e.ZoneNames = make(map[string]string, len(cfg.Engine.Zones))
 	for id, z := range cfg.Engine.Zones {
 		e.DeviceNames[id] = z.Name
+		e.ZoneNames[id] = z.Name
 	}
 	sirens := siteOf(f.Zones, f.SirenIDs, f.SirenNames)
 	for _, id := range f.SirenIDs {

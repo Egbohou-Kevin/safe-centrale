@@ -435,3 +435,51 @@ func TestOtherAlertsAreThrottledPerContact(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+// --- the zone of the cause ----------------------------------------------------------------
+
+// An alert names the zone of its cause as configured, accents kept, so that a phone
+// opened from it says the zone: one device in a zone, for an intrusion, a fire, a
+// panic or a tamper. Several devices, a device outside a zone (a siren, a keypad) and
+// the hub's own faults name none.
+func TestAnAlertNamesTheZoneOfItsCause(t *testing.T) {
+	zones := func(c *Config) {
+		c.ZoneNames = map[string]string{"dev_door": "Entr\u00e9e", "dev_back": "Porte arri\u00e8re"}
+	}
+	for name, c := range map[string]struct {
+		kind    AlertKind
+		devices []string
+		want    string
+	}{
+		"intrusion":       {KindIntrusion, []string{"dev_door"}, "Entr\u00e9e"},
+		"fire":            {KindFire, []string{"dev_back"}, "Porte arri\u00e8re"},
+		"panic":           {KindPanic, []string{"dev_door"}, "Entr\u00e9e"},
+		"tamper":          {KindTamper, []string{"dev_door"}, "Entr\u00e9e"},
+		"a keypad":        {KindTamper, []string{"dev_keypad"}, ""},
+		"several":         {KindIntrusion, []string{"dev_door", "dev_back"}, ""},
+		"a silent siren":  {KindSirenFailed, []string{"dev_door"}, ""},
+		"a battery":       {KindBatteryLow, []string{"dev_door"}, ""},
+		"the hub's power": {KindHubBatteryLow, nil, ""},
+		"no zone at all":  {KindIntrusion, nil, ""},
+	} {
+		out := raise(newEsc(t, zones), t0, c.kind, c.devices...)
+		var n int
+		for _, a := range out {
+			if s, ok := a.(Send); ok {
+				n++
+				if s.ZoneName != c.want {
+					t.Errorf("%s: zone %q, want %q", name, s.ZoneName, c.want)
+				}
+			}
+		}
+		if n == 0 {
+			t.Errorf("%s: nothing sent", name)
+		}
+	}
+	// Without zone names (an older configuration), the alert goes as before.
+	for _, a := range raise(newEsc(t), t0, KindIntrusion, "dev_door") {
+		if s, ok := a.(Send); ok && s.ZoneName != "" {
+			t.Fatalf("zone %q without zone names", s.ZoneName)
+		}
+	}
+}
