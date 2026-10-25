@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -18,17 +19,24 @@ import (
 func TestPut(t *testing.T) {
 	var got []byte
 	var auth, ctype string
+	var landed atomic.Int32 // requests that followed the redirection
 	status := http.StatusCreated
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var srv *httptest.Server
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			http.Error(w, "", http.StatusMethodNotAllowed)
 			return
 		}
 		got, _ = io.ReadAll(r.Body)
 		auth, ctype = r.Header.Get("Authorization"), r.Header.Get("Content-Type")
-		if r.URL.Path == "/moved" {
-			http.Redirect(w, r, "https://elsewhere.example/", http.StatusTemporaryRedirect)
+		switch r.URL.Path {
+		case "/moved":
+			// To the same server: the token would follow it there (Go drops it only
+			// for another host).
+			http.Redirect(w, r, srv.URL+"/landing", http.StatusTemporaryRedirect)
 			return
+		case "/landing":
+			landed.Add(1)
 		}
 		w.WriteHeader(status)
 	}))
@@ -63,8 +71,8 @@ func TestPut(t *testing.T) {
 		}
 	}
 	status = http.StatusCreated
-	if err := c.Put(ctx, srv.URL+"/moved", "tok-secret", bytes.NewReader(photo), int64(len(photo))); err == nil {
-		t.Fatal("a redirection is not followed, nor taken for a success")
+	if err := c.Put(ctx, srv.URL+"/moved", "tok-secret", bytes.NewReader(photo), int64(len(photo))); err == nil || landed.Load() != 0 {
+		t.Fatalf("a redirection is not followed (%d followed), nor taken for a success: %v", landed.Load(), err)
 	}
 	if err := c.Put(ctx, strings.Replace(srv.URL, "https", "http", 1)+"/p", "t", bytes.NewReader(photo), 5); !errors.Is(err, ErrExpired) {
 		t.Fatalf("http: %v", err)

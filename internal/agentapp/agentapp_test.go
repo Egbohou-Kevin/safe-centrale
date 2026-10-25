@@ -501,7 +501,8 @@ func TestUploadFailures(t *testing.T) {
 func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 	r := newRig(t, nil)
 	r.settle()
-	if !r.app.HandleLocal(inbox.Message{Topic: topic("alarm", "event"), Payload: r.msg(contract.TypeAlarmTriggered, triggered)}) {
+	first := r.msg(contract.TypeAlarmTriggered, triggered)
+	if !r.app.HandleLocal(inbox.Message{Topic: topic("alarm", "event"), Payload: first}) {
 		t.Fatal("a message is taken while the agent runs")
 	}
 	release := r.local.Hold()
@@ -519,5 +520,13 @@ func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 	<-r.done
 	if strings.Contains(r.logs.String(), "level=ERROR") {
 		t.Fatal("an error was logged for a message given up at shutdown")
+	}
+	// The one taken before went to the cloud, or waits in the queue's store.
+	env, _ := contract.ParseEnvelope(first)
+	r.disk.queue.mu.Lock()
+	_, kept := r.disk.queue.items[env.ID]
+	r.disk.queue.mu.Unlock()
+	if !kept && !slices.ContainsFunc(r.cloud.OfType(contract.TypeAlarmTriggered), func(m outboxtest.Message) bool { return m.Env.ID == env.ID }) {
+		t.Fatal("a message taken before the stop was lost")
 	}
 }
