@@ -51,7 +51,9 @@ func Changed(c zigbee.Changed) (Device, error) {
 	return out, nil
 }
 
-// Presence builds the availability event and state of a device.
+// Presence builds the availability event and state of a device. The state of an
+// offline device also says when it was last heard (the hub's system.devices reads it
+// there); a device online has no such time.
 func Presence(p zigbee.Presence) Device {
 	v := contract.ValOffline
 	if p.Online {
@@ -60,6 +62,9 @@ func Presence(p zigbee.Presence) Device {
 	ev := contract.DeviceEventData{DeviceID: p.DeviceID, Capability: contract.CapAvailability, Value: json.RawMessage(strconv.Quote(v))}
 	st := ev
 	st.Since = contract.TSPtr(p.Since)
+	if !p.Online {
+		st.Heard = contract.TSPtr(p.Heard)
+	}
 	return Device{Event: &ev, State: &st}
 }
 

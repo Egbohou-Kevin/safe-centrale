@@ -19,7 +19,12 @@ type DeviceEventData struct {
 	Capability string          `json:"capability"`
 	Value      json.RawMessage `json:"value"`
 	Since      *Timestamp      `json:"since,omitempty"` // device.state only
-	Code       string          `json:"code,omitempty"`  // keypad disarm and silence only
+	// Heard is when an offline device was last heard, to the minute: device.state of
+	// availability "offline" only, absent when it said nothing since the adapter's
+	// restart. Never for a device online: when a device that answers last spoke moves
+	// with every door and every passer-by.
+	Heard *Timestamp `json:"heard,omitempty"`
+	Code  string     `json:"code,omitempty"` // keypad disarm and silence only
 }
 
 func (d DeviceEventData) redacted() DeviceEventData {
@@ -86,6 +91,9 @@ func (d DeviceEventData) Validate() error {
 		if len(d.Code) > maxCodeLen || strings.Trim(d.Code, "0123456789") != "" {
 			return fmt.Errorf("%w: the code must be digits, at most %d", ErrInvalid, maxCodeLen)
 		}
+	}
+	if d.Heard != nil && (d.Capability != CapAvailability || d.StringValue() != ValOffline) {
+		return fmt.Errorf("%w: heard is only allowed with availability offline", ErrInvalid)
 	}
 	if numericCapabilities[d.Capability] {
 		n, ok := d.IntValue()

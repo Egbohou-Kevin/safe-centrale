@@ -26,10 +26,24 @@ type Battery struct {
 
 // Availability says whether a device is answering. The adapter decides when a
 // silent device counts as offline; this package only records it.
+//
+// For an offline device, the adapter also says since when (Since) and when it last
+// heard it (Heard, zero when it said nothing since the adapter's restart): the device
+// list shows them. Either may be unknown (zero).
 type Availability struct {
 	Now      time.Time
 	DeviceID string
 	Online   bool
+	Since    time.Time
+	Heard    time.Time
+}
+
+// Registry gives the devices the adapter registered, with their capabilities (for
+// example "contact", "battery"): the device list shows those. It replaces the
+// previous list.
+type Registry struct {
+	Now     time.Time
+	Devices map[string][]string // device id -> capabilities
 }
 
 // Forget removes a device that left the registry, with its faults.
@@ -79,6 +93,7 @@ func (t Tick) at() time.Time         { return t.Now }
 func (m Mains) at() time.Time        { return m.Now }
 func (b Battery) at() time.Time      { return b.Now }
 func (a Availability) at() time.Time { return a.Now }
+func (r Registry) at() time.Time     { return r.Now }
 func (f Forget) at() time.Time       { return f.Now }
 
 // Action is what the monitor asks the driver to do.

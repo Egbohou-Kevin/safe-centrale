@@ -61,14 +61,27 @@ func TestValuesTheContractRefusesAreErrors(t *testing.T) {
 }
 
 func TestPresence(t *testing.T) {
-	out := Presence(zigbee.Presence{DeviceID: "d", Since: t0})
+	heard := t0.Add(-4 * time.Hour)
+	out := Presence(zigbee.Presence{DeviceID: "d", Since: t0, Heard: heard})
 	if string(out.Event.Value) != `"offline"` || out.Event.Capability != contract.CapAvailability || !out.State.Since.Equal(t0) {
 		t.Fatalf("%+v", out)
 	}
-	if out := Presence(zigbee.Presence{DeviceID: "d", Online: true}); string(out.State.Value) != `"online"` {
+	// The last news goes in the retained state only: the event says the change.
+	if out.State.Heard == nil || !out.State.Heard.Equal(heard) || out.Event.Heard != nil || out.Event.Since != nil {
 		t.Fatalf("%+v", out)
 	}
 	schematest.Validate(t, "device-event.json", *out.Event)
+	schematest.Validate(t, "device-event.json", *out.State)
+	if err := out.State.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if out := Presence(zigbee.Presence{DeviceID: "d", Since: t0}); out.State.Heard != nil {
+		t.Fatalf("silent since the adapter's restart: no last news, %+v", out.State)
+	}
+	// Online, a device has no last news, even if one was given.
+	if out := Presence(zigbee.Presence{DeviceID: "d", Online: true, Since: t0, Heard: heard}); string(out.State.Value) != `"online"` || out.State.Heard != nil {
+		t.Fatalf("%+v", out)
+	}
 }
 
 func TestStatesToClearOnRemoval(t *testing.T) {

@@ -131,7 +131,7 @@ func (n *Network) interviewed(i Interviewed) []Action {
 	}
 	d := Device{ID: id, IEEE: i.IEEE, Model: i.Model, Profile: p.Name, Capabilities: p.capabilities()}
 	n.s.Devices[id] = d
-	n.seen[id] = i.Now
+	n.spokeAt(id, i.Now, i.Now) // joining is news from it
 	out := []Action{Rename{IEEE: i.IEEE, To: id}}
 	if p.carriesCode() {
 		out = append(out, CarriesCode{IEEE: i.IEEE})
@@ -166,6 +166,7 @@ func (n *Network) remove(r Remove) []Action {
 	delete(n.s.States, d.ID)
 	delete(n.s.Offline, d.ID)
 	delete(n.seen, d.ID)
+	delete(n.news, d.ID)
 	n.s.Retired[d.ID] = true
 	return append(out, Removed{Ref: r.Ref, Device: d}, RegistryChanged{Devices: n.Devices()})
 }

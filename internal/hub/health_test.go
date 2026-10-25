@@ -51,7 +51,7 @@ func TestHubBatteryAlertsAndHealth(t *testing.T) {
 func TestDailySummaryOfFaultsFromTheClock(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
-	r.device(devBack, contract.CapAvailability, "offline")
+	r.offline(devBack, time.Time{})
 	r.device(devMotion, contract.CapBattery, "9")
 	r.settle()
 	r.clock.Advance(13 * time.Hour) // next morning, 10:00 (the summary is at 09:00)
@@ -138,7 +138,7 @@ func TestARemovedDeviceIsForgotten(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	r.device(devBack, contract.CapContact, "open")
-	r.device(devMotion, contract.CapAvailability, "offline")
+	r.offline(devMotion, time.Time{})
 	r.settle()
 	if st := r.hub.faults.Load(); len(st.Offline) != 1 {
 		t.Fatalf("offline: %v", st.Offline)

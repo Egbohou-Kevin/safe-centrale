@@ -3,6 +3,7 @@ package zigbee
 import (
 	"maps"
 	"slices"
+	"time"
 )
 
 // report reads a device's message. Only changes are announced: Zigbee2MQTT repeats
@@ -22,7 +23,7 @@ func (n *Network) report(r Report) []Action {
 	if r.Retained {
 		return n.readFields(d.ID, p, r) // old news: the device is not alive for it
 	}
-	out := n.heard(d.ID, r.Now)
+	out := n.heard(d.ID, r.Now, r.spokenAt())
 	out = append(out, n.readFields(d.ID, p, r)...)
 	return append(out, n.confirm(d.ID, p, r)...)
 }
@@ -53,17 +54,23 @@ func (n *Network) readFields(id string, p Profile, r Report) []Action {
 	return out
 }
 
+// spokenAt is when Zigbee2MQTT heard the device say this message (its last_seen), or
+// when the message reached us if Zigbee2MQTT does not say; never later than that. A
+// message may wait at the broker while the adapter is down.
+func (r Report) spokenAt() time.Time {
+	if !r.Heard.IsZero() && r.Heard.Before(r.Now) {
+		return r.Heard
+	}
+	return r.Now
+}
+
 // momentary announces an action (a button, a keypad): an event every time, no state.
 // The code typed comes with every key; the wire subpackage keeps it only for the keys
 // the contract lets carry one. The action dates from when Zigbee2MQTT heard it, not
 // from when it reached us: a key pressed while the adapter was down must look as old
-// as it is, so that the hub lets it expire (never later than now, though).
+// as it is, so that the hub lets it expire.
 func momentary(id, capability, v string, rule Rule, r Report) Changed {
-	since := r.Now
-	if !r.Heard.IsZero() && r.Heard.Before(r.Now) {
-		since = r.Heard
-	}
-	ch := Changed{DeviceID: id, Capability: capability, Value: v, Since: since, Notify: true}
+	ch := Changed{DeviceID: id, Capability: capability, Value: v, Since: r.spokenAt(), Notify: true}
 	if rule.CodeFrom != "" {
 		ch.Code = text(r.Fields[rule.CodeFrom])
 	}

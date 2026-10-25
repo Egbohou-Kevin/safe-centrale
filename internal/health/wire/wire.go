@@ -10,7 +10,7 @@ import (
 	"safehome/internal/health"
 )
 
-// Input turns a device event into a health input. ok is false when the event does
+// Input turns a device event or state into a health input. ok is false when it does
 // not concern supervision (a door opening, for instance) or is malformed.
 func Input(d contract.DeviceEventData, now time.Time) (in health.Input, ok bool) {
 	switch d.Capability {
@@ -23,9 +23,20 @@ func Input(d contract.DeviceEventData, now time.Time) (in health.Input, ok bool)
 		}
 		return health.Battery{Now: now, DeviceID: d.DeviceID, Percent: percent}, true
 	case contract.CapAvailability:
-		return health.Availability{Now: now, DeviceID: d.DeviceID, Online: d.StringValue() == contract.ValOnline}, true
+		return health.Availability{
+			Now: now, DeviceID: d.DeviceID, Online: d.StringValue() == contract.ValOnline,
+			Since: timeOf(d.Since), Heard: timeOf(d.Heard),
+		}, true
 	}
 	return nil, false
+}
+
+// timeOf is the time of an optional field, zero when absent.
+func timeOf(t *contract.Timestamp) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return t.Time
 }
 
 // GSM turns the GSM gateway's status, written at seen (the envelope's ts), into a

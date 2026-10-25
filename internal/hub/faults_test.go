@@ -3,6 +3,7 @@ package hub
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"safehome/internal/contract"
 	"safehome/internal/driver/drivertest"
@@ -12,7 +13,7 @@ import (
 func TestArmingWarnsOfSilentDevicesAndWeakBatteries(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
-	r.device(devBack, contract.CapAvailability, "offline")
+	r.offline(devBack, time.Time{})
 	r.device(devMotion, contract.CapBattery, "9")
 	r.settle()
 
@@ -36,8 +37,8 @@ func TestArmingWarnsOfSilentDevicesAndWeakBatteries(t *testing.T) {
 func TestArmingWithoutFaultsSaysNothingMore(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
-	r.device(devBack, contract.CapAvailability, "offline")
-	r.device(devBack, contract.CapAvailability, "online") // back
+	r.offline(devBack, time.Time{})
+	r.online(devBack) // back
 	r.settle()
 	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_owner")
 	drivertest.WaitFor(t, "the reply", func() bool { return len(eventsOf(r, contract.TypeAlarmAck)) == 1 })

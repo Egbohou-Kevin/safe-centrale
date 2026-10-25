@@ -139,7 +139,7 @@ func TestASilentDeviceGoesOfflineAndComesBack(t *testing.T) {
 		t.Fatalf("next wake %v: the siren's profile allows one hour", h.n.NextWake())
 	}
 	out := h.advance(time.Hour)
-	if p := all[Presence](out); len(p) != 1 || p[0] != (Presence{DeviceID: "dev_siren", Since: t0.Add(time.Hour)}) {
+	if p := all[Presence](out); len(p) != 1 || p[0] != (Presence{DeviceID: "dev_siren", Since: t0.Add(time.Hour), Heard: t0}) {
 		t.Fatalf("%+v", out)
 	}
 	h.now = t0.Add(2 * time.Hour)
@@ -161,6 +161,87 @@ func TestASilentDeviceGoesOfflineAndComesBack(t *testing.T) {
 	}
 	if !h.n.NextWake().Equal(h.now.Add(time.Hour)) {
 		t.Fatalf("next wake %v", h.n.NextWake())
+	}
+}
+
+// An offline device carries its last news, to the minute: from then on, its door
+// is not watched. It stays fixed while the device is offline, and a device that
+// answers has none: when it last spoke moves with every door and every passer-by.
+func TestAnOfflineDeviceSaysWhenItWasLastHeard(t *testing.T) {
+	h := newHarness(t)
+	h.add("dev_door", ieeeDoor, "MCCGQ11LM") // joining is news from it
+	h.now = t0.Add(2*time.Hour + 47*time.Minute + 31*time.Second)
+	h.report("dev_door", map[string]any{"contact": true})
+	out := h.advance(4 * time.Hour)
+	if p := all[Presence](out); len(p) != 1 || p[0] != (Presence{DeviceID: "dev_door", Since: h.now, Heard: t0.Add(2*time.Hour + 47*time.Minute)}) {
+		t.Fatalf("%+v", out)
+	}
+	h.now = h.now.Add(time.Hour)
+	out = h.report("dev_door", map[string]any{"contact": true})
+	if p := all[Presence](out); len(p) != 1 || !p[0].Online || !p[0].Heard.IsZero() {
+		t.Fatalf("back online, with no time but its return: %+v", out)
+	}
+
+	// A device that leaves the network carries its last news too.
+	h.now = h.now.Add(10*time.Minute + 59*time.Second)
+	h.report("dev_door", map[string]any{"contact": true})
+	spoke := h.now
+	h.now = h.now.Add(time.Minute)
+	if p := all[Presence](h.do(Left{Now: h.now, IEEE: ieeeDoor})); len(p) != 1 || !p[0].Heard.Equal(spoke.Truncate(time.Minute)) {
+		t.Fatalf("%+v", p)
+	}
+}
+
+// A message the broker kept while the adapter was down is no news from its arrival:
+// the last news is when Zigbee2MQTT heard the device, or the owner would be told its
+// door was watched longer than it was. Its silence still counts from the arrival, and
+// an older message delivered after never takes the last news back.
+func TestTheLastNewsIsWhenZigbee2MQTTHeardTheDevice(t *testing.T) {
+	h := newHarness(t)
+	h.add("dev_door", ieeeDoor, "MCCGQ11LM")
+	h.now = t0.Add(time.Hour + 40*time.Minute) // after 40 min with the adapter down
+	h.do(Report{Now: h.now, Name: "dev_door", Fields: map[string]any{"contact": true}, Heard: t0.Add(time.Hour + 20*time.Second)})
+	h.do(Report{Now: h.now, Name: "dev_door", Fields: map[string]any{"contact": true}, Heard: t0.Add(30 * time.Minute)})
+	if out := h.advance(4*time.Hour - time.Second); len(all[Presence](out)) != 0 {
+		t.Fatalf("its silence counts from the arrival: %+v", out)
+	}
+	out := h.advance(time.Second)
+	if p := all[Presence](out); len(p) != 1 || p[0] != (Presence{DeviceID: "dev_door", Since: h.now, Heard: t0.Add(time.Hour)}) {
+		t.Fatalf("%+v", out)
+	}
+
+	// Back online, a last_seen later than the arrival counts as the arrival.
+	h.do(Report{Now: h.now, Name: "dev_door", Fields: map[string]any{"contact": true}, Heard: h.now.Add(3 * time.Minute)})
+	out = h.advance(4 * time.Hour)
+	if p := all[Presence](out); len(p) != 1 || !p[0].Heard.Equal(h.now.Add(-4*time.Hour).Truncate(time.Minute)) {
+		t.Fatalf("%+v", out)
+	}
+}
+
+// After a restart, a device that said nothing since goes offline with no last news:
+// the restart is no news from it. One that spoke since has its own.
+func TestAfterARestartADeviceSilentSinceHasNoLastNews(t *testing.T) {
+	h := newHarness(t)
+	h.add("dev_door", ieeeDoor, "MCCGQ11LM")
+	h.add("dev_back", "0x00158d0001000009", "MCCGQ11LM")
+	var s Snapshot
+	raw, _ := json.Marshal(h.n.Snapshot())
+	json.Unmarshal(raw, &s)
+
+	again := newHarness(t)
+	again.n.Restore(s)
+	again.now = t0.Add(time.Hour)
+	again.do(Tick{Now: again.now}) // the restart: both are silent since
+	again.now = t0.Add(90*time.Minute + 20*time.Second)
+	again.report("dev_back", map[string]any{"contact": true})
+
+	out := again.advance(3*time.Hour + 39*time.Minute + 40*time.Second) // t0+5h
+	if p := all[Presence](out); len(p) != 1 || p[0] != (Presence{DeviceID: "dev_door", Since: again.now}) {
+		t.Fatalf("%+v", out)
+	}
+	out = again.advance(30*time.Minute + 20*time.Second)
+	if p := all[Presence](out); len(p) != 1 || p[0] != (Presence{DeviceID: "dev_back", Since: again.now, Heard: t0.Add(90 * time.Minute)}) {
+		t.Fatalf("%+v", out)
 	}
 }
 

@@ -120,16 +120,22 @@ func (h *Hub) publishHealth(now time.Time) {
 	st := h.monitor.mon.Status()
 	h.faults.Store(&st)
 	h.followUplink(now, st.Internet)
-	raw, err := json.Marshal(h.healthData(st))
+	h.publishChanged(&h.monitor.lastHealth, contract.HealthTopic(h.cfg.Site), contract.TypeHealth, h.healthData(st), now)
+}
+
+// publishChanged publishes a retained message of the monitor when it differs from the
+// last one published there (*last), and keeps it. It runs on the monitor's loop.
+func (h *Hub) publishChanged(last *[]byte, topic, typ string, data any, now time.Time) {
+	raw, err := json.Marshal(data)
 	if err != nil {
-		h.log.Error("encoding system.health failed", "err", err)
+		h.log.Error("encoding a message failed", "type", typ, "err", err)
 		return
 	}
-	if bytes.Equal(raw, h.monitor.lastHealth) {
+	if bytes.Equal(raw, *last) {
 		return
 	}
-	h.monitor.lastHealth = raw
-	h.out.Send(srcHealth, contract.HealthTopic(h.cfg.Site), contract.TypeHealth, json.RawMessage(raw), true, now)
+	*last = raw
+	h.out.Send(srcHealth, topic, typ, json.RawMessage(raw), true, now)
 }
 
 // healthData is system.health for the monitor's summary and the GSM lines.

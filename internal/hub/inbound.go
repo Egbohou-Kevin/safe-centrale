@@ -59,6 +59,8 @@ func (h *Hub) serviceMessage(topic string, m inbox.Message) {
 		h.installMessage(m)
 	case "registry/event":
 		h.registryMessage(m)
+	case "registry/devices":
+		h.registrySnapshotMessage(m)
 	}
 }
 
@@ -111,7 +113,10 @@ func (h *Hub) deviceMessage(deviceID, capability string, m inbox.Message) {
 }
 
 // deviceState handles a retained state. They matter once, at start: they tell the
-// hub what the devices look like. After that, events carry every change.
+// hub what the devices look like. After that, events carry every change, the
+// availability apart: its state also says since when a device is offline and when it
+// was last heard, which its event does not, so the monitor follows it by its state
+// alone, at start and after (system.devices).
 func (h *Hub) deviceState(d contract.DeviceEventData) {
 	if d.Capability == contract.CapKeypad {
 		return
@@ -122,7 +127,7 @@ func (h *Hub) deviceState(d contract.DeviceEventData) {
 		h.startup.states[d.DeviceID+"/"+d.Capability] = d
 	}
 	h.startup.mu.Unlock()
-	if !booting {
+	if !booting && d.Capability != contract.CapAvailability {
 		return
 	}
 	if d.Capability == contract.CapMains {
@@ -146,7 +151,9 @@ func (h *Hub) deviceEvent(env contract.Envelope, d contract.DeviceEventData) {
 		})
 		h.submitFailed(err)
 	}
-	h.feedHealth(d)
+	if d.Capability != contract.CapAvailability { // followed by its state (deviceState)
+		h.feedHealth(d)
+	}
 }
 
 // signalOf tells whether a device message means something to the engine; the time

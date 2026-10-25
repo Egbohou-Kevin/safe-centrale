@@ -65,3 +65,34 @@ type HealthData struct {
 	Links      map[string]string `json:"links"`                 // zigbee, gsm, internet -> ok, down...
 	GSM        *GSMHealth        `json:"gsm,omitempty"`
 }
+
+// DevicesData is the payload of system.devices: the health of each registered device,
+// for the owner's list of sensors. Published retained at every real change, never for
+// a door or a passer-by as such: no door or motion state, and no time for a device
+// that answers. Its envelope's ts still dates each change it went for, such as a
+// device going offline or its first message back (see docs/contract.md).
+type DevicesData struct {
+	Devices []DeviceHealth `json:"devices"`
+}
+
+// DeviceHealth is one device of system.devices.
+type DeviceHealth struct {
+	ID string `json:"id"` // the registry's device_id
+	// Name and Zone come from the device's zone in the site's configuration: its name
+	// (see DeviceName) and its kind (entry, instant...). Absent for a device outside
+	// any zone (a siren).
+	Name string `json:"name,omitempty"`
+	Zone string `json:"zone,omitempty"`
+	Type string `json:"type"` // contact, motion, smoke, keypad, siren, panic, vibration, glass_break
+	// Online is false once the adapter counts the device offline. Only then: Since,
+	// when it went offline, and Heard, its last news before (absent when it said
+	// nothing since the adapter's restart), both to the minute and fixed while it is
+	// offline.
+	Online bool       `json:"online"`
+	Since  *Timestamp `json:"since,omitempty"`
+	Heard  *Timestamp `json:"heard,omitempty"`
+	// Battery is the last reading in percent, rounded to the nearest ten, absent when
+	// none was read; BatteryLow is present, and true, while the battery is weak.
+	Battery    *int `json:"battery,omitempty"`
+	BatteryLow bool `json:"battery_low,omitempty"`
+}

@@ -54,6 +54,9 @@ func AlertAckTopic(site string) string     { return Topic(site, "alert", "ack") 
 func HeartbeatTopic(site string) string { return Topic(site, "system", "heartbeat") }
 func HealthTopic(site string) string    { return Topic(site, "system", "health") }
 
+// DevicesTopic carries the health of each device (system.devices), retained.
+func DevicesTopic(site string) string { return Topic(site, "system", "devices") }
+
 // GSMStatusTopic carries the GSM gateway's lines, retained.
 func GSMStatusTopic(site string) string { return Topic(site, "gsm", "status") }
 
