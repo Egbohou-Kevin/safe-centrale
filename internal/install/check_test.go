@@ -108,7 +108,8 @@ func TestCheckFindsWhatIsWrong(t *testing.T) {
 			"dev_window": {"Vitrine", "glass"},   // unknown kind
 			"dev_noname": {"", "instant"},        // no name
 		},
-		SirenIDs: []string{"dev_motion", "dev_lost"},
+		SirenIDs:   []string{"dev_motion", "dev_lost"},
+		SirenNames: map[string]string{"dev_lost": "Reserve\t"}, // a tab in a name
 	}
 	devices := []contract.RegistryDevice{
 		dev("dev_door", "contact"), dev("dev_smoke", "smoke"), dev("dev_window", "contact"),
@@ -124,7 +125,9 @@ func TestCheckFindsWhatIsWrong(t *testing.T) {
 		"problem dev_smoke",
 		"problem dev_window",
 		"problem dev_motion", // a siren that cannot sound
+		"warning dev_motion", // one of two sirens, without a name
 		"warning dev_lost",   // a siren that is not paired
+		"problem dev_lost",   // a siren's name with a control character
 		"warning dev_spare",  // paired, used for nothing
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -132,6 +135,9 @@ func TestCheckFindsWhatIsWrong(t *testing.T) {
 	}
 	if !HasProblem(Check(site, devices)) {
 		t.Fatal("HasProblem missed the problems")
+	}
+	if f := Check(site, devices)[5]; !strings.Contains(f.Text, "the alerts call it \"Sir\u00e8ne 1\"") {
+		t.Fatalf("an unnamed siren must say what the alerts call it: %s", f)
 	}
 }
 

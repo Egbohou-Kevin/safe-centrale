@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,6 +22,9 @@ const usage = `usage:
   safehome-install unzone  -config FILE DEVICE           take a device out of its zone
   safehome-install siren   -config FILE add|remove DEVICE
                                                          use a device as a siren, or stop
+  safehome-install siren   -config FILE name -name NAME DEVICE
+                                                         name a siren for the alerts' texts
+                                                         (add takes -name too)
   safehome-install watch   -config FILE [DEVICE]         show device events live, for the tests
   safehome-install check   -config FILE                  compare the configuration with the paired devices
   safehome-install version
@@ -46,7 +50,7 @@ type command struct {
 	cfg      hubconfig.Result
 	path     string
 	args     []string // the positional arguments
-	zoneName string   // -name
+	zoneName string   // -name, of a zone or a siren
 	kind     string   // -kind
 	pairFor  time.Duration
 	force    bool
@@ -106,8 +110,8 @@ func parse(args []string, stdout, stderr io.Writer) (c command, exit int, ok boo
 	case len(c.args) < bounds[0] || len(c.args) > bounds[1]:
 		fmt.Fprintf(stderr, "%s: wrong number of arguments\n%s", c.cmd, usage)
 		return c, 2, false
-	case c.cmd == "siren" && c.args[0] != "add" && c.args[0] != "remove":
-		fmt.Fprintf(stderr, "siren: say add or remove, not %q\n", c.args[0])
+	case c.cmd == "siren" && !slices.Contains([]string{"add", "remove", "name"}, c.args[0]):
+		fmt.Fprintf(stderr, "siren: say add, remove or name, not %q\n", c.args[0])
 		return c, 2, false
 	}
 	return c, 0, true
@@ -126,6 +130,7 @@ func (c *command) flags(stderr io.Writer) *flag.FlagSet {
 		fs.StringVar(&c.kind, "kind", "", "the zone's kind: "+strings.Join(install.ZoneKinds(), ", ")+" (required)")
 		fs.BoolVar(&c.force, "force", false, "accept a device that is not in the Zigbee registry (another adapter)")
 	case "siren":
+		fs.StringVar(&c.zoneName, "name", "", "the siren's name in the alerts, as people say it (required by name)")
 		fs.BoolVar(&c.force, "force", false, "accept a device that is not in the Zigbee registry (another adapter)")
 	}
 	return fs
@@ -139,6 +144,8 @@ func (c *command) do(ctx context.Context) error {
 		return c.unzone()
 	case c.cmd == "siren" && c.args[0] == "remove":
 		return c.sirenRemove()
+	case c.cmd == "siren" && c.args[0] == "name":
+		return c.sirenName()
 	}
 	return c.online(ctx, map[string]func(context.Context, *install.Session) error{
 		"siren": c.sirenAdd, "devices": c.devices, "pair": c.pair, "remove": c.remove,

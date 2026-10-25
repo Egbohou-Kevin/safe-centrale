@@ -17,19 +17,46 @@ type Zone struct {
 	Kind string
 }
 
-// Site is the use of the devices: their zones and the sirens.
+// Site is the use of the devices: their zones and the sirens. SirenNames names some
+// sirens for people, by id (see SirenName).
 type Site struct {
-	Zones    map[string]Zone
-	SirenIDs []string
+	Zones      map[string]Zone
+	SirenIDs   []string
+	SirenNames map[string]string
 }
 
 // Without returns a copy of the site where the device id has no zone and is no siren.
 func (s Site) Without(id string) Site {
-	out := Site{Zones: maps.Clone(s.Zones), SirenIDs: slices.DeleteFunc(slices.Clone(s.SirenIDs), func(x string) bool { return x == id })}
+	out := Site{Zones: maps.Clone(s.Zones), SirenIDs: slices.DeleteFunc(slices.Clone(s.SirenIDs), func(x string) bool { return x == id }),
+		SirenNames: unnamed(s.SirenNames, id)}
 	if out.Zones == nil {
 		out.Zones = map[string]Zone{}
 	}
 	delete(out.Zones, id)
+	return out
+}
+
+// defaultSirenName is what the texts call a siren without a name ("Sirene").
+const defaultSirenName = "Sir\u00e8ne"
+
+// SirenName is what the alerts call the siren id: the name it was given, or by
+// default "Sirene" when it is the site's only siren, and "Sirene 1", "Sirene 2"...
+// (in the order the sirens were added) when there are several.
+func (s Site) SirenName(id string) string {
+	if n := s.SirenNames[id]; n != "" {
+		return n
+	}
+	rank := slices.Index(s.SirenIDs, id)
+	if len(s.SirenIDs) < 2 || rank < 0 {
+		return defaultSirenName
+	}
+	return fmt.Sprintf("%s %d", defaultSirenName, rank+1)
+}
+
+// unnamed returns a copy of names without the siren id.
+func unnamed(names map[string]string, id string) map[string]string {
+	out := maps.Clone(names)
+	delete(out, id)
 	return out
 }
 
@@ -44,6 +71,7 @@ type Sites interface {
 // The refusals of a change of the site, for a tool to explain them.
 var (
 	ErrNoZone      = errors.New("has no zone")
+	ErrNoSiren     = errors.New("is not a siren")
 	ErrCannotSound = errors.New("cannot sound")
 	// ErrLastSiren: the hub refuses a site without a siren. The editor says so before
 	// asking the hub, for a tool to explain it.
@@ -143,8 +171,32 @@ func (e *Editor) AddSiren(id string, d *contract.RegistryDevice) (added bool, er
 	return added, err
 }
 
-// RemoveSiren stops the device id being a siren; removed is false when it was none.
-// The last siren stays (ErrLastSiren).
+// NameSiren gives the siren id its name for people, and returns the name it had
+// ("" for none, the default of SirenName). The name follows the zones' rule
+// (ValidSirenName): it goes into the same texts.
+func (e *Editor) NameSiren(id, name string) (old string, err error) {
+	if err := ValidSirenName(name); err != nil {
+		return "", err
+	}
+	err = e.edit(func(s *Site) (bool, error) {
+		if !slices.Contains(s.SirenIDs, id) {
+			return false, fmt.Errorf("%s %w", id, ErrNoSiren)
+		}
+		if old = s.SirenNames[id]; old == name {
+			return false, nil
+		}
+		s.SirenNames = maps.Clone(s.SirenNames)
+		if s.SirenNames == nil {
+			s.SirenNames = map[string]string{}
+		}
+		s.SirenNames[id] = name
+		return true, nil
+	})
+	return old, err
+}
+
+// RemoveSiren stops the device id being a siren, and forgets its name; removed is
+// false when it was none. The last siren stays (ErrLastSiren).
 func (e *Editor) RemoveSiren(id string) (removed bool, err error) {
 	err = e.edit(func(s *Site) (bool, error) {
 		if !slices.Contains(s.SirenIDs, id) {
@@ -154,6 +206,7 @@ func (e *Editor) RemoveSiren(id string) (removed bool, err error) {
 			return false, ErrLastSiren
 		}
 		s.SirenIDs = slices.DeleteFunc(s.SirenIDs, func(x string) bool { return x == id })
+		s.SirenNames = unnamed(s.SirenNames, id)
 		removed = true
 		return true, nil
 	})

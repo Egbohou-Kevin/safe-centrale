@@ -35,6 +35,10 @@ func (f *fakeConsole) Siren(id string, on bool) error {
 	f.calls = append(f.calls, fmt.Sprintf("siren %s %v", id, on))
 	return f.err
 }
+func (f *fakeConsole) NameSiren(id, name string) error {
+	f.calls = append(f.calls, fmt.Sprintf("siren name %s %q", id, name))
+	return f.err
+}
 func (f *fakeConsole) Remove(_ context.Context, id string) error {
 	f.calls = append(f.calls, "remove "+id)
 	return f.err
@@ -61,7 +65,8 @@ func overview() consoleapp.Overview {
 		Devices: []consoleapp.Device{
 			{ID: "dev_door", Model: "aqara.contact", Capabilities: []string{"contact", "battery"}, Paired: true,
 				Zone: &install.Zone{Name: "Porte <A>", Kind: "entry"}, Kinds: []string{"entry", "instant", "interior"}},
-			{ID: "dev_siren", Model: "heiman.siren", Capabilities: []string{"siren"}, Paired: true, Siren: true, CanSound: true},
+			{ID: "dev_siren", Model: "heiman.siren", Capabilities: []string{"siren"}, Paired: true, Siren: true, CanSound: true,
+				SirenName: "Sir\u00e8ne"},
 		},
 		Findings: []install.Finding{{Level: install.Warning, Text: "no zone: nothing is watched"}},
 		Events:   []consoleapp.Event{{At: until.Add(-time.Minute), DeviceID: "dev_door", Zone: "Porte <A>", Capability: "contact", Value: "open"}},
@@ -104,7 +109,8 @@ func TestThePageShowsTheDevicesInFrench(t *testing.T) {
 	for _, want := range []string{
 		"Mode installation ouvert jusqu'\u00e0 14:30", "Pont en ligne, 2 appareil(s)", "dev_door",
 		"Zone \u00ab Porte &lt;A&gt; \u00bb \u2014 Entr\u00e9e (avec d\u00e9lai)", `<option value="entry" selected>`,
-		"Sir\u00e8ne", "Ne plus servir de sir\u00e8ne", "Retirer du r\u00e9seau", "Appairer de nouveaux appareils",
+		"Sir\u00e8ne \u00ab Sir\u00e8ne \u00bb <span class=\"muted\">(nom par d\u00e9faut)</span>", `action="/siren-name"`,
+		"Nommer la sir\u00e8ne", "Ne plus servir de sir\u00e8ne", "Retirer du r\u00e9seau", "Appairer de nouveaux appareils",
 		"no zone: nothing is watched", "Terminer l'installation",
 	} {
 		if !strings.Contains(body, want) {
@@ -164,11 +170,16 @@ func TestOrdersAndTheirOutcome(t *testing.T) {
 		t.Fatalf("after %s: no confirmation", loc)
 	}
 	post(h, "/siren", url.Values{"id": {"dev_siren"}, "on": {"1"}})
+	loc = post(h, "/siren-name", url.Values{"id": {"dev_siren"}, "name": {" R\u00e9serve "}}).Header().Get("Location")
+	if body := get(h, loc).Body.String(); !strings.Contains(body, "dev_siren : nom de sir\u00e8ne enregistr\u00e9.") {
+		t.Fatalf("after %s: no confirmation", loc)
+	}
 	post(h, "/unzone", url.Values{"id": {"dev_door"}})
 	post(h, "/remove", url.Values{"id": {"dev_door"}})
 	post(h, "/pair", nil)
 	post(h, "/finish", nil)
-	want := []string{`zone dev_door "Porte" instant`, "siren dev_siren true", "unzone dev_door", "remove dev_door", "pair", "finish"}
+	want := []string{`zone dev_door "Porte" instant`, "siren dev_siren true", "siren name dev_siren \"R\u00e9serve\"",
+		"unzone dev_door", "remove dev_door", "pair", "finish"}
 	if strings.Join(c.calls, "|") != strings.Join(want, "|") {
 		t.Fatalf("calls %v", c.calls)
 	}
@@ -177,7 +188,7 @@ func TestOrdersAndTheirOutcome(t *testing.T) {
 		consoleapp.ErrBusy:      "Un appairage est en cours",
 		consoleapp.ErrClosed:    "retapez le code installateur",
 		consoleapp.ErrLastSiren: "garder au moins une sir\u00e8ne",
-		fmt.Errorf("zone name %q is %w", "x", consoleapp.ErrNameTooLong): "Nom de zone trop long",
+		fmt.Errorf("zone name %q is %w", "x", consoleapp.ErrNameTooLong): "Nom trop long",
 		fmt.Errorf("%w: a fire zone...", consoleapp.ErrCannotServe):      "ne peut pas servir",
 		consoleapp.ErrEmptyName:                          "Donnez un nom",
 		consoleapp.ErrNoAnswer:                           "n'a pas r\u00e9pondu",
@@ -185,6 +196,7 @@ func TestOrdersAndTheirOutcome(t *testing.T) {
 		errors.New("something odd <script>"):             "Refus\u00e9 : something odd &lt;script&gt;",
 		fmt.Errorf("x: %w", consoleapp.ErrUnknown):       "dev_door n'est pas appair\u00e9",
 		fmt.Errorf("%w: dev_door", consoleapp.ErrNoZone): "dev_door n'a pas de zone",
+		fmt.Errorf("dev_door %w", consoleapp.ErrNoSiren): "dev_door ne sert pas de sir\u00e8ne",
 	} {
 		c.err = err
 		loc := post(h, "/zone", url.Values{"id": {"dev_door"}, "name": {"X"}, "kind": {"entry"}}).Header().Get("Location")

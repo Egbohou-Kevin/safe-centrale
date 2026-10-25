@@ -353,7 +353,8 @@ le planning arme dans le moteur.
 
 `device_name` (facultatif) est le nom que la configuration du site donne à l'appareil
 (« Porte d'entrée »), 32 caractères au plus (un nom plus long est coupé). Il est absent
-quand l'appareil n'a pas de nom (pas de zone : le sabotage d'un clavier ou d'une sirène).
+quand l'appareil n'a pas de nom (pas de zone : le sabotage d'un clavier ou d'une sirène ;
+le nom d'une sirène, `siren_names`, ne sert qu'aux textes des alertes).
 La configuration nomme un appareil par sa zone : dans `alarm.triggered`, `zone` porte
 aujourd'hui le même nom, mais c'est `device_name` qui dit l'appareil. Les listes
 d'appareils (`bypassed`, `offline`, `low_battery` de `alarm.arming`) restent des
@@ -362,10 +363,11 @@ d'appareils (`bypassed`, `offline`, `low_battery` de `alarm.arming`) restent des
 `alarm.siren_failed` va à l'historique : l'alarme `incident` sonne sans cette sirène,
 le magasin est peut-être silencieux. Il ne termine aucun incident et ne fait sonner
 aucun téléphone : l'alerte aux contacts est l'`alert.request` `siren_failed`, sous un
-incident à elle, qui nomme l'alarme dans `alarm_incident` (voir « Alertes »). Une sirène
-n'a pas de nom dans la configuration du site, d'où l'absence de `device_name`. Après un
-redémarrage de la centrale en pleine alarme, l'événement peut repartir une fois : un
-lecteur range les pannes d'une alarme par sirène.
+incident à elle, qui nomme l'alarme dans `alarm_incident` (voir « Alertes »). Il ne
+porte pas de `device_name` : le nom d'une sirène dans la configuration d'installation
+(`siren_names`) ne sert aujourd'hui qu'au texte des alertes. Après un redémarrage de la
+centrale en pleine alarme, l'événement peut repartir une fois : un lecteur range les
+pannes d'une alarme par sirène.
 
 `incidents` d'`alarm.disarmed` (toujours présent) nomme les incidents que le
 désarmement termine : l'alarme qui sonne (dont l'`alarm.cleared` d'origine `user` part

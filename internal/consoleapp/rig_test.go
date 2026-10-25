@@ -61,7 +61,7 @@ type fakeSites struct {
 
 func (s *fakeSites) Read() (install.Site, error) {
 	s.mu.Lock()
-	out := install.Site{Zones: maps.Clone(s.site.Zones), SirenIDs: slices.Clone(s.site.SirenIDs)}
+	out := install.Site{Zones: maps.Clone(s.site.Zones), SirenIDs: slices.Clone(s.site.SirenIDs), SirenNames: maps.Clone(s.site.SirenNames)}
 	s.mu.Unlock()
 	if out.Zones == nil {
 		out.Zones = map[string]install.Zone{}

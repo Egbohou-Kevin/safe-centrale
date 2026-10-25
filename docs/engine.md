@@ -198,7 +198,9 @@ La centrale vérifie que chaque sirène prend l'ordre : un `siren.on` refusé es
 quelques fois, puis les contacts reçoivent l'alerte `siren_failed` (voir
 `adapter-zigbee.md`). Elle nomme l'alarme qui sonne, et part discrète si cette alarme est
 déjà prise en charge (voir `escalation.md`, « Sirène muette pendant une alarme »). Le
-moteur n'en sait rien : il continue ses cycles.
+moteur n'en sait rien : il continue ses cycles. Les textes nomment la sirène par son
+nom dans la configuration d'installation (`siren_names`), ou par défaut « Sirène »,
+« Sirène 2 ».
 
 ## Sources d'armement et de désarmement
 

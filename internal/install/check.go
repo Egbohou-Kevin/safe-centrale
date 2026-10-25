@@ -64,9 +64,9 @@ func ValidKind(kind string) error {
 	return nil
 }
 
-// The refusals of a zone, for a tool to explain them.
+// The refusals of a zone or of a siren's name, for a tool to explain them.
 var (
-	ErrEmptyName   = errors.New("empty zone name")
+	ErrEmptyName   = errors.New("is empty")
 	ErrNameTooLong = fmt.Errorf("longer than %d characters", MaxNameLength)
 	ErrCannotServe = errors.New("the device cannot trigger this kind of zone")
 )
@@ -92,21 +92,27 @@ func CanServe(kind string, capabilities []string) error {
 		ErrCannotServe, kind, strings.Join(sensors, ", "), strings.Join(capabilities, ", "))
 }
 
-// MaxNameLength bounds a zone name: it goes into SMS and voice messages, and names
-// the device in the alarm events (device_name).
+// MaxNameLength bounds a zone's or a siren's name: it goes into SMS and voice
+// messages, and a zone's names the device in the alarm events (device_name).
 const MaxNameLength = contract.MaxDeviceName
 
 // ValidName checks a zone name. It refuses control characters (a line break) and
 // invisible format characters (a bidi override would show the name backwards in an
 // SMS or on the phone).
-func ValidName(name string) error {
+func ValidName(name string) error { return validName("zone", name) }
+
+// ValidSirenName checks a siren's name, by the zones' rule: it goes into the same
+// texts.
+func ValidSirenName(name string) error { return validName("siren", name) }
+
+func validName(what, name string) error {
 	switch {
 	case strings.TrimSpace(name) == "":
-		return ErrEmptyName
+		return fmt.Errorf("%s name %w", what, ErrEmptyName)
 	case utf8.RuneCountInString(name) > MaxNameLength:
-		return fmt.Errorf("zone name %q is %w", name, ErrNameTooLong)
+		return fmt.Errorf("%s name %q is %w", what, name, ErrNameTooLong)
 	case strings.IndexFunc(name, invisible) >= 0:
-		return fmt.Errorf("zone name %q contains a control or invisible character", name)
+		return fmt.Errorf("%s name %q contains a control or invisible character", what, name)
 	}
 	return nil
 }
@@ -160,7 +166,8 @@ func (f *findings) zones(site Site, byID map[string]contract.RegistryDevice) {
 	}
 }
 
-// sirens checks that each siren is paired and can sound.
+// sirens checks that each siren is paired and can sound, and how the alerts name it:
+// among several sirens, one without a name is only known by its rank.
 func (f *findings) sirens(site Site, byID map[string]contract.RegistryDevice) {
 	for _, id := range site.SirenIDs {
 		d, paired := byID[id]
@@ -169,6 +176,15 @@ func (f *findings) sirens(site Site, byID map[string]contract.RegistryDevice) {
 			f.add(Warning, id, "siren: the device is not paired (removed, misspelt, or from another adapter)")
 		case !slices.Contains(d.Capabilities, contract.CapSiren):
 			f.add(Problem, id, "listed as a siren but cannot sound (it has %s)", strings.Join(d.Capabilities, ", "))
+		}
+		name, named := site.SirenNames[id]
+		switch {
+		case named:
+			if err := ValidSirenName(name); err != nil {
+				f.add(Problem, id, "%v", err)
+			}
+		case len(site.SirenIDs) > 1:
+			f.add(Warning, id, "siren without a name: the alerts call it %q, give it one", site.SirenName(id))
 		}
 	}
 }

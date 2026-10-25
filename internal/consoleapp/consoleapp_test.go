@@ -35,6 +35,9 @@ func TestTheConsoleLivesOnlyWhileTheInstallationModeLasts(t *testing.T) {
 	if err := r.app.SetZone("dev_motion", "Salle", "interior"); !errors.Is(err, ErrClosed) {
 		t.Fatalf("a change while closed: %v", err)
 	}
+	if err := r.app.NameSiren("dev_siren", "Reserve"); !errors.Is(err, ErrClosed) {
+		t.Fatalf("a siren named while closed: %v", err)
+	}
 }
 
 func TestTheConsoleStopsOnItsOwnWhenTheTimeIsUp(t *testing.T) {
@@ -110,6 +113,8 @@ func TestZonesAndSirensFromThePage(t *testing.T) {
 		{"a contact as a siren", func() error { return r.app.Siren("dev_door", true) }, ErrNotASiren},
 		{"the last siren", func() error { return r.app.Siren("dev_siren", false) }, ErrLastSiren},
 		{"no zone to remove", func() error { return r.app.Unzone("dev_motion") }, ErrNoZone},
+		{"a zone named as a siren", func() error { return r.app.NameSiren("dev_door", "Porte") }, ErrNoSiren},
+		{"an empty siren name", func() error { return r.app.NameSiren("dev_siren", " ") }, ErrEmptyName},
 	}
 	for _, c := range cases {
 		err := c.err()
@@ -126,6 +131,20 @@ func TestZonesAndSirensFromThePage(t *testing.T) {
 	site, _ := r.sites.Read()
 	if site.Zones["dev_motion"] != (install.Zone{Name: "Salle", Kind: "interior"}) || len(site.Zones) != 1 {
 		t.Fatalf("zones %+v", site.Zones)
+	}
+	// The siren shows the name the alerts call it by: the default, then its own.
+	sirenOf := func() Device {
+		o := r.app.Overview()
+		return o.Devices[slices.IndexFunc(o.Devices, func(d Device) bool { return d.ID == "dev_siren" })]
+	}
+	if d := sirenOf(); d.SirenName != "Sir\u00e8ne" || d.SirenNamed {
+		t.Fatalf("an unnamed siren: %+v", d)
+	}
+	if err := r.app.NameSiren("dev_siren", "Reserve"); err != nil {
+		t.Fatal(err)
+	}
+	if d := sirenOf(); d.SirenName != "Reserve" || !d.SirenNamed {
+		t.Fatalf("a named siren: %+v", d)
 	}
 	// The zoned device that is not paired shows, as a mistake to undo.
 	r.sites.Write(install.Site{Zones: map[string]install.Zone{"dev_ghost": {Name: "G", Kind: "entry"}}, SirenIDs: []string{"dev_siren"}})

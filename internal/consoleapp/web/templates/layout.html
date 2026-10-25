@@ -49,6 +49,7 @@
   {{else if eq .Code "zone"}}{{.ID}} : zone enregistrée.
   {{else if eq .Code "unzone"}}{{.ID}} : zone retirée.
   {{else if eq .Code "siren"}}{{if .On}}{{.ID}} sert maintenant de sirène.{{else}}{{.ID}} ne sert plus de sirène.{{end}}
+  {{else if eq .Code "siren_name"}}{{.ID}} : nom de sirène enregistré.
   {{else if eq .Code "remove"}}{{.ID}} est retiré du réseau.
   {{else if eq .Code "code"}}Code enregistré ({{.ID}}) : la centrale le prend aussitôt.
   {{else if eq .Code "uncode"}}Code retiré ({{.ID}}) : sa place est libre.
@@ -60,11 +61,12 @@
   {{else if eq .Code "unknown"}}{{.ID}} n'est pas appairé.
   {{else if eq .Code "not_siren"}}{{.ID}} ne peut pas sonner.
   {{else if eq .Code "no_registry"}}La liste des appareils n'est pas encore connue : l'adaptateur Zigbee tourne-t-il ?
-  {{else if eq .Code "empty_name"}}Donnez un nom à la zone.
-  {{else if eq .Code "long_name"}}Nom de zone trop long : 32 caractères au plus.
+  {{else if eq .Code "empty_name"}}Donnez un nom.
+  {{else if eq .Code "long_name"}}Nom trop long : 32 caractères au plus.
   {{else if eq .Code "last_siren"}}Il faut garder au moins une sirène : ajoutez-en une autre d'abord.
   {{else if eq .Code "cannot_serve"}}{{.ID}} ne peut pas servir à ce type de zone.
   {{else if eq .Code "no_zone"}}{{.ID}} n'a pas de zone.
+  {{else if eq .Code "no_siren"}}{{.ID}} ne sert pas de sirène.
   {{else if eq .Code "no_answer"}}L'adaptateur Zigbee n'a pas répondu : tourne-t-il ?
   {{else if eq .Code "not_contact"}}{{.ID}} n'est pas un contact du site.
   {{else if eq .Code "code_mismatch"}}Les deux codes tapés diffèrent : recommencez.

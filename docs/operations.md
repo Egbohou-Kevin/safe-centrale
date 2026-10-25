@@ -111,8 +111,12 @@ l'adaptateur Zigbee : `zigbee_silent_after` (3 min) et `zigbee_down_after` (3 mi
 l'alerte « capteurs injoignables »).
 
 À noter : `timezone` (Lomé : `Africa/Lome`, UTC), `zones` (le rôle de chaque appareil),
-`closing` (heure de fermeture par jour, `"off"` pour ne pas armer ce jour-là),
-`access.iterations` (coût du hachage, à régler sur la centrale réelle).
+`siren_ids` (les sirènes) et `siren_names` (facultatif : le nom d'une sirène dans les
+textes des alertes, par identifiant, par exemple `{"dev_siren1": "Reserve"}` ; même
+règle qu'un nom de zone ; une sirène sans nom s'y appelle « Sirène », ou « Sirène 2 »
+parmi plusieurs, voir `escalation.md`), `closing` (heure de fermeture par jour, `"off"`
+pour ne pas armer ce jour-là), `access.iterations` (coût du hachage, à régler sur la
+centrale réelle).
 
 ## Démarrage
 
@@ -436,7 +440,8 @@ GOOS=linux GOARCH=arm64 go build -o safehome-install ./cmd/safehome-install
 | `pair -config F [-for 2m]` | Ouvre le réseau (10 min au plus) et affiche chaque appareil ajouté ou refusé, avec la raison ; Ctrl-C referme le réseau tout de suite |
 | `zone -config F -name NOM -kind TYPE APPAREIL` | Donne sa zone à un appareil (ou la change) |
 | `unzone -config F APPAREIL` | Retire la zone d'un appareil |
-| `siren -config F add\|remove APPAREIL` | Fait d'un appareil une sirène, ou plus |
+| `siren -config F add\|remove APPAREIL` | Fait d'un appareil une sirène, ou plus ; `add -name NOM` la nomme aussi |
+| `siren -config F name -name NOM APPAREIL` | Donne à une sirène son nom dans les textes des alertes (ou le change) |
 | `remove -config F APPAREIL` | Retire un appareil du réseau pour de bon, et de la configuration (zone, sirène) |
 | `watch -config F [APPAREIL]` | Affiche les événements en direct, avec le nom de la zone : pour les tests (déclencher chaque appareil). Les codes du clavier ne s'affichent jamais |
 | `check -config F` | Compare la configuration et les appareils appairés |
@@ -449,6 +454,7 @@ Une installation type :
 ```bash
 sudo -u safehome safehome-install pair  -config /etc/safehome/hub.json
 sudo -u safehome safehome-install zone  -config /etc/safehome/hub.json -name "Porte arriere" -kind instant dev_k7p2
+sudo -u safehome safehome-install siren -config /etc/safehome/hub.json name -name "Reserve" dev_siren1
 sudo -u safehome safehome-install watch -config /etc/safehome/hub.json
 sudo -u safehome safehome-install check -config /etc/safehome/hub.json
 sudo systemctl restart safehome-hub
@@ -475,12 +481,15 @@ Ce que l'outil vérifie avant de toucher à quoi que ce soit :
 `check` signale :
 
 - comme **problèmes** (code de sortie 1) : une zone qui ne pourra jamais se déclencher,
-  un type de zone inconnu, une zone sans nom, une sirène qui ne sait pas sonner ;
+  un type de zone inconnu, une zone sans nom, une sirène qui ne sait pas sonner, un nom
+  de sirène fautif ;
 - comme **avertissements** : un appareil appairé qui ne sert à rien, une zone ou une
-  sirène dont l'appareil n'est pas appairé, un site sans zone ou sans sirène.
+  sirène dont l'appareil n'est pas appairé, un site sans zone ou sans sirène, une
+  sirène sans nom sur un site qui en a plusieurs (les textes ne la désignent que par
+  son rang, « Sirène 2 »).
 
-Les zones et les sirènes sont écrites dans le dossier d'état de la centrale
-(`/var/lib/safehome/site-devices.json`, droits 0600), pas dans `hub.json` :
+Les zones et les sirènes, avec leurs noms, sont écrites dans le dossier d'état de la
+centrale (`/var/lib/safehome/site-devices.json`, droits 0600), pas dans `hub.json` :
 `/etc/safehome` est en lecture seule une fois l'installation finie, alors qu'un capteur
 s'ajoute plus tard. Le remplacement est atomique (une coupure laisse l'ancien fichier
 ou le nouveau). Lancer l'outil sous l'utilisateur de la centrale

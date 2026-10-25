@@ -243,7 +243,9 @@ arrêtée avec un code), l'alerte part discrète, sans appel ni sonnerie (voir
 `escalation.md`, « Sirène muette pendant une alarme »). La centrale publie aussi
 `alarm.siren_failed` (l'alarme et la sirène) pour l'historique (voir `contract.md`).
 Un échec qui arrive dans la dernière seconde du cycle n'est ni renvoyé ni compté : le
-cycle suivant renvoie l'ordre, avec ses propres tentatives.
+cycle suivant renvoie l'ordre, avec ses propres tentatives. Les textes nomment la
+sirène par son nom d'installation (`siren_names`), ou par défaut « Sirène »,
+« Sirène 2 » (voir `escalation.md`, « Le nom d'une sirène »).
 
 ## État de la liaison
 

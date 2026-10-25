@@ -170,7 +170,7 @@ garde 24 heures les alarmes prises en charge, même une fois leur escalade finie
 |---|---|---|
 | Qui | Le premier contact et le gardien | Les mêmes |
 | Urgence | `high` | `low`, et `alarm_handled` |
-| Texte | `ALERTE Boutique Lome: la sirene (dev_siren1) ne repond pas a 21:04, l'alarme est silencieuse.`, et la manière de répondre par SMS | `Boutique Lome: la sirene (dev_siren1) n'a pas sonne a 21:04. L'alarme est deja prise en charge.` (`L'alarme a ete arretee.` après un code), sans manière de répondre |
+| Texte | `ALERTE Boutique Lome: la sirene (Reserve) ne repond pas a 21:04, l'alarme est silencieuse.`, et la manière de répondre par SMS | `Boutique Lome: la sirene (Reserve) n'a pas sonne a 21:04. L'alarme est deja prise en charge.` (`L'alarme a ete arretee.` après un code), sans manière de répondre |
 | Internet | D'abord | D'abord |
 | SMS | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ou en cas d'échec ; en doublon à +1 min | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ou en cas d'échec ; à +1 min si le téléphone du contact n'a pas dit l'avoir reçue (`delivered`, pas seulement `sent`) |
 | Appel | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ou en cas d'échec ; en doublon à +1 min | Jamais. L'appel refusé est journalisé |
@@ -220,9 +220,34 @@ La centrale publie aussi `alarm.siren_failed` (l'alarme et la sirène) pour l'hi
 une fois par sirène et par alarme. Après un redémarrage en pleine alarme, cet événement
 peut repartir une fois, mais pas l'alerte (voir `contract.md`).
 
-Pas fait, décidé le 24 octobre 2026 : un nom par sirène dans la configuration
-d'installation (le texte dit son identifiant, par exemple `dev_siren1`), et une phrase
-dans le texte d'un feu levé après qu'une panne a été dite discrètement.
+### Le nom d'une sirène
+
+Décidé le 24 octobre 2026, fait le 25 octobre : les textes nomment une sirène par le nom
+que l'installateur lui donne (`siren_names` dans la configuration d'installation, voir
+`operations.md`), plus par son identifiant (`dev_siren1`). Les choix par défaut, pris
+le 25 octobre 2026 :
+
+- Sans nom, une sirène s'appelle « Sirène » si c'est la seule du site, et « Sirène 1 »,
+  « Sirène 2 »… (dans l'ordre où elles ont été ajoutées) s'il y en a plusieurs.
+  `safehome-install check` et la console le signalent sur un site à plusieurs sirènes :
+  personne ne sait laquelle est la « 2 ».
+- Un nom qui dit déjà « sirène » (les noms par défaut, ou « Sirène extérieure ») sert
+  de sujet : `la sirene ne repond pas`, `la sirene 2 ne repond pas`,
+  `la sirene exterieure ne repond pas`. Un autre nom, celui d'un lieu, va entre
+  parenthèses : `la sirene (Reserve) ne repond pas`.
+- Un appareil qui a aussi une zone (un détecteur de fumée qui sonne) garde le nom de sa
+  zone.
+- Le nom suit la règle d'un nom de zone : 32 caractères au plus, sans caractère de
+  contrôle ni caractère invisible. Les accents sont retirés dans les textes, comme pour
+  les zones.
+
+Les mêmes noms servent aux autres alertes qui listent des appareils : au résumé
+quotidien, une sirène hors ligne ou à pile faible se lit « Sirène » et plus
+`dev_siren1`. Les événements d'alarme (`alarm.siren_failed`) ne portent toujours que
+l'identifiant de la sirène.
+
+Pas fait, décidé le 24 octobre 2026 : une phrase dans le texte d'un feu levé après
+qu'une panne a été dite discrètement.
 
 ## Coupures de courant
 

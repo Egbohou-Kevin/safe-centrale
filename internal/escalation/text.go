@@ -65,9 +65,9 @@ func (e *Escalation) message(in IncidentSnap) (msg string, answer bool) {
 		return fmt.Sprintf("ALERTE %s: capteurs injoignables depuis %s, l'alarme ne detecte plus rien. Verifiez la centrale.", site, hour), true
 	case KindSirenFailed:
 		if in.Quiet {
-			return fmt.Sprintf("%s: la sirene%s n'a pas sonne a %s.", site, where, hour), false
+			return fmt.Sprintf("%s: %s n'a pas sonne a %s.", site, e.theSiren(in.Devices), hour), false
 		}
-		return fmt.Sprintf("ALERTE %s: la sirene%s ne repond pas a %s, l'alarme est silencieuse.", site, where, hour), true
+		return fmt.Sprintf("ALERTE %s: %s ne repond pas a %s, l'alarme est silencieuse.", site, e.theSiren(in.Devices), hour), true
 	case KindGSMDegraded:
 		return fmt.Sprintf("%s: protection degradee, SMS indisponible: verifiez la SIM.", site), false
 	}
@@ -92,6 +92,29 @@ func (e *Escalation) deviceList(ids []string) string {
 		names = append(names, ascii(id))
 	}
 	return strings.Join(names, ", ")
+}
+
+// sirenWord is how a siren's name says it is one, once in plain ASCII.
+const sirenWord = "sirene"
+
+// theSiren names a siren as the subject of a sentence: "la sirene (Reserve)", or "la
+// sirene 2" when its name already says it is one (the defaults "Sirene" and "Sirene
+// 2", or a name such as "Sirene exterieure"). Several read "la sirene (A, B)".
+func (e *Escalation) theSiren(ids []string) string {
+	names := e.deviceList(ids)
+	switch {
+	case names == "":
+		return "la " + sirenWord
+	case len(ids) == 1 && saysSiren(names):
+		return "la " + sirenWord + names[len(sirenWord):]
+	}
+	return "la " + sirenWord + " (" + names + ")"
+}
+
+// saysSiren reports whether a name starts with the word "sirene".
+func saysSiren(name string) bool {
+	n := len(sirenWord)
+	return len(name) >= n && strings.EqualFold(name[:n], sirenWord) && (len(name) == n || name[n] == ' ')
 }
 
 // fit cuts a message to one SMS with its tail (the way to answer) whole: what is cut

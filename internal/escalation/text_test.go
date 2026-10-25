@@ -197,3 +197,26 @@ func TestTheQuietSirenTextSaysTheAlarmIsHandled(t *testing.T) {
 		}
 	}
 }
+
+// A siren is named as the installer named it, or by its default name. A name that
+// already says "sirene" is the subject itself; another goes between brackets.
+func TestTheSirenTextReadsWellWhateverItsName(t *testing.T) {
+	for name, want := range map[string]string{
+		"Sir\u00e8ne":            "Boutique Lome: la sirene ne repond pas a 21:04",
+		"Sir\u00e8ne 2":          "Boutique Lome: la sirene 2 ne repond pas a 21:04",
+		"SIRENE ext\u00e9rieure": "Boutique Lome: la sirene exterieure ne repond pas a 21:04",
+		"R\u00e9serve":           "Boutique Lome: la sirene (Reserve) ne repond pas a 21:04",
+		"Sir\u00e8nes du fond":   "Boutique Lome: la sirene (Sirenes du fond) ne repond pas a 21:04",
+	} {
+		e := newEsc(t, func(c *Config) { c.DeviceNames["dev_siren1"] = name })
+		if text := textOf(t, raise(e, t0, KindSirenFailed, "dev_siren1"), ChannelApp); !strings.Contains(text, want) {
+			t.Errorf("%s: %q, want %q", name, text, want)
+		}
+	}
+	e := newEsc(t, func(c *Config) { c.DeviceNames["dev_siren1"] = "Sir\u00e8ne 2" })
+	e.Handle(Ack{Now: t0, Incident: "x", Contact: "owner"})
+	out := e.Handle(Raise{Now: t0, Incident: "y", Kind: KindSirenFailed, Urgency: UrgencyHigh, Devices: []string{"dev_siren1"}, Alarm: "x"})
+	if text := textOf(t, out, ChannelApp); !strings.Contains(text, "Boutique Lome: la sirene 2 n'a pas sonne a 21:04.") {
+		t.Errorf("quiet: %q", text)
+	}
+}
