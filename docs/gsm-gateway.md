@@ -238,7 +238,8 @@ Là où le document laissait un doute :
   plus) jusqu'à l'âge maximum. Un envoi réussi plus tard publie `sent`.
 - **Âge maximum** : 10 minutes pour fire, panic et intrusion, une heure pour le reste
   (réglable). Une demande abandonnée publie `failed` avec la raison `timeout`, sauf
-  si un `failed` est déjà parti pour elle : jamais deux. Sans aucune ligne utilisable
+  si un `failed` est déjà parti pour elle : jamais deux. Une demande dont l'incident a pris fin avant son
+  départ publie `failed` avec la raison `dropped`, sous la même règle. Sans aucune ligne utilisable
   (pas de réseau, modem muet), une demande reste dans la file sans être essayée, puis
   part en échec `timeout` à son âge maximum.
   L'âge d'une demande compte depuis son `ts` (l'heure où l'escalade l'a écrite), pas

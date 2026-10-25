@@ -20,7 +20,8 @@ func (g *Gateway) request(r Request) []Action {
 		g.s.Seen = g.s.Seen[len(g.s.Seen)-seenSize:]
 	}
 	if g.isClosed(r.Incident) {
-		return []Action{Dropped{Incident: r.Incident, Jobs: 1}} // delivered after its incident ended
+		// Delivered after its incident ended: not sent, and said so.
+		return []Action{Report{Ref: r.ID, Status: StatusFailed, Reason: ReasonDropped}, Dropped{Incident: r.Incident, Jobs: 1}}
 	}
 	asked := askedAt(r)
 	if !r.Now.Before(asked.Add(g.cfg.MaxAge[r.Priority])) {

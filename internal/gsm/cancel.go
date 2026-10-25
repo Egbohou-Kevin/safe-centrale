@@ -13,10 +13,18 @@ func (g *Gateway) cancel(incident string) []Action {
 	if len(g.s.Closed) > closedSize {
 		g.s.Closed = g.s.Closed[len(g.s.Closed)-closedSize:]
 	}
+	var out []Action
 	before := len(g.s.Jobs)
-	g.s.Jobs = slices.DeleteFunc(g.s.Jobs, func(j Job) bool { return j.Incident == incident && j.Line == "" })
+	g.s.Jobs = slices.DeleteFunc(g.s.Jobs, func(j Job) bool {
+		drop := j.Incident == incident && j.Line == ""
+		if drop && j.Ref != "" && !j.Reported {
+			// Said, so that who reads the escalation never takes it for sent; never a second failure.
+			out = append(out, Report{Ref: j.Ref, Status: StatusFailed, Reason: ReasonDropped})
+		}
+		return drop
+	})
 	if n := before - len(g.s.Jobs); n > 0 {
-		return []Action{Dropped{Incident: incident, Jobs: n}}
+		return append(out, Dropped{Incident: incident, Jobs: n})
 	}
 	return nil
 }

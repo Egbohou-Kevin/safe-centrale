@@ -29,6 +29,9 @@ const (
 	ReasonTimeout     Reason = "timeout"
 	ReasonBusy        Reason = "busy"
 	ReasonUnreachable Reason = "unreachable"
+	// ReasonDropped: its incident ended before the message left (a person ended
+	// the alarm, or a contact handles it), so it was not sent.
+	ReasonDropped Reason = "dropped"
 )
 
 // Status is what is reported about a request.

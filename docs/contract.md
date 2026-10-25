@@ -489,7 +489,9 @@ lecteur ne le montre pas comme un compte à rebours en cours (« reprend à 16:2
 - `alert.result` : le canal répond. Champs : `ref` (l'`id` du `alert.request`),
   `status` (`queued`, `sent`, `delivered`, `failed`) et `reason` en cas d'échec
   (`no_network`, `no_credit`, `modem_error`, `timeout`, `busy`, `unreachable`,
-  `no_uplink`). Pour `app` et `whatsapp`, `sent` veut dire que le cloud a pris le
+  `no_uplink`, `dropped`). `dropped` vient de la passerelle GSM : l'incident a pris fin (une
+  personne a arrêté l'alarme, un contact la gère) avant que le SMS ou l'appel parte, il n'est
+  donc pas parti ; l'escalade, qui a clos l'incident, n'en fait rien. Pour `app` et `whatsapp`, `sent` veut dire que le cloud a pris le
   message et `delivered` qu'il est arrivé sur le téléphone. `no_uplink` vient de
   l'agent de liaison : internet est coupé, ou le cloud n'a pas confirmé en 10
   secondes. Le moteur s'en sert pour décider d'escalader. Pour `app` et `whatsapp`,
@@ -957,6 +959,9 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **25 octobre 2026, les messages abandonnés** : la passerelle GSM publie un `alert.result`
+  `failed`, raison `dropped`, pour chaque SMS ou appel qu'elle abandonne parce que son incident a
+  pris fin : celui qui lit l'escalade ne le prend jamais pour envoyé (voir « Alertes »).
 - **25 octobre 2026, les personnes prévenues** : nouveau message `system.contacts`, retenu sur
   `system/contacts` : qui une intrusion prévient, et quand, du plan que la centrale suit (voir
   « `system.contacts` »). Un cloud qui ne le connaît pas encore refuse chaque copie : il est mis

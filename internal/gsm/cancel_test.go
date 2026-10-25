@@ -1,6 +1,7 @@
 package gsm
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -65,8 +66,13 @@ func TestNothingGoesOutAfterTheAlarmIsDisarmed(t *testing.T) {
 	g.Handle(call)
 	g.Handle(other)
 	out := g.Handle(Cancel{Now: at(5), Incident: "inc"})
-	if d := of[Dropped](out); len(d) != 1 || d[0].Incident != "inc" || d[0].Jobs != 2 || len(of[Report](out)) != 0 {
+	if d := of[Dropped](out); len(d) != 1 || d[0].Incident != "inc" || d[0].Jobs != 2 {
 		t.Fatalf("%+v", out)
+	}
+	// Each said not sent, its incident over: who reads the escalation never takes it for sent.
+	want := []Report{{Ref: "r1", Status: StatusFailed, Reason: ReasonDropped}, {Ref: "r2", Status: StatusFailed, Reason: ReasonDropped}}
+	if got := of[Report](out); !slices.Equal(got, want) {
+		t.Fatalf("reports %+v, want %+v", got, want)
 	}
 	ex := of[Execute](network(g, at(8)))
 	if len(ex) != 1 || ex[0].Text != "pile faible" {
@@ -74,8 +80,12 @@ func TestNothingGoesOutAfterTheAlarmIsDisarmed(t *testing.T) {
 	}
 	// A request of the incident delivered late is dropped too.
 	late := Request{Now: at(9), ID: "r4", Incident: "inc", Contact: "owner", Channel: ChannelSMS, Priority: PriorityIntrusion}
-	if out := g.Handle(late); len(of[Dropped](out)) != 1 || len(of[Execute](out)) != 0 || g.Queued() != 1 {
+	out = g.Handle(late)
+	if len(of[Dropped](out)) != 1 || len(of[Execute](out)) != 0 || g.Queued() != 1 {
 		t.Fatalf("%+v", out)
+	}
+	if r := of[Report](out); len(r) != 1 || r[0].Ref != "r4" || r[0].Reason != ReasonDropped {
+		t.Fatalf("the late one said not sent: %+v", r)
 	}
 	// Test messages have no incident: an empty one cancels nothing.
 	if out := g.Handle(Cancel{Now: at(9), Incident: ""}); len(out) != 0 || g.Queued() != 1 {
