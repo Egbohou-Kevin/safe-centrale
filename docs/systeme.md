@@ -90,10 +90,21 @@ l'étape 9 (voir « Installer par le script » plus bas). La mise à jour du sys
    - Wi-Fi de la box si la centrale n'est pas branchée par câble ;
    - fuseau horaire `Africa/Lome`.
 3. **Empêcher l'agrandissement automatique** de la racine au premier démarrage, pour
-   laisser la place à la partition de données. **À valider** : la méthode dépend de la
-   version de Raspberry Pi OS (option dans `cmdline.txt` ou dans la configuration de
-   premier démarrage, sur la partition `bootfs` que l'ordinateur sait lire). Si la
-   racine a déjà pris toute la carte, réécrire la carte et recommencer.
+   laisser la place à la partition de données. Une fois la carte écrite et **avant** de la
+   mettre dans le Pi, sur la partition `bootfs` que l'ordinateur sait lire (méthode validée le
+   25 octobre 2026, Raspberry Pi OS Lite Debian 13) :
+   - dans `cmdline.txt`, retirer le mot `resize` (l'image l'utilise pour agrandir au démarrage) ;
+   - dans `user-data` (cloud-init), ajouter `growpart: {mode: "off"}` et `resize_rootfs: false`.
+
+   Sans cela, la racine prend toute la carte (constaté), et on ne peut pas la réduire en marche :
+   réécrire la carte et recommencer.
+4. **Wi-Fi** : choisir le réseau en WPA2. Le Pi 4 ne se connecte pas à un réseau WPA3 seul
+   (constaté avec le réseau « …-Plus » d'une Bbox, qui est en WPA3 : le Pi ne s'y connecte pas ;
+   le réseau du même nom sans « -Plus » est en WPA2 et marche). Un câble de secours évite de
+   perdre l'accès pendant la mise au point.
+5. Pour la durée de l'installation, `user-data` peut donner à l'utilisateur d'administration
+   `sudo: "ALL=(ALL) NOPASSWD:ALL"`, qui permet d'enchaîner les étapes à distance. **Le retirer
+   à la fin** (`/etc/sudoers.d/90-cloud-init-users`), avant la lecture seule.
 
 Plus tard, on préparera une **image maîtresse** une fois pour toutes (carte déjà
 partitionnée, tout installé) et chaque nouvelle centrale sera une simple copie.
@@ -101,8 +112,10 @@ partitionnée, tout installé) et chaque nouvelle centrale sera une simple copie
 ### 2. Partitions
 
 ```bash
-# agrandir la racine à 8 Go (possible pendant qu'elle tourne), puis créer les données
-sudo parted /dev/mmcblk0 resizepart 2 8GiB
+# agrandir la racine à 8 Go (possible pendant qu'elle tourne), puis créer les données.
+# parted demande confirmation parce que la racine est montée : « Yes » (validé le 25/10/2026)
+printf 'Yes\n' | sudo parted ---pretend-input-tty /dev/mmcblk0 resizepart 2 8GiB
+sudo partprobe /dev/mmcblk0
 sudo resize2fs /dev/mmcblk0p2
 sudo parted /dev/mmcblk0 mkpart primary ext4 8GiB 100%
 sudo mkfs.ext4 -L safehome-data /dev/mmcblk0p3
@@ -306,6 +319,16 @@ différences :
   notre service), pas `/opt/zigbee2mqtt/data` ;
 - on utilise notre service `deploy/systemd/zigbee2mqtt.service` (utilisateur
   `safehome`), qui lance `/usr/bin/node`.
+
+Méthode validée sur le Pi le 25 octobre 2026, plus courte que le guide : le paquet npm, avec
+la même version que l'essai, dans un dossier à part, et le lien que notre service attend.
+
+```bash
+sudo mkdir -p /opt/z2m-install && cd /opt/z2m-install
+echo '{"private":true}' | sudo tee package.json >/dev/null
+sudo npm install --no-audit --no-fund zigbee2mqtt@2.14.2
+sudo ln -sfn /opt/z2m-install/node_modules/zigbee2mqtt /opt/zigbee2mqtt
+```
 
 La clé Sonoff ZBDongle-E se présente en USB `10c4:ea60` (« Sonoff Zigbee 3.0 USB Dongle
 Plus V2 ») ; à l'essai, son micrologiciel était EmberZNet 7.4.4 (EZSP 13), piloté par
@@ -529,6 +552,44 @@ Changer la configuration (`/etc/safehome`) demande aussi le mode maintenance. Le
 codes d'accès, les zones et les sirènes, eux, sont dans l'état (`/var/lib/safehome`) et
 se changent à tout moment.
 
+## Essai sur le vrai Pi (25 octobre 2026)
+
+Premier Raspberry Pi 4 (1 Go) réel, avec la clé Sonoff ZBDongle-E branchée en direct (sans
+rallonge) et la porte Aqara. Il a pris la place de la centrale du banc sur le Mac, pour le site
+d'essai `tg-lom-0001`. Ce qui a marché tel quel : les étapes 1 à 9 (voir les corrections
+ci-dessus), l'installation par script du premier coup, 6 services actifs, 635 Mo de mémoire
+disponibles, la porte appairée sur le Mac reprise sans réappairage, l'intrusion vue par l'agent,
+le cloud et l'application du téléphone.
+
+Pas de modem ni de module batterie à ce stade : `safehome-gsm` journalise l'absence du port
+(attendu), l'alerte `gsm_degraded` part à l'échéance, et l'application affiche « SMS à voir » et
+« Courant — ». Aucune sirène n'est appairée : `dev_siren1` n'existe pas dans Zigbee2MQTT, donc
+`unknown_device` à chaque ordre et l'application dit « La sirène ne répond pas ».
+
+**Reprendre la place d'une centrale du banc.**
+
+1. Arrêter la centrale du banc, ses superviseurs d'abord, par leur PID. Deux centrales du même
+   identifiant de site se délogent l'une l'autre sur le broker du cloud, sans fin.
+2. Copier son dossier d'état dans `/var/lib/safehome` du Pi (codes, appareils, zones, numérotation
+   de l'agent) : `tar` du dossier, sans les `*.pid`, après avoir arrêté les programmes du Pi et
+   vidé son état neuf. Le cloud rejoue alors les messages en attente (« gave number … again » au
+   journal du cloud : c'est le dédoublonnage, pas une erreur).
+3. Copier `configuration.yaml`, `coordinator_backup.json` et `database.db` de Zigbee2MQTT dans
+   `/var/lib/zigbee2mqtt`, en changeant le broker (`mqtt://127.0.0.1:1883`) et le port de la clé
+   (`/dev/serial/by-id/…`). Les capteurs ne sont pas réappairés.
+4. **`install.sh` remet `hub.json` du paquet** à chaque relance : un réglage fait à la main dans
+   `/etc/safehome` (les délais d'entrée et de sortie, par exemple) disparaît. Le changer dans le
+   dossier du site, puis refaire le paquet.
+
+**Le cloud de l'essai** tourne sur le Mac, et son broker n'écoute que sur `127.0.0.1` : la centrale
+le joint par un tunnel SSH inverse lancé depuis le Mac (`safeHome-cloud/README.md`, « Une vraie
+centrale sur ce cloud »). Pour que le téléphone sonne, le cloud doit avoir Firebase allumé (même
+README) ; sans lui, chaque alerte pour l'application échoue avec `no_app`.
+
+**À faire avant la lecture seule** : retirer le `sudo` sans mot de passe de l'utilisateur
+d'administration (`/etc/sudoers.d/90-cloud-init-users`, posé pour l'installation) ; la lecture
+seule (étape 12) et la recette ci-dessous n'ont pas encore été faites sur ce Pi.
+
 ## Recette sur le kit d'essai
 
 | Essai | Attendu |
@@ -567,8 +628,8 @@ se changent à tout moment.
 - Zigbee2MQTT et Mosquitto ne sont pas sous le chien de garde de systemd : seulement
   redémarrés s'ils s'arrêtent. Un Zigbee2MQTT figé est vu par l'adaptateur
   (`zigbee_down`).
-- L'agrandissement de la racine, l'option `recurse=0` et le module RTC sont **à
-  valider** sur le kit d'essai.
+- L'option `recurse=0` et le module RTC sont **à valider** sur le kit d'essai.
+  L'agrandissement de la racine l'a été le 25 octobre 2026 (étape 1 et 2).
 - Les messages d'un clavier partent de Zigbee2MQTT en QoS 0 (option d'appareil
   posée par l'adaptateur, `adapter-zigbee.md`, « Clavier : QoS 0 ») : une touche, un
   sabotage ou un appui sur « urgence » du clavier pendant les quelques secondes où
