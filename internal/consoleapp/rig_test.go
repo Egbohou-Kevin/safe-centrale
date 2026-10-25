@@ -280,6 +280,12 @@ func newRig(t *testing.T) *rig {
 	r.registry()
 	r.deliver(contract.ZigbeeStatusTopic(site), contract.TypeZigbeeStatus, zigbee(false), true)
 	drivertest.WaitFor(r.t, "the registry", func() bool { return r.app.Overview().Known })
+	// The start takes down a network an earlier run may have left; the tests count
+	// the modes' own from there (see TestANetworkLeftByAConsoleThatDiedIsTakenDown).
+	drivertest.WaitFor(r.t, "the cleanup of the start", func() bool { _, down := r.hotspot.counts(); return down == 1 })
+	r.hotspot.mu.Lock()
+	r.hotspot.down = 0
+	r.hotspot.mu.Unlock()
 	return r
 }
 

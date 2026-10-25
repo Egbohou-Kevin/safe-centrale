@@ -86,6 +86,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 |---|---|
 | `internal/adapter/mqtt` | L'adaptateur MQTT 5 (client de Mosquitto) : seul paquet qui connaît la bibliothèque MQTT |
 | `internal/adapter/filestore` | Écriture atomique de l'état sur disque (survit à une coupure de courant) ; un fichier écrit prend le propriétaire du dossier |
+| `internal/adapter/filelock` | Verrou de fichier (flock) entre les programmes qui récrivent les mêmes fichiers : les codes d'accès, depuis la console et l'outil en ligne de commande |
 | `internal/adapter/atmodem` | L'adaptateur du modem : commandes AT sur le port série (bibliothèque standard seulement) ; `attest` est un faux modem pour les tests |
 | `internal/adapter/queuedir` | La file de l'agent pour le cloud sur disque : un petit fichier par message, écrit d'un coup, qui survit à une coupure de courant |
 | `internal/adapter/photodir` | Le dossier des photos prises à l'alarme : le service vidéo les y écrit, l'agent les lit et les efface ; borné en nombre et en taille |

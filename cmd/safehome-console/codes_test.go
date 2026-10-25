@@ -128,3 +128,29 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 		t.Fatal("the code shows in the logs")
 	}
 }
+
+// Two people set their codes at the same moment, from two phones: each change reads
+// the list, hashes for seconds, and writes the whole list. Both codes are kept, as
+// both are told; a code set by the command-line tool meanwhile too.
+func TestCodesSetAtOnceAreAllKept(t *testing.T) {
+	_, hubPath, _ := setup(t, "mqtt://127.0.0.1:1883", 80)
+	c := codes{hubConfig: hubPath, log: slog.New(slog.DiscardHandler)}
+	errs := make(chan error, 2)
+	for user, code := range map[string]string{"u_owner": "2580", "u_deputy": "3917"} {
+		go func() { errs <- c.Set(user, code) }()
+	}
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	people, _, err := c.People()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range people {
+		if (p.ID == "u_owner" || p.ID == "u_deputy") && !p.HasCode {
+			t.Fatalf("%s's code was lost: %+v", p.ID, people)
+		}
+	}
+}

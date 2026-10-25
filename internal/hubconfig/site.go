@@ -24,6 +24,12 @@ const DevicesFile = "site-devices.json"
 // the process it names to have the access codes read again.
 const PidFile = "hub.pid"
 
+// CodesLock is the lock the installer's tools hold while they change the access codes
+// (read, change, write the whole list): the local console's page serves two phones at
+// once, and the command-line tool may run meanwhile. Without it, the second write
+// would drop the first one's code.
+const CodesLock = "codes.lock"
+
 // devicesFile is the form of DevicesFile: what the installer's tools change, the zones
 // and the sirens with their names (install.Site). Everything else (contacts,
 // delays...) is written by hand or sent by the cloud. A file without siren names is

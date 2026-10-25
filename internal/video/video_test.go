@@ -471,3 +471,24 @@ func TestNoPhotosWhenSetSo(t *testing.T) {
 		}
 	}
 }
+
+// The service was down while alarms went off (a crash loop, a configuration to fix):
+// the broker hands them over hours later. Photos taken now would show the shop as it
+// is, not the intrusion, and use up the hour's allowance: a live alarm right after
+// still gets its photos.
+func TestALateAlarmGetsNoPhotosNorTheHoursAllowance(t *testing.T) {
+	h := newHarness(t)
+	for i := range 6 {
+		acts := h.v.Handle(Alarm{Now: h.now, At: h.now.Add(-5 * time.Hour), Incident: fmt.Sprint("old", i)})
+		if len(acts) != 1 || !strings.Contains(acts[0].(NoPhotos).Why, "5h0m0s old") {
+			t.Fatalf("%d: %+v", i, acts)
+		}
+	}
+	if acts := h.v.Handle(Alarm{Now: h.now, At: h.now.Add(-time.Minute), Incident: "live"}); len(acts) != 1 || reflect.TypeOf(acts[0]) != reflect.TypeOf(TakePhotos{}) {
+		t.Fatalf("a live alarm: %+v", acts)
+	}
+	// Written by a clock set back since: as if it went off now.
+	if acts := h.v.Handle(Alarm{Now: h.now, At: h.now.Add(time.Hour), Incident: "ahead"}); len(acts) != 1 || reflect.TypeOf(acts[0]) != reflect.TypeOf(TakePhotos{}) {
+		t.Fatalf("an alarm from the future: %+v", acts)
+	}
+}

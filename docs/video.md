@@ -89,6 +89,13 @@ images des caméras, sans attendre personne :
   au plus (un capteur qui se déclenche sans cesse ne doit pas remplir la liaison) ;
   des séries datées dans le futur (horloge en avance, reculée depuis) comptent comme
   prises à l'instant, une heure au plus ;
+- pas de photos pour une alarme vieille de plus de 5 minutes à son arrivée (l'heure
+  de son message) : le broker garde les alarmes pour le service vidéo pendant qu'il
+  est arrêté (un redémarrage en boucle, une configuration à corriger) et les lui
+  donne toutes d'un coup à son retour, parfois des heures plus tard. Prises alors,
+  les photos montreraient la boutique telle qu'elle est, personnel et clients compris,
+  rangées comme celles de l'intrusion, et rempliraient le plafond de l'heure dont une
+  vraie alarme a besoin. Elles ne comptent pas dans ce plafond ;
 - `"photos": false` dans `video.json` les coupe.
 
 Les images sont prises même au-delà du plafond du mois : quelques centaines de
@@ -215,8 +222,11 @@ consommer les données mobiles du client.
   n'apparaissent. Une caméra en H.265 est refusée. Ces essais ont trouvé deux erreurs
   que le faux go2rtc cachait (le nom que go2rtc donne à l'envoi, et un masquage des
   secrets qui gênait la lecture de ses erreurs).
-- Lancé avec notre configuration, go2rtc n'ouvre aucun port réseau (vérifié avec
-  `lsof`) et sa page web est désactivée.
+- Lancé avec notre configuration, go2rtc n'ouvre aucun port réseau et sa page web
+  est désactivée. L'essai des photos le vérifie à chaque passage, avec `lsof`, pendant
+  que go2rtc tourne : il ne repose que sur la liste `app.modules`, qu'une autre
+  version de go2rtc pourrait lire autrement (sans elle, go2rtc 1.9.14 écoute sur le
+  port 8555 de toutes les interfaces).
 
 - Photos, contre le vrai go2rtc et ffmpeg : une image de la caméra simulée à 640 et
   à 320 px (de l'ordre de 0,1 s chacune), une caméra morte refusée. go2rtc 1.9.14

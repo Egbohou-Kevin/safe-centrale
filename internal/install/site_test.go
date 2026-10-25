@@ -229,6 +229,10 @@ func TestARemovalUnderWayHoldsItsDevice(t *testing.T) {
 	if _, err := e.CheckRemoval("dev_siren"); err != nil {
 		t.Fatal(err)
 	}
+	// A second tap, another tab: refused, and the first removal still holds.
+	if _, err := e.CheckRemoval("dev_siren"); !errors.Is(err, ErrRemoving) {
+		t.Fatalf("the same removal twice: %v", err)
+	}
 	if _, err := e.RemoveSiren("dev_siren2"); !errors.Is(err, ErrLastSiren) {
 		t.Fatalf("the other siren taken off during the removal: %v", err)
 	}

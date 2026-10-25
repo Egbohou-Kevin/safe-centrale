@@ -21,8 +21,8 @@ programmes et leurs configurations d'exemple : même broker, même dossier d'ét
 - **Journaux en mémoire** : la carte SD n'est pas usée à chaque ligne.
 - **Pas de Docker** : neuf services, autant de fichiers simples, moins de mémoire.
 - **Rien n'écoute sur le réseau du commerce**, sauf SSH par clé (pas de mot de passe).
-  La console locale n'écoute que sur le réseau Wi-Fi propre à la centrale, et
-  seulement pendant le mode installation.
+  La console locale n'écoute que sur le réseau Wi-Fi propre à la centrale, ne répond
+  qu'aux appareils de ce réseau, et seulement pendant le mode installation.
 
 ## Ce qui tourne
 

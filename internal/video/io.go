@@ -44,9 +44,11 @@ type Probe struct {
 	Reachable bool
 }
 
-// Alarm says the alarm went off (alarm.triggered): time for photos.
+// Alarm says the alarm went off (alarm.triggered): time for photos. At is when it
+// went off (the message's ts), zero if unknown; Now is when it reached the service.
 type Alarm struct {
 	Now      time.Time
+	At       time.Time
 	Incident string
 }
 

@@ -142,7 +142,7 @@ func runConsole(ctx context.Context, cfg consoleconfig.Result, hub hubconfig.Res
 		log.Error("cannot start the console", "err", err)
 		return 1
 	}
-	h, err := web.New(app, cfg.Host(), hub.Hub.Engine.Location)
+	h, err := web.New(app, cfg.Host(), cfg.Clients(), hub.Hub.Engine.Location)
 	if err != nil {
 		log.Error("cannot build the page", "err", err)
 		return 1

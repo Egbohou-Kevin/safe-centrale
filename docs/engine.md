@@ -544,6 +544,10 @@ règles : pur, sans horloge) :
   dater leur silence d'avant le redémarrage lèverait une alerte urgente à chaque
   démarrage. Un service qui ne revient pas est dit muet trois minutes après le
   redémarrage, puis signalé dans les délais habituels. Un service déjà muet le reste.
+  Une panne encore ouverte à l'arrêt et pas encore signalée (une ligne GSM qui a perdu
+  le réseau pendant la coupure, un pont Zigbee arrêté avec la centrale) repart elle
+  aussi du redémarrage : signalée dans les délais habituels si elle dure, jamais dès le
+  démarrage. Une panne déjà signalée ne l'est pas de nouveau.
 - La liste des appareils (`Monitor.Devices`, d'où la centrale tire `system.devices`,
   voir `contract.md`) : les appareils du registre (entrée `Registry`) avec leur zone
   (`Config.Zones`, reprises de `hub.json`), en ligne ou non, et pour un appareil hors

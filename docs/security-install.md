@@ -190,7 +190,11 @@ En mode installation, la centrale allume **son propre réseau Wi-Fi**. Par défa
 s'appelle `safehome-tg-lom-0001` et la page est à l'adresse `http://10.42.0.1/`.
 
 - **Rien n'écoute sur le réseau du commerce.** La page n'est servie que sur ce réseau à
-  part, et seulement pendant le mode.
+  part, et seulement pendant le mode. Elle ne répond qu'aux appareils de ce réseau
+  (`10.42.0.0/24`) : Linux remet un paquet adressé à `10.42.0.1` quelle que soit
+  l'interface par laquelle il arrive, et un appareil du réseau du commerce qui ferait
+  passer `10.42.0.1` par la centrale atteindrait la page sans la phrase de passe.
+  Une demande venue d'une autre adresse est refusée.
 - **Le réseau est protégé (WPA2).** Sa phrase de passe est sur l'étiquette de la
   centrale. Le script d'installation la tire au sort une fois et l'affiche pour
   l'étiquette (`/etc/safehome/console.secret`).
@@ -206,7 +210,13 @@ s'appelle `safehome-tg-lom-0001` et la page est à l'adresse `http://10.42.0.1/`
 - **Le réseau ne survit pas au mode.** Il est créé à l'ouverture, jamais démarré au
   boot, et supprimé à la fin. Il est aussi supprimé quand le service s'arrête, et
   quand son démarrage a échoué (coupé par son délai, NetworkManager a pu le lever
-  quand même) : la fin du mode le retire alors aussi.
+  quand même) : la fin du mode le retire alors aussi. Un service mort pendant un mode
+  (plantage, chien de garde) n'a pas pu le supprimer : le service le supprime à son
+  démarrage, avant tout nouveau mode, même si le mode est fini entre-temps.
+- **Un réseau qui n'a pas démarré est retenté.** La puce Wi-Fi occupée par le réseau
+  de la box, par exemple : l'installateur ne voit pas le réseau, et retape le code
+  installateur. La centrale ouvre une nouvelle demi-heure, et la console relance le
+  réseau (au lieu de seulement prolonger un mode sans page).
 - NetworkManager crée le réseau (`nmcli`). Le service tourne sans droits
   d'administration. Une règle polkit lui permet de créer, lever, baisser et supprimer
   des connexions (jamais d'éteindre la radio Wi-Fi), et une capacité systemd seulement
@@ -241,7 +251,9 @@ est conseillé.
 - **Retirer un appareil** du réseau Zigbee. Un retrait que la centrale refuserait
   (la dernière sirène) est refusé avant que rien ne parte. Pendant le retrait,
   l'appareil est tenu pour parti : un autre onglet ne peut pas retirer l'autre sirène
-  entre-temps. Un ordre parti sans réponse de l'adaptateur peut encore s'exécuter :
+  entre-temps. Un second retrait du même appareil (un double appui, un autre onglet)
+  est refusé : la page dit que le retrait est déjà en cours. Un ordre parti sans
+  réponse de l'adaptateur peut encore s'exécuter :
   l'appareil quitte la configuration quand même, et la page le dit.
 - **Vérifier** : la page montre ce qui manque, comme `safehome-install check`. Par
   exemple un appareil sans usage, ou une zone qui ne pourra jamais se déclencher.
@@ -251,7 +263,11 @@ est conseillé.
   lui-même son code, deux fois, sur le téléphone. Le code n'est ni affiché, ni dans
   l'adresse, ni dans les journaux. Il est refusé s'il est trop facile, déjà pris, ou
   si c'est le code installateur. La centrale le prend aussitôt (`SIGHUP`, comme après
-  `safehome-hub codes set`). La page ne retire que les codes d'anciens contacts
+  `safehome-hub codes set`). Deux codes posés au même moment (deux téléphones, ou la
+  page et `codes set`) sont gardés tous les deux : chaque changement relit la liste,
+  calcule quelques secondes et la récrit en entier, sous un verrou
+  (`codes.lock` dans le dossier d'état) que la page et l'outil prennent l'un après
+  l'autre. La page ne retire que les codes d'anciens contacts
   (« Codes d'anciens contacts ») ; retirer le code d'un contact reste en SSH. Le code
   installateur lui-même ne se règle ni ne se retire depuis la page, même par un ordre
   forgé : celui qui atteindrait la page s'ouvrirait sinon le mode installation. Il se

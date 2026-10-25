@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
 	"testing"
@@ -75,16 +76,19 @@ func overview() consoleapp.Overview {
 
 func newHandler(t *testing.T, c Console) *Handler {
 	t.Helper()
-	h, err := New(c, host, time.UTC)
+	h, err := New(c, host, netip.MustParsePrefix("10.42.0.0/24"), time.UTC)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return h
 }
 
+// phone is a phone on the hub's own network.
+const phone = "10.42.0.23:51234"
+
 func get(h http.Handler, target string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest("GET", target, nil)
-	r.Host = host
+	r.Host, r.RemoteAddr = host, phone
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	return w
@@ -92,7 +96,7 @@ func get(h http.Handler, target string) *httptest.ResponseRecorder {
 
 func post(h http.Handler, target string, form url.Values) *httptest.ResponseRecorder {
 	r := httptest.NewRequest("POST", target, strings.NewReader(form.Encode()))
-	r.Host = host
+	r.Host, r.RemoteAddr = host, phone
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -223,7 +227,7 @@ func TestOrdersAndTheirOutcome(t *testing.T) {
 func TestOnlyTheHubsAddressAndKnownRoutes(t *testing.T) {
 	h := newHandler(t, &fakeConsole{o: overview()})
 	r := httptest.NewRequest("GET", "/", nil)
-	r.Host = "evil.example"
+	r.Host, r.RemoteAddr = "evil.example", phone
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	if w.Code != http.StatusMisdirectedRequest {
@@ -306,12 +310,35 @@ func TestTheCodesOfFormerContacts(t *testing.T) {
 
 // The installer's phone may browse the internet over its mobile data while on the
 // hub's network: a page from elsewhere must not be able to post orders.
+// A device on the shop's network may route the hub's address on its own network
+// through the hub, and Linux delivers it whatever the interface: the page answers
+// only the phones on the hub's network, which the Wi-Fi passphrase lets in.
+func TestOnlyThePhonesOnTheHubsNetworkAreAnswered(t *testing.T) {
+	c := &fakeConsole{o: overview()}
+	h := newHandler(t, c)
+	for _, from := range []string{"192.168.1.50:40000", "10.42.1.5:40000", "[::ffff:192.168.1.50]:40000", "nonsense"} {
+		r := httptest.NewRequest("POST", "/finish", nil)
+		r.Host, r.RemoteAddr = host, from
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusForbidden || len(c.calls) != 0 {
+			t.Fatalf("from %s: %d, %v", from, w.Code, c.calls)
+		}
+	}
+	if w := get(h, "/"); w.Code != http.StatusOK {
+		t.Fatalf("a phone on the hub's network: %d", w.Code)
+	}
+	if _, err := New(c, host, netip.Prefix{}, time.UTC); err == nil {
+		t.Fatal("the network is required")
+	}
+}
+
 func TestOrdersFromAnotherSiteAreRefused(t *testing.T) {
 	c := &fakeConsole{o: overview()}
 	h := newHandler(t, c)
 	order := func(headers map[string]string) int {
 		r := httptest.NewRequest("POST", "/finish", nil)
-		r.Host = host
+		r.Host, r.RemoteAddr = host, phone
 		for k, v := range headers {
 			r.Header.Set(k, v)
 		}

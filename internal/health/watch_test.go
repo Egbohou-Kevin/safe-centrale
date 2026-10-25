@@ -416,3 +416,36 @@ func TestASilentComponentStaysSilentAndToldAcrossARestart(t *testing.T) {
 		t.Fatalf("status %q", h.m.Status().GSM)
 	}
 }
+
+// An outage still open and not yet told when the hub stopped: the GSM lost its
+// network a minute before a long power cut ended in a shutdown, the Zigbee bridge
+// said it stopped as the hub was going down, the gateway was already silent. At boot
+// none is told at once: the outage counts from the restart, as a silence does, and is
+// told in its usual time if it lasts.
+func TestAnOutageOpenAtTheStopCountsFromTheRestart(t *testing.T) {
+	for name, stop := range map[string]func(h *harness){
+		"gsm down":       func(h *harness) { h.gsm(true); h.advance(time.Minute); h.gsm(false); h.advance(time.Minute) },
+		"bridge down":    func(h *harness) { h.zigbee(true); h.advance(time.Minute); h.zigbee(false); h.advance(30 * time.Second) },
+		"gateway silent": func(h *harness) { h.gsm(true); h.advance(7 * time.Minute) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			stop(h)
+			if len(alerts(t, h.advance(0))) != 0 {
+				t.Fatal("not told before the stop")
+			}
+			h.restart(2 * time.Hour)
+			start := h.now
+			if al := alerts(t, h.advance(0)); len(al) != 0 {
+				t.Fatalf("told at boot: %+v", al)
+			}
+			var got []Action
+			for h.now.Before(start.Add(14 * time.Minute)) {
+				got = append(got, h.advance(30*time.Second)...)
+			}
+			if al := alerts(t, got); len(al) != 1 {
+				t.Fatalf("told once in its usual time: %+v", al)
+			}
+		})
+	}
+}
