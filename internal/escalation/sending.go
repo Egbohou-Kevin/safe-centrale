@@ -39,7 +39,7 @@ func (e *Escalation) notify(in *IncidentSnap, ct Contact, step int, wave Wave, a
 		if wave.SMSNow && slices.Contains(gsm, ChannelSMS) {
 			send(ChannelSMS)
 		}
-		if wave.Double {
+		if wave.Double && gsmLeft(gsm, round) {
 			round.GSMDue = at.Add(e.cfg.GSMDelay)
 		}
 	}
@@ -72,8 +72,18 @@ func (e *Escalation) gsm(in *IncidentSnap, contact string, at time.Time) []Actio
 			out = append(out, e.send(in, ct, ch, &round, at)...)
 		}
 	}
+	if !gsmLeft(gsm, round) {
+		// Nothing left for a GSM takeover to send: waiting for it would only hold the
+		// next wave back (see pullForwardIfAllUnreachable) and the end of the incident.
+		round.GSMDue = time.Time{}
+	}
 	in.Rounds[contact] = round
 	return out
+}
+
+// gsmLeft tells whether a GSM channel of the round is still unused.
+func gsmLeft(gsm []Channel, round Round) bool {
+	return slices.ContainsFunc(gsm, func(ch Channel) bool { return !slices.Contains(round.Sent, ch) })
 }
 
 // resend sends a channel again in the current round (the round's channel list

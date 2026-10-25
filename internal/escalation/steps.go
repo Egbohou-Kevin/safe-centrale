@@ -139,10 +139,13 @@ func (e *Escalation) nextDue(now time.Time) (event, bool) {
 }
 
 // runStep tells the contacts of the next step. A step nobody is left for is skipped
-// at once rather than waited for.
+// at once rather than waited for. An incident saved under a plan that had more steps
+// (a plan changed, then a restart) has none left: its step falls due no more, and it
+// concludes, rather than falling due again and again forever.
 func (e *Escalation) runStep(in *IncidentSnap, at time.Time) []Action {
 	plan := e.plan(*in)
 	n := plan.totalSteps()
+	in.NextAt = time.Time{}
 	for in.Step < n {
 		step := in.Step
 		in.Step++

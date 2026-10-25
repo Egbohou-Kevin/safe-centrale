@@ -377,7 +377,11 @@ consigne du SMS à côté de son propre bouton.
   le délai de 60 secondes.
 - **SMS non envoyé** (pas de réseau, SIM sans crédit) : la passerelle essaie ses
   autres lignes, puis publie un échec. Si tous les messages de la vague échouent pour
-  tous ses contacts, l'escalade passe à la vague suivante sans attendre. Sans aucune
+  tous ses contacts, l'escalade passe à la vague suivante sans attendre, que ces
+  contacts aient l'application ou non : un relais par GSM qui n'a plus rien à envoyer
+  (tous les canaux GSM du contact sont déjà partis, après l'échec d'internet) n'est plus
+  attendu. Avant le 25 octobre 2026, ce relais prévu à 60 secondes retenait la vague
+  suivante jusqu'à son délai pour tout contact qui avait l'application. Sans aucune
   ligne utilisable, la demande attend dans la file de la passerelle, puis échoue à son
   âge maximum (10 minutes pour une intrusion).
 - **Aucun canal ne marche** : la sirène continue et l'incident reste en attente.
@@ -518,7 +522,12 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
 - **Reprise.** L'état est sauvegardé : après un redémarrage, les vagues et les délais
   en retard sont rejoués dans l'ordre, à leur heure. Les alarmes prises en charge et
   les sirènes déjà signalées y sont aussi, 24 heures (un état écrit avant elles se
-  relit).
+  relit). Les plans, eux, sont ceux de la configuration du nouveau démarrage : un
+  incident gardé à une étape que son plan n'a plus (des rappels retirés dans
+  `escalation.plans`, ou par une mise à jour) se termine sans réponse, sans autre
+  message. Avant le 25 octobre 2026, cette étape revenait sans fin : la boucle de
+  l'escalade ne répondait plus, le chien de garde de systemd tuait la centrale, qui
+  repartait sur le même état, sans fin, moteur d'alarme compris.
 
 La passerelle GSM (`safehome-gsm`) exécute les demandes `sms` et `call`, connaît les
 numéros des contacts et publie `alert.ack` pour une réponse « 1 ». Les canaux
