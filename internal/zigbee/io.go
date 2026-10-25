@@ -107,10 +107,16 @@ type Changed struct {
 }
 
 // Presence says that a device stopped answering, or answers again.
+//
+// Heard, for a device that stopped answering, is when it last spoke, to the minute:
+// zero when it said nothing since the adapter started. It is the last news the owner
+// had of it, fixed while it stays offline; a device that answers has none, since
+// when it last spoke moves with every door and every passer-by.
 type Presence struct {
 	DeviceID string
 	Online   bool
 	Since    time.Time
+	Heard    time.Time
 }
 
 // Send writes to a device through Zigbee2MQTT. The IEEE address names the device

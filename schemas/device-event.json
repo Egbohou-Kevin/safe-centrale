@@ -37,6 +37,11 @@
       "format": "date-time",
       "description": "device.state seulement : date du dernier changement"
     },
+    "heard": {
+      "type": "string",
+      "format": "date-time",
+      "description": "device.state de availability à offline seulement : dernière nouvelle de l'appareil, à la minute. Absent s'il n'a rien dit depuis le redémarrage de l'adaptateur, jamais pour un appareil en ligne."
+    },
     "code": {
       "type": "string",
       "pattern": "^[0-9]{1,16}$",
@@ -358,6 +363,16 @@
             "disarm",
             "silence"
           ]
+        }
+      }
+    },
+    "heard": {
+      "properties": {
+        "capability": {
+          "const": "availability"
+        },
+        "value": {
+          "const": "offline"
         }
       }
     }

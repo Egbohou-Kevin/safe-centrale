@@ -217,6 +217,24 @@ le broker ne garde que le dernier message retenu d'un sujet, et une lecture de p
 ne doit pas effacer l'état de la porte. Un état ne porte jamais de code. Quand un
 appareil est retiré, l'adaptateur efface ses états retenus (message vide).
 
+L'état `availability` d'un appareil hors ligne porte aussi `heard` : l'heure de son
+dernier message, à la minute, absente s'il n'a rien dit depuis le redémarrage de
+l'adaptateur (son appairage compte comme un message). Jamais pour un appareil en ligne,
+ni pour une autre capacité (le schéma le refuse, la centrale ignore un tel état) :
+l'heure du dernier message d'un appareil qui répond bouge avec chaque porte et chaque
+passage. Figée tant que l'appareil est hors ligne, elle dit depuis quand sa porte n'est
+plus surveillée. La centrale s'en sert pour `system.devices`.
+
+```json
+{
+  "type": "device.state",
+  "data": {
+    "device_id": "dev_back", "capability": "availability", "value": "offline",
+    "since": "2026-10-24T18:47:00.000Z", "heard": "2026-10-24T14:47:00.000Z"
+  }
+}
+```
+
 ### `command` et `command.ack`
 
 ```json

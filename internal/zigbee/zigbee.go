@@ -151,7 +151,10 @@ type Network struct {
 	byName  map[string]Profile
 	byModel map[string]Profile
 	s       Snapshot
-	seen    map[string]time.Time // when each device last spoke
+	// seen is when each device last spoke, or the start for one silent since: its
+	// silence counts from there. spoke tells the devices that did speak.
+	seen  map[string]time.Time
+	spoke map[string]bool
 	// coded: Zigbee2MQTT was told, since it last came online, which devices carry
 	// a code. Not saved: it is told again after each start.
 	coded bool
@@ -213,7 +216,7 @@ func (n *Network) Restore(s Snapshot) {
 		}
 	}
 	n.s = s
-	n.seen = map[string]time.Time{}
+	n.seen, n.spoke = map[string]time.Time{}, map[string]bool{}
 	n.coded = false
 }
 

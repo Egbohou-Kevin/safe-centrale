@@ -8,6 +8,9 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
+
+	"safehome/internal/schematest"
 )
 
 func TestDeviceEventValidate(t *testing.T) {
@@ -36,6 +39,29 @@ func TestDeviceEventValidate(t *testing.T) {
 	for _, d := range bad {
 		if err := d.Validate(); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s=%s should be refused, got %v", d.Capability, d.Value, err)
+		}
+	}
+}
+
+// Only an offline device has a last news: for a device that answers, it would move
+// with every door and every passer-by, and tell the shop's activity.
+func TestOnlyAnOfflineDeviceSaysWhenItWasLastHeard(t *testing.T) {
+	heard := TSPtr(time.Date(2026, 10, 24, 14, 47, 0, 0, time.UTC))
+	offline := DeviceEventData{DeviceID: "d", Capability: CapAvailability, Value: json.RawMessage(`"offline"`), Since: heard, Heard: heard}
+	if err := offline.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	schematest.Validate(t, "device-event.json", offline)
+	online := offline
+	online.Value = json.RawMessage(`"online"`)
+	door := DeviceEventData{DeviceID: "d", Capability: CapContact, Value: json.RawMessage(`"closed"`), Heard: heard}
+	for _, d := range []DeviceEventData{online, door} {
+		if err := d.Validate(); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s=%s with heard: %v", d.Capability, d.Value, err)
+		}
+		raw, _ := json.Marshal(d)
+		if err := schematest.Check("device-event.json", raw); err == nil {
+			t.Errorf("the schema accepts %s", raw)
 		}
 	}
 }

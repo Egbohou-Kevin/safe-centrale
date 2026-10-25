@@ -214,7 +214,11 @@ est enregistré chez nous » (voir `architecture.md`).
 - **Présence.** L'adaptateur note l'heure du dernier message de chaque appareil. Sans
   message pendant la durée `offline_after` du profil (4 heures par défaut, voir
   `engine.md`), il émet `availability` = `offline`. Le premier message suivant
-  émet `online`.
+  émet `online`. L'état retenu d'un appareil hors ligne porte aussi `heard`, l'heure
+  de son dernier message à la minute (son appairage compte), absente s'il n'a rien dit
+  depuis le redémarrage de l'adaptateur ; jamais pour un appareil en ligne, dont le
+  dernier message bouge avec chaque porte et chaque passage. La centrale en tire
+  `system.devices` (voir `contract.md`).
 
 ## Commandes vers les appareils
 
@@ -348,7 +352,9 @@ Choix faits au codage :
   `systeme.md`) ; l'état du sabotage revient au message suivant du clavier.
 - **Présence** : l'heure du dernier message n'est pas sauvegardée (elle change à
   chaque message et userait la carte SD). Après un redémarrage, le silence de chaque
-  appareil compte à partir de ce moment.
+  appareil compte à partir de ce moment, et un appareil qui n'a rien dit depuis passe
+  hors ligne sans `heard` : le redémarrage n'est pas une nouvelle de lui. Un appareil
+  déjà hors ligne le reste, et son état retenu garde son `heard`.
 - **Commandes** : une à la fois par appareil ; une nouvelle remplace celle qui attend
   (réponse `failed`, raison `superseded`). Sans confirmation au bout de 3 s, elle est
   renvoyée, 3 fois en tout, puis `failed` (`no_confirmation`). Une commande périmée
