@@ -139,7 +139,13 @@ l'outil d'installation le lisent au démarrage.
    pendant l'interrogation : l'Aqara MCCGQ11LM demande, après l'appui long de 5 s, un
    appui bref toutes les 2 à 3 secondes pendant environ 30 s (voir « Constaté sur le
    matériel »).
-3. Zigbee2MQTT signale l'arrivée et termine l'interrogation de l'appareil.
+3. Zigbee2MQTT signale l'arrivée (`device_joined`) et termine l'interrogation de
+   l'appareil. L'appareil est jugé d'après la fenêtre où il est entré, pas d'après
+   celle ouverte à la fin de son interrogation : une porte entrée à 100 s d'une
+   fenêtre de 120 s finit son interrogation vers 130 s, et elle est gardée sous l'ordre
+   de la fenêtre. Tant qu'un appareil entré pendant la fenêtre est interrogé (3 minutes
+   au plus, puis il est oublié), `zigbee.status` garde `pairing` à vrai, et l'outil
+   d'installation attend qu'il soit décidé.
 4. L'adaptateur cherche un profil pour ce modèle :
    - **profil trouvé** : il crée le `device_id`, renomme l'appareil, enregistre
      l'appareil et publie `registry.device_added` ;
@@ -177,15 +183,46 @@ nouvelle fenêtre aurait mis fin à cette nouvelle fenêtre.
   avec la raison « Zigbee2MQTT did not answer the request to open the network: is it
   running? ». L'outil d'installation attend 15 s la confirmation de l'ouverture, plus
   que l'adaptateur, pour entendre cette raison.
+- **Zigbee2MQTT hors ligne** pendant la fenêtre (redémarrage, chute) : il repart
+  réseau fermé. La fenêtre prend fin de même, `registry.pair_failed` avec la raison
+  « Zigbee2MQTT went offline… », et l'installateur relance l'appairage, au lieu
+  d'attendre devant un réseau fermé que l'outil croirait ouvert.
 
-Quand l'adaptateur s'arrête pendant une fenêtre (même pas encore confirmée : la
-réponse peut n'être qu'en retard), il referme le réseau : un appareil qui entrerait
-sans lui resterait dans le réseau de Zigbee2MQTT, hors du registre, sans surveillance.
-Au redémarrage, si la fenêtre court encore, il le rouvre pour ce qui en reste, et
-attend la réponse comme pour un morceau suivant.
+**Un ordre en retard est ignoré.** Un ordre `registry/cmd` (appairage ou retrait)
+écrit il y a plus d'une minute est journalisé et laissé de côté : le broker garde la
+session de l'adaptateur un jour, et l'outil d'installation abandonne au bout de 15 s
+sans réponse. Un ordre d'appairage gardé pendant une panne de l'adaptateur ne doit
+pas ouvrir le réseau des heures plus tard, pour personne (comme les ordres de la
+centrale, `orderMaxAge`).
 
-Le **retrait** d'un appareil (`registry.remove`) l'enlève de Zigbee2MQTT et du
-registre. Son `device_id` est retiré définitivement.
+Quand l'adaptateur s'arrête **proprement** pendant une fenêtre (même pas encore
+confirmée : la réponse peut n'être qu'en retard), il referme le réseau : un appareil
+qui entrerait sans lui resterait dans le réseau de Zigbee2MQTT, hors du registre, sans
+surveillance. Au redémarrage, si la fenêtre court encore, il le rouvre pour ce qui en
+reste, et attend la réponse comme pour un morceau suivant. Un arrêt brutal (plantage,
+chien de garde, coupure) ne referme rien : le réseau reste ouvert jusqu'à la fin du
+morceau en cours (254 s au plus, jamais au-delà de la fenêtre). Un appareil qui entre
+alors, ou dont l'interrogation finit pendant un redémarrage même propre, n'est pas vu
+par l'adaptateur : il est rattrapé quand il parle (voir ci-dessous).
+
+Le **retrait** d'un appareil (`registry.remove`) demande à Zigbee2MQTT de le faire
+quitter le réseau, et le retire du registre. Son `device_id` est retiré
+définitivement. `registry.device_removed` dit que le registre l'a retiré, pas que
+Zigbee2MQTT l'a fait : un capteur sur pile endormi ne répond pas à la demande de
+départ, et Zigbee2MQTT le garde (son refus est journalisé en erreur, « Zigbee2MQTT
+refused a request »). Il est rattrapé quand il parle, comme un appareil refusé dont
+l'expulsion a échoué de même.
+
+**Un appareil hors du registre qui parle** dans le réseau n'est surveillé par
+personne : retiré ou refusé pendant qu'il dormait, ou entré sans que l'adaptateur le
+voie. Quand un message arrive sous un `device_id` retiré, ou sous une adresse IEEE
+hors d'une fenêtre et hors d'une interrogation en cours, l'adaptateur demande à
+l'appareil de partir pendant qu'il est éveillé, puis, s'il parle encore, le retire de
+force de la liste de Zigbee2MQTT (`device/remove` avec `force`) ; une fois chacun par
+démarrage. Il le journalise en avertissement (« a device outside the registry speaks
+in the network ») et publie `registry.device_rejected` (`not_pairing`, sans `ref`, sans
+modèle) pour celui qui n'avait jamais été au registre. Les autres noms ne sont pas des
+appareils à nous : ils restent écartés.
 
 L'appairage ne peut être lancé que **localement**, jamais depuis le cloud (le cloud
 ne peut publier ni sur `registry/cmd` ni sur `device/{id}/cmd`, voir `contract.md`) :
@@ -209,6 +246,20 @@ est enregistré chez nous » (voir `architecture.md`).
   Un message retenu qui arriverait quand même met à jour l'état mais ne produit
   **jamais** d'événement : un vieux « porte ouverte » rejoué au redémarrage ne doit
   pas déclencher l'alarme.
+- **Cache rejoué par Zigbee2MQTT.** À chacun de ses démarrages, Zigbee2MQTT republie
+  l'état en cache de chaque appareil (`advanced.cache_state_send_on_startup`, vrai par
+  défaut), non retenu, avec le vieux `last_seen`. Un message dont le `last_seen` n'est
+  pas plus récent que ce que l'appareil a dit en dernier n'est pas une nouvelle : il
+  est écarté en entier. Il ne remet pas en ligne une porte dont la pile est morte, et
+  ne rejoue pas comme une ouverture un vieux « open » que le cache de Zigbee2MQTT
+  (sauvegardé toutes les quelques minutes) garderait encore. Pour un appareil hors
+  ligne, sa dernière nouvelle est gardée dans l'état de l'adaptateur et vaut aussi
+  après un redémarrage ; pour un appareil en ligne, seulement tant que l'adaptateur
+  tourne (la sauvegarder à chaque message userait la carte SD). Après un redémarrage
+  de toute la centrale, la relecture d'un appareil en ligne compte donc encore, comme
+  avant. Un message sans `last_seen` ne peut pas être jugé et compte. Le réglage de
+  Zigbee2MQTT n'est pas changé : une clé que sa version refuserait l'empêcherait de
+  démarrer.
 - **`battery` et `link`** : publiés seulement quand la valeur change de façon utile
   (voir `contract.md`).
 - **Présence.** L'adaptateur note l'heure du dernier message de chaque appareil. Sans
@@ -371,7 +422,8 @@ Choix faits au codage :
   l'adaptateur redémarre est perdu (comme un code envoyé à la centrale qui redémarre,
   `systeme.md`) ; l'état du sabotage revient au message suivant du clavier.
 - **Présence** : l'heure du dernier message n'est pas sauvegardée (elle change à
-  chaque message et userait la carte SD). Après un redémarrage, le silence de chaque
+  chaque message et userait la carte SD) ; seule la dernière nouvelle d'un appareil
+  hors ligne l'est, qui ne bouge plus (voir « Cache rejoué par Zigbee2MQTT »). Après un redémarrage, le silence de chaque
   appareil compte à partir de ce moment, et un appareil qui n'a rien dit depuis passe
   hors ligne sans `heard` : le redémarrage n'est pas une nouvelle de lui. Un appareil
   déjà hors ligne le reste, et son état retenu garde son `heard`. Un message gardé par
@@ -387,7 +439,8 @@ Choix faits au codage :
   le renommage a échoué.
 - **Appairage** : borné à 10 minutes, ouvert par morceaux de 254 secondes au plus
   (voir « Appairage »). Un appareil entré hors d'une fenêtre
-  d'appairage, illisible ou sans profil est retiré du réseau et signalé. Un identifiant
+  d'appairage, illisible ou sans profil est retiré du réseau et signalé ; un appareil
+  hors du registre qui parle encore est retiré de nouveau, de force la seconde fois. Un identifiant
   n'est jamais redonné, même après un retrait.
 - **Abonnements** : l'adaptateur ne s'abonne qu'à ce qu'il lit de Zigbee2MQTT : les
   messages des appareils (un niveau sous le sujet de base, `zigbee2mqtt/+`),

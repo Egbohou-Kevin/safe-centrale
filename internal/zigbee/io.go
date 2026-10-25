@@ -41,6 +41,12 @@ type Interviewed struct {
 	OK    bool
 }
 
+// Joined says that a device entered the network: Zigbee2MQTT starts questioning it.
+type Joined struct {
+	Now  time.Time
+	IEEE string
+}
+
 // Left says that a device left the network.
 type Left struct {
 	Now  time.Time
@@ -86,6 +92,7 @@ func (r Report) at() time.Time      { return r.Now }
 func (b Bridge) at() time.Time      { return b.Now }
 func (i Interviewed) at() time.Time { return i.Now }
 func (l Left) at() time.Time        { return l.Now }
+func (j Joined) at() time.Time      { return j.Now }
 func (p Pair) at() time.Time        { return p.Now }
 func (j JoinAnswer) at() time.Time  { return j.Now }
 func (r Remove) at() time.Time      { return r.Now }
@@ -138,8 +145,14 @@ type PermitJoin struct {
 // the topics and the logs.
 type Rename struct{ IEEE, To string }
 
-// Expel takes a device out of the Zigbee network.
-type Expel struct{ IEEE string }
+// Expel takes a device out of the Zigbee network. IEEE names it: its IEEE address,
+// or its name in Zigbee2MQTT, which Zigbee2MQTT takes too. Force removes it from
+// Zigbee2MQTT's own list even if it does not answer the request to leave (a sleeping
+// sensor): it is for a device asked to leave before that still speaks.
+type Expel struct {
+	IEEE  string
+	Force bool
+}
 
 // CarriesCode says that a device's messages carry an access code (a keypad):
 // Zigbee2MQTT must publish them at QoS 0, so that the broker never keeps one for a
@@ -160,6 +173,15 @@ type Added struct {
 	Device Device
 }
 
+// Stray: a device outside the registry spoke in the network, and is asked to leave;
+// by force the second time (see Expel). Name is its name in Zigbee2MQTT. Removed says
+// it was taken out of the registry before: it did not answer the request to leave.
+type Stray struct {
+	Name    string
+	Removed bool
+	Forced  bool
+}
+
 // Rejected: a device that joined was refused and expelled.
 type Rejected struct {
 	Ref    string // the pairing order, empty outside a pairing window
@@ -171,7 +193,7 @@ type Rejected struct {
 // the window is over.
 type PairFailed struct {
 	Ref    string // the pairing order
-	Reason string // Zigbee2MQTT's words, or ReasonNoJoinAnswer
+	Reason string // Zigbee2MQTT's words, ReasonNoJoinAnswer or ReasonBridgeOffline
 }
 
 // Removed: a device left the registry. Its retained states are to be cleared.
@@ -196,6 +218,7 @@ func (CarriesCode) isAction()     {}
 func (Ack) isAction()             {}
 func (Added) isAction()           {}
 func (Rejected) isAction()        {}
+func (Stray) isAction()           {}
 func (PairFailed) isAction()      {}
 func (Removed) isAction()         {}
 func (RegistryChanged) isAction() {}
@@ -214,6 +237,10 @@ const (
 	ReasonSuperseded     = "superseded"      // a newer command for the same device came first
 	ReasonRemoved        = "removed"         // the device was removed meanwhile
 )
+
+// ReasonBridgeOffline is why a pairing window ended when Zigbee2MQTT went offline
+// during it.
+const ReasonBridgeOffline = "Zigbee2MQTT went offline: it starts again with the network closed, open it again"
 
 // ReasonNoJoinAnswer is why a pairing window failed when Zigbee2MQTT never answered
 // the request to open the network.

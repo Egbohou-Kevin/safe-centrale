@@ -513,16 +513,19 @@ Les ordres arrivent sur `registry/cmd` et ne viennent jamais du cloud.
 - `registry.pair` : `duration_s` à 0 referme le réseau. L'adaptateur borne la durée
   (10 minutes par défaut) et l'obtient de Zigbee2MQTT par morceaux de 254 secondes au
   plus.
+- `registry.pair` et `registry.remove` écrits il y a plus d'une minute (`ts`) sont
+  ignorés : l'outil d'installation qui les a envoyés a abandonné.
 - `registry.pair_failed` : Zigbee2MQTT a refusé d'ouvrir le réseau (ou de le garder
-  ouvert) pour l'ordre `ref`, ou n'a pas répondu à la demande ; `reason` reprend ses
-  mots, ou dit qu'il n'a pas répondu. La fenêtre est finie
+  ouvert) pour l'ordre `ref`, n'a pas répondu à la demande, ou est passé hors ligne
+  pendant la fenêtre ; `reason` reprend ses mots, ou dit ce qui s'est passé. La fenêtre est finie
   (`zigbee.status` repasse `pairing` à faux) : l'outil d'installation s'arrête en
   erreur.
 - `registry.device_added`, `registry.device_rejected` et `registry.device_removed`
   portent `ref`, l'`id` de l'ordre qui les a causés (absent pour un appareil refusé
   hors appairage).
 - `registry.device_rejected` : `reason` vaut `unknown_model` (pas de profil),
-  `not_pairing` (entré hors d'une fenêtre d'appairage) ou `interview_failed` (modèle
+  `not_pairing` (entré hors d'une fenêtre d'appairage, ou appareil hors du registre
+  qui parle dans le réseau, sans `ref` ni modèle) ou `interview_failed` (modèle
   illisible) ; `model` est le modèle du matériel, vide s'il n'a pas pu être lu.
 - Dans le registre, `model` est le nom de notre profil (`aqara.contact.mccgq11lm`) et
   `adapter` vaut `adapter.zigbee`. L'adresse Zigbee n'en sort jamais.
@@ -542,7 +545,8 @@ vit) :
 
 - `bridge` : `online` quand Zigbee2MQTT et sa clé tournent, `offline` sinon.
 - `devices` : appareils enregistrés ; `offline` : ceux qui ne répondent plus ;
-  `pairing` : le réseau est ouvert aux nouveaux appareils, Zigbee2MQTT l'a confirmé.
+  `pairing` : le réseau est ouvert aux nouveaux appareils, Zigbee2MQTT l'a confirmé,
+  ou un appareil entré pendant la fenêtre est encore interrogé (3 minutes au plus).
 - La centrale en déduit le lien `zigbee` de `system.health` : `ok`, `down`, ou
   `silent` si l'adaptateur ne donne plus de nouvelles. Après 3 minutes de panne, le
   responsable (sinon le propriétaire) reçoit l'alerte `zigbee_down` : l'alarme

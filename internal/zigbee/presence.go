@@ -14,6 +14,7 @@ func (n *Network) heard(id string, now, news time.Time) []Action {
 		return nil
 	}
 	delete(n.s.Offline, id)
+	delete(n.s.Heard, id)
 	return []Action{Presence{DeviceID: id, Online: true, Since: now}}
 }
 
@@ -22,7 +23,7 @@ func (n *Network) left(l Left) []Action {
 	if !ok || n.s.Offline[d.ID] {
 		return nil
 	}
-	n.s.Offline[d.ID] = true
+	n.goneOffline(d.ID)
 	return []Action{Presence{DeviceID: d.ID, Since: l.Now, Heard: n.lastHeard(d.ID)}}
 }
 
@@ -33,10 +34,25 @@ func (n *Network) markSilent(now time.Time) []Action {
 		if n.s.Offline[id] || now.Before(n.seen[id].Add(n.offlineAfter(n.s.Devices[id]))) {
 			continue
 		}
-		n.s.Offline[id] = true
+		n.goneOffline(id)
 		out = append(out, Presence{DeviceID: id, Since: now, Heard: n.lastHeard(id)})
 	}
 	return out
+}
+
+// goneOffline takes a device offline, and keeps its last news with the state: it no
+// longer moves, and it is what tells a message replaying older news after a restart
+// (see report).
+func (n *Network) goneOffline(id string) {
+	n.s.Offline[id] = true
+	news, ok := n.news[id]
+	if !ok {
+		return
+	}
+	if n.s.Heard == nil {
+		n.s.Heard = map[string]time.Time{}
+	}
+	n.s.Heard[id] = news
 }
 
 // spokeAt records that a device spoke. Its silence counts from now, when the message

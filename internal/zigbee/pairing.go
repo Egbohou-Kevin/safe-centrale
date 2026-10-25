@@ -107,27 +107,29 @@ func (n *Network) failPairing(reason string) []Action {
 	return []Action{PermitJoin{}, PairFailed{Ref: ref, Reason: reason}}
 }
 
-// interviewed decides about a device that joined. Only a model with a profile, during
-// a pairing window, is kept: a device we cannot read is a device we cannot watch.
+// interviewed decides about a device that joined. Only a model with a profile, that
+// entered during a pairing window, is kept: a device we cannot read is a device we
+// cannot watch. Its questioning may end after the window (see JoinWait).
 func (n *Network) interviewed(i Interviewed) []Action {
 	if _, known := n.byIEEE(i.IEEE); known {
 		return []Action{Ignored{What: "a registered device was questioned again"}}
 	}
+	ref, inWindow := n.windowOf(i.IEEE, i.Now)
 	reject := func(reason, ref string) []Action {
 		return []Action{Expel{IEEE: i.IEEE}, Rejected{Ref: ref, Model: i.Model, Reason: reason}}
 	}
 	p, ok := n.byModel[i.Model]
 	switch {
-	case n.s.PairUntil.IsZero():
+	case !inWindow:
 		return reject(RejectNotPairing, "")
 	case !i.OK:
-		return reject(RejectInterviewFailed, n.s.PairRef)
+		return reject(RejectInterviewFailed, ref)
 	case !ok:
-		return reject(RejectUnknownModel, n.s.PairRef)
+		return reject(RejectUnknownModel, ref)
 	}
 	id := n.freshID()
 	if id == "" {
-		return append(reject(RejectInterviewFailed, n.s.PairRef), Ignored{What: "no free device id"})
+		return append(reject(RejectInterviewFailed, ref), Ignored{What: "no free device id"})
 	}
 	d := Device{ID: id, IEEE: i.IEEE, Model: i.Model, Profile: p.Name, Capabilities: p.capabilities()}
 	n.s.Devices[id] = d
@@ -136,7 +138,7 @@ func (n *Network) interviewed(i Interviewed) []Action {
 	if p.carriesCode() {
 		out = append(out, CarriesCode{IEEE: i.IEEE})
 	}
-	return append(out, Added{Ref: n.s.PairRef, Device: d}, RegistryChanged{Devices: n.Devices()})
+	return append(out, Added{Ref: ref, Device: d}, RegistryChanged{Devices: n.Devices()})
 }
 
 // freshID asks newID for an id never given before, a bounded number of times.
@@ -167,6 +169,8 @@ func (n *Network) remove(r Remove) []Action {
 	delete(n.s.Offline, d.ID)
 	delete(n.seen, d.ID)
 	delete(n.news, d.ID)
+	delete(n.said, d.ID)
+	delete(n.s.Heard, d.ID)
 	n.s.Retired[d.ID] = true
 	return append(out, Removed{Ref: r.Ref, Device: d}, RegistryChanged{Devices: n.Devices()})
 }

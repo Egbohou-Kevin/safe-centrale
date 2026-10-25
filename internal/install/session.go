@@ -47,8 +47,13 @@ type Timing struct {
 	// adapter waits for Zigbee2MQTT's own confirmation, asking again, and reports
 	// that none came (confirm_wait x attempts, 9 s by default): Open must be longer,
 	// for the tool to hear why.
-	Open  time.Duration
-	Grace time.Duration // after the end of a pairing window, for its last news (default 5 s)
+	Open time.Duration
+	// Grace is the wait after the end of a pairing window, for its last news (default
+	// 3 min 5 s). A device that entered during the window may still be questioned
+	// after it: the adapter keeps saying that the network is pairing until it is
+	// decided, 3 min at most, then says it is over, which ends the wait at once. Grace
+	// only bounds the wait for an adapter that stops answering.
+	Grace time.Duration
 }
 
 // Session is one run of a tool against the broker: it sends orders and reads what the
@@ -80,7 +85,7 @@ func NewSession(site string, d Deps, t Timing) (*Session, error) {
 		t.Open = 15 * time.Second
 	}
 	if t.Grace <= 0 {
-		t.Grace = 5 * time.Second
+		t.Grace = 3*time.Minute + 5*time.Second
 	}
 	return &Session{site: site, d: d, timing: t, in: make(chan inbox.Message, 1024)}, nil
 }

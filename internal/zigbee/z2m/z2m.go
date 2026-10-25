@@ -133,7 +133,7 @@ func parseEvent(payload []byte, now time.Time) (zigbee.Input, bool, error) {
 	if err := json.Unmarshal(payload, &e); err != nil {
 		return nil, false, fmt.Errorf("%w: bridge event: %v", ErrInvalid, err)
 	}
-	if e.Data.IEEE == "" && (e.Type == "device_interview" || e.Type == "device_leave") {
+	if e.Data.IEEE == "" && (e.Type == "device_interview" || e.Type == "device_leave" || e.Type == "device_joined") {
 		return nil, false, fmt.Errorf("%w: %s without an address", ErrInvalid, e.Type)
 	}
 	switch e.Type {
@@ -150,8 +150,10 @@ func parseEvent(payload []byte, now time.Time) (zigbee.Input, bool, error) {
 		}
 	case "device_leave":
 		return zigbee.Left{Now: now, IEEE: e.Data.IEEE}, true, nil
+	case "device_joined":
+		return zigbee.Joined{Now: now, IEEE: e.Data.IEEE}, true, nil
 	}
-	return nil, false, nil // device_joined, device_announce, interview started...
+	return nil, false, nil // device_announce, interview started...
 }
 
 // parsePermitJoin reads Zigbee2MQTT's answer to a request to open or close the
@@ -218,7 +220,11 @@ func Build(base string, a zigbee.Action) (Message, bool, error) {
 	case zigbee.Rename:
 		topic, body = base+"/bridge/request/device/rename", map[string]any{"from": v.IEEE, "to": v.To}
 	case zigbee.Expel:
-		topic, body = base+"/bridge/request/device/remove", map[string]any{"id": v.IEEE}
+		req := map[string]any{"id": v.IEEE}
+		if v.Force {
+			req["force"] = true // out of Zigbee2MQTT's list, whether it answers or not
+		}
+		topic, body = base+"/bridge/request/device/remove", req
 	default:
 		return Message{}, false, nil
 	}

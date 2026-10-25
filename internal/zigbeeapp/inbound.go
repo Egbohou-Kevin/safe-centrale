@@ -77,6 +77,12 @@ func (a *App) deviceCommand(deviceID string, m inbox.Message) {
 	a.submit(func(now time.Time) zigbee.Input { return wire.Command(d, env.ID, now) })
 }
 
+// orderMaxAge is how long a registry order stays good after it was written. The
+// broker keeps the adapter's session for a day, and the installer's tool gives up
+// after some seconds without an answer: a pairing order kept while the adapter was
+// down must not open the network hours later, for nobody.
+const orderMaxAge = time.Minute
+
 func (a *App) registryOrder(m inbox.Message) {
 	env, err := inbox.Envelope(m, a.cfg.Site, contract.TypeRegistryPair, contract.TypeRegistryRemove)
 	if err != nil {
@@ -84,6 +90,11 @@ func (a *App) registryOrder(m inbox.Message) {
 		return
 	}
 	if !a.seen.FirstTime(env.ID) {
+		return
+	}
+	if age := a.deps.Clock.Now().Sub(env.TS.Time); age > orderMaxAge {
+		a.log.Warn("ignoring a registry order written too long ago: the tool that sent it gave up",
+			"type", env.Type, "age", age.Round(time.Second))
 		return
 	}
 	if env.Type == contract.TypeRegistryPair {

@@ -10,7 +10,7 @@ import (
 
 // order applies one order of the pipe:
 //
-//	pair MODEL IEEE     a device joins and its interview succeeds
+//	pair MODEL IEEE     a device joins, and its interview succeeds
 //	send IEEE JSON      the device reports (last_seen is added)
 //	leave IEEE          the device leaves the network
 //	bridge online|offline
@@ -24,6 +24,7 @@ func (z *bridge) order(f []string) error {
 		if len(f) != 3 {
 			return errors.New("usage: pair MODEL IEEE")
 		}
+		z.event("device_joined", f[2], "")
 		z.event("device_interview", f[2], f[1])
 	case "send":
 		return z.report(f[1], strings.Join(f[2:], " "))
@@ -57,7 +58,9 @@ func (z *bridge) report(ieee, raw string) error {
 	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
 		return err
 	}
-	fields["last_seen"] = time.Now().UTC().Format(time.RFC3339)
+	// To the millisecond, as Zigbee2MQTT writes it: the adapter takes a message that
+	// says it was heard no later than the last one for a replay of its cache.
+	fields["last_seen"] = time.Now().UTC().Format("2006-01-02T15:04:05.000Z07:00")
 	z.mu.Lock()
 	name, ok := z.names[ieee]
 	qos, set := z.qos[ieee]

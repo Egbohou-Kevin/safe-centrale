@@ -118,7 +118,7 @@ func TestNewSessionNeedsASiteAndItsDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.timing.Confirm != 5*time.Second || s.timing.Open != 15*time.Second || s.timing.Grace != 5*time.Second {
+	if s.timing.Confirm != 5*time.Second || s.timing.Open != 15*time.Second || s.timing.Grace != 3*time.Minute+5*time.Second {
 		t.Errorf("default timing %+v", s.timing)
 	}
 	want := []string{
