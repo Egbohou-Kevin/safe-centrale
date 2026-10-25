@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"safehome/internal/adapter/filestore"
+	"safehome/internal/adapter/pidfile"
 	"safehome/internal/consoleapp"
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/escalation"
@@ -62,6 +63,11 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { stand.Process.Kill() })
+	running, err := pidfile.Lock(cfg.StateDir, hubconfig.PidFile) // a running hub holds its pid file
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer running()
 	os.WriteFile(filepath.Join(cfg.StateDir, hubconfig.PidFile), []byte(strconv.Itoa(stand.Process.Pid)+"\n"), 0o600)
 	if err := c.Set("u_owner", "2580"); err != nil {
 		t.Fatal(err)

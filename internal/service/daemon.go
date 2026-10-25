@@ -44,14 +44,16 @@ func OpenState(name, dir, pidName string, log *slog.Logger) (*filestore.Store, f
 	return store, release, nil
 }
 
-// ErrNotRunning: no live process holds the pid file.
+// ErrNotRunning: no process holds the pid file.
 var ErrNotRunning = errors.New("not running")
 
 // Reload tells the program whose pid file is pidName in dir to read its files again
-// (SIGHUP; see the hub's codes). It returns the process told, or ErrNotRunning.
+// (SIGHUP; see the hub's codes). It returns the process told, or ErrNotRunning. Only
+// the program that holds its pid file is told: the pid left in the file of a program
+// that is not running may now be another program's, which SIGHUP would stop.
 func Reload(dir, pidName string) (pid int, err error) {
-	pid, ok := pidfile.Read(dir, pidName)
-	if !ok || !pidfile.Alive(pid) {
+	pid, ok := pidfile.Held(dir, pidName)
+	if !ok {
 		return 0, ErrNotRunning
 	}
 	p, err := os.FindProcess(pid)

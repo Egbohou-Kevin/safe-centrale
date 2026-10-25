@@ -129,12 +129,17 @@ func TestASecondCopyRefusesTheState(t *testing.T) {
 	if err != nil || store == nil {
 		t.Fatalf("first copy: %v", err)
 	}
-	release()
-	// The parent process (go test) is alive and holds the file.
-	os.WriteFile(filepath.Join(dir, "hub.pid"), []byte(strconv.Itoa(os.Getppid())), 0o600)
 	if _, _, err := OpenState("hub", dir, "hub.pid", nil); err == nil || !strings.Contains(err.Error(), "another hub is already using") {
 		t.Fatalf("second copy: %v", err)
 	}
+	release()
+	// A pid left by a power cut, given again to a live process: no copy holds it.
+	os.WriteFile(filepath.Join(dir, "hub.pid"), []byte(strconv.Itoa(os.Getppid())), 0o600)
+	_, again, err := OpenState("hub", dir, "hub.pid", nil)
+	if err != nil {
+		t.Fatalf("a stale pid file: %v", err)
+	}
+	again()
 	file := filepath.Join(dir, "a-file")
 	os.WriteFile(file, nil, 0o600)
 	if _, _, err := OpenState("hub", file, "hub.pid", nil); err == nil || !strings.Contains(err.Error(), "cannot open the state directory") {
@@ -152,6 +157,17 @@ func TestReloadSignalsTheProcessOfThePidFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { stand.Process.Kill() })
+	// The pid of a live process in a file nobody holds (left by a power cut, the pid
+	// given again): that process is not the hub, it is not signalled.
+	os.WriteFile(filepath.Join(dir, "hub.pid"), []byte(strconv.Itoa(stand.Process.Pid)+"\n"), 0o600)
+	if _, err := Reload(dir, "hub.pid"); !errors.Is(err, ErrNotRunning) {
+		t.Fatalf("a stale pid file: %v", err)
+	}
+	// Held, with the stand-in's pid in it: the stand-in plays the hub.
+	release, err := Lock("hub", dir, "hub.pid")
+	if err != nil {
+		t.Fatal(err)
+	}
 	os.WriteFile(filepath.Join(dir, "hub.pid"), []byte(strconv.Itoa(stand.Process.Pid)+"\n"), 0o600)
 	if pid, err := Reload(dir, "hub.pid"); err != nil || pid != stand.Process.Pid {
 		t.Fatalf("%d %v", pid, err)
@@ -160,8 +176,9 @@ func TestReloadSignalsTheProcessOfThePidFile(t *testing.T) {
 	if err := stand.Wait(); !errors.As(err, &exit) || exit.Sys().(syscall.WaitStatus).Signal() != syscall.SIGHUP {
 		t.Fatalf("not sent SIGHUP: %v", err)
 	}
+	release() // the hub stops
 	if _, err := Reload(dir, "hub.pid"); !errors.Is(err, ErrNotRunning) {
-		t.Fatalf("a dead process: %v", err)
+		t.Fatalf("a stopped hub: %v", err)
 	}
 }
 

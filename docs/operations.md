@@ -124,9 +124,13 @@ centrale réelle).
 Sur la centrale, systemd démarre les programmes et les relance s'ils tombent :
 installation dans `systeme.md`, fichiers dans `deploy/`.
 
-1. Le fichier de pid `hub.pid` est posé dans le dossier d'état. Si un autre processus
-   vivant le tient, la centrale refuse de démarrer : deux centrales sur le même état
-   croiraient chacune posséder l'alarme.
+1. Le fichier de pid `hub.pid` est posé dans le dossier d'état, et la centrale le
+   tient par un verrou (`flock`) que le système lâche quand elle s'arrête, de quelque
+   façon que ce soit. Si un autre processus le tient, la centrale refuse de démarrer :
+   deux centrales sur le même état croiraient chacune posséder l'alarme. Un fichier
+   resté après une coupure de courant n'empêche rien, même si son pid a été redonné à
+   un autre programme au démarrage suivant : personne ne le tient. Il en va de même
+   pour le fichier de pid de chaque programme.
 2. L'état sauvegardé est lu. Un état abîmé des deux copies empêche le démarrage : c'est
    à la personne qui installe de décider.
 3. Le client MQTT se connecte (il réessaie sans fin si le broker n'est pas là : la
@@ -162,7 +166,9 @@ la connexion, retire `hub.pid`.
 La console locale peut aussi régler le code d'un contact pendant le mode installation
 (`security-install.md`). Après `codes set`, `codes remove` ou un code donné depuis la
 console, l'outil envoie `SIGHUP` à la centrale si elle
-tourne (il lit son pid dans `hub.pid`), qui relit les codes. Si le rechargement échoue,
+tourne (il lit son pid dans `hub.pid`, seulement si la centrale tient le fichier : le
+pid d'un fichier que personne ne tient peut être celui d'un autre programme, que le
+signal arrêterait), qui relit les codes. Si le rechargement échoue,
 les anciens codes restent en usage et une erreur est journalisée.
 
 La centrale prend les contacts tels qu'ils sont enregistrés au moment où elle relit
