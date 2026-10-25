@@ -188,6 +188,9 @@ func (e *Engine) pullBack(now time.Time) {
 	if step := e.step(); step > 0 && e.s.Deadline.After(now.Add(step)) {
 		e.s.Deadline = now.Add(step)
 	}
+	if latest := now.Add(e.cfg.EntryDelay); e.s.EntryEnds.After(latest) {
+		e.s.EntryEnds = latest
+	}
 }
 
 // step is the length of what the current deadline ends: the exit or the entry delay,
@@ -237,8 +240,11 @@ func (e *Engine) learn(current []Signal) []Signal {
 // tick is late.
 func (e *Engine) tick(now time.Time) []Action {
 	var out []Action
-	for !e.s.Deadline.IsZero() && !now.Before(e.due()) {
-		ref := e.due()
+	for ref := e.due(); !ref.IsZero() && !now.Before(ref); ref = e.due() {
+		if late := e.lateEntryDue(); !late.IsZero() && ref.Equal(late) {
+			out = append(out, e.lateEntry(ref)...)
+			continue
+		}
 		switch e.s.Mode {
 		case ModeArming:
 			out = append(out, e.finishArming(ref)...)
@@ -310,6 +316,7 @@ func (e *Engine) setMode(m Mode, at time.Time) {
 // deadline becomes that of the next automatic arming.
 func (e *Engine) disarm(at time.Time) {
 	e.s.Incident, e.s.EntryCause, e.s.TimedOut, e.s.Raised = nil, nil, nil, nil
+	e.s.EntryEnds = time.Time{}
 	e.s.Bypassed = map[string]bool{}
 	e.setMode(ModeDisarmed, at)
 }

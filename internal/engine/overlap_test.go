@@ -149,3 +149,116 @@ func TestPermanentZonesCannotBeBypassed(t *testing.T) {
 	h.signal(panic_, SensorPanic, true)
 	h.mustBe(ModeTriggered)
 }
+
+// smoke2 is a second fire detector, in the stock room.
+const smoke2 = "dev_smoke2"
+
+func withSmoke2(c *Config) { c.Zones[smoke2] = Zone{Name: "stock", Kind: ZoneFire} }
+
+// A fire set off again during an intrusion, after its first detector went back to
+// rest, is not lost: it alerts again (the first alert may have been answered "only
+// steam") and the siren rings for it once the intrusion ends. The same goes for a
+// second detector, and for one that stays in alarm while the first one clears.
+func TestAFireSetOffAgainDuringAnIntrusionStillRings(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		again func(h *harness) []Action
+	}{
+		{"same detector", func(h *harness) []Action { return h.signal(smoke, SensorSmoke, true) }},
+		{"other detector", func(h *harness) []Action { return h.signal(smoke2, SensorSmoke, true) }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHarness(t, withSmoke2)
+			_, first := fireDuringIntrusion(t, h)
+			h.signal(smoke, SensorSmoke, false)
+			al := alerts(c.again(h))
+			if len(al) != 1 || al[0].Kind != AlertFire || al[0].Incident == first {
+				t.Fatalf("a fire after the first one cleared alerts under a new incident: %v", al)
+			}
+			mustRingFire(t, h, h.cmd(CmdDisarm, goodCode("u_1")), al[0].Incident)
+		})
+	}
+
+	// A second detector while the first one waits joins its incident; the first one
+	// clearing does not take the siren from the second.
+	h := newHarness(t, withSmoke2)
+	_, fire := fireDuringIntrusion(t, h)
+	if al := alerts(h.signal(smoke2, SensorSmoke, true)); len(al) != 0 {
+		t.Fatalf("one fire alert while a fire waits: %v", al)
+	}
+	h.signal(smoke, SensorSmoke, false)
+	mustRingFire(t, h, h.cmd(CmdDisarm, goodCode("u_1")), fire)
+	h.advance(19 * time.Minute)
+	h.mustBe(ModeDisarmed) // the fire rang once, not once per detector
+}
+
+// A tamper (or a fire) during an entry delay rings at once, but does not take the
+// intrusion's place: nobody typed a code before the delay ran out, so whoever came in
+// is an intruder, with an intrusion's alert and escalation, not a tamper's single
+// message.
+func TestAnAlarmDuringAnEntryDelayDoesNotDropTheIntrusion(t *testing.T) {
+	for _, other := range []struct {
+		name string
+		kind AlertKind
+		do   func(h *harness) []Action
+	}{
+		{"tamper", AlertTamper, func(h *harness) []Action { return h.signal(tamper, SensorTamper, true) }},
+		{"fire", AlertFire, func(h *harness) []Action { return h.signal(smoke, SensorSmoke, true) }},
+	} {
+		t.Run(other.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.armed()
+			h.open(door)
+			h.advance(10 * time.Second)
+			first := onlyEvent[Triggered](t, other.do(h)).Incident
+			h.e = restart(t, h) // what is left of the entry delay is saved
+			h.e.Boot(h.now, nil)
+			if len(alerts(h.moves())) != 0 {
+				t.Fatal("motion during the entry delay is the person coming in")
+			}
+			al := alerts(h.advance(h.cfg.EntryDelay - 10*time.Second))
+			if len(al) != 1 || al[0].Kind != AlertIntrusion || al[0].Incident == first {
+				t.Fatalf("the entry delay that ran out alerts an intrusion under its own incident: %v", al)
+			}
+			h.mustBe(ModeTriggered)
+			if s := h.e.State(h.now); s.Incident != first {
+				t.Fatalf("the %s keeps the siren: %+v", other.name, s)
+			}
+			ended := onlyEvent[Disarmed](t, h.cmd(CmdDisarm, goodCode("u_1"))).Incidents
+			if !slices.Contains(ended, al[0].Incident) {
+				t.Fatalf("the disarm ends the intrusion's escalation: %v", ended)
+			}
+		})
+	}
+
+	// Whoever disarms in time is no intruder.
+	h := newHarness(t)
+	h.armed()
+	h.open(door)
+	h.signal(tamper, SensorTamper, true)
+	h.advance(20 * time.Second)
+	h.cmd(CmdDisarm, goodCode("u_1"))
+	if al := alerts(h.advance(time.Hour)); len(al) != 0 {
+		t.Fatalf("no intrusion after a disarm: %v", al)
+	}
+}
+
+// An alarm silenced before the entry delay it interrupted ran out gives the rest of
+// the delay back: the code that silenced the siren did not disarm.
+func TestTheEntryDelayGoesOnOnceTheAlarmThatInterruptedItIsSilenced(t *testing.T) {
+	h := newHarness(t)
+	h.armed()
+	h.open(door)
+	h.advance(10 * time.Second)
+	h.signal(tamper, SensorTamper, true)
+	h.advance(10 * time.Second)
+	h.cmd(CmdSilence, goodCode("u_1"))
+	h.mustBe(ModeEntryDelay)
+	if s := h.e.State(h.now); !s.EndsAt.Equal(t0.Add(h.cfg.ExitDelay + h.cfg.EntryDelay)) {
+		t.Fatalf("the entry delay keeps its end: %+v", s)
+	}
+	as := h.advance(h.cfg.EntryDelay - 20*time.Second)
+	if tr := onlyEvent[Triggered](t, as); tr.Cause.DeviceID != door || count[SirenOn](as) != 1 {
+		t.Fatalf("the entry delay that ran out rings the intrusion: %v", as)
+	}
+}

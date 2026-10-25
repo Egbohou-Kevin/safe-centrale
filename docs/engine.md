@@ -120,6 +120,7 @@ zone qu'il ne peut pas déclencher.
 | `entry_delay` | ordre de désarmement valide | `disarmed` | arrête les délais, publie `alarm.disarmed` |
 | `entry_delay` | délai d'entrée écoulé | `triggered` | idem déclenchement |
 | `entry_delay` | zone `instant` | `triggered` | idem déclenchement |
+| `entry_delay` | sabotage, fumée, panique qui sonne | `triggered` | idem déclenchement ; le délai d'entrée continue derrière l'alarme et devient une intrusion s'il n'est pas arrêté (voir « Une alarme pendant une autre ») |
 | `armed` | ordre de désarmement | `disarmed` | publie `alarm.disarmed` ; termine l'escalade des intrusions et sabotages de cet armement dont la sirène s'est arrêtée seule, que `alarm.disarmed` nomme dans `incidents` |
 | `triggered` | ordre de désarmement | `disarmed` | `siren.off`, publie `alarm.cleared` et `alarm.disarmed` ; termine l'escalade de l'alarme en cours (et de celles de l'armement arrêtées seules), toutes nommées dans `incidents` d'`alarm.disarmed` |
 | `triggered` | `alarm.silence`, code valide | état d'avant l'alarme | `siren.off`, `alarm.cleared` ; termine l'escalade de l'alarme en cours |
@@ -220,8 +221,15 @@ de sirène à lui.
   que l'autre alarme sonne, puisque la sirène sonne déjà. Il attend sa fin, quelle qu'elle
   soit (code, désarmement, cycles épuisés), puis sonne à son tour, sous l'incident de son
   alerte, avec ses propres cycles, sans alerter de nouveau. La personne qui arrête une
-  intrusion au clavier entend donc la sirène repartir pour le feu. Un détecteur revenu au
-  repos avant la fin de l'autre alarme ne sonne plus.
+  intrusion au clavier entend donc la sirène repartir pour le feu. Le moteur retient
+  chaque détecteur en alarme : un deuxième détecteur qui se déclenche pendant que le
+  premier attend rejoint son incident, sans nouvelle alerte, et le feu sonne tant que
+  l'un d'eux est encore en alarme. Un détecteur revenu au repos avant la fin de l'autre
+  alarme ne sonne plus. Quand tous sont revenus au repos, un détecteur qui se déclenche
+  ensuite (le même ou un autre) est un nouveau feu : il alerte de nouveau, sous un
+  nouvel incident (la première alerte a pu être acquittée « ce n'était que de la
+  vapeur »), et attend la sirène à son tour. Corrigé le 25 octobre 2026 après une
+  revue : ce second feu était perdu, sans alerte ni sirène.
 - **Intrusion** (une zone `instant`) quand le site est armé sous l'alarme (un feu ou un
   sabotage alors qu'il était armé) : une alerte, sans sirène à elle. Comme pendant un
   délai d'entrée, la porte d'entrée et l'intérieur ne disent rien : celui qui entre
@@ -231,6 +239,19 @@ de sirène à lui.
   signalé (et ne le redit pas après un redémarrage) que s'il l'a vraiment signalé.
 
 L'état publié (`alarm.state`) reste celui de l'alarme qui sonne.
+
+Une alarme d'un autre genre qu'une intrusion pendant un délai d'entrée (sabotage, feu,
+panique qui sonne) sonne aussitôt, mais ne prend pas la place de l'intrusion : le délai
+d'entrée continue derrière elle, et il est gardé dans la sauvegarde du moteur
+(`entry_ends`). Si aucun code ne l'arrête avant sa fin, celui qui est entré est un
+intrus : l'intrusion lève son alerte sous son propre incident, avec l'escalade d'une
+intrusion (vagues, gardien, rappels), comme une intrusion pendant une autre alarme ;
+le désarmement qui termine l'armement termine son escalade. Sinon, quelqu'un qui arrache
+le capot du clavier ou de la sirène pendant les 45 secondes ramènerait l'escalade
+complète d'une intrusion au seul message d'un sabotage. Un désarmement avant la fin
+termine tout, sans intrusion. Un `alarm.silence` (qui ne désarme pas) avant la fin rend
+le reste du délai d'entrée : l'état revient à `entry_delay`, avec sa fin d'origine.
+Corrigé le 25 octobre 2026 après une revue.
 
 ## Sources d'armement et de désarmement
 
