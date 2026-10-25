@@ -20,9 +20,7 @@
     },
     "zone_name": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 32,
-      "description": "Nom de la zone de la cause tel que configuré (Entrée), pour une intrusion, un incendie, une panique ou un sabotage d'un seul appareil d'une zone ; absent sinon. Ne pas confondre avec zone, le fuseau"
+      "description": "Nom de la zone de la cause tel que configuré (Entrée), 32 caractères au plus, pour une intrusion, un incendie, une panique ou un sabotage d'un seul appareil d'une zone ; absent sinon. Ne pas confondre avec zone, le fuseau. Sans minLength ni maxLength : un nom de zone hors norme ne doit jamais faire refuser l'alerte, le lecteur le coupe ou l'ignore"
     },
     "kind": {
       "type": "string",

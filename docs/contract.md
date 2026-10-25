@@ -482,7 +482,8 @@ lecteur ne le montre pas comme un compte à rebours en cours (« reprend à 16:2
   levés par un seul appareil d'une zone ; il est absent sinon (plusieurs appareils, un
   appareil hors zone comme une sirène ou un clavier, une panne de la centrale, du GSM
   ou des piles). À ne pas confondre avec `zone`, le fuseau. Sans lui, l'alerte se dit
-  comme avant.
+  comme avant. Le schéma ne le borne pas : un nom vide ou trop long ne doit jamais
+  faire refuser l'alerte, celui qui le lit le coupe ou l'ignore.
 - `alert.result` : le canal répond. Champs : `ref` (l'`id` du `alert.request`),
   `status` (`queued`, `sent`, `delivered`, `failed`) et `reason` en cas d'échec
   (`no_network`, `no_credit`, `modem_error`, `timeout`, `busy`, `unreachable`,

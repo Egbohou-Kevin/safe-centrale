@@ -435,22 +435,23 @@ func TestSchemasRejectInvalidMessages(t *testing.T) {
 	}
 }
 
-// zone_name is the zone of the cause, never empty and as long as a device name at
-// most: a phone can show it as it comes.
-func TestAnAlertNamesItsZoneWithinBounds(t *testing.T) {
+// zone_name is the zone of the cause. The hub never sends it empty nor longer than a
+// device name (wire), but the schema bounds neither: whoever checks a request against
+// it must never refuse the alert for an odd zone name.
+func TestAnOddZoneNameNeverRefusesTheAlert(t *testing.T) {
 	const ok = `{"incident":"x","incident_at":"2026-10-24T16:15:00.000Z","zone":"Africa/Lome","kind":"intrusion","urgency":"critical","zone_name":"Entr\u00e9e"}`
-	if err := schematest.Check("alert-request.json", []byte(ok)); err != nil {
-		t.Fatalf("the reference alert must be valid: %v", err)
-	}
 	for name, zone := range map[string]string{
+		"named":    `"Entr\u00e9e"`,
 		"empty":    `""`,
-		"too long": `"` + strings.Repeat("a", MaxDeviceName+1) + `"`,
-		"a number": `3`,
+		"too long": `"` + strings.Repeat("a", 3*MaxDeviceName) + `"`,
 	} {
 		raw := strings.Replace(ok, `"Entr\u00e9e"`, zone, 1)
-		if err := schematest.Check("alert-request.json", []byte(raw)); err == nil {
-			t.Errorf("%s: accepted %s", name, raw)
+		if err := schematest.Check("alert-request.json", []byte(raw)); err != nil {
+			t.Errorf("%s: refused %s: %v", name, raw, err)
 		}
+	}
+	if raw := strings.Replace(ok, `"Entr\u00e9e"`, `3`, 1); schematest.Check("alert-request.json", []byte(raw)) == nil {
+		t.Errorf("a number: accepted %s", raw)
 	}
 }
 
