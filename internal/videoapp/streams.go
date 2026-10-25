@@ -87,7 +87,21 @@ func (a *App) follow(ctx context.Context, session string, st Stream) {
 			})
 			return
 		}
-		a.submit(func(now time.Time) video.Input { return video.Progress{Now: now, Session: session, Bytes: n} })
+		a.progress(session, n)
+	}
+}
+
+// progress tells the core how many bytes a stream sent, and publishes the usage if
+// it moved (to the megabyte): the core saves it in steps, so its saved state does not
+// change, nor say so, at every progress.
+func (a *App) progress(session string, n int64) {
+	err := a.loop.Post(a.life, func(now time.Time) []video.Action {
+		acts := a.core.Handle(video.Progress{Now: now, Session: session, Bytes: n})
+		a.publishStatus(now)
+		return acts
+	})
+	if err != nil && a.life.Err() == nil {
+		a.log.Error("handing an input to the video service failed", "err", err)
 	}
 }
 

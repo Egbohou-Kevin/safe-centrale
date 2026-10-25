@@ -40,7 +40,7 @@ func (ct Contact) validate() error {
 type Audience string
 
 const (
-	// AudienceFirst is the deputy if there is one, else the owner.
+	// AudienceFirst is the deputies if there are any, else the owners.
 	AudienceFirst    Audience = "first"
 	AudienceOwner    Audience = "owner"
 	AudienceGuard    Audience = "guard"
@@ -260,32 +260,34 @@ func (c Config) contact(id string) (Contact, bool) {
 	return Contact{}, false
 }
 
-// audience lists the contacts an audience designates, in configuration order.
+// audience lists the contacts an audience designates, in configuration order. A
+// role may be held by several contacts (two co-owners, two deputies): an audience
+// that names a role tells all of them, or the second of a couple would only hear of
+// an intrusion at the first reminder, and never of a tamper.
 func (c Config) audience(a Audience) []Contact {
-	var out []Contact
-	switch a {
-	case AudienceFirst:
-		for _, role := range []Role{RoleDeputy, RoleOwner} {
-			for _, ct := range c.Contacts {
-				if ct.Role == role {
-					return []Contact{ct}
-				}
-			}
+	if a == AudienceFirst {
+		if deputies := c.withRole(RoleDeputy); len(deputies) > 0 {
+			return deputies
 		}
-		return nil
-	case AudienceOwner:
-		for _, ct := range c.Contacts {
-			if ct.Role == RoleOwner {
-				return []Contact{ct}
-			}
-		}
-		return nil
+		return c.withRole(RoleOwner)
 	}
+	var out []Contact
 	for _, ct := range c.Contacts {
 		switch {
 		case a == AudienceEveryone,
+			a == AudienceOwner && ct.Role == RoleOwner,
 			a == AudienceGuard && ct.Role == RoleGuard,
 			a == AudienceRest && (ct.Role == RoleManager || ct.Role == RoleOther):
+			out = append(out, ct)
+		}
+	}
+	return out
+}
+
+func (c Config) withRole(r Role) []Contact {
+	var out []Contact
+	for _, ct := range c.Contacts {
+		if ct.Role == r {
 			out = append(out, ct)
 		}
 	}

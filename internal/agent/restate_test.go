@@ -182,3 +182,32 @@ func TestTheDeviceListGoesUpLikeTheHealth(t *testing.T) {
 		t.Fatalf("said again: %v", got)
 	}
 }
+
+// A state said again (its new id is the agent's) still queued at a restart: the hub's
+// broker gives back the hub's own state, which the cloud already has. It is not sent
+// again under a new number, which the cloud would drop as a duplicate of its id, and
+// the hole it left would never close.
+func TestAStateSaidAgainAndStillQueuedAtARestartDoesNotLeaveAHole(t *testing.T) {
+	for _, tried := range []bool{false, true} {
+		h := newHarness(t)
+		state, stateID := h.msg(contract.TypeAlarmState, contract.AlarmStateData{State: contract.StateArmed})
+		given := func() []Action { return h.handle(Local{Now: h.now, Topic: topic("alarm", "state"), Payload: state}) }
+		given()
+		h.linkUp()
+		h.send() // the hub's state reaches the cloud
+		h.handle(Link{Now: h.now, Up: false})
+		if got := h.restated(h.handle(Link{Now: h.now, Up: true, Transport: "mqtts"})); len(got) != 1 {
+			t.Fatalf("said again: %v", got)
+		}
+		if tried {
+			h.next() // numbered, then the agent stops before the cloud took it
+		}
+		h.restart()
+		given()
+		for _, it := range h.r.queue {
+			if it.ID == stateID {
+				t.Fatalf("tried %v: the hub's state the cloud has goes up again (seq %d)", tried, it.Seq)
+			}
+		}
+	}
+}

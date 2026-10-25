@@ -32,7 +32,7 @@ func (r *Relay) cloud(c Cloud) []Action {
 		return refuse("wrong type for the topic: " + env.Type)
 	case slices.Contains(r.s.Seen, env.ID):
 		return nil // a duplicate: already passed on, or answered
-	case !r.allow(c.Now):
+	case !replies[env.Type] && !r.allow(c.Now):
 		return r.overLimit(c, env)
 	}
 	if late, ok := r.lateResult(env); ok {
@@ -55,6 +55,13 @@ func (r *Relay) cloud(c Cloud) []Action {
 	}
 	return []Action{PublishLocal{Topic: c.Topic, Payload: c.Payload, Code: route.code}}
 }
+
+// replies are the cloud's answers to what the agent sent, checked against what it
+// sent (an alert it follows, an incident it saw go up, a photo it announced): they do
+// not count against the limit, which is there for orders. Their number grows with the
+// contacts and the channels of a large alarm, and one dropped would be lost for good
+// (an acknowledgement, or a photo never sent).
+var replies = map[string]bool{contract.TypeAlertResult: true, contract.TypeAlertAck: true, contract.TypePhotoUpload: true}
 
 // markSeen keeps the id of a message passed on, to drop it if it comes again.
 func (r *Relay) markSeen(id string) {

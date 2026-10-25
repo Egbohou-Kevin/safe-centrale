@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime"
+	"sync/atomic"
 	"time"
 )
 
@@ -82,6 +84,8 @@ type Loop[In, Act, Snap any] struct {
 	o       Options[In, Act, Snap]
 	log     *slog.Logger
 	tasks   chan task[Act]
+	closing chan struct{} // closed when Run starts to stop: no task is taken any more
+	sending atomic.Int32  // enqueue calls between their look at closing and their send
 	stopped chan struct{}
 	last    time.Time // latest time handed to the core: time never goes back
 	saved   []byte    // last state written, to skip identical writes
@@ -109,6 +113,7 @@ func New[In, Act, Snap any](o Options[In, Act, Snap]) (*Loop[In, Act, Snap], err
 		o:       o,
 		log:     o.Logger,
 		tasks:   make(chan task[Act], queueSize),
+		closing: make(chan struct{}),
 		stopped: make(chan struct{}),
 	}
 	if l.log == nil {
@@ -137,9 +142,12 @@ func New[In, Act, Snap any](o Options[In, Act, Snap]) (*Loop[In, Act, Snap], err
 
 // now reads the clock, never going back: if the system clock steps backward (a
 // clock correction, a dying RTC battery), the core keeps seeing time that moves
-// forward.
+// forward. The monotonic reading of the real clock is dropped first: Go compares two
+// times that both carry one by that reading alone, which would hide the step back
+// from the guard, and the core works on wall time (deadlines read back from a saved
+// state carry none).
 func (l *Loop[In, Act, Snap]) now() time.Time {
-	t := l.o.Clock.Now()
+	t := l.o.Clock.Now().Round(0)
 	if t.Before(l.last) {
 		t = l.last
 	}
@@ -159,17 +167,42 @@ func (l *Loop[In, Act, Snap]) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			stop()
+			l.drain(context.WithoutCancel(ctx))
 			return ctx.Err()
 		case t := <-l.tasks:
 			stop()
-			if t.run != nil {
-				l.process(ctx, t.run)
-			}
-			if t.done != nil {
-				close(t.done)
-			}
+			l.serve(ctx, t)
 		case <-fired:
 			l.process(ctx, func(now time.Time) []Act { return l.o.Core.Handle(l.o.Core.Tick(now)) })
+		}
+	}
+}
+
+func (l *Loop[In, Act, Snap]) serve(ctx context.Context, t task[Act]) {
+	if t.run != nil {
+		l.process(ctx, t.run)
+	}
+	if t.done != nil {
+		close(t.done)
+	}
+}
+
+// drain refuses new tasks, then carries out those already taken: a task the loop took
+// (Submit returned nil) is done even when the loop stops, so that a message handler
+// can tell the broker it took the message (see mqtt.Options.Take). It waits for the
+// callers caught between their look and their send, which never wait long: the queue
+// is being emptied. Their context is not the stopping one: the actions still go out.
+func (l *Loop[In, Act, Snap]) drain(ctx context.Context) {
+	close(l.closing)
+	for {
+		select {
+		case t := <-l.tasks:
+			l.serve(ctx, t)
+		default:
+			if l.sending.Load() == 0 && len(l.tasks) == 0 {
+				return
+			}
+			runtime.Gosched()
 		}
 	}
 }
@@ -260,9 +293,13 @@ func (l *Loop[In, Act, Snap]) Post(ctx context.Context, fn func(now time.Time) [
 	return l.enqueue(ctx, task[Act]{run: fn})
 }
 
+// enqueue hands a task to the loop. Once the loop is stopping, it takes none: what
+// enqueue took is carried out (see drain).
 func (l *Loop[In, Act, Snap]) enqueue(ctx context.Context, t task[Act]) error {
+	l.sending.Add(1)
+	defer l.sending.Add(-1)
 	select {
-	case <-l.stopped:
+	case <-l.closing:
 		return ErrStopped
 	default:
 	}

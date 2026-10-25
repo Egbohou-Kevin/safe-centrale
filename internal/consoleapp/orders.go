@@ -3,6 +3,7 @@ package consoleapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"safehome/internal/contract"
@@ -102,6 +103,7 @@ func (a *App) Remove(ctx context.Context, id string) error {
 	}
 	result := make(chan error, 1)
 	if err := a.submit(func(wctx context.Context) { result <- a.remove(sctx, wctx, id) }); err != nil {
+		a.site.CancelRemoval(id)
 		return err
 	}
 	select {
@@ -116,17 +118,26 @@ func (a *App) Remove(ctx context.Context, id string) error {
 
 // remove runs on the worker: it removes the device from the network, unless the mode
 // whose context is sctx ended before the order's turn came, then from the site. The
-// wait for the adapter is bounded by the session, and by wctx, the console's life.
+// wait for the adapter is bounded by the session, and by wctx, the console's life. An
+// order that went out without an answer may still be carried out a moment later: the
+// site stops using the device all the same, and the installer is told.
 func (a *App) remove(sctx, wctx context.Context, id string) error {
 	if sctx.Err() != nil {
+		a.site.CancelRemoval(id)
 		return ErrClosed
 	}
-	if err := a.sess.Remove(wctx, id); err != nil {
+	err := a.sess.Remove(wctx, id)
+	switch {
+	case err == nil:
+		a.log.Info("device removed from the console", "device", id)
+	case errors.Is(err, install.ErrUnconfirmed):
+		a.log.Warn("removal not confirmed: the device is taken out of the site all the same", "device", id, "err", err)
+	default:
+		a.site.CancelRemoval(id)
 		return err
 	}
-	a.log.Info("device removed from the console", "device", id)
-	_, err := a.site.FinishRemoval(id)
-	return err
+	_, ferr := a.site.FinishRemoval(id)
+	return errors.Join(err, ferr)
 }
 
 // Finish asks the hub to close the installation mode: the console stops when the hub

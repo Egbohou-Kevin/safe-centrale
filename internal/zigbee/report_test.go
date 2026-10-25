@@ -103,14 +103,18 @@ func TestKeypadAndPanicActionsAreEventsEveryTime(t *testing.T) {
 
 // A key dates from when Zigbee2MQTT heard it: one pressed while the adapter was down
 // reaches us late, and must look as old as it is. Never later than now.
+// Each key on a keypad of its own: Zigbee2MQTT says them in the order it heard them.
 func TestAnActionDatesFromWhenItWasHeard(t *testing.T) {
-	h := newHarness(t)
-	h.add("dev_kp", ieeeKeypad, "KP-1")
+	now := newHarness(t).now
 	for heard, want := range map[time.Time]time.Time{
-		h.now.Add(-2 * time.Hour): h.now.Add(-2 * time.Hour),
-		h.now.Add(time.Hour):      h.now,
-		{}:                        h.now,
+		now.Add(-2 * time.Hour): now.Add(-2 * time.Hour),
+		now.Add(time.Hour):      now,
+		{}:                      now,
 	} {
+		h := newHarness(t)
+		h.now = now.Add(-3 * time.Hour) // paired before the key
+		h.add("dev_kp", ieeeKeypad, "KP-1")
+		h.now = now
 		out := h.do(Report{Now: h.now, Name: "dev_kp", Fields: map[string]any{"action": "disarm"}, Heard: heard})
 		if ch := all[Changed](out); len(ch) != 1 || !ch[0].Since.Equal(want) {
 			t.Fatalf("heard %v: %+v", heard, out)

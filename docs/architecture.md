@@ -98,8 +98,13 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   déclenchée et un état en retard qu'un état sauvegardé pour des actions que personne
   n'a faites). La boucle est générique : elle ne connaît ni le moteur ni la supervision,
   seulement des fonctions (`Core`). Le temps, le stockage et la sortie sont des ports :
-  les tests la font tourner avec une horloge simulée. Le temps ne recule jamais pour le
-  domaine, même si l'horloge système est corrigée en arrière. `driver.Every` répète un
+  les tests la font tourner avec une horloge simulée. Quand elle s'arrête, elle ne
+  prend plus de tâche et fait celles qu'elle a déjà prises : un programme peut dire au
+  broker qu'il a pris un message dès que la boucle l'a accepté (option `Take` de
+  l'adaptateur MQTT, utilisée par l'adaptateur Zigbee et l'agent). Le temps ne recule jamais pour le
+  domaine, même si l'horloge système est corrigée en arrière : la boucle lui donne
+  l'heure murale, sans la lecture monotone que Go ajoute à `time.Now` (deux heures qui
+  en portent une se comparent par elle seule, ce qui cacherait le recul). `driver.Every` répète un
   travail (un statut, le battement de cœur) sur la même horloge. La fausse horloge des
   tests (`drivertest`) fait comme la vraie : ses minuteries suivent une horloge
   monotone, que `Set` ne bouge pas.
@@ -161,18 +166,28 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   bastion). Détail dans `maintenance.md`.
 - **La configuration réglée depuis le cloud** (`config.set`) : sa couche application
   (`internal/configapp`) tourne dans le programme de la centrale. Elle ne connaît ni
-  fichier ni processus : vérifier, garder et redémarrer sont des ports (`Check`,
-  `Save`, `Restart`), et elle ne lit pas l'horloge. Elle redémarre aussi la centrale,
-  à un moment calme, quand `site-devices.json` a changé (port `DevicesChanged`) : elle
-  le vérifie à chaque état de l'alarme, mode installation ou message de configuration.
-  `internal/hub` n'y a aucune part. Le fichier qui garde cette
+  fichier ni processus : vérifier, garder, redémarrer et savoir si le moment est calme
+  sont des ports (`Check`, `Save`, `Restart`, `Quiet`), et elle ne lit pas l'horloge.
+  Elle redémarre aussi la centrale, à un moment calme, quand `site-devices.json` a
+  changé (port `DevicesChanged`) : elle le vérifie à chaque état de l'alarme, mode
+  installation ou message de configuration. `internal/hub` ne fait que répondre à
+  `Quiet` (`Hub.Quiet`) : le moteur dit son propre état, après les entrées déjà en
+  file, car l'état publié sur `alarm/state` revient par le broker en retard sur lui.
+  Son travail (vérifier et écrire une configuration sur la carte SD, interroger le
+  moteur) se fait sur sa propre goroutine, jamais sur celle du client MQTT, qui porte
+  tous les messages de la centrale. Un arrêt normal finit ce travail ; un plantage
+  peut perdre une configuration reçue à l'instant, sans `config.applied` pour elle.
+  Le fichier qui garde cette
   configuration dans le dossier d'état est `internal/siteconfig`, qui ne connaît que le
   contrat ; la centrale, la passerelle GSM et la vidéo le lisent au démarrage.
 - **L'arrêt** a la même forme dans toutes les couches application qui ont une boucle
   (centrale, passerelle, Zigbee, agent, vidéo, maintenance). Tout tourne sur un
   contexte `life`, annulé dès que le contexte de `Run` se termine. Puis `Run` attend
   la fin de ses goroutines et fait un dernier envoi de la file (`Flush`, 3 s au plus).
-  Un message qui arrive pendant ce temps est abandonné sans erreur au journal.
+  Un message qui arrive pendant ce temps est abandonné sans erreur au journal ;
+  l'adaptateur Zigbee et l'agent ne l'acquittent pas, et le broker le leur redonne au
+  démarrage suivant. Les autres programmes l'acquittent encore, et il est perdu (un
+  état retenu revient à la connexion suivante, un événement non).
 - **Les lectures de configuration** (`internal/hubconfig`, `internal/gsmconfig`, etc.)
   partagent `internal/configfile` : JSON strict, niveau de journal, durées, secrets,
   écriture atomique. L'en-tête commun des fichiers (`site`, `broker_url`, `client_id`,

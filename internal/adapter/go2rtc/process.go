@@ -113,10 +113,12 @@ func secrets(sources []string, target string) []string {
 		}
 	}
 	if target != "" {
-		out = append(out, target)
+		// The target is also a query value of the request to go2rtc: an HTTP error
+		// quotes that URL, where it is escaped once more, its token twice.
+		out = append(out, target, url.QueryEscape(target))
 		if u, err := url.Parse(target); err == nil {
 			if tok := u.Query().Get("token"); tok != "" {
-				out = append(out, tok, url.QueryEscape(tok))
+				out = append(out, tok, url.QueryEscape(tok), url.QueryEscape(url.QueryEscape(tok)))
 			}
 		}
 	}

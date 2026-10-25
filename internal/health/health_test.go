@@ -198,7 +198,8 @@ func TestMainsBackIsAnnouncedOnlyAfterABatteryAlert(t *testing.T) {
 		t.Fatalf("%+v", a)
 	}
 	none(t, h.mains(false)) // said once
-	h.mains(true)
+	h.hubBattery(30)
+	none(t, h.mains(true))  // the first alert stays used until a recharge, the urgent level is not reached
 	none(t, h.mains(false)) // no new battery alert since: nothing owed
 }
 
@@ -448,5 +449,30 @@ func TestDefaultsMatchSpecification(t *testing.T) {
 	if c.HubBatteryWarn != 40 || c.HubBatteryCritical != 10 || c.HubBatteryRearm != 60 ||
 		c.DeviceBatteryLow != 15 || c.DeviceBatteryRearm != 30 || c.SummaryAt != (TimeOfDay{9, 0}) {
 		t.Fatalf("defaults differ from docs/escalation.md: %+v", c)
+	}
+}
+
+// A second cut before the battery recharged above 60 %: the first alert stays used
+// (once per recharge), but the urgent one is due again, the hub may go dark during
+// this cut, and the return of the power is announced again.
+func TestTheUrgentBatteryAlertIsDueAgainAtEachCut(t *testing.T) {
+	h := newHarness(t)
+	h.hubBattery(100)
+	h.mains(true)
+	one(t, h.hubBattery(40))
+	one(t, h.hubBattery(9))
+	one(t, h.mains(false))
+	h.hubBattery(35)
+	none(t, h.mains(true))
+	none(t, h.hubBattery(20))
+	if a := one(t, h.hubBattery(10)); a.Urgency != UrgencyCritical {
+		t.Fatalf("%+v", a)
+	}
+	if a := one(t, h.mains(false)); a.Kind != AlertMainsRestored {
+		t.Fatalf("%+v", a)
+	}
+	// Already at the urgent level when the power goes again: told at once.
+	if a := one(t, h.mains(true)); a.Urgency != UrgencyCritical {
+		t.Fatalf("%+v", a)
 	}
 }

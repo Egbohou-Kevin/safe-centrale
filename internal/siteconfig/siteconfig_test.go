@@ -55,9 +55,11 @@ func TestBadConfigurationsAreRefused(t *testing.T) {
 	if _, _, err := Read(dir); err == nil {
 		t.Fatal("a damaged file read")
 	}
+	// A file that reads but no longer fits: refused, under its version, for the hub
+	// to tell the cloud which version it refuses.
 	os.WriteFile(filepath.Join(dir, FileName), []byte(`{"version":2,"entry_delay_s":900}`), 0o600)
-	if _, _, err := Read(dir); err == nil {
-		t.Fatal("an invalid file read")
+	if got, found, err := Read(dir); err == nil || !found || !reflect.DeepEqual(got, contract.ConfigSetData{Version: 2}) {
+		t.Fatalf("an invalid file: %+v %v %v", got, found, err)
 	}
 	if err := Write(filepath.Join(dir, "none"), contract.ConfigSetData{Version: 1}); err == nil {
 		t.Fatal("written in a missing folder")

@@ -164,11 +164,12 @@ func TestTheHubRefusesToStartOnADamagedState(t *testing.T) {
 func TestASecondHubOnTheSameStateIsRefused(t *testing.T) {
 	state := t.TempDir()
 	cfg := writeConfig(t, "mqtt://127.0.0.1:1", state, "")
-	// Another live process (the test's parent) holds the pid file.
-	pid := []byte(strconv.Itoa(os.Getppid()) + "\n")
-	if err := os.WriteFile(filepath.Join(state, pidName), pid, 0o600); err != nil {
+	// A hub that runs holds the pid file.
+	running, err := pidfile.Lock(state, pidName)
+	if err != nil {
 		t.Fatal(err)
 	}
+	pid, _ := os.ReadFile(filepath.Join(state, pidName))
 	var out, errb drivertest.SyncBuffer
 	code := run(context.Background(), []string{"run", "-config", cfg}, strings.NewReader(""), &out, &errb)
 	if code != 1 || !strings.Contains(errb.String(), "already using") {
@@ -177,16 +178,20 @@ func TestASecondHubOnTheSameStateIsRefused(t *testing.T) {
 	if got, _ := os.ReadFile(filepath.Join(state, pidName)); string(got) != string(pid) {
 		t.Fatal("the refused hub must leave the pid file of the running one alone")
 	}
+	running()
 
-	// A pid file left by a dead process does not block a start.
-	if err := os.WriteFile(filepath.Join(state, pidName), []byte("999999\n"), 0o600); err != nil {
-		t.Fatal(err)
+	// A pid file left by a power cut does not block a start, even when its pid was
+	// given again to a live process (here the test's parent): nobody holds the file.
+	for _, left := range []string{"999999\n", strconv.Itoa(os.Getppid()) + "\n"} {
+		if err := os.WriteFile(filepath.Join(state, pidName), []byte(left), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		release, err := pidfile.Lock(state, pidName)
+		if err != nil {
+			t.Fatalf("%q: %v", left, err)
+		}
+		release()
 	}
-	release, err := pidfile.Lock(state, pidName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	release()
 }
 
 func TestAnAcknowledgementOverTheBrokerEndsTheEscalation(t *testing.T) {

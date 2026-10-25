@@ -61,6 +61,16 @@ l'agent l'attend sur le broker du cloud, sauf les ordres de l'application. L'age
 `alarm/cmd` en QoS 0, et le broker ne garde rien pour lui sur ce topic (voir « Ordres
 et configuration reçus »).
 
+Sur les deux brokers, l'agent n'accuse réception d'un message (QoS 1) qu'une fois que
+sa boucle l'a pris, et elle fait tout ce qu'elle a pris, même quand elle s'arrête. Un
+message qui arrive pendant l'arrêt (entre la fin de la boucle et la déconnexion) n'est
+donc pas acquitté : le broker le garde pour la session suivante, au lieu de l'oublier
+alors que personne ne l'a traité. Les accusés partent dans l'ordre des messages
+(MQTT l'exige) : un message non pris retient ceux qui le suivent, que l'agent ne
+prend pas non plus. Reste perdu ce que la boucle avait pris sans l'avoir fait quand le
+programme meurt d'un coup (plantage, chien de garde, coupure), comme le reste de ce
+qu'elle garde en mémoire.
+
 L'agent ne se dit relié au cloud qu'une fois abonné à ses ordres. Si le broker ne
 répond pas à l'abonnement (10 s), l'agent le redemande, avec le même délai croissant,
 tant que la connexion tient.
@@ -115,7 +125,9 @@ Quand internet est coupé :
   pas : il prendrait un nouveau numéro, que le cloud jetterait comme doublon, et le
   trou laissé ne se refermerait jamais. L'agent garde donc, par topic retenu, l'`id`
   du dernier état parti. Un état changé pendant un arrêt de l'agent a un autre `id` et
-  part. L'agent ne lit pas ses propres topics (`agent/status`, `agent/replayed`) sur
+  part. Un état redit (voir ci-dessous) porte un `id` de l'agent, pas celui de la
+  centrale : encore en file à un redémarrage, il ne remplace pas l'`id` gardé, sinon
+  l'état de la centrale redonné par le broker repartirait sous un nouveau numéro. L'agent ne lit pas ses propres topics (`agent/status`, `agent/replayed`) sur
   la centrale.
 - **L'état du moment à chaque connexion au cloud** : un cloud qui a perdu l'état de
   l'alarme, la santé ou la liste des appareils (base remise à zéro, ou cloud qui ne
@@ -195,7 +207,11 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
 - Il y a une limite de débit (20 d'un coup, 60 par minute par défaut), pour qu'un
   cloud défaillant ou piraté ne puisse pas noyer la centrale d'ordres. Un message
   refusé par cette limite ne change rien à ce que l'agent sauvegarde : un flot ne
-  devient pas un flot d'écritures sur la carte SD.
+  devient pas un flot d'écritures sur la carte SD. Les réponses à ce que l'agent a
+  envoyé (`alert.result`, `alert.ack`, `photo.upload`), vérifiées contre ce qu'il a
+  envoyé, n'y comptent pas : leur nombre croît avec les contacts et les canaux d'une
+  grande alarme (trois résultats par alerte), et une réponse refusée serait perdue
+  pour de bon (un acquittement, une photo jamais envoyée).
 - **Un ordre de l'application qui ne va pas à la centrale reçoit une réponse tout de
   suite** : sans elle, le cloud attendrait plus d'une minute pour conclure `expired`.
   L'agent publie lui-même `alarm.ack` vers le cloud, `ref` à l'`id` de l'ordre :

@@ -118,7 +118,10 @@ Quatre défauts que les tests unitaires ne voyaient pas, corrigés avec un test 
   l'intrusion n'aurait pas déclenché l'alarme.
 - **Un modem débranché restait perdu** pendant une alarme : la passerelle gardait le
   port mort, et ne le redémarrait que sur une ligne au repos. Le port est maintenant
-  rouvert à la demande suivante.
+  rouvert à la demande suivante, et de nouveau à chaque demande tant qu'il ne s'ouvre
+  pas : un modem USB met quelques secondes à revenir, et un seul essai, fait trop tôt,
+  laissait le port fermé jusqu'au redémarrage du modem (corrigé le 25 octobre 2026
+  après une revue ; le kit rebranche le modem tout de suite, il ne le voyait pas).
 - **Le mode installation se refermait tout seul** quand l'installateur tapait son code
   juste après un redémarrage de la centrale (coupure de courant, chien de garde) : la
   fin du démarrage annonçait « fermé, redémarrage » par-dessus, et la console coupait

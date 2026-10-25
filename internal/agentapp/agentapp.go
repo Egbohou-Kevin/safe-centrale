@@ -210,22 +210,24 @@ func (a *App) Run(ctx context.Context) error {
 	return nil
 }
 
-// HandleLocal takes a message from the hub's broker. It returns at once.
-func (a *App) HandleLocal(m inbox.Message) {
+// HandleLocal takes a message from the hub's broker, and says whether it took it (see
+// mqtt.Options.Take). It returns at once. Only a message that reaches it once the
+// agent is stopping is not taken: the broker keeps it for the next start.
+func (a *App) HandleLocal(m inbox.Message) bool {
 	if len(m.Payload) > maxPayload {
 		a.log.Warn("not sending an oversized message to the cloud", "topic", m.Topic, "bytes", len(m.Payload))
-		return
+		return true
 	}
-	a.submit(func(now time.Time) agent.Input { return agent.Local{Now: now, Topic: m.Topic, Payload: m.Payload} })
+	return a.submit(func(now time.Time) agent.Input { return agent.Local{Now: now, Topic: m.Topic, Payload: m.Payload} })
 }
 
-// HandleCloud takes a message from the cloud's broker. It returns at once.
-func (a *App) HandleCloud(m inbox.Message) {
+// HandleCloud takes a message from the cloud's broker, like HandleLocal.
+func (a *App) HandleCloud(m inbox.Message) bool {
 	if len(m.Payload) > maxPayload {
 		a.log.Warn("refusing an oversized message from the cloud", "topic", m.Topic, "bytes", len(m.Payload))
-		return
+		return true
 	}
-	a.submit(func(now time.Time) agent.Input { return agent.Cloud{Now: now, Topic: m.Topic, Payload: m.Payload} })
+	return a.submit(func(now time.Time) agent.Input { return agent.Cloud{Now: now, Topic: m.Topic, Payload: m.Payload} })
 }
 
 // LinkChanged is told when the connection to the cloud comes up or goes down, with
@@ -247,8 +249,13 @@ func (a *App) Will() (topic string, payload []byte) {
 	return contract.AgentStatusTopic(a.cfg.Site), b
 }
 
-func (a *App) submit(build func(now time.Time) agent.Input) {
-	if err := a.loop.Submit(a.life, build); err != nil && a.life.Err() == nil {
+// submit hands an input to the core, and says whether the loop took it: a loop that
+// took an input carries it out, even when it stops. Once the agent is stopping,
+// nothing is taken.
+func (a *App) submit(build func(now time.Time) agent.Input) bool {
+	err := a.loop.Submit(a.life, build)
+	if err != nil && a.life.Err() == nil {
 		a.log.Error("handing an input to the agent failed", "err", err)
 	}
+	return err == nil || a.life.Err() == nil
 }

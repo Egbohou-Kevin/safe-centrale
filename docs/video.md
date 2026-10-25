@@ -87,6 +87,8 @@ images des caméras, sans attendre personne :
   caméra, 480 px de large ;
 - 4 caméras au plus, une seule série par alarme, 6 alarmes photographiées par heure
   au plus (un capteur qui se déclenche sans cesse ne doit pas remplir la liaison) ;
+  des séries datées dans le futur (horloge en avance, reculée depuis) comptent comme
+  prises à l'instant, une heure au plus ;
 - `"photos": false` dans `video.json` les coupe.
 
 Les images sont prises même au-delà du plafond du mois : quelques centaines de
@@ -186,9 +188,13 @@ consommer les données mobiles du client.
   court entre la demande du cloud et le réglage du client en données mobiles), à
   l'épuisement du plafond, quand rien ne part depuis 30 s (`relay_unreachable`), ou si
   le relais n'a rien reçu 20 s après la demande. La consommation du mois est gardée sur
-  disque et repart de zéro le 1er de chaque mois (heure UTC, celle du Togo). Les
-  sessions, elles, ne sont pas gardées : après un redémarrage du service, leurs flux
-  sont arrêtés et le relais le voit.
+  disque et repart de zéro le 1er de chaque mois (heure UTC, celle du Togo), et
+  seulement dans un mois plus tard : une horloge reculée au démarrage (module
+  d'horloge mort, corrigé ensuite par le réseau) n'efface pas ce que le client a déjà
+  payé ce mois-ci. Celle d'une session en cours rejoint le disque tous les 10 Mo et à
+  la fin de la session, pas à chaque comptage (toutes les 2 s, la carte SD s'userait) :
+  un arrêt brutal en perd moins de 10 Mo. Les sessions, elles, ne sont pas gardées :
+  après un redémarrage du service, leurs flux sont arrêtés et le relais le voit.
 - **Le comptage** : les octets de vidéo et de son que go2rtc envoie, lus toutes les
   2 secondes. L'enveloppe RTMP et TLS n'est pas comptée (quelques pour cent en plus,
   à mesurer sur le kit).

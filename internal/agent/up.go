@@ -32,7 +32,7 @@ func (r *Relay) local(now time.Time, topic string, payload []byte, own bool) []A
 		// escalation goes to the GSM and sends this again when the link returns.
 		return []Action{FailAlert{Ref: env.ID}}
 	}
-	it := Item{ID: env.ID, Topic: topic, Payload: json.RawMessage(payload), Prio: route.prio, Retain: route.retain, At: now}
+	it := Item{ID: env.ID, Topic: topic, Payload: json.RawMessage(payload), Prio: route.prio, Retain: route.retain, At: now, Own: own}
 	var replaced []Action
 	if route.retain || env.Type == contract.TypeHeartbeat {
 		if r.thinned(now, env, topic) {

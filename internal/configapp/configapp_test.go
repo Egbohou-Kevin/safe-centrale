@@ -67,7 +67,10 @@ type rig struct {
 	restarts int
 	checkErr error
 	saveErr  error
-	devices  bool // the installer's tools changed the zones or the sirens
+	devices  bool          // the installer's tools changed the zones or the sirens
+	busy     bool          // the engine is in a delay, an alarm or the installation mode
+	gate     chan struct{} // if set, Save waits for it: a slow SD card
+	stop     func()        // stops Run and waits for its end
 }
 
 func start(t *testing.T, cfg Config) *rig {
@@ -79,6 +82,12 @@ func start(t *testing.T, cfg Config) *rig {
 		Check: func(contract.ConfigSetData) error { r.mu.Lock(); defer r.mu.Unlock(); return r.checkErr },
 		Save: func(d contract.ConfigSetData) error {
 			r.mu.Lock()
+			gate := r.gate
+			r.mu.Unlock()
+			if gate != nil {
+				<-gate
+			}
+			r.mu.Lock()
 			defer r.mu.Unlock()
 			if r.saveErr != nil {
 				return r.saveErr
@@ -87,6 +96,7 @@ func start(t *testing.T, cfg Config) *rig {
 			return nil
 		},
 		Restart:        func() { r.mu.Lock(); r.restarts++; r.mu.Unlock() },
+		Quiet:          func(context.Context) bool { r.mu.Lock(); defer r.mu.Unlock(); return !r.busy },
 		DevicesChanged: func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.devices },
 		Logger:         slog.New(slog.NewTextHandler(r.logs, nil)),
 	})
@@ -97,20 +107,42 @@ func start(t *testing.T, cfg Config) *rig {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { app.Run(ctx); close(done) }()
-	t.Cleanup(func() { cancel(); <-done })
+	var once sync.Once
+	r.stop = func() { once.Do(func() { cancel(); <-done }) }
+	t.Cleanup(r.stop)
 	return r
 }
 
-// send hands the application a message, and returns it.
-func (r *rig) send(topic, typ string, data any) []byte {
+// message builds a message of the site.
+func (r *rig) message(topic, typ string, data any) inbox.Message {
 	r.t.Helper()
 	env, err := contract.NewEnvelope(site, "cloud", 1, r.ids.New(), r.clock.Now(), typ, data)
 	if err != nil {
 		r.t.Fatal(err)
 	}
 	b, _ := json.Marshal(env)
-	r.app.HandleMessage(inbox.Message{Topic: topic, Payload: b})
-	return b
+	return inbox.Message{Topic: topic, Payload: b}
+}
+
+// send hands the application a message, waits until it is handled, and returns it.
+func (r *rig) send(topic, typ string, data any) []byte {
+	r.t.Helper()
+	m := r.message(topic, typ, data)
+	r.app.HandleMessage(m)
+	r.settle()
+	return m.Payload
+}
+
+// settle waits until the work handed to the application so far is done.
+func (r *rig) settle() {
+	r.t.Helper()
+	done := make(chan struct{})
+	r.app.work <- func(context.Context) { close(done) }
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		r.t.Fatal("the application's work never ends")
+	}
 }
 
 func (r *rig) config(d contract.ConfigSetData) {
@@ -145,6 +177,7 @@ func (r *rig) waitAnswer(n int) contract.ConfigAppliedData {
 // in the outbox before it returns.
 func (r *rig) sent() {
 	r.t.Helper()
+	r.settle()
 	drivertest.WaitFor(r.t, "the outbox to empty", func() bool { return r.app.out.Depth() == 0 })
 }
 
@@ -200,6 +233,67 @@ func TestAQuietHubRestartsAtOnce(t *testing.T) {
 	r.config(phoneConfig(1))
 	if r.restarted() != 1 {
 		t.Fatal("armed is quiet")
+	}
+}
+
+// The state said on alarm/state comes back through the broker, behind the engine: a
+// configuration that lands just after a door opened (armed still said, the entry
+// delay begun) waits, on the engine's word.
+func TestTheEngineHasTheLastWordOnTheQuietMoment(t *testing.T) {
+	r := start(t, DefaultConfig(site, 0))
+	r.alarm(contract.StateArmed)
+	r.mu.Lock()
+	r.busy = true
+	r.mu.Unlock()
+	r.config(phoneConfig(1))
+	if len(r.saved) != 1 || r.restarted() != 0 {
+		t.Fatalf("saved %d, restarts %d: kept, no restart in the delay the engine is in", len(r.saved), r.restarted())
+	}
+	r.alarm(contract.StateEntryDelay)
+	r.mu.Lock()
+	r.busy = false
+	r.mu.Unlock()
+	r.alarm(contract.StateDisarmed)
+	if r.restarted() != 1 {
+		t.Fatal("restart once quiet")
+	}
+}
+
+// Checking and writing a configuration takes time on an SD card: the broker's
+// goroutine, which carries every message of the hub (a door, a disarm), must not wait
+// for it. A configuration taken before a stop is still kept: the broker had it
+// acknowledged.
+func TestAConfigurationIsHandledOffTheBrokersGoroutine(t *testing.T) {
+	r := start(t, DefaultConfig(site, 0))
+	gate := make(chan struct{})
+	r.mu.Lock()
+	r.gate = gate
+	r.mu.Unlock()
+	returned := make(chan struct{})
+	go func() {
+		r.app.HandleMessage(r.message(contract.ConfigSetTopic(site), contract.TypeConfigSet, phoneConfig(1)))
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		close(gate)
+		t.Fatal("the broker's goroutine waits for the disk")
+	}
+	close(gate)
+	r.settle()
+	if len(r.saved) != 1 {
+		t.Fatalf("%+v", r.saved)
+	}
+
+	r = start(t, DefaultConfig(site, 0))
+	held := make(chan struct{})
+	r.app.work <- func(ctx context.Context) { close(held); <-ctx.Done() } // the worker busy until the stop
+	<-held
+	r.app.HandleMessage(r.message(contract.ConfigSetTopic(site), contract.TypeConfigSet, phoneConfig(1)))
+	r.stop()
+	if len(r.saved) != 1 || r.restarted() != 0 {
+		t.Fatalf("saved %d, restarts %d: kept at the stop, nothing restarted", len(r.saved), r.restarted())
 	}
 }
 

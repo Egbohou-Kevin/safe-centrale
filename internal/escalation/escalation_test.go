@@ -87,6 +87,27 @@ func keyOf(actions []Action, contact string, ch Channel) uint64 {
 
 // --- intrusion: the waves ----------------------------------------------------------------
 
+// A role may be held by two contacts (a couple owning the shop, two deputies): each
+// is told what the role is told, not only the first one listed.
+func TestEveryContactOfARoleIsTold(t *testing.T) {
+	two := func(c *Config) {
+		c.Contacts = []Contact{
+			{ID: "o1", Name: "O1", Role: RoleOwner, Channels: []Channel{ChannelApp}},
+			{ID: "o2", Name: "O2", Role: RoleOwner, Channels: []Channel{ChannelApp}},
+			{ID: "d1", Name: "D1", Role: RoleDeputy, Channels: []Channel{ChannelApp}},
+			{ID: "d2", Name: "D2", Role: RoleDeputy, Channels: []Channel{ChannelApp}},
+		}
+	}
+	e := newEsc(t, two)
+	want(t, "wave 1", sends(raise(e, t0, KindIntrusion)), "d1/app/1", "d2/app/1")
+	want(t, "wave 2", sends(tick(e, t0.Add(2*time.Minute))), "o1/app/2", "o2/app/2", "d1/app/2", "d2/app/2")
+
+	e = newEsc(t, two)
+	want(t, "tamper", sends(raise(e, t0, KindTamper)), "d1/app/1", "d2/app/1")
+	e = newEsc(t, two)
+	want(t, "the owner's summary", sends(raise(e, t0, KindBatteryLow)), "o1/app/1", "o2/app/1")
+}
+
 func TestIntrusionFollowsTheWaves(t *testing.T) {
 	e := newEsc(t)
 	// 0: the deputy (first person) and the guard. The guard has no internet: GSM at once.

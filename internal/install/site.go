@@ -110,9 +110,16 @@ var (
 // Editor changes the use of the devices in the site that Sites keeps, for the
 // command-line tool and the local console alike. The changes wait for each other:
 // each one reads the site, edits it and writes it, and two at once would lose one.
+//
+// A removal from the network takes seconds between its check and its end (the Zigbee
+// adapter's answer): the device is held as being removed meanwhile, and no change may
+// leave a site that would not work without it (another tab taking the other siren
+// off). This holds within one process: the console and the command-line tool each
+// have their editor.
 type Editor struct {
-	sites Sites
-	mu    sync.Mutex
+	sites    Sites
+	mu       sync.Mutex
+	removing map[string]bool // devices whose removal is under way (see CheckRemoval)
 }
 
 // NewEditor returns an editor of the site that sites keeps.
@@ -123,6 +130,13 @@ func (e *Editor) Read() (Site, error) { return e.sites.Read() }
 
 // edit reads the site, applies change, and writes the result when change says so.
 func (e *Editor) edit(change func(*Site) (write bool, err error)) error {
+	return e.write(true, change)
+}
+
+// write reads the site, applies change and writes the result, checked against the
+// removals under way unless held is false: the end of a removal follows a device the
+// network already lost.
+func (e *Editor) write(held bool, change func(*Site) (write bool, err error)) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	site, err := e.sites.Read()
@@ -136,7 +150,32 @@ func (e *Editor) edit(change func(*Site) (write bool, err error)) error {
 	if err != nil || !write {
 		return err
 	}
+	if !held {
+		return e.sites.Write(site)
+	}
+	if err := e.checkWithout(site, ""); err != nil {
+		return fmt.Errorf("not while a removal is under way: %w", err)
+	}
 	return e.sites.Write(site)
+}
+
+// checkWithout checks that the site works without id ("" for none) and the devices
+// whose removal is under way. The caller holds mu.
+func (e *Editor) checkWithout(site Site, id string) error {
+	without := site
+	if id != "" {
+		without = without.Without(id)
+	}
+	for other := range e.removing {
+		without = without.Without(other)
+	}
+	if len(without.SirenIDs) == 0 && len(site.SirenIDs) > 0 {
+		return ErrLastSiren
+	}
+	if id == "" && len(e.removing) == 0 {
+		return nil // the change itself is the hub's to check, when it is written
+	}
+	return e.sites.Check(without)
 }
 
 // ValidZone checks a zone's name and kind, whatever the device.
@@ -267,32 +306,42 @@ func useOf(s Site, id string) Use {
 
 // CheckRemoval says whether the site can do without the device id, before it is
 // removed from the network: a removal cannot be undone (the device would have to be
-// paired again, with a new id). It returns what the device does now.
+// paired again, with a new id). It returns what the device does now. Once it says
+// yes, the device is held as being removed until FinishRemoval, or CancelRemoval if
+// the order never went out.
 func (e *Editor) CheckRemoval(id string) (Use, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	site, err := e.sites.Read()
 	if err != nil {
 		return Use{}, err
 	}
 	u := useOf(site, id)
-	if !u.Used() {
-		return u, nil
+	if u.Used() {
+		if err := e.checkWithout(site, id); err != nil {
+			return u, fmt.Errorf("%s cannot be removed yet, the configuration could not follow (add its replacement first): %w", id, err)
+		}
 	}
-	if without := site.Without(id); u.Siren && len(without.SirenIDs) == 0 {
-		err = ErrLastSiren
-	} else {
-		err = e.sites.Check(without)
+	if e.removing == nil {
+		e.removing = map[string]bool{}
 	}
-	if err != nil {
-		return u, fmt.Errorf("%s cannot be removed yet, the configuration could not follow (add its replacement first): %w", id, err)
-	}
+	e.removing[id] = true
 	return u, nil
+}
+
+// CancelRemoval forgets a removal whose order did not go out.
+func (e *Editor) CancelRemoval(id string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.removing, id)
 }
 
 // FinishRemoval takes the device id out of the site once it is out of the network,
 // and returns what it did there.
 func (e *Editor) FinishRemoval(id string) (Use, error) {
+	defer e.CancelRemoval(id)
 	var u Use
-	err := e.edit(func(s *Site) (bool, error) {
+	err := e.write(false, func(s *Site) (bool, error) {
 		if u = useOf(*s, id); !u.Used() {
 			return false, nil
 		}

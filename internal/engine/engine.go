@@ -74,7 +74,7 @@ func (e *Engine) NextWake() time.Time {
 	if e.awaitingBoot {
 		return time.Time{}
 	}
-	return e.s.Deadline
+	return e.due()
 }
 
 // State returns the public summary of the engine at time now.
@@ -110,13 +110,20 @@ func (e *Engine) Handle(in Input) []Action {
 	if !e.awaitingBoot {
 		out = e.tick(in.at())
 	}
+	ref := ""
 	switch v := in.(type) {
 	case Signal:
 		out = append(out, e.signal(v)...)
 	case Command:
+		ref = v.ID
 		out = append(out, e.command(v)...)
 	case Forget:
 		e.forget(v.DeviceID)
+	case CodeEntered:
+		e.codeEntered(v)
+	}
+	if _, typed := in.(CodeEntered); !typed {
+		e.checked(ref, in.at())
 	}
 	return out
 }
@@ -128,18 +135,26 @@ func (e *Engine) Handle(in Input) []Action {
 // deadlines missed while the hub was off are replayed against the doors as they are
 // now: a door closed during the outage does not start the entry delay at the end of
 // the exit delay. Then the devices still in alarm trip the engine like an ordinary
-// signal, except a tamper already reported before the restart.
+// signal, except what was already known before the restart: a tamper already
+// reported, a contact already open. Contacts report changes only, so a door known open
+// and still open is not news: an interior door left open at arming, or the entry door
+// left open after the siren was silenced, must not set off a restart while armed.
+//
+// While disarmed, the automatic arming saved before the restart is checked against
+// the configuration first (see checkPlan): a new configuration is applied by a
+// restart.
 //
 // Momentary sensors (motion) must therefore publish their return to rest, or a
 // stale "active" state would trigger an alarm on restart.
 func (e *Engine) Boot(now time.Time, current []Signal) []Action {
 	e.awaitingBoot = false
+	e.s.Checking = nil // the checks under way did not survive the restart
 	e.pullBack(now)
 	alarms := e.learn(current)
-	out := e.tick(now)
-	if e.s.Mode == ModeDisarmed && e.s.Schedule == nil {
-		e.planSchedule(now) // a snapshot from before the schedule existed, or a new configuration
+	if e.s.Mode == ModeDisarmed {
+		e.checkPlan(now)
 	}
+	out := e.tick(now)
 	if e.sirenSounds() && !slices.ContainsFunc(out, isSirenOn) {
 		// The siren may have missed its order while the hub went down: it is told
 		// again, for what is left of the cycle.
@@ -153,12 +168,14 @@ func (e *Engine) Boot(now time.Time, current []Signal) []Action {
 }
 
 // pullBack brings back to now what a clock running ahead stamped in the future: a
-// wrong code counts as entered now, and a lockout ends at most LockoutDuration from
-// now. Otherwise, once the clock is pulled back (an RTC glitch, a bad time at boot
-// corrected by NTP), they would hold until it caught up with them: a lockout an hour
-// too long, or two forgotten mistakes and one real slip locking the site. Within a
-// run the driver never hands an earlier time; a snapshot saved before a restart may
-// still hold one.
+// wrong code counts as entered now, a lockout ends at most LockoutDuration from now,
+// and a delay or a siren step ends at most its own length from now. Otherwise, once
+// the clock is pulled back (an RTC glitch, a bad time at boot corrected by NTP), they
+// would hold until it caught up with them: a lockout an hour too long, two forgotten
+// mistakes and one real slip locking the site, an exit delay an hour long during
+// which a real intrusion does not ring, or a siren told to sound for an hour. Within
+// a run the driver never hands an earlier time; a snapshot saved before a restart may
+// still hold one. The automatic arming is planned again at Boot instead (checkPlan).
 func (e *Engine) pullBack(now time.Time) {
 	for i, at := range e.s.Failures {
 		if at.After(now) {
@@ -168,11 +185,33 @@ func (e *Engine) pullBack(now time.Time) {
 	if latest := now.Add(e.cfg.LockoutDuration); e.s.LockedUntil.After(latest) {
 		e.s.LockedUntil = latest
 	}
+	if step := e.step(); step > 0 && e.s.Deadline.After(now.Add(step)) {
+		e.s.Deadline = now.Add(step)
+	}
+}
+
+// step is the length of what the current deadline ends: the exit or the entry delay,
+// a siren cycle or the pause after it; zero while disarmed, whose deadline is the
+// automatic arming.
+func (e *Engine) step() time.Duration {
+	switch e.s.Mode {
+	case ModeArming:
+		return e.cfg.ExitDelay
+	case ModeEntryDelay:
+		return e.cfg.EntryDelay
+	case ModeTriggered:
+		if e.s.Incident != nil && !e.s.Incident.SirenOn {
+			return e.cfg.SirenPause
+		}
+		return e.cfg.SirenCycle
+	}
+	return 0
 }
 
 // learn records the devices' states given at Boot: which contacts are open, which
 // tampers have ended. It returns the signals still to act on: every active one but
-// the tampers already reported before the restart.
+// the tampers already reported before the restart and the contacts already known
+// open.
 func (e *Engine) learn(current []Signal) []Signal {
 	var alarms []Signal
 	for _, sig := range current {
@@ -185,8 +224,9 @@ func (e *Engine) learn(current []Signal) []Signal {
 				continue
 			}
 		}
+		known := sig.Sensor == SensorContact && e.s.Open[sig.DeviceID]
 		e.trackContact(sig)
-		if sig.Active {
+		if sig.Active && !known {
 			alarms = append(alarms, sig)
 		}
 	}
@@ -197,8 +237,8 @@ func (e *Engine) learn(current []Signal) []Signal {
 // tick is late.
 func (e *Engine) tick(now time.Time) []Action {
 	var out []Action
-	for !e.s.Deadline.IsZero() && !now.Before(e.s.Deadline) {
-		ref := e.s.Deadline
+	for !e.s.Deadline.IsZero() && !now.Before(e.due()) {
+		ref := e.due()
 		switch e.s.Mode {
 		case ModeArming:
 			out = append(out, e.finishArming(ref)...)
@@ -211,7 +251,7 @@ func (e *Engine) tick(now time.Time) []Action {
 		case ModeTriggered:
 			out = append(out, e.sirenStep(ref)...)
 		case ModeDisarmed:
-			out = append(out, e.scheduleStep(ref)...)
+			out = append(out, e.scheduleStep(ref, now)...)
 		default:
 			e.s.Deadline = time.Time{}
 		}
@@ -269,7 +309,7 @@ func (e *Engine) setMode(m Mode, at time.Time) {
 // disarm goes back to disarmed from any mode: no incident, no delay, no bypass. The
 // deadline becomes that of the next automatic arming.
 func (e *Engine) disarm(at time.Time) {
-	e.s.Incident, e.s.EntryCause, e.s.TimedOut = nil, nil, nil
+	e.s.Incident, e.s.EntryCause, e.s.TimedOut, e.s.Raised = nil, nil, nil, nil
 	e.s.Bypassed = map[string]bool{}
 	e.setMode(ModeDisarmed, at)
 }

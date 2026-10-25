@@ -49,3 +49,11 @@ func Subscriptions(in []inbox.Subscription) []mqtt.Subscription {
 func Deliver(handle func(inbox.Message)) func(mqtt.Message) {
 	return func(m mqtt.Message) { handle(inbox.Message{Topic: m.Topic, Payload: m.Payload, Retain: m.Retain}) }
 }
+
+// Take turns an application's handler that says whether it took a message into the
+// client's (see mqtt.Options.Take).
+func Take(handle func(inbox.Message) bool) func(mqtt.Message) bool {
+	return func(m mqtt.Message) bool {
+		return handle(inbox.Message{Topic: m.Topic, Payload: m.Payload, Retain: m.Retain})
+	}
+}

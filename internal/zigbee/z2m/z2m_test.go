@@ -54,6 +54,7 @@ func TestInterviewsAndDeparturesFromTheBridge(t *testing.T) {
 		`{"type":"device_interview","data":{"ieee_address":"0x02","status":"successful","supported":false,"definition":null}}`:                                                         zigbee.Interviewed{Now: now, IEEE: "0x02", OK: true},
 		`{"type":"device_interview","data":{"ieee_address":"0x03","status":"failed"}}`:                                                                                                 zigbee.Interviewed{Now: now, IEEE: "0x03"},
 		`{"type":"device_leave","data":{"ieee_address":"0x04","friendly_name":"dev_x"}}`:                                                                                               zigbee.Left{Now: now, IEEE: "0x04"},
+		`{"type":"device_joined","data":{"ieee_address":"0x05","friendly_name":"0x05"}}`:                                                                                               zigbee.Joined{Now: now, IEEE: "0x05"},
 	}
 	for payload, want := range cases {
 		in, ok := parse(t, "zigbee2mqtt/bridge/event", payload, false)
@@ -63,11 +64,21 @@ func TestInterviewsAndDeparturesFromTheBridge(t *testing.T) {
 	}
 	for _, payload := range []string{
 		`{"type":"device_interview","data":{"ieee_address":"0x01","status":"started"}}`,
-		`{"type":"device_joined","data":{"ieee_address":"0x01"}}`,
 		`{"type":"device_announce","data":{"ieee_address":"0x01"}}`,
 	} {
 		if _, ok := parse(t, "zigbee2mqtt/bridge/event", payload, false); ok {
 			t.Errorf("%s: the core waits for the end of the interview", payload)
+		}
+	}
+	if _, _, err := Parse(DefaultBase, "zigbee2mqtt/bridge/event", []byte(`{"type":"device_joined","data":{}}`), false, now); err == nil {
+		t.Error("a device that joined without an address")
+	}
+	for payload, want := range map[zigbee.Action]string{
+		zigbee.Expel{IEEE: "dev_x"}:              `{"id":"dev_x"}`,
+		zigbee.Expel{IEEE: "dev_x", Force: true}: `{"force":true,"id":"dev_x"}`,
+	} {
+		if msg, ok, err := Build(DefaultBase, payload); err != nil || !ok || string(msg.Payload) != want || msg.Topic != "zigbee2mqtt/bridge/request/device/remove" {
+			t.Errorf("%+v: %s %s", payload, msg.Topic, msg.Payload)
 		}
 	}
 }

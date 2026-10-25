@@ -2,9 +2,15 @@
 // (config.set, see docs/contract.md). It runs in the hub's program: it checks a new
 // configuration against the site's files, keeps it in the state folder, and has the
 // hub restart to load it, at a quiet moment: never during an exit or entry delay, an
-// alarm, nor the installation mode. It answers with config.applied, retained, once the
-// hub runs with it, or at once when it refuses it. The zones and sirens changed by the
-// installer's tools are applied the same way.
+// alarm, nor the installation mode. The engine itself says whether the moment is
+// quiet: the alarm/state it publishes comes back through the broker, behind it. It
+// answers with config.applied, retained, once the hub runs with it, or at once when it
+// refuses it. The zones and sirens changed by the installer's tools are applied the
+// same way.
+//
+// The work (a configuration checked and written to disk, the engine asked) is done on
+// Run's goroutine, never on the broker's, which would hold up every other message of
+// the hub meanwhile.
 //
 // The other programs that read this configuration (the GSM gateway, the video
 // service) restart when config.applied names a version they do not run.
@@ -72,6 +78,10 @@ type Deps struct {
 	Save func(contract.ConfigSetData) error
 	// Restart has the hub's program stop, to be started again with it.
 	Restart func()
+	// Quiet says, from the engine itself, whether the moment is quiet now: the alarm
+	// disarmed or armed, no installation mode. It waits for the inputs queued before it
+	// (a door opened a moment ago), until ctx ends: false then.
+	Quiet func(ctx context.Context) bool
 	// DevicesChanged says whether the installer's tools (the local console, the
 	// command-line tool) changed the zones or the sirens since the hub loaded them: the
 	// hub restarts for them too. Asked at each quiet moment; nil when none can change.
@@ -84,6 +94,12 @@ const (
 	src        = "config"
 	keySeq     = "config_seq"
 	maxPayload = 64 * 1024
+	// queueSize bounds the messages waiting for Run's goroutine: configurations are
+	// rare, and the alarm's states come one at a time.
+	queueSize = 256
+	// quietWait bounds the wait for the engine's answer: a busy engine is no quiet
+	// moment, and its next state asks again.
+	quietWait = 5 * time.Second
 )
 
 // App is the application.
@@ -93,6 +109,7 @@ type App struct {
 	log  *slog.Logger
 	out  *outbox.Outbox
 	seen *inbox.RecentIDs
+	work chan func(context.Context) // run in order on Run's goroutine
 
 	mu         sync.Mutex
 	saved      int    // the version kept, waiting for a quiet moment (0: none)
@@ -107,8 +124,8 @@ func New(cfg Config, deps Deps) (*App, error) {
 		return nil, err
 	}
 	if deps.Clock == nil || deps.Store == nil || deps.Publisher == nil || deps.NewID == nil ||
-		deps.Check == nil || deps.Save == nil || deps.Restart == nil {
-		return nil, errors.New("configapp: Clock, Store, Publisher, NewID, Check, Save and Restart are required")
+		deps.Check == nil || deps.Save == nil || deps.Restart == nil || deps.Quiet == nil {
+		return nil, errors.New("configapp: Clock, Store, Publisher, NewID, Check, Save, Restart and Quiet are required")
 	}
 	log := deps.Logger
 	if log == nil {
@@ -118,7 +135,8 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &App{cfg: cfg, deps: deps, log: log, out: out, seen: inbox.NewRecentIDs(cfg.DedupeSize)}, nil
+	return &App{cfg: cfg, deps: deps, log: log, out: out, seen: inbox.NewRecentIDs(cfg.DedupeSize),
+		work: make(chan func(context.Context), queueSize)}, nil
 }
 
 // Subscriptions lists what the application listens to: the configuration, and the
@@ -144,29 +162,62 @@ func (a *App) Run(ctx context.Context) error {
 		a.log.Info("running with the configuration from the cloud", "version", a.cfg.Running)
 		a.answer(now, a.cfg.Running, "")
 	}
-	a.out.Run(ctx)
+	sending := make(chan struct{})
+	go func() { defer close(sending); a.out.Run(ctx) }()
+	a.serve(ctx)
+	<-sending
 	a.out.Flush()
 	return nil
 }
 
-// HandleMessage takes a message from the broker. It returns quickly.
+// serve does the work handed by HandleMessage until ctx ends, then what is left: a
+// configuration taken from the broker (and acknowledged) before the stop is still
+// kept. Nothing restarts then.
+func (a *App) serve(ctx context.Context) {
+	for {
+		select {
+		case do := <-a.work:
+			do(ctx)
+		case <-ctx.Done():
+			for {
+				select {
+				case do := <-a.work:
+					do(ctx)
+				default:
+					return
+				}
+			}
+		}
+	}
+}
+
+// HandleMessage takes a message from the broker. It returns at once: the work is
+// done on Run's goroutine, in the order received.
 func (a *App) HandleMessage(m inbox.Message) {
 	if len(m.Payload) > maxPayload {
 		return
 	}
+	var do func(context.Context, inbox.Message)
 	switch m.Topic {
 	case contract.AlarmStateTopic(a.cfg.Site):
-		a.alarmState(m)
+		do = a.alarmState
 	case contract.InstallModeTopic(a.cfg.Site):
-		a.installMode(m)
+		do = a.installMode
 	case contract.ConfigSetTopic(a.cfg.Site):
-		a.configSet(m)
+		do = a.configSet
+	default:
+		return
+	}
+	select {
+	case a.work <- func(ctx context.Context) { do(ctx, m) }:
+	default:
+		a.log.Warn("too many messages waiting: one is dropped", "topic", m.Topic)
 	}
 }
 
 // alarmState follows the alarm's state. A retained state comes again at each
 // connection: no duplicate to drop.
-func (a *App) alarmState(m inbox.Message) {
+func (a *App) alarmState(ctx context.Context, m inbox.Message) {
 	_, d, err := inbox.Open[contract.AlarmStateData](m, a.cfg.Site, contract.TypeAlarmState)
 	if err != nil {
 		a.log.Warn("ignoring an invalid alarm state", "err", err)
@@ -175,13 +226,13 @@ func (a *App) alarmState(m inbox.Message) {
 	a.mu.Lock()
 	a.state = d.State
 	a.mu.Unlock()
-	a.restartIfQuiet()
+	a.restartIfQuiet(ctx)
 }
 
 // installMode follows the installation mode. The hub publishes it on the same outbox
 // as the alarm's state, in order: a mode closed by an arming arrives after the
 // arming's state, so the exit delay is known before the mode's end.
-func (a *App) installMode(m inbox.Message) {
+func (a *App) installMode(ctx context.Context, m inbox.Message) {
 	_, d, err := inbox.Open[contract.InstallModeData](m, a.cfg.Site, contract.TypeInstallMode)
 	if err != nil {
 		a.log.Warn("ignoring an invalid installation mode", "err", err)
@@ -190,12 +241,12 @@ func (a *App) installMode(m inbox.Message) {
 	a.mu.Lock()
 	a.installing = d.Status == contract.InstallOpen
 	a.mu.Unlock()
-	a.restartIfQuiet()
+	a.restartIfQuiet(ctx)
 }
 
 // configSet takes a configuration. Its data is checked only after its version: the
 // cloud is told why a configuration is refused, and an old one is refused as old.
-func (a *App) configSet(m inbox.Message) {
+func (a *App) configSet(ctx context.Context, m inbox.Message) {
 	now := a.deps.Clock.Now()
 	env, err := inbox.Envelope(m, a.cfg.Site, contract.TypeConfigSet)
 	if err != nil {
@@ -241,29 +292,39 @@ func (a *App) configSet(m inbox.Message) {
 	a.mu.Lock()
 	a.saved = d.Version
 	a.mu.Unlock()
-	a.restartIfQuiet()
+	a.restartIfQuiet(ctx)
 }
 
 // restartIfQuiet restarts the hub when a configuration or new devices wait and the
 // moment is quiet: the alarm disarmed or armed, never in the middle of a delay or of
-// an alarm, and no installation under way.
-func (a *App) restartIfQuiet() {
+// an alarm, and no installation under way. The state said on the broker must be
+// quiet, and the engine must say so too: its states reach the broker behind it, and a
+// delay begun a moment ago is not said yet. Its next state asks again.
+func (a *App) restartIfQuiet(ctx context.Context) {
 	devices := a.deps.DevicesChanged != nil && a.deps.DevicesChanged() // reads a file: outside the lock
 	a.mu.Lock()
 	pending := (a.saved != 0 || devices) && !a.restarted
-	quiet := (a.state == contract.StateDisarmed || a.state == contract.StateArmed) && !a.installing
-	if pending && quiet {
-		a.restarted = true
-	}
+	said := (a.state == contract.StateDisarmed || a.state == contract.StateArmed) && !a.installing
 	version, state, installing := a.saved, a.state, a.installing
 	a.mu.Unlock()
-	switch {
-	case pending && quiet:
+	if !pending {
+		return
+	}
+	if said && ctx.Err() == nil && a.engineQuiet(ctx) {
+		a.mu.Lock()
+		a.restarted = true
+		a.mu.Unlock()
 		a.log.Info("restarting to apply the new configuration", "version", version, "devices", devices)
 		a.deps.Restart()
-	case pending:
-		a.log.Info("waiting for a quiet moment to restart", "version", version, "devices", devices, "alarm", state, "installing", installing)
+		return
 	}
+	a.log.Info("waiting for a quiet moment to restart", "version", version, "devices", devices, "alarm", state, "installing", installing)
+}
+
+func (a *App) engineQuiet(ctx context.Context) bool {
+	ctx, cancel := context.WithTimeout(ctx, quietWait)
+	defer cancel()
+	return a.deps.Quiet(ctx)
 }
 
 // answer publishes config.applied: applied when why is empty, rejected otherwise.

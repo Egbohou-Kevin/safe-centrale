@@ -110,12 +110,17 @@ alarme (voir « Sirène muette pendant une alarme »).
 
 Chaque contact a un rôle : `deputy` (responsable, délégué du propriétaire,
 facultatif), `guard` (gardien, facultatif), `owner` (propriétaire), `manager` (gérant)
-ou `other` (autre). Les rôles absents sont sautés.
+ou `other` (autre). Les rôles absents sont sautés. Un rôle peut être tenu par plusieurs
+contacts (deux propriétaires, souvent un couple ; deux responsables) : chacun reçoit ce
+que reçoit son rôle, ici comme pour le « premier contact » des autres alertes (les
+responsables, sinon les propriétaires) et le résumé du propriétaire. Avant le 25
+octobre 2026, seul le premier de la liste l'était : le second propriétaire n'apprenait
+une intrusion qu'à la première relance, à +15 min, et jamais un sabotage.
 
 | Moment | Qui | Comment |
 |---|---|---|
-| 0 | Le responsable s'il existe, sinon le propriétaire ; **et** le gardien s'il existe | Internet d'abord, GSM à +1 min sans acquittement (ou tout de suite si internet est coupé) |
-| +2 min sans acquittement | Le propriétaire (si le responsable a été prévenu en premier) ; relance du gardien et de la première personne | Internet, GSM 1 min après |
+| 0 | Les responsables s'il y en a, sinon les propriétaires ; **et** les gardiens | Internet d'abord, GSM à +1 min sans acquittement (ou tout de suite si internet est coupé) |
+| +2 min sans acquittement | Les propriétaires (si les responsables ont été prévenus en premier) ; relance des gardiens et des premiers prévenus | Internet, GSM 1 min après |
 | +5 min sans acquittement | Le gérant et tous les autres contacts | Internet, GSM 1 min après |
 | Ensuite, toutes les 10 min | Tous les contacts qui n'ont pas acquitté | Internet et SMS, jusqu'à 3 relances |
 
@@ -307,9 +312,11 @@ alerter à chaque fois épuiserait les contacts.
 - **Coupure du secteur** : enregistrée et visible dans l'application, sans alerte.
 - **Batterie à 40 %** : une alerte au propriétaire (premier contact).
 - **Batterie à 10 %** : une deuxième alerte, urgente.
-- Ces deux seuils sont réglables, et chaque seuil n'envoie qu'une alerte par
-  coupure. Ils se réarment quand la batterie remonte (par exemple au-dessus de
-  60 %).
+- Ces deux seuils sont réglables. La première alerte ne part qu'une fois, jusqu'à ce
+  que la batterie remonte (par exemple au-dessus de 60 %). L'urgente part une fois
+  par coupure, même si la batterie n'a pas remonté depuis la précédente : la
+  centrale peut s'éteindre pendant celle-ci, et le retour du courant est alors
+  annoncé de nouveau.
 - **Retour du courant** : un message court, seulement si une alerte de batterie
   est partie, par **internet de préférence**. Il n'est pas urgent : le GSM n'est
   utilisé que si internet reste indisponible longtemps (la box met du temps à

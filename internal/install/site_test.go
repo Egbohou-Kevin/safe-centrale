@@ -220,6 +220,43 @@ func TestARemovalIsCheckedThenFinished(t *testing.T) {
 	}
 }
 
+// A removal takes seconds between its check and its end: the other siren cannot be
+// taken off meanwhile, or the site would end with none once both are done.
+func TestARemovalUnderWayHoldsItsDevice(t *testing.T) {
+	sites := newSites()
+	sites.site.SirenIDs = []string{"dev_siren", "dev_siren2"}
+	e := NewEditor(sites)
+	if _, err := e.CheckRemoval("dev_siren"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.RemoveSiren("dev_siren2"); !errors.Is(err, ErrLastSiren) {
+		t.Fatalf("the other siren taken off during the removal: %v", err)
+	}
+	if _, err := e.CheckRemoval("dev_siren2"); !errors.Is(err, ErrLastSiren) {
+		t.Fatalf("both removed at once: %v", err)
+	}
+	if _, err := e.Unzone("dev_door"); err != nil {
+		t.Fatalf("a change the removal does not touch: %v", err)
+	}
+	if u, err := e.FinishRemoval("dev_siren"); err != nil || !u.Siren {
+		t.Fatalf("%+v %v", u, err)
+	}
+	if s, _ := sites.Read(); !slices.Equal(s.SirenIDs, []string{"dev_siren2"}) {
+		t.Fatalf("%+v", s)
+	}
+	// An order that did not go out frees the device.
+	if _, err := e.AddSiren("dev_siren3", registered("dev_siren3", "siren")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.CheckRemoval("dev_siren3"); err != nil {
+		t.Fatal(err)
+	}
+	e.CancelRemoval("dev_siren3")
+	if _, err := e.RemoveSiren("dev_siren2"); err != nil {
+		t.Fatalf("a cancelled removal still holds: %v", err)
+	}
+}
+
 func TestSiteWithoutLeavesTheOriginalAlone(t *testing.T) {
 	s := Site{Zones: map[string]Zone{"a": {Name: "A", Kind: "entry"}}, SirenIDs: []string{"a", "b"},
 		SirenNames: map[string]string{"a": "Comptoir", "b": "Reserve"}}

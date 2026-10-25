@@ -154,6 +154,10 @@ type Item struct {
 	// Order is its place in the queue: at equal priority, items leave in this order.
 	// It is saved with the item, so the order survives a restart.
 	Order uint64 `json:"order"`
+	// Own: the agent queued it itself (Own), its id is not the hub's. A state said
+	// again is one: at a restart, it must not be taken for the hub's state (see
+	// RestoreQueue).
+	Own bool `json:"own,omitempty"`
 }
 
 // Status is the state of the link, as agent.status says it.

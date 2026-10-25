@@ -2,8 +2,8 @@ package engine
 
 import "time"
 
-// Input is what the engine receives: a sensor signal, an order, a clock tick, or a
-// device that left. Every input carries the time it happened; the engine never reads
+// Input is what the engine receives: a sensor signal, an order, a clock tick, a
+// device that left, or a code being checked. Every input carries the time it happened; the engine never reads
 // the clock.
 type Input interface{ at() time.Time }
 
@@ -47,10 +47,21 @@ type Forget struct {
 	DeviceID string
 }
 
-func (t Tick) at() time.Time    { return t.Now }
-func (s Signal) at() time.Time  { return s.Now }
-func (c Command) at() time.Time { return c.Now }
-func (f Forget) at() time.Time  { return f.Now }
+// CodeEntered tells the engine that a code was typed for the order Ref, and that it
+// is being checked: the check runs outside the engine and is slow on purpose. An entry
+// delay that ends meanwhile waits for that order, CodeCheckHold at most, so that a
+// person who typed the right code in time is not set off by the time the hub takes to
+// check it. The order itself follows, as a Command with the same ID.
+type CodeEntered struct {
+	Now time.Time
+	Ref string
+}
+
+func (t Tick) at() time.Time        { return t.Now }
+func (s Signal) at() time.Time      { return s.Now }
+func (c Command) at() time.Time     { return c.Now }
+func (f Forget) at() time.Time      { return f.Now }
+func (c CodeEntered) at() time.Time { return c.Now }
 
 // Action is what the engine asks the outside world to do. The engine has no side
 // effects of its own: the driver carries the actions out.

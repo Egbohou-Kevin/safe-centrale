@@ -26,6 +26,10 @@ var (
 	// ErrPairRefused: Zigbee2MQTT would not open the network, or keep it open, or
 	// never answered the adapter; the window is over.
 	ErrPairRefused = errors.New("the network could not be opened")
+	// ErrUnconfirmed wraps the error of a removal whose order went out but whose
+	// answer did not come (ErrNoAnswer, or the context's end): the adapter may still
+	// carry it out, a moment later.
+	ErrUnconfirmed = errors.New("the removal was sent but not confirmed")
 )
 
 // Publisher sends one message to the broker. The program gives the MQTT client.
@@ -47,8 +51,13 @@ type Timing struct {
 	// adapter waits for Zigbee2MQTT's own confirmation, asking again, and reports
 	// that none came (confirm_wait x attempts, 9 s by default): Open must be longer,
 	// for the tool to hear why.
-	Open  time.Duration
-	Grace time.Duration // after the end of a pairing window, for its last news (default 5 s)
+	Open time.Duration
+	// Grace is the wait after the end of a pairing window, for its last news (default
+	// 3 min 5 s). A device that entered during the window may still be questioned
+	// after it: the adapter keeps saying that the network is pairing until it is
+	// decided, 3 min at most, then says it is over, which ends the wait at once. Grace
+	// only bounds the wait for an adapter that stops answering.
+	Grace time.Duration
 }
 
 // Session is one run of a tool against the broker: it sends orders and reads what the
@@ -63,6 +72,10 @@ type Session struct {
 
 	registry *contract.RegistrySnapshotData // the last snapshot seen, nil before
 	status   *contract.ZigbeeStatusData     // the last status seen, nil before
+
+	// Told of every message the session reads, whatever reads it (see Observe).
+	onView  func(View)
+	onEvent func(at time.Time, e contract.DeviceEventData)
 }
 
 // NewSession prepares a session for a site.
@@ -80,7 +93,7 @@ func NewSession(site string, d Deps, t Timing) (*Session, error) {
 		t.Open = 15 * time.Second
 	}
 	if t.Grace <= 0 {
-		t.Grace = 5 * time.Second
+		t.Grace = 3*time.Minute + 5*time.Second
 	}
 	return &Session{site: site, d: d, timing: t, in: make(chan inbox.Message, 1024)}, nil
 }
@@ -137,7 +150,9 @@ func (s *Session) next(ctx context.Context) (received, error) {
 					s.status = &d
 				}
 			}
-			return received{env: env, retain: m.Retain}, nil
+			r := received{env: env, retain: m.Retain}
+			s.observed(r)
+			return r, nil
 		}
 	}
 }
@@ -305,9 +320,9 @@ func (s *Session) Remove(ctx context.Context, deviceID string) error {
 		r, err := s.next(waitCtx)
 		if err != nil {
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return fmt.Errorf("%w: %w", ErrUnconfirmed, ctx.Err())
 			}
-			return ErrNoAnswer
+			return fmt.Errorf("%w: %w", ErrUnconfirmed, ErrNoAnswer)
 		}
 		if r.env.Type != contract.TypeRegistryDeviceRemoved {
 			continue
@@ -316,61 +331,4 @@ func (s *Session) Remove(ctx context.Context, deviceID string) error {
 			return nil
 		}
 	}
-}
-
-// Current returns what the session knows of the Zigbee side now, without waiting;
-// false before the registry arrived.
-func (s *Session) Current() (View, bool) {
-	if s.registry == nil {
-		return View{}, false
-	}
-	return View{Devices: s.registry.Devices, Status: s.status}, true
-}
-
-// Follow reads the broker until ctx ends, which is the normal way out: it then returns
-// nil. After each message it reports the view (once the registry is known), and each
-// device event, without a keypad's code. The local console keeps its page up to date
-// with it.
-func (s *Session) Follow(ctx context.Context, view func(View), event func(at time.Time, e contract.DeviceEventData)) error {
-	for {
-		r, err := s.next(ctx)
-		if err != nil {
-			return nil
-		}
-		if v, ok := s.Current(); ok {
-			view(v)
-		}
-		if e, ok := deviceEvent(r); ok {
-			event(r.env.TS.Time, e)
-		}
-	}
-}
-
-// Watch reports the events of the devices (all of them, or only deviceID) until ctx
-// ends, which is the normal way out: it then returns nil. A keypad's code is never
-// reported.
-func (s *Session) Watch(ctx context.Context, deviceID string, report func(at time.Time, e contract.DeviceEventData)) error {
-	for {
-		r, err := s.next(ctx)
-		if err != nil {
-			return nil
-		}
-		if e, ok := deviceEvent(r); ok && (deviceID == "" || e.DeviceID == deviceID) {
-			report(r.env.TS.Time, e)
-		}
-	}
-}
-
-// deviceEvent decodes a device event, without the keypad's code: the tools show
-// events to people, and a code must never be shown or logged.
-func deviceEvent(r received) (contract.DeviceEventData, bool) {
-	if r.env.Type != contract.TypeDeviceEvent {
-		return contract.DeviceEventData{}, false
-	}
-	e, err := contract.DecodeData[contract.DeviceEventData](r.env)
-	if err != nil {
-		return contract.DeviceEventData{}, false
-	}
-	e.Code = ""
-	return e, true
 }

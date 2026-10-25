@@ -89,7 +89,7 @@ func withStateDevices(f file) (out file, digest string, devErr error) {
 func withStoredSite(r Result, f file) Result {
 	o, found, err := siteconfig.Read(r.StateDir)
 	if err != nil {
-		r.SiteErr = err
+		r.SiteVersion, r.SiteErr = o.Version, err // 0 for a file that cannot be read
 		return r
 	}
 	if !found {

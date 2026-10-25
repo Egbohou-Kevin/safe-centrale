@@ -89,7 +89,7 @@ func runAdapter(ctx context.Context, cfg zigbeeconfig.Result, stderr io.Writer) 
 		Name: name, Log: log, Loops: []func(context.Context) error{app.Run}, Alive: app.Alive,
 		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
 			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: service.Subscriptions(app.Subscriptions()), Logger: log,
-			OnMessage: service.Deliver(app.HandleMessage),
+			Take: service.Take(app.HandleMessage),
 		}}},
 	}.Run(ctx)
 }

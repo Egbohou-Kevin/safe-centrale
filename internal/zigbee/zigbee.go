@@ -113,6 +113,20 @@ type Snapshot struct {
 	// PairAsk is the request to open the network that waits for Zigbee2MQTT's answer.
 	PairAsk Asking `json:"pair_ask,omitzero"`
 	PairSeq int    `json:"pair_seq,omitzero"` // requests made for the window, to name them
+	// Joining are the devices that entered during a pairing window, by IEEE address,
+	// while Zigbee2MQTT questions them: they are decided by the window they entered,
+	// even if their questioning ends after it (see interviewed).
+	Joining map[string]Joining `json:"joining,omitempty"`
+	// Heard is the last news of each offline device (see Presence): kept for them only,
+	// whose last news no longer moves, so that a message replaying older news is known
+	// for what it is after a restart too (see oldNews).
+	Heard map[string]time.Time `json:"heard,omitempty"`
+}
+
+// Joining is a device that entered during a pairing window, being questioned.
+type Joining struct {
+	At  time.Time `json:"at"`  // when it entered
+	Ref string    `json:"ref"` // the window's pairing order
 }
 
 // Asking is a request to open the network waiting for its answer. Without one by
@@ -133,6 +147,8 @@ func (s Snapshot) clone() Snapshot {
 	s.Offline = maps.Clone(s.Offline)
 	s.Retired = maps.Clone(s.Retired)
 	s.Pending = maps.Clone(s.Pending)
+	s.Joining = maps.Clone(s.Joining)
+	s.Heard = maps.Clone(s.Heard)
 	return s
 }
 
@@ -159,6 +175,12 @@ type Network struct {
 	// coded: Zigbee2MQTT was told, since it last came online, which devices carry
 	// a code. Not saved: it is told again after each start.
 	coded bool
+	// said is when each device said its last message that carries a last_seen (see
+	// noNews). Not saved: the last news of the offline devices is (Snapshot.Heard).
+	said map[string]time.Time
+	// expelled counts the requests to leave sent to each stranger since the start
+	// (see stranger). Not saved: a stranger that speaks after a restart is asked again.
+	expelled map[string]int
 }
 
 // New creates the core. newID proposes device ids (for example "dev_k7p2"); one
@@ -217,8 +239,11 @@ func (n *Network) Restore(s Snapshot) {
 		}
 	}
 	n.s = s
-	n.seen, n.news = map[string]time.Time{}, map[string]time.Time{}
-	n.coded = false
+	n.seen, n.news = map[string]time.Time{}, maps.Clone(s.Heard)
+	if n.news == nil {
+		n.news = map[string]time.Time{}
+	}
+	n.said, n.coded, n.expelled = map[string]time.Time{}, false, map[string]int{}
 }
 
 // Devices lists the registry, sorted by id.
@@ -236,7 +261,8 @@ func (n *Network) Devices() []Device {
 func (n *Network) Status() Status {
 	return Status{
 		Bridge: n.s.Bridge, Devices: len(n.s.Devices),
-		Offline: slices.Sorted(maps.Keys(n.s.Offline)), Pairing: !n.s.PairUntil.IsZero() && n.s.PairOpen,
+		Offline: slices.Sorted(maps.Keys(n.s.Offline)),
+		Pairing: (!n.s.PairUntil.IsZero() && n.s.PairOpen) || len(n.s.Joining) > 0,
 	}
 }
 
@@ -256,6 +282,9 @@ func (n *Network) NextWake() time.Time {
 	}
 	if n.s.PairAsk.Txn != "" {
 		add(n.s.PairAsk.Deadline)
+	}
+	for _, j := range n.s.Joining {
+		add(j.At.Add(JoinWait))
 	}
 	for _, p := range n.s.Pending {
 		add(p.Deadline)
@@ -292,6 +321,8 @@ func (n *Network) Handle(in Input) []Action {
 		out = n.interviewed(v)
 	case Left:
 		out = n.left(v)
+	case Joined:
+		out = n.joined(v)
 	case Pair:
 		out = n.pair(v)
 	case JoinAnswer:
@@ -308,17 +339,24 @@ func (n *Network) Handle(in Input) []Action {
 // piece, commands not confirmed in time, devices silent for too long.
 func (n *Network) due(now time.Time) []Action {
 	out := n.pairingDue(now)
+	n.joinsDue(now)
 	out = append(out, n.retryPending(now)...)
 	return append(out, n.markSilent(now)...)
 }
 
-// bridge follows Zigbee2MQTT's state. Each time it comes online, it is told again
-// which devices carry a code: a keypad paired before, or a configuration of
-// Zigbee2MQTT restored from a backup, gets its setting back.
+// bridge follows Zigbee2MQTT's state. A pairing window ends when Zigbee2MQTT goes
+// offline, and says so to whoever asked for it: Zigbee2MQTT starts again with the
+// network closed, and the installer must not wait in front of a closed network. Each
+// time it comes online, it is told again which devices carry a code: a keypad paired
+// before, or a configuration of Zigbee2MQTT restored from a backup, gets its setting
+// back.
 func (n *Network) bridge(b Bridge) []Action {
 	n.s.Bridge = b.Online
 	if !b.Online {
 		n.coded = false
+		if !n.s.PairUntil.IsZero() {
+			return n.failPairing(ReasonBridgeOffline)
+		}
 		return nil
 	}
 	if n.coded {

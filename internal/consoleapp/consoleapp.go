@@ -167,12 +167,15 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &App{
+	a := &App{
 		cfg: cfg, deps: deps, log: log, sess: sess, site: install.NewEditor(deps.Sites),
 		modes: make(chan contract.InstallModeData, 16),
 		jobs:  make(chan func(context.Context), 1),
 		ping:  make(chan chan struct{}),
-	}, nil
+	}
+	// Also while a pairing or a removal reads the broker: the page does not freeze.
+	sess.Observe(a.setView, a.addEvent)
+	return a, nil
 }
 
 // Subscriptions lists what the program must subscribe to.

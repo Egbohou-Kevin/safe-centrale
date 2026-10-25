@@ -170,7 +170,10 @@ func (r *Relay) RestoreQueue(stored []Item, uplink uint64) []Action {
 		}
 		r.queue = append(r.queue, it)
 		r.order = max(r.order, it.Order)
-		if it.Retain {
+		if it.Retain && !it.Own {
+			// The hub's state queued: what its broker gives back with this id is
+			// not news. A state said again has the agent's id, not the hub's: the
+			// hub's own, which the cloud has, must stay known.
 			r.s.Retained[it.Topic] = it.ID
 		}
 	}

@@ -253,6 +253,15 @@ func (r *rig) mode() (m engine.Mode) {
 	return m
 }
 
+// engineSnapshot reads the engine's state from the loop's goroutine.
+func (r *rig) engineSnapshot() (s engine.Snapshot) {
+	r.t.Helper()
+	if err := r.hub.alarm.loop.Do(context.Background(), func(time.Time) []engine.Action { s = r.hub.alarm.eng.Snapshot(); return nil }); err != nil {
+		r.t.Fatal(err)
+	}
+	return s
+}
+
 // mustBe waits for the engine to reach the mode: ticks and code checks are handled
 // by goroutines of their own, so the mode may take a moment to settle.
 func (r *rig) mustBe(m engine.Mode) {

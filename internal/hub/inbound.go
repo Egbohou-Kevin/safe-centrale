@@ -147,7 +147,10 @@ func (h *Hub) deviceEvent(env contract.Envelope, d contract.DeviceEventData) {
 	if _, ok := signalOf(d); ok {
 		err := h.alarm.loop.Post(h.life, func(now time.Time) []engine.Action {
 			sig, _ := engwire.Signal(d, now)
-			return h.quietTamper(h.alarm.eng.Handle(sig))
+			if h.quietTamper(sig) {
+				return nil
+			}
+			return h.alarm.eng.Handle(sig)
 		})
 		h.submitFailed(err)
 	}

@@ -449,15 +449,23 @@ func TestAFailedActionDoesNotHoldBackTheOthers(t *testing.T) {
 
 // A message that arrives while the adapter stops (here during its last flush, which
 // the broker holds) is given up without an error.
+// A message that reaches the adapter once it is stopping is not taken: the broker
+// keeps it for the next start (the adapter acknowledges only what it took), and a door
+// opened during a restart is not lost.
 func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 	r := newRig(t, nil)
 	r.settle()
+	if !r.app.HandleMessage(inbox.Message{Topic: "zigbee2mqtt/bridge/state", Payload: []byte(`{"state":"online"}`)}) {
+		t.Fatal("a message is taken while the adapter runs")
+	}
 	release := r.broker.Hold()
 	r.app.repeatStatus(context.Background()) // something left for the last flush
 	r.cancel()
 	drivertest.WaitFor(t, "the loop to stop", func() bool { return r.app.Alive(context.Background()) != nil })
 	r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 120})
-	r.z2m("bridge/state", `{"state":"online"}`, false)
+	if r.app.HandleMessage(inbox.Message{Topic: "zigbee2mqtt/dev_door", Payload: []byte(`{"contact":false}`)}) {
+		t.Fatal("taken by a stopping adapter")
+	}
 	release()
 	<-r.done
 	if strings.Contains(r.logs.String(), "level=ERROR") {
@@ -477,4 +485,48 @@ func TestARegistryOrderDeliveredTwiceIsCarriedOutOnce(t *testing.T) {
 	if pj := r.rawOn("bridge/request/permit_join"); len(pj) != 1 {
 		t.Fatalf("%d pairing requests", len(pj))
 	}
+}
+
+// A pairing order kept by the broker while the adapter was down must not open the
+// network hours later, for nobody: the installer's tool gave up long ago.
+func TestALateRegistryOrderIsIgnored(t *testing.T) {
+	r := newRig(t, nil)
+	send := func(written time.Time, typ string, data any) {
+		env, _ := contract.NewEnvelope(site, "test", 1, r.ids.New(), written, typ, data)
+		b, _ := json.Marshal(env)
+		r.app.HandleMessage(inbox.Message{Topic: contract.RegistryCmdTopic(site), Payload: b})
+	}
+	send(r.clock.Now().Add(-3*time.Hour), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 120})
+	r.settle()
+	if pj := r.rawOn("bridge/request/permit_join"); len(pj) != 0 || !strings.Contains(r.logs.String(), "level=WARN") {
+		t.Fatalf("a late order opened the network: %v", pj)
+	}
+	send(r.clock.Now().Add(-30*time.Second), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 120})
+	r.settle()
+	if pj := r.rawOn("bridge/request/permit_join"); len(pj) != 1 {
+		t.Fatalf("a fresh order is carried out: %v", pj)
+	}
+}
+
+// A device outside the registry that speaks is refused, asked to leave, and said in
+// the journal: nobody watches it.
+func TestAStrayDeviceIsAskedToLeaveAndJournaled(t *testing.T) {
+	r := newRig(t, nil)
+	r.z2m("0x00158d00010000aa", `{"contact":true}`, false)
+	r.settle()
+	if rm := r.rawOn("bridge/request/device/remove"); len(rm) != 1 || rm[0]["id"] != "0x00158d00010000aa" || rm[0]["force"] != nil {
+		t.Fatalf("asked to leave: %v", rm)
+	}
+	if !strings.Contains(r.logs.String(), "level=WARN msg=\"a device outside the registry") {
+		t.Fatalf("journaled:\n%s", r.logs.String())
+	}
+	if len(r.broker.OfType(contract.TypeRegistryDeviceRejected)) != 1 {
+		t.Fatal("refused")
+	}
+	r.z2m("0x00158d00010000aa", `{"contact":true}`, false)
+	r.settle()
+	if rm := r.rawOn("bridge/request/device/remove"); len(rm) != 2 || rm[1]["force"] != true {
+		t.Fatalf("removed by force: %v", rm)
+	}
+	r.validateAll()
 }

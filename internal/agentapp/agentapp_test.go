@@ -15,6 +15,7 @@ import (
 	"safehome/internal/agent"
 	"safehome/internal/contract"
 	"safehome/internal/driver/drivertest"
+	"safehome/internal/inbox"
 	"safehome/internal/outbox/outboxtest"
 	"safehome/internal/schematest"
 )
@@ -494,16 +495,25 @@ func TestUploadFailures(t *testing.T) {
 
 // A message that arrives while the agent stops (here during its last flush to the
 // hub, which the hub's broker holds) is given up without an error.
+// A message that reaches the agent once it is stopping is not taken: the broker keeps
+// it for the next start (the agent acknowledges only what it took). One taken before
+// is carried out.
 func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 	r := newRig(t, nil)
 	r.settle()
+	if !r.app.HandleLocal(inbox.Message{Topic: topic("alarm", "event"), Payload: r.msg(contract.TypeAlarmTriggered, triggered)}) {
+		t.Fatal("a message is taken while the agent runs")
+	}
 	release := r.local.Hold()
 	r.app.LinkChanged(true, "mqtts") // a status left for the last flush
 	drivertest.WaitFor(t, "a status to send", func() bool { return r.app.out.Depth() > 0 })
 	r.cancel()
 	drivertest.WaitFor(t, "the loop to stop", func() bool { return r.app.Alive(context.Background()) != nil })
-	r.fromHub(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
-	r.fromCloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp})
+	if r.app.HandleLocal(inbox.Message{Topic: topic("alarm", "event"), Payload: r.msg(contract.TypeAlarmTriggered, triggered)}) ||
+		r.app.HandleCloud(inbox.Message{Topic: topic("alarm", "cmd"), Payload: r.msg(contract.TypeAlarmCommand,
+			contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp})}) {
+		t.Fatal("taken by a stopping agent")
+	}
 	r.app.LinkChanged(false, "")
 	release()
 	<-r.done

@@ -19,6 +19,7 @@ import (
 
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/mqtt/mqtttest"
+	"safehome/internal/adapter/pidfile"
 	"safehome/internal/contract"
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/schematest"
@@ -88,7 +89,11 @@ func TestTheConfigExampleChecksWithItsSecret(t *testing.T) {
 func TestASecondAgentOnTheSameStateIsRefused(t *testing.T) {
 	state := t.TempDir()
 	cfg := writeConfig(t, "mqtt://127.0.0.1:1", "mqtts://cloud.example:8883", "", state)
-	os.WriteFile(filepath.Join(state, pidName), []byte(fmt.Sprintf("%d\n", os.Getppid())), 0o600)
+	running, err := pidfile.Lock(state, pidName) // a copy that runs holds the pid file
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer running()
 	if code, _, errb := cli("run", "-config", cfg); code != 1 || !strings.Contains(errb, "already using") {
 		t.Fatalf("%d %q", code, errb)
 	}

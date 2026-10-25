@@ -145,7 +145,8 @@ func (g *Gateway) queueTest(now time.Time) {
 // not wait behind a routine check), then the checks that are due on the lines left
 // idle.
 func (g *Gateway) schedule(now time.Time) []Action {
-	out := g.startJobs(now)
+	out := g.closeRounds(now)
+	out = append(out, g.startJobs(now)...)
 	return append(out, g.startChecks(now)...)
 }
 

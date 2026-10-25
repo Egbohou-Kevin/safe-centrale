@@ -69,6 +69,7 @@ type fakeAdapter struct {
 	devices []contract.RegistryDevice
 	join    []contract.RegistryDevice // devices that join at the next pairing
 	refuse  string                    // Zigbee2MQTT's refusal of the next pairing, if any
+	mute    bool                      // removals are carried out without an answer
 	seq     uint64
 }
 
@@ -173,7 +174,11 @@ func (a *fakeAdapter) order(ctx context.Context, m mqtt.Message) {
 		d, _ := contract.DecodeData[contract.RegistryRemoveData](env)
 		a.mu.Lock()
 		a.devices = slices.DeleteFunc(a.devices, func(x contract.RegistryDevice) bool { return x.DeviceID == d.DeviceID })
+		mute := a.mute
 		a.mu.Unlock()
+		if mute {
+			return
+		}
 		a.publish(ctx, ev, contract.TypeRegistryDeviceRemoved, contract.RegistryDeviceRemovedData{Ref: env.ID, DeviceID: d.DeviceID}, false)
 		a.publishRegistry(ctx)
 	}
@@ -406,6 +411,26 @@ func TestAnInstallation(t *testing.T) {
 	}
 	if _, err := hubconfig.Load(path); err != nil {
 		t.Fatalf("the file no longer loads: %v", err)
+	}
+}
+
+// The removal went out without an answer: the adapter may still carry it out, so the
+// configuration stops using the device, and the tool says so and fails.
+func TestAnUnconfirmedRemovalLeavesTheConfiguration(t *testing.T) {
+	broker := mqtttest.Start(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	path := writeConfig(t, broker.URL())
+	a := startAdapter(t, ctx, broker.URL(), exampleDevices())
+	a.mu.Lock()
+	a.mute = true
+	a.mu.Unlock()
+	code, out, errb := cli(ctx, "remove", "-config", path, "dev_window")
+	if code != 1 || !strings.Contains(out, "not confirmed") || !strings.Contains(errb, "did not answer") {
+		t.Fatalf("%d %q %q", code, out, errb)
+	}
+	if _, ok := readSite(t, path).Zones["dev_window"]; ok {
+		t.Fatal("the configuration keeps a device the network may have lost")
 	}
 }
 

@@ -358,7 +358,8 @@ func TestDisarmingPlansTheNextClosing(t *testing.T) {
 	h.mustPlan(closing) // still before closing time: it arms again tonight
 	h.mustWake(notice)
 
-	h.advance(2 * time.Hour) // 23:22, arming has run
+	h.advance(38 * time.Minute) // 22:00, the arming starts
+	h.advance(h.cfg.ExitDelay)  // and has run
 	h.mustBe(ModeArmed)
 	h.cmd(CmdDisarm, goodCode("u_42"))
 	h.mustPlan(nextDay)
@@ -376,26 +377,58 @@ func TestDisarmingJustBeforeClosingGivesALateNoticeAtOnce(t *testing.T) {
 	}
 }
 
+// A tick a little late replays the notice, the arming and the end of the exit delay
+// at their own time.
 func TestLateTickReplaysNoticeThenArmingThenArmed(t *testing.T) {
 	h := newHarness(t, closes22)
-	as := h.advance(3 * time.Hour) // the hub was suspended until 00:00
-	h.mustBe(ModeArmed)
-	var order []string
-	for _, a := range as {
-		if e, ok := a.(Emit); ok {
-			switch e.Event.(type) {
-			case ArmingScheduled:
-				order = append(order, "notice")
-			case ArmingStarted:
-				order = append(order, "arming")
-			case Armed:
-				order = append(order, "armed")
-			}
-		}
+	as := h.advance(time.Hour + 30*time.Second) // 22:00:30
+	h.mustBe(ModeArming)
+	onlyEvent[ArmingScheduled](t, as)
+	if ev := onlyEvent[ArmingStarted](t, as); !ev.EndsAt.Equal(closing.Add(h.cfg.ExitDelay)) {
+		t.Fatalf("a tick 30 s late replays the arming at its time: %+v", ev)
 	}
-	if want := "notice arming armed"; len(order) != 3 || order[0]+" "+order[1]+" "+order[2] != want {
-		t.Fatalf("order %v, want %s", order, want)
+	onlyEvent[Armed](t, h.advance(time.Minute+40*time.Second)) // 22:02:10
+}
+
+// The hub was off (or suspended) at closing time and comes back before the plan's
+// limit: the arming still happens, but its exit delay starts now, so that whoever is
+// inside gets the whole delay to postpone it or to leave. Replayed at its own time,
+// it would arm at once and the first movement inside would ring.
+func TestAnArmingMissedWithinTheLimitStartsItsExitDelayNow(t *testing.T) {
+	h := newHarness(t, closes22)
+	as := h.advance(2*time.Hour + 30*time.Minute) // off until 23:30, before the limit (00:00)
+	h.mustBe(ModeArming)
+	onlyEvent[ArmingScheduled](t, as)
+	if ev := onlyEvent[ArmingStarted](t, as); !ev.EndsAt.Equal(h.now.Add(h.cfg.ExitDelay)) || ev.Origin != OriginSchedule {
+		t.Fatalf("the exit delay must start now: %+v", ev)
 	}
+	if r := replyOf(t, h.postpone()); r.Status != StatusDone {
+		t.Fatalf("the people inside can still postpone it: %+v", r)
+	}
+}
+
+// Back after the plan's limit, the next morning: yesterday's arming is not replayed on
+// a shop that opened again; the next closing is planned.
+func TestAnArmingMissedPastTheLimitIsDropped(t *testing.T) {
+	h := newHarness(t, closes22)
+	h.e = restart(t, h)
+	h.now = t0.Add(11 * time.Hour) // 08:00 the next day
+	as := h.e.Boot(h.now, []Signal{
+		{DeviceID: motion, Sensor: SensorMotion, Active: true},
+		{DeviceID: door, Sensor: SensorContact, Active: true},
+	})
+	h.mustBe(ModeDisarmed)
+	if len(eventsOf[ArmingScheduled](as)) != 0 || len(eventsOf[ArmingStarted](as)) != 0 || len(alerts(as)) != 0 {
+		t.Fatalf("nothing of last night's arming: %v", as)
+	}
+	h.mustPlan(nextDay)
+	h.mustWake(nextDay.Add(-h.cfg.AutoArmNotice))
+
+	// The same within a run: a tick that comes the next morning.
+	h = newHarness(t, closes22)
+	noActions(t, h.advance(11*time.Hour))
+	h.mustBe(ModeDisarmed)
+	h.mustPlan(nextDay)
 }
 
 func TestAlarmWhileDisarmedPausesTheScheduleThenPlansAgain(t *testing.T) {

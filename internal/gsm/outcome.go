@@ -72,13 +72,23 @@ func (g *Gateway) failed(id uint64, line string, reason Reason, now time.Time) [
 	if !slices.Contains(j.Tried, line) {
 		j.Tried = append(j.Tried, line)
 	}
+	j.Failure = reason
 	if g.otherLineLeft(j.Tried) {
 		return nil
 	}
-	// Every line failed this round.
+	return g.roundFailed(i, now)
+}
+
+// roundFailed ends the round of the job at index i, whose every usable line failed:
+// it waits before the next round, and its first failed round is reported. A test is
+// removed instead: it is not retried, its job is to tell.
+func (g *Gateway) roundFailed(i int, now time.Time) []Action {
+	j := &g.s.Jobs[i]
 	if j.Test {
-		g.recordTest(line, false, now)
-		g.remove(i) // a test is not retried: its job is to tell
+		if len(j.Tried) > 0 {
+			g.recordTest(j.Tried[len(j.Tried)-1], false, now)
+		}
+		g.remove(i)
 		return nil
 	}
 	j.Attempts++
@@ -88,7 +98,23 @@ func (g *Gateway) failed(id uint64, line string, reason Reason, now time.Time) [
 		return nil
 	}
 	j.Reported = true
-	return []Action{Report{Ref: j.Ref, Status: StatusFailed, Reason: reason}}
+	return []Action{Report{Ref: j.Ref, Status: StatusFailed, Reason: j.Failure}}
+}
+
+// closeRounds ends the round of each job that waits for a line it has not tried yet
+// once no such line is usable any more (it lost the network, failed its check, was
+// removed by a restart). Otherwise the job would wait until it expires, its failure
+// never reported for the escalation to move on, even with the line it tried working
+// again.
+func (g *Gateway) closeRounds(now time.Time) []Action {
+	var out []Action
+	for i := len(g.s.Jobs) - 1; i >= 0; i-- { // from the end: a test may be removed
+		j := g.s.Jobs[i]
+		if j.Line == "" && len(j.Tried) > 0 && !g.otherLineLeft(j.Tried) {
+			out = append(out, g.roundFailed(i, now)...)
+		}
+	}
+	return out
 }
 
 // noteFailure keeps what a failure says about the line.

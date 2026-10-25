@@ -28,6 +28,9 @@ type Incident struct {
 // only while the system is disarmed, and during the exit delay that it started (so
 // that this delay can still be postponed).
 type Schedule struct {
+	// Closing is the closing time the plan is for, before any postponement. Boot
+	// checks it against the configuration, which a restart may have changed.
+	Closing   time.Time `json:"closing,omitzero"`
 	At        time.Time `json:"at"`        // when the system arms by itself
 	Limit     time.Time `json:"limit"`     // latest time At can be pushed back to
 	Postponed int       `json:"postponed"` // postponements used for this closing
@@ -48,10 +51,21 @@ type Snapshot struct {
 	Open       map[string]bool `json:"open"`        // contacts that are currently open
 	EntryCause *Cause          `json:"entry_cause"` // what started the entry delay
 	Incident   *Incident       `json:"incident"`
-	// TimedOut are the incidents of this arming (intrusions, tampers) whose siren ran
-	// out without anyone ending them. The system went back to armed, but their
-	// escalation goes on: the disarm that ends this arming ends them too.
+	// TimedOut are the incidents of this arming (intrusions, tampers) that no longer
+	// ring and that nobody ended: their siren ran out, or they were raised while
+	// another alarm rang. Their escalation goes on: the disarm that ends this arming
+	// ends them too.
 	TimedOut []string `json:"timed_out,omitempty"`
+	// Raised are the other kinds of alarm raised while the current one rings, each
+	// alerted once under its own incident (see during).
+	Raised []AlertKind `json:"raised,omitempty"`
+	// Waiting are the fires (and panics that sound the siren) raised while another
+	// alarm rang: they ring in turn once it is over, if their device is still in
+	// alarm (see wake).
+	Waiting []Incident `json:"waiting,omitempty"`
+	// Checking are the orders whose code is being checked, with the time it was typed:
+	// the end of an entry delay waits for them (see CodeEntered). A restart drops them.
+	Checking map[string]time.Time `json:"checking,omitempty"`
 
 	// Devices whose tamper is active and was reported, so that a restart does not
 	// report it again.
@@ -79,6 +93,9 @@ func (s Snapshot) clone() Snapshot {
 	s.Tampered = maps.Clone(s.Tampered)
 	s.Failures = slices.Clone(s.Failures)
 	s.TimedOut = slices.Clone(s.TimedOut)
+	s.Raised = slices.Clone(s.Raised)
+	s.Waiting = slices.Clone(s.Waiting)
+	s.Checking = maps.Clone(s.Checking)
 	s.EntryCause = clonePtr(s.EntryCause)
 	s.Incident = clonePtr(s.Incident)
 	s.LastTrigger = clonePtr(s.LastTrigger)

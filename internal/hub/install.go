@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"time"
 
@@ -31,6 +32,23 @@ type installMode struct {
 	session int // counts the openings: the timer of an older one does nothing
 	// endTimer lets the timer of the open mode go once the mode closes earlier.
 	endTimer context.CancelFunc
+	// quieted are the devices whose tamper went unreported during the mode and has
+	// not ended since: closing the mode reports them (see quietTamper).
+	quieted map[string]bool
+}
+
+// Quiet says whether the moment is quiet for the hub to restart (a configuration from
+// the cloud to apply): the alarm disarmed or armed, and no installation mode. It is
+// the engine's own state, after the inputs queued before the question: the state on
+// alarm/state comes back through the broker later. False if ctx ends first.
+func (h *Hub) Quiet(ctx context.Context) bool {
+	quiet := false
+	err := h.alarm.loop.Do(ctx, func(time.Time) []engine.Action {
+		m := h.alarm.eng.Mode()
+		quiet = (m == engine.ModeDisarmed || m == engine.ModeArmed) && !h.alarm.inst.open
+		return nil
+	})
+	return err == nil && quiet
 }
 
 // installerCode tells whether a code that is nobody's is the installer's. Only a
@@ -119,30 +137,52 @@ func (h *Hub) closeInstall(now time.Time, reason string) {
 	h.stopInstallTimer()
 	h.log.Info("installation mode closed", "reason", reason)
 	h.publishInstall(now, reason)
+	h.reportQuieted()
 }
 
-// quietTamper drops the tamper alerts while the installation mode is open: the
-// installer opens the devices (a battery, a fixing) and nobody must be woken for it.
-// The engine still sees the signals, so what it knows of the devices stays right;
-// fire and panic are never dropped. It runs on the engine's loop.
-func (h *Hub) quietTamper(actions []engine.Action) []engine.Action {
-	if !h.alarm.inst.open {
-		return actions
-	}
-	return slices.DeleteFunc(actions, func(a engine.Action) bool {
-		if al, ok := a.(engine.Alert); ok && al.Kind == engine.AlertTamper {
-			h.log.Info("tamper during the installation mode: not reported", "device", deviceOf(al))
-			return true
-		}
+// quietTamper keeps the tampers from the engine while the installation mode is open:
+// the installer opens the devices (a battery, a fixing) and nobody must be woken for
+// it. They are not handed over at all, so that the engine does not take them for
+// reported (it reports a tamper once, until it ends); their end is, and fire and panic
+// are never held. It tells whether sig is held. It runs on the engine's loop.
+func (h *Hub) quietTamper(sig engine.Signal) bool {
+	inst := &h.alarm.inst
+	if sig.Sensor != engine.SensorTamper {
 		return false
-	})
+	}
+	if !sig.Active {
+		delete(inst.quieted, sig.DeviceID)
+		return false
+	}
+	if !inst.open {
+		return false
+	}
+	if inst.quieted == nil {
+		inst.quieted = map[string]bool{}
+	}
+	inst.quieted[sig.DeviceID] = true
+	h.log.Info("tamper during the installation mode: not reported", "device", sig.DeviceID)
+	return true
 }
 
-func deviceOf(a engine.Alert) string {
-	if a.Cause == nil {
-		return ""
+// reportQuieted hands the engine the tampers held during the mode that have not
+// ended: a cover the installer left open is reported once the mode is over. It runs on
+// the engine's loop, which it must not wait for: the signals are queued from a
+// goroutine of their own.
+func (h *Hub) reportQuieted() {
+	ids := slices.Sorted(maps.Keys(h.alarm.inst.quieted))
+	h.alarm.inst.quieted = nil
+	if len(ids) == 0 {
+		return
 	}
-	return a.Cause.DeviceID
+	go func() {
+		for _, id := range ids {
+			err := h.alarm.loop.Submit(h.life, func(now time.Time) engine.Input {
+				return engine.Signal{Now: now, DeviceID: id, Sensor: engine.SensorTamper, Active: true}
+			})
+			h.submitFailed(err)
+		}
+	}()
 }
 
 // publishInstall publishes the mode, retained: open when reason is empty.

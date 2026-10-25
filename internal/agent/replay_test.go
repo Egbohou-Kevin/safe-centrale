@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"math"
 	"reflect"
 	"testing"
+	"time"
 
 	"safehome/internal/contract"
 )
@@ -177,5 +179,23 @@ func TestABadReplayIsRefused(t *testing.T) {
 	acts = h.replay(1, 1+contract.MaxReplay)
 	if len(of[Refused](acts)) != 1 {
 		t.Fatalf("%+v", acts)
+	}
+}
+
+// A replay that ends at the top of the numbers ends: counting past it would go back
+// to 0 and never stop, and the agent would hang until the watchdog killed it.
+func TestAReplayAtTheTopOfTheNumbersEnds(t *testing.T) {
+	h := newHarness(t)
+	h.linkUp()
+	done := make(chan []Action, 1)
+	go func() { done <- h.replay(math.MaxUint64-2, math.MaxUint64) }()
+	select {
+	case acts := <-done:
+		r := of[Replayed](acts)
+		if len(r) != 1 || len(r[0].Report.Missing) != 1 || r[0].Report.Missing[0] != (contract.SeqRange{First: math.MaxUint64 - 2, Last: math.MaxUint64}) {
+			t.Fatalf("%+v", acts)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the replay never ends")
 	}
 }

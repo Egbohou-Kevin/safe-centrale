@@ -97,6 +97,12 @@ func TestACloudConfigurationThatDoesNotFitNeverStopsTheHub(t *testing.T) {
 		t.Fatal("the hub runs on its own file")
 	}
 
+	// A file a stricter contract refuses (written before an update): refused under its
+	// version, which the hub tells the cloud.
+	os.WriteFile(filepath.Join(state, siteconfig.FileName), []byte(`{"version":7,"entry_delay_s":900}`), 0o600)
+	if r, err := Load(path); err != nil || r.SiteErr == nil || r.SiteVersion != 7 {
+		t.Fatalf("%v %v %d", err, r.SiteErr, r.SiteVersion)
+	}
 	// A damaged file too.
 	os.WriteFile(filepath.Join(state, siteconfig.FileName), []byte("{"), 0o600)
 	if r, err := Load(path); err != nil || r.SiteErr == nil || r.SiteVersion != 0 {

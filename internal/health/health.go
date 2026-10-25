@@ -273,6 +273,11 @@ func (m *Monitor) mains(v Mains) []Action {
 	was := m.s.MainsLost
 	m.s.MainsLost = v.Lost
 	if v.Lost {
+		if !was {
+			// A new cut: the urgent alert is due again, the hub may go dark during
+			// it. The first one goes once per recharge (see hubBattery).
+			m.s.CriticalSent = false
+		}
 		return m.checkHubBattery()
 	}
 	if !was || !m.s.Owed {

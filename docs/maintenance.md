@@ -60,7 +60,9 @@ Cloud ──maint.open──► Agent ──► safehome-maint ──maint.sessi
 - **Une session à la fois, une heure au plus**, refusée si l'ordre arrive après son
   `exp`. Le tunnel meurt avec le service (systemd et le noyau tuent `ssh`).
 - **Coupure possible par l'installateur** : `"enabled": false` dans `maint.json` ; la
-  centrale répond alors `failed` / `disabled`.
+  centrale répond alors `failed` / `disabled`. Une session gardée d'avant le
+  redémarrage du service se termine aussitôt : `closed` / `disabled`, ou `failed` /
+  `disabled` si son tunnel ne s'était pas encore ouvert. Aucun tunnel n'est retenté.
 - Le client `ssh` ne lit aucune configuration de l'utilisateur ni du système
   (`-F /dev/null`), ne pose jamais de question (`BatchMode`), et s'arrête si le port
   est refusé (`ExitOnForwardFailure`).

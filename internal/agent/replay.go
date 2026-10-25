@@ -96,7 +96,9 @@ func (r *Relay) replayRange(d contract.ReplayData) []Action {
 		}
 	}
 	report := contract.ReplayedData{From: d.From, To: d.To, Last: r.uplink}
-	for seq := d.From; seq <= d.To; seq++ {
+	// The loop ends on To itself: seq <= To would hold forever for a To at the top of
+	// uint64, where seq++ goes back to 0.
+	for seq := d.From; ; seq++ {
 		it, ok := held[seq]
 		switch {
 		case queued[seq]:
@@ -113,6 +115,9 @@ func (r *Relay) replayRange(d contract.ReplayData) []Action {
 				it.Retain, it.Key = false, ""
 				r.replay = append(r.replay, it)
 			}
+		}
+		if seq == d.To {
+			break
 		}
 	}
 	return []Action{Replayed{Report: report}}

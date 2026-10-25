@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,6 +18,8 @@ type fakeRules struct {
 	refuse  map[string]bool // subscriptions refused (0x87, not authorized), as the cloud's access list would
 	puback  map[string]byte // the reason code of the acknowledgement, by topic (0 if absent)
 	silence atomic.Int32    // how many subscriptions, the first ones, get no answer
+	deliver []string        // topics of the messages (QoS 1) sent after the first subscription
+	acked   chan uint16     // the packet ids the client acknowledged, if not nil
 }
 
 // startFakeBroker plays a broker that follows rules.
@@ -55,6 +58,16 @@ func serveFake(conn net.Conn, rules *fakeRules) {
 				continue
 			}
 			out = suback(in.Content.(*packets.Subscribe), rules.refuse)
+			if _, err := out.WriteTo(conn); err != nil {
+				return
+			}
+			out = nil
+			deliver(conn, rules.deliver)
+		case packets.PUBACK:
+			if rules.acked != nil {
+				rules.acked <- in.Content.(*packets.Puback).PacketID
+			}
+			continue
 		case packets.PUBLISH:
 			pub := in.Content.(*packets.Publish)
 			out = packets.NewControlPacket(packets.PUBACK)
@@ -67,6 +80,21 @@ func serveFake(conn net.Conn, rules *fakeRules) {
 		default:
 			continue
 		}
+		if out == nil {
+			continue
+		}
+		if _, err := out.WriteTo(conn); err != nil {
+			return
+		}
+	}
+}
+
+// deliver sends the client a message (QoS 1) on each topic, numbered from 1.
+func deliver(conn net.Conn, topics []string) {
+	for i, topic := range topics {
+		out := packets.NewControlPacket(packets.PUBLISH)
+		pub := out.Content.(*packets.Publish)
+		pub.Topic, pub.QoS, pub.PacketID, pub.Payload = topic, 1, uint16(i+1), []byte("{}")
 		if _, err := out.WriteTo(conn); err != nil {
 			return
 		}
@@ -164,5 +192,53 @@ func TestABrokerRefusalIsTold(t *testing.T) {
 	err = c.Publish(ctx, Message{Topic: "s/quota", Payload: []byte("{}"), QoS: 1})
 	if err == nil || errors.Is(err, ErrRefused) || errors.Is(err, ErrDown) {
 		t.Fatalf("quota exceeded: %v, want an error worth another try", err)
+	}
+}
+
+// A message the application did not take (it is stopping) is not acknowledged, and
+// holds back those after it: the broker gives them all again at the next connection.
+// Without Take, every message is acknowledged.
+func TestOnlyTheMessagesTakenAreAcknowledged(t *testing.T) {
+	for name, want := range map[string][]uint16{"take": {1}, "on message": {1, 2, 3}} {
+		t.Run(name, func(t *testing.T) {
+			rules := &fakeRules{deliver: []string{"s/a", "s/stopping", "s/c"}, acked: make(chan uint16, 8)}
+			url := startFakeBroker(t, rules)
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			got := make(chan string, 8)
+			o := Options{BrokerURL: url, ClientID: uniqueID("ack"), Subscriptions: []Subscription{{Filter: "s/#", QoS: 1}}}
+			if name == "take" {
+				stopping := false
+				o.Take = func(m Message) bool {
+					got <- m.Topic
+					stopping = stopping || m.Topic == "s/stopping"
+					return !stopping
+				}
+			} else {
+				o.OnMessage = func(m Message) { got <- m.Topic }
+			}
+			c, err := Dial(ctx, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close(ctx)
+			for range 3 {
+				<-got
+			}
+			var acked []uint16
+			deadline := time.After(500 * time.Millisecond) // ten times the library's batching of acknowledgements
+			for len(acked) < 3 {
+				select {
+				case id := <-rules.acked:
+					acked = append(acked, id)
+					continue
+				case <-deadline:
+				}
+				break
+			}
+			if !slices.Equal(acked, want) {
+				t.Fatalf("acknowledged %v, want %v", acked, want)
+			}
+		})
 	}
 }

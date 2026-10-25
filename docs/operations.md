@@ -124,9 +124,13 @@ centrale réelle).
 Sur la centrale, systemd démarre les programmes et les relance s'ils tombent :
 installation dans `systeme.md`, fichiers dans `deploy/`.
 
-1. Le fichier de pid `hub.pid` est posé dans le dossier d'état. Si un autre processus
-   vivant le tient, la centrale refuse de démarrer : deux centrales sur le même état
-   croiraient chacune posséder l'alarme.
+1. Le fichier de pid `hub.pid` est posé dans le dossier d'état, et la centrale le
+   tient par un verrou (`flock`) que le système lâche quand elle s'arrête, de quelque
+   façon que ce soit. Si un autre processus le tient, la centrale refuse de démarrer :
+   deux centrales sur le même état croiraient chacune posséder l'alarme. Un fichier
+   resté après une coupure de courant n'empêche rien, même si son pid a été redonné à
+   un autre programme au démarrage suivant : personne ne le tient. Il en va de même
+   pour le fichier de pid de chaque programme.
 2. L'état sauvegardé est lu. Un état abîmé des deux copies empêche le démarrage : c'est
    à la personne qui installe de décider.
 3. Le client MQTT se connecte (il réessaie sans fin si le broker n'est pas là : la
@@ -162,7 +166,9 @@ la connexion, retire `hub.pid`.
 La console locale peut aussi régler le code d'un contact pendant le mode installation
 (`security-install.md`). Après `codes set`, `codes remove` ou un code donné depuis la
 console, l'outil envoie `SIGHUP` à la centrale si elle
-tourne (il lit son pid dans `hub.pid`), qui relit les codes. Si le rechargement échoue,
+tourne (il lit son pid dans `hub.pid`, seulement si la centrale tient le fichier : le
+pid d'un fichier que personne ne tient peut être celui d'un autre programme, que le
+signal arrêterait), qui relit les codes. Si le rechargement échoue,
 les anciens codes restent en usage et une erreur est journalisée.
 
 La centrale prend les contacts tels qu'ils sont enregistrés au moment où elle relit
@@ -184,6 +190,8 @@ délais et, en données mobiles, son forfait vidéo (`config.set`, voir `contrac
    numéros). `/etc/safehome` reste en lecture seule.
 3. Elle redémarre pour l'appliquer, **jamais pendant un délai, une alarme ni le mode
    installation** : elle attend que l'alarme soit désarmée ou armée et le mode fermé.
+   Le moteur le confirme lui-même au moment de redémarrer : un délai commencé à
+   l'instant (une porte ouverte) n'est pas encore sur `alarm/state`.
    Une configuration reçue pendant le mode installation est gardée et appliquée à sa
    fermeture. systemd la relance (`Restart=always`), l'état armé ou désarmé est repris
    comme après une coupure.
@@ -197,7 +205,7 @@ Ce que le cloud règle remplace le fichier du programme ; le reste du fichier ne
 change pas. Une liste envoyée (contacts, horaires) remplace celle du fichier.
 
 Un `site-config.json` abîmé ou qui ne convient plus (fichier de la centrale modifié
-depuis) **n'empêche jamais un programme de démarrer** : il est laissé de côté, le
+depuis, ou contrat rendu plus strict par une mise à jour) **n'empêche jamais un programme de démarrer** : il est laissé de côté, le
 programme tourne sur son propre fichier et le dit dans son journal. La centrale
 répond alors `rejected` avec la raison si le fichier se lit mais ne convient plus ; un
 fichier illisible est seulement journalisé. `check` affiche la version en service, ou
@@ -472,7 +480,16 @@ Ce que l'outil vérifie avant de toucher à quoi que ce soit :
   démarrage de la centrale avant d'être écrite. Par exemple, la dernière sirène ne peut
   pas être retirée (la centrale refuse un site sans sirène) : il faut d'abord ajouter
   la nouvelle. Pour `remove`, cette vérification a lieu **avant** le retrait du réseau,
-  qui ne se défait pas.
+  qui ne se défait pas. Pendant le retrait, l'appareil est tenu pour parti : aucun
+  autre changement du même programme ne peut laisser un site qui ne marcherait pas sans
+  lui (retirer l'autre sirène, par exemple). Cette garde ne vaut qu'à l'intérieur d'un
+  programme : la console et l'outil ont chacun la leur, et `check` dit après coup qu'un
+  site n'a plus aucune sirène appairée.
+- **Un retrait parti sans réponse** : l'ordre est envoyé mais l'adaptateur ne répond
+  pas à temps. Il peut encore l'exécuter un instant plus tard : l'appareil quitte donc
+  la configuration quand même, et `remove` le dit (`the removal was sent but not
+  confirmed`) puis s'arrête en erreur. `devices` montre ensuite s'il est encore
+  appairé.
 - **L'adaptateur répond** : `pair` attend que l'adaptateur Zigbee confirme l'ouverture
   du réseau (15 s), sinon il dit que `safehome-zigbee` ne tourne pas, au lieu d'attendre
   deux minutes pour rien. L'adaptateur ne la confirme qu'une fois que Zigbee2MQTT l'a
@@ -485,7 +502,8 @@ Ce que l'outil vérifie avant de toucher à quoi que ce soit :
 
 - comme **problèmes** (code de sortie 1) : une zone qui ne pourra jamais se déclencher,
   un type de zone inconnu, une zone sans nom, une sirène qui ne sait pas sonner, un nom
-  de sirène fautif ou donné à une sirène qui a une zone ;
+  de sirène fautif ou donné à une sirène qui a une zone, des sirènes dont aucune n'est
+  appairée (rien ne peut sonner) ;
 - comme **avertissements** : un appareil appairé qui ne sert à rien, une zone ou une
   sirène dont l'appareil n'est pas appairé, un site sans zone ou sans sirène, une
   sirène sans nom ni zone sur un site qui en a plusieurs ainsi (les textes ne la

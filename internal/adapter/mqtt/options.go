@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
 )
@@ -50,6 +51,14 @@ type Options struct {
 	// from the client's own goroutine: it must return quickly (hand the message to
 	// the driver's queue) and must not call Publish synchronously.
 	OnMessage func(Message)
+	// Take, set instead of OnMessage, receives each message in the same way and says
+	// whether the application took it: queued work that will be done, or dropped it
+	// on purpose (invalid, a duplicate). The broker is told the message arrived only
+	// then. One not taken, because the program is stopping, stays with the broker,
+	// which gives it again at the next connection of the lasting session. The
+	// acknowledgements go out in the order of the messages: one not taken holds back
+	// those after it, so an application takes every message until it stops.
+	Take func(Message) bool
 	// OnSubscribed, when set, is called each time the subscriptions are active
 	// (after every connection): retained messages follow right after. A filter the
 	// broker refuses is logged and does not hold the others back.
@@ -84,8 +93,8 @@ func (o Options) validate() ([]*url.URL, error) {
 	if o.ClientID == "" {
 		return nil, fmt.Errorf("mqtt: ClientID is required")
 	}
-	if len(o.Subscriptions) > 0 && o.OnMessage == nil {
-		return nil, fmt.Errorf("mqtt: OnMessage is required when there are subscriptions")
+	if len(o.Subscriptions) > 0 && (o.OnMessage == nil) == (o.Take == nil) {
+		return nil, fmt.Errorf("mqtt: OnMessage or Take, one of them, is required when there are subscriptions")
 	}
 	for _, s := range o.Subscriptions {
 		if s.Filter == "" || s.QoS > 2 {
@@ -108,8 +117,16 @@ func parseBrokerURL(raw string) (*url.URL, error) {
 	if u.User != nil {
 		return nil, fmt.Errorf("mqtt: put the credentials in Username and Password, not in %q", u.Redacted())
 	}
+	if u.Port() == "" {
+		// The dial needs a port: without one, every attempt would fail, and only a
+		// warning per attempt would say so.
+		u.Host = net.JoinHostPort(u.Hostname(), defaultPorts[u.Scheme])
+	}
 	return u, nil
 }
+
+// defaultPorts are the usual ports of the schemes, for a URL that gives none.
+var defaultPorts = map[string]string{"mqtt": "1883", "mqtts": "8883", "tls": "8883", "ws": "80", "wss": "443"}
 
 // tlsConfig returns the TLS settings: nil (the system's authorities) without CAFile.
 func (o Options) tlsConfig() (*tls.Config, error) {

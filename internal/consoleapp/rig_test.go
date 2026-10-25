@@ -160,6 +160,7 @@ type rig struct {
 	join     []contract.RegistryDevice
 	serving  int
 	keepOpen bool                    // the adapter keeps the network open for the whole window
+	mute     bool                    // the adapter carries out removals without answering
 	hold     func(contract.Envelope) // called before each message is taken, may block
 }
 
@@ -210,7 +211,11 @@ func (r *rig) answer(env contract.Envelope) {
 		d, _ := contract.DecodeData[contract.RegistryRemoveData](env)
 		r.mu.Lock()
 		r.devices = slices.DeleteFunc(r.devices, func(x contract.RegistryDevice) bool { return x.DeviceID == d.DeviceID })
+		mute := r.mute
 		r.mu.Unlock()
+		if mute {
+			return
+		}
 		r.deliver(ev, contract.TypeRegistryDeviceRemoved, contract.RegistryDeviceRemovedData{Ref: env.ID, DeviceID: d.DeviceID}, false)
 		r.registry()
 	}

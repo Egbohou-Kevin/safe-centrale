@@ -41,8 +41,10 @@ programmes et leurs configurations d'exemple : même broker, même dossier d'ét
 
 Réglages système : `system/journald-safehome.conf` (journaux),
 `system/watchdog-safehome.conf` (chien de garde), `system/fstab-data` (partition de
-données), `system/polkit-safehome-console.rules` (la console peut gérer les réseaux de
-NetworkManager, et rien d'autre).
+données), `system/polkit-safehome-console.rules` (la console peut créer, lever,
+baisser et supprimer les connexions de NetworkManager, sans éteindre la radio ; la
+règle vaut pour tout programme lancé sous `safehome`, voir la limite dans
+`security-install.md`).
 
 Nos programmes tournent sous l'utilisateur `safehome`, sans droits
 d'administration, et ne peuvent écrire que dans `/var/lib/safehome`

@@ -133,14 +133,14 @@ func (a *App) network(ctx, sctx context.Context) {
 			a.hotspotErr = err.Error()
 		}
 		a.mu.Unlock()
-		return
+		<-sctx.Done() // a start that failed may still bring the network up: down at the end
 	case err == nil:
 		if err := a.deps.Serve(sctx); err != nil && sctx.Err() == nil {
 			a.log.Error("the console's page stopped", "err", err)
 		}
 		<-sctx.Done()
 	}
-	// Also after a start cut short by the mode's end: it may have left a network.
+	// Also after a start cut short or failed: it may have left a network.
 	downCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.cfg.Wait)
 	defer cancel()
 	if err := a.deps.Hotspot.Down(downCtx); err != nil {
@@ -163,7 +163,7 @@ func (a *App) worker(ctx context.Context) {
 			case <-fctx.Done():
 			}
 		}()
-		a.sess.Follow(fctx, a.setView, a.addEvent)
+		a.sess.Follow(fctx)
 		cancel()
 		<-got
 		if ctx.Err() != nil {

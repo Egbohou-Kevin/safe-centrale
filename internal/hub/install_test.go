@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -52,6 +53,33 @@ func (r *rig) openInstall() {
 	r.t.Helper()
 	r.keypad(contract.ValDisarm, installerCode)
 	drivertest.WaitFor(r.t, "the installation mode", func() bool { return r.lastInstall().Status == contract.InstallOpen })
+}
+
+// The configuration's application asks the engine itself whether the moment is
+// quiet for a restart: neither a delay nor the installation mode.
+func TestQuietIsTheEnginesOwnWord(t *testing.T) {
+	r := newRig(t, nil)
+	r.withInstaller()
+	r.start()
+	ctx := context.Background()
+	if !r.hub.Quiet(ctx) {
+		t.Fatal("disarmed is quiet")
+	}
+	r.openInstall()
+	if r.hub.Quiet(ctx) {
+		t.Fatal("the installation mode is no quiet moment")
+	}
+	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_owner") // closes the mode
+	r.mustBe(engine.ModeArming)
+	drivertest.WaitFor(t, "the mode closed", func() bool { return r.lastInstall().Status == contract.InstallClosed })
+	if r.hub.Quiet(ctx) {
+		t.Fatal("an exit delay is no quiet moment")
+	}
+	done, cancel := context.WithCancel(ctx)
+	cancel()
+	if r.hub.Quiet(done) {
+		t.Fatal("no answer, no quiet moment")
+	}
 }
 
 func TestTheInstallerCodeOpensTheInstallationModeForHalfAnHour(t *testing.T) {
@@ -231,6 +259,38 @@ func TestTamperAlertsAgainOnceTheModeIsClosed(t *testing.T) {
 	drivertest.WaitFor(t, "the mode closed", func() bool { return r.lastInstall().Status == contract.InstallClosed && len(r.installModes()) == 3 })
 	r.device("dev_box", contract.CapTamper, contract.ValTriggered)
 	drivertest.WaitFor(t, "the tamper alert", func() bool { return len(eventsOf(r, contract.TypeAlertRequest)) > 0 })
+}
+
+// A tamper held during the mode and not ended by its close is reported then: a cover
+// the installer left open does not stay unreported.
+func TestATamperLeftOpenIsReportedWhenTheModeCloses(t *testing.T) {
+	r := newRig(t, nil, func(c *Config) {
+		c.Engine.Zones["dev_box"] = engine.Zone{Name: "box", Kind: engine.ZoneTamper}
+		c.Engine.Zones["dev_lid"] = engine.Zone{Name: "lid", Kind: engine.ZoneTamper}
+	})
+	r.withInstaller()
+	r.start()
+	r.openInstall()
+	r.device("dev_box", contract.CapTamper, contract.ValTriggered)
+	r.device("dev_lid", contract.CapTamper, contract.ValTriggered)
+	r.device("dev_lid", contract.CapTamper, contract.ValClear) // closed again
+	r.settle()
+	if n := len(eventsOf(r, contract.TypeAlertRequest)); n != 0 {
+		t.Fatalf("%d alert request(s) during the mode", n)
+	}
+	r.send(contract.InstallCmdTopic(site), contract.TypeInstallClose, contract.InstallCloseData{})
+	drivertest.WaitFor(t, "the tamper alert", func() bool { return len(eventsOf(r, contract.TypeAlertRequest)) > 0 })
+	r.settle()
+	incidents := map[string]bool{}
+	for _, p := range eventsOf(r, contract.TypeAlertRequest) {
+		incidents[dataOf[contract.AlertRequestData](t, p).Incident] = true
+	}
+	if len(incidents) != 1 {
+		t.Fatalf("one tamper reported, got %d incident(s)", len(incidents))
+	}
+	if snap := r.engineSnapshot(); !snap.Tampered["dev_box"] || snap.Tampered["dev_lid"] {
+		t.Fatalf("what the engine took for reported: %v", snap.Tampered)
+	}
 }
 
 // The timer of a mode that closed early goes with it, and the timer of a new mode

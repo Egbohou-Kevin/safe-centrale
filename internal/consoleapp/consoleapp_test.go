@@ -68,9 +68,9 @@ func TestANetworkThatDoesNotStartIsSaid(t *testing.T) {
 	}
 	r.mode(contract.InstallModeData{Status: contract.InstallClosed, Reason: contract.InstallTimeout})
 	drivertest.WaitFor(t, "the end", func() bool { return !r.app.Overview().Open })
-	if _, down := r.hotspot.counts(); down != 0 {
-		t.Fatal("stopped a network that never started")
-	}
+	// A start that failed (cut short by its deadline, say) may still have left a
+	// network that NetworkManager brings up: it is taken down at the end of the mode.
+	drivertest.WaitFor(t, "the network down", func() bool { _, down := r.hotspot.counts(); return down == 1 })
 }
 
 func TestPairingShowsTheDevicesAsTheyJoin(t *testing.T) {
@@ -93,6 +93,33 @@ func TestPairingShowsTheDevicesAsTheyJoin(t *testing.T) {
 	}
 	if !slices.ContainsFunc(o.Findings, func(f install.Finding) bool { return f.DeviceID == "dev_k7p2" }) {
 		t.Fatalf("a device without use is not pointed out: %+v", o.Findings)
+	}
+}
+
+// During a pairing window the page goes on: the device that joined can be given its
+// zone at once, and a sensor triggered right away shows on the Tests page.
+func TestThePageFollowsTheDevicesDuringAPairing(t *testing.T) {
+	r := newRig(t)
+	r.open()
+	r.mu.Lock()
+	r.keepOpen = true
+	r.join = []contract.RegistryDevice{dev("dev_k7p2", "contact", "battery")}
+	r.mu.Unlock()
+	if err := r.app.Pair(); err != nil {
+		t.Fatal(err)
+	}
+	drivertest.WaitFor(t, "the new device", func() bool { p := r.app.Overview().Pairing; return p != nil && p.Active && len(p.Added) == 1 })
+	if !slices.ContainsFunc(r.app.Overview().Devices, func(d Device) bool { return d.ID == "dev_k7p2" }) {
+		t.Fatalf("the device list without the new device: %+v", r.app.Overview().Devices)
+	}
+	if err := r.app.SetZone("dev_k7p2", "Reserve", "instant"); err != nil {
+		t.Fatalf("a zone for the new device during the window: %v", err)
+	}
+	r.deliver(contract.DeviceEventTopic(site, "dev_k7p2"), contract.TypeDeviceEvent,
+		contract.DeviceEventData{DeviceID: "dev_k7p2", Capability: "contact", Value: json.RawMessage(`"open"`)}, false)
+	drivertest.WaitFor(t, "the event", func() bool { return len(r.app.Overview().Events) == 1 })
+	if !r.app.Overview().Pairing.Active {
+		t.Fatal("the window ended before the checks")
 	}
 }
 
@@ -181,6 +208,22 @@ func TestRemovingADevice(t *testing.T) {
 	drivertest.WaitFor(t, "the registry without it", func() bool {
 		return !slices.ContainsFunc(r.app.Overview().Devices, func(d Device) bool { return d.ID == "dev_door" && d.Paired })
 	})
+}
+
+// The order went out, the answer did not come: the adapter may carry it out a moment
+// later, and the site must not keep a device the network lost.
+func TestAnUnconfirmedRemovalStillLeavesTheSite(t *testing.T) {
+	r := newRig(t)
+	r.open()
+	r.mu.Lock()
+	r.mute = true
+	r.mu.Unlock()
+	if err := r.app.Remove(context.Background(), "dev_door"); !errors.Is(err, install.ErrUnconfirmed) {
+		t.Fatalf("the page is told: %v", err)
+	}
+	if site, _ := r.sites.Read(); site.Zones["dev_door"] != (install.Zone{}) {
+		t.Fatalf("the site keeps the device: %+v", site)
+	}
 }
 
 func TestTheTestsPageShowsEventsWithZonesAndNoCode(t *testing.T) {

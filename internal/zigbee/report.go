@@ -11,10 +11,18 @@ import (
 // live message tells the present, and a new door whose first word is "open" is an
 // opening the alarm must hear. Only retained messages (old news) are silent.
 // Actions are announced every time.
+//
+// A message Zigbee2MQTT says it heard no later than the device's last news is no news:
+// Zigbee2MQTT replays its cache of every device when it starts, not retained, with
+// the old last_seen. It is ignored whole: it must not bring a dead door back online,
+// nor replay an old "open" as an opening.
 func (n *Network) report(r Report) []Action {
 	d, ok := n.resolve(r.Name)
 	if !ok {
-		return []Action{Ignored{What: "a message from a device that is not registered"}}
+		return n.stranger(r)
+	}
+	if n.noNews(d.ID, r) {
+		return []Action{Ignored{What: "a message with no news: Zigbee2MQTT heard it before the last one (its cache, replayed when it starts)"}}
 	}
 	p, ok := n.byName[d.Profile]
 	if !ok {
@@ -26,6 +34,25 @@ func (n *Network) report(r Report) []Action {
 	out := n.heard(d.ID, r.Now, r.spokenAt())
 	out = append(out, n.readFields(d.ID, p, r)...)
 	return append(out, n.confirm(d.ID, p, r)...)
+}
+
+// noNews tells whether a live message is older than what the device last said: the
+// last_seen of its last message, or for an offline device its last news, kept with
+// the state. A message that does not say when Zigbee2MQTT heard it cannot be judged.
+// Otherwise it records what the device said.
+func (n *Network) noNews(id string, r Report) bool {
+	if r.Retained || r.Heard.IsZero() {
+		return false
+	}
+	last, known := n.said[id]
+	if h, ok := n.s.Heard[id]; ok && h.After(last) {
+		last, known = h, true
+	}
+	if known && !r.spokenAt().After(last) {
+		return true
+	}
+	n.said[id] = r.spokenAt()
+	return false
 }
 
 // readFields turns the fields of a message into changes, capability by capability.
