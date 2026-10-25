@@ -54,13 +54,23 @@ func TestDrainingTheQueueWritesItemsNotTheQueue(t *testing.T) {
 	itemWrites, snapWrites, countWrites := q.written[puts:], s.Sizes(keyAgent)[saves:], s.Sizes(keyUplink)[counts:]
 	t.Logf("draining %d items wrote %d bytes of items, %d bytes of snapshots (%d saves) and %d bytes of counter",
 		n, sum(itemWrites), sum(snapWrites), len(snapWrites), sum(countWrites))
-	// Each item is written once more, with its number, then removed; a few agent.status
-	// join it.
-	if len(itemWrites) < n || len(itemWrites) > n+10 || q.removed-removed < n || len(q.items) != 0 {
+	// Each item is written once more, with its number, then replaced by a tombstone of
+	// a few bytes, which goes 10 minutes later (internal/agent/sent.go); a few
+	// agent.status join it.
+	if len(itemWrites) < 2*n || len(itemWrites) > 2*n+20 || q.removed-removed > 10 || len(q.items) < n {
 		t.Fatalf("%d items written and %d removed for %d sent, %d left", len(itemWrites), q.removed-removed, n, len(q.items))
 	}
 	if big := slices.Max(itemWrites); big > 2048 {
 		t.Fatalf("an item of %d bytes", big)
+	}
+	stones := 0
+	for _, size := range itemWrites {
+		if size < 200 {
+			stones++
+		}
+	}
+	if stones < n {
+		t.Fatalf("%d small tombstones for %d items sent", stones, n)
 	}
 	// The counter is saved for each new number, and is tiny; the snapshot hardly moves.
 	if len(countWrites) < n || len(countWrites) > n+10 || sum(countWrites) > 64*len(countWrites) {
@@ -69,6 +79,15 @@ func TestDrainingTheQueueWritesItemsNotTheQueue(t *testing.T) {
 	if len(snapWrites) > 10 {
 		t.Fatalf("%d snapshots saved for %d items sent", len(snapWrites), n)
 	}
+	q.mu.Unlock()
+	r.clock.Advance(10 * time.Minute)
+	r.fromHub(topic("alarm", "event"), contract.TypeAlarmArmed, contract.ArmedData{})
+	drivertest.WaitFor(t, "the tombstones to go", func() bool {
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		return q.removed-removed >= n
+	})
+	q.mu.Lock()
 }
 
 func sum(sizes []int) int {

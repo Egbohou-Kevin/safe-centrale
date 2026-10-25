@@ -223,8 +223,14 @@ func (r *Relay) allow(now time.Time) bool { return r.take(now, &r.s.Tokens, &r.s
 // take takes one from an allowance (what is left, and when it was last refilled),
 // refilled DownPerMinute per minute up to DownBurst. A refusal changes neither: the
 // allowance it found is worked out again at the next message, and a flood over the
-// limit causes no write of the snapshot.
+// limit causes no write of the snapshot. A refill time to come means the clock ran
+// ahead and was set back since (an RTC corrected at boot): the time gone by since is
+// unknown, and waiting for the clock to catch up would refuse every order from the
+// app meanwhile. The allowance is given back whole, once, from now.
 func (r *Relay) take(now time.Time, tokens *float64, at *time.Time) bool {
+	if at.After(now) {
+		*tokens, *at = float64(r.cfg.DownBurst), now
+	}
 	avail := *tokens
 	if !at.IsZero() && now.After(*at) {
 		avail += now.Sub(*at).Minutes() * float64(r.cfg.DownPerMinute)

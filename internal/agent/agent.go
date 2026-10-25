@@ -142,6 +142,10 @@ type Relay struct {
 	states   map[string][]byte
 	owed     map[string]bool
 	restated map[string]time.Time
+	// Saved as tombstones in the queue's store (see sent.go): the ids of what
+	// reached the cloud lately, oldest first, and the same as a set.
+	tombs  []tomb
+	buried map[string]bool
 }
 
 // New builds a relay with an empty queue.
@@ -196,6 +200,7 @@ func (r *Relay) Restore(s Snapshot) {
 	r.journal, r.journalBytes, r.replay = nil, 0, nil
 	r.got = map[string]sentMark{}
 	r.states, r.owed, r.restated = map[string][]byte{}, map[string]bool{}, map[string]time.Time{}
+	r.tombs, r.buried = nil, map[string]bool{}
 }
 
 // Up says whether the cloud can be reached.
@@ -254,7 +259,7 @@ func (r *Relay) Handle(in Input) []Action {
 	case Cloud:
 		out = append(out, r.cloud(v)...)
 	case Sent:
-		out = append(out, r.sent(v.ID)...)
+		out = append(out, r.sent(v.Now, v.ID)...)
 	case Rejected:
 		out = append(out, r.rejected(v.ID)...)
 	case Link:
@@ -340,5 +345,6 @@ func (r *Relay) expire(now time.Time) []Action {
 	}
 	old, _ := r.removeIf(func(it Item) bool { return !now.Before(it.At.Add(r.cfg.QueueAge)) })
 	out = append(out, r.dropped(old, "too old")...)
+	out = append(out, r.forgetSent(now)...)
 	return append(out, r.expirePhotos(now)...)
 }

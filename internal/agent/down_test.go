@@ -139,3 +139,23 @@ func TestRepliesDoNotCountAgainstTheLimit(t *testing.T) {
 		}
 	}
 }
+
+// The clock ran ahead while messages came from the cloud, then was set back, and the
+// agent restarted: the allowances refill from now, not from a time to come, or every
+// order from the app would be refused until the clock caught up.
+func TestAClockSetBackDoesNotStopTheAllowance(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.DownBurst = 2; c.DownPerMinute = 6 })
+	order := contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp, User: "u_owner"}
+	h.now = t0.Add(6 * time.Hour)
+	for range 4 { // both allowances spent
+		h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order)
+	}
+	h.restart()
+	h.now = t0
+	for i := range 5 {
+		h.now = h.now.Add(time.Minute)
+		if _, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order); len(of[PublishLocal](acts)) != 1 {
+			t.Fatalf("order %d: %+v", i+1, acts)
+		}
+	}
+}

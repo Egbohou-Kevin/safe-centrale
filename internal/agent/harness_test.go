@@ -56,8 +56,17 @@ func (h *harness) next() (Item, bool) {
 func (h *harness) keep(acts []Action) {
 	h.t.Helper()
 	h.apply(h.disk, acts)
-	if len(h.disk) != len(h.r.queue) {
-		h.t.Fatalf("%d items on disk, %d in the queue", len(h.disk), len(h.r.queue))
+	stones := 0
+	for id, it := range h.disk {
+		if it.Sent {
+			stones++
+			if !h.r.buried[id] {
+				h.t.Fatalf("a tombstone on disk not remembered: %s", id)
+			}
+		}
+	}
+	if len(h.disk)-stones != len(h.r.queue) || stones != len(h.r.tombs) {
+		h.t.Fatalf("%d items and %d tombstones on disk, %d in the queue, %d remembered", len(h.disk)-stones, stones, len(h.r.queue), len(h.r.tombs))
 	}
 	for _, it := range h.r.queue {
 		if !reflect.DeepEqual(h.disk[it.ID], it) {

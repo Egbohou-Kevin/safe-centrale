@@ -158,6 +158,9 @@ type Item struct {
 	// again is one: at a restart, it must not be taken for the hub's state (see
 	// RestoreQueue).
 	Own bool `json:"own,omitempty"`
+	// Sent: a tombstone, kept on disk for a while once the item reached the cloud,
+	// with only its id, topic, number and time (see sent.go). Not in the queue.
+	Sent bool `json:"sent,omitempty"`
 }
 
 // Status is the state of the link, as agent.status says it.

@@ -30,13 +30,18 @@ func TestDrainingTheQueueSavesOneItemAtATime(t *testing.T) {
 			t.Fatalf("numbering %s: %+v", it.ID, acts)
 		}
 		h.keep(acts)
+		// Sent, the item leaves a tombstone of a few bytes in its place (sent.go).
 		acts = h.handle(Sent{Now: h.now, ID: it.ID})
-		if d := of[QueueDrop](acts); len(d) != 1 || !reflect.DeepEqual(d[0].IDs, []string{it.ID}) {
+		if s := of[QueueSave](acts); len(acts) != 1 || len(s) != 1 || s[0].Item.ID != it.ID || !s[0].Item.Sent || s[0].Item.Payload != nil {
 			t.Fatalf("sent %s: %+v", it.ID, acts)
 		}
 	}
-	if len(h.disk) != 0 {
-		t.Fatalf("%d items left on disk", len(h.disk))
+	if len(h.disk) != 50 || len(h.r.queue) != 0 {
+		t.Fatalf("%d documents left on disk, %d items in the queue", len(h.disk), len(h.r.queue))
+	}
+	h.now = h.now.Add(sentMemory)
+	if d := of[QueueDrop](h.handle(Tick{Now: h.now})); len(d) != 1 || len(d[0].IDs) != 50 || len(h.disk) != 0 {
+		t.Fatalf("the tombstones go after %v: %+v, %d left", sentMemory, d, len(h.disk))
 	}
 	// The numbers went to their own document: the snapshot did not move.
 	if after, _ := json.Marshal(h.r.Snapshot()); string(after) != string(before) || h.uplink != 50 {
