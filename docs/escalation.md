@@ -200,7 +200,8 @@ discrète quand il est pris en charge à son tour.
 sirène ne fait plus appeler le gardien, elle passe par l'application ou par SMS
 (décidé le 24 octobre 2026). Un feu levé pendant une intrusion ne change pas l'alarme
 de la sirène : c'est l'intrusion. Il garde l'alerte bruyante tant qu'il n'est pas pris
-en charge, et son escalade n'est jamais touchée.
+en charge, et son escalade n'est jamais touchée. Si une sirène est connue muette, son
+texte le dit (voir « Un feu dit la sirène muette » plus bas).
 
 **Sabotage.** Son escalade (le premier contact, une vague) finit d'habitude « sans
 réponse » : personne ne l'a pris en charge, l'alerte de la sirène reste bruyante.
@@ -246,8 +247,33 @@ quotidien, une sirène hors ligne ou à pile faible se lit « Sirène » et plus
 `dev_siren1`. Les événements d'alarme (`alarm.siren_failed`) ne portent toujours que
 l'identifiant de la sirène.
 
-Pas fait, décidé le 24 octobre 2026 : une phrase dans le texte d'un feu levé après
-qu'une panne a été dite discrètement.
+### Un feu dit la sirène muette
+
+Décidé le 24 octobre 2026, fait le 25 octobre : un feu levé pendant une alarme dont une
+sirène est connue muette le dit à la fin de son texte, avant la manière de répondre :
+`ALARME INCENDIE Boutique Lome: fumee detectee (Cuisine) a 21:09. La sirene ne repond
+pas. Repondre 1 si vous gerez.` Les personnes sur place ne sont pas prévenues par
+cette sirène. La phrase n'est jamais coupée ; avec plusieurs sirènes muettes, elle les
+nomme (`Les sirenes (Sirene 1, Reserve) ne repondent pas.`), sauf si leurs noms
+prennent trop de place.
+
+Une sirène est connue muette, choix du 25 octobre 2026, quand sa `siren_failed` n'est
+pas encore finie :
+
+- elle a été signalée muette pendant l'alarme qui sonne encore ;
+- et elle n'a pas pris d'ordre de sonner depuis (un `siren.on` répondu `done` à un cycle
+  suivant la fait revenir ; elle redevient muette si elle refuse de nouveau, sans
+  nouvelle alerte).
+
+Une fois cette alarme finie (désarmement, sirène coupée, fin des cycles), rien n'est
+dit : l'alarme suivante redonne l'ordre à chaque sirène, et une sirène qui refuse encore
+lève sa propre `siren_failed`, rattachée à cette alarme. Un feu levé désarmé est sa
+propre alarme : si la sirène refuse, c'est cette `siren_failed`, bruyante tant que le feu
+attend une réponse, qui le dit. Le savoir est en mémoire : après un redémarrage de la
+centrale, une sirène redevient connue muette à son prochain refus (au cycle suivant).
+La phrase est gardée avec l'incident du feu, donc dans ses relances, après un
+redémarrage aussi. Une panique ne la porte pas : elle ne fait pas sonner la sirène par
+défaut.
 
 ## Coupures de courant
 

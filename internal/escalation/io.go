@@ -103,6 +103,10 @@ type Raise struct {
 	// a siren that does not sound during an alarm. Once that alarm is handled, the
 	// alert is told without ringing (see Send.AlarmHandled).
 	Alarm string
+	// Silent lists the sirens known not to sound as the alert is raised: its texts
+	// say so, the people on the site are not warned by them. The hub gives them to a
+	// fire raised during an alarm whose siren failed.
+	Silent []string
 }
 
 // Result is a channel's report about a message sent with Send. Ref, when set, is

@@ -42,6 +42,8 @@ type IncidentSnap struct {
 	// alarm is handled, the alert is told without ringing (see quieten).
 	Alarm string `json:"alarm,omitempty"`
 	Quiet bool   `json:"quiet,omitempty"`
+	// Silent: the sirens known not to sound as the alert was raised (Raise.Silent).
+	Silent []string `json:"silent,omitempty"`
 
 	Step         int                 `json:"step"`          // steps already run
 	NextAt       time.Time           `json:"next_at"`       // when the next step is due, zero if none
@@ -99,6 +101,7 @@ func (s Snapshot) clone() Snapshot {
 
 func (in IncidentSnap) clone() IncidentSnap {
 	in.Devices = slices.Clone(in.Devices)
+	in.Silent = slices.Clone(in.Silent)
 	in.WaveContacts = slices.Clone(in.WaveContacts)
 	rounds := make(map[string]Round, len(in.Rounds))
 	for c, r := range in.Rounds {

@@ -329,3 +329,96 @@ func TestTheBootDoesNotRepeatASirenOrderOfTheBootWindow(t *testing.T) {
 		t.Fatalf("siren.on orders: %+v, want one for 240 s", on)
 	}
 }
+
+// --- a fire while a siren is known silent -------------------------------------------
+
+const devSmoke = "dev_smoke"
+
+func withSmoke(c *Config) {
+	c.Engine.Zones[devSmoke] = engine.Zone{Name: "kitchen", Kind: engine.ZoneFire}
+}
+
+// fireTexts raises a fire and returns the texts of its alert requests.
+func fireTexts(r *rig) []string {
+	r.t.Helper()
+	r.device(devSmoke, contract.CapSmoke, contract.ValAlarm)
+	var out []string
+	drivertest.WaitFor(r.t, "the fire's alert", func() bool {
+		r.settle()
+		out = out[:0]
+		for _, m := range eventsOf(r, contract.TypeAlertRequest) {
+			if d := dataOf[contract.AlertRequestData](r.t, m); d.Kind == contract.AlertFire {
+				out = append(out, d.Text)
+			}
+		}
+		return len(out) > 0
+	})
+	return out
+}
+
+// sirenFailsThen starts an alarm whose siren refuses to sound, waits for its report,
+// then lets then do what follows before a fire is raised.
+func sirenFailsThen(t *testing.T, then func(r *rig)) []string {
+	r := newRig(t, nil, withSmoke)
+	r.start()
+	r.setCode("u_owner", "482915")
+	trigger(r) // at t0+2m: cycle 1 until +7m, pause until +9m, cycle 2 until +14m
+	failEveryOrder(r)
+	drivertest.WaitFor(t, "the siren's alert", func() bool { r.settle(); return len(sirenAlerts(r)) > 0 })
+	then(r)
+	texts := fireTexts(r)
+	r.validateAll()
+	return texts
+}
+
+// nextCycle lets the siren's next cycle start: its order is the last one sent.
+func nextCycle(r *rig) {
+	r.t.Helper()
+	n := len(sirenOrders(r))
+	r.clock.Advance(7 * time.Minute) // to the next cycle, from the start of this one
+	drivertest.WaitFor(r.t, "the next cycle", func() bool {
+		r.settle()
+		return len(sirenOrders(r)) > n && lastSirenCommand(r) == contract.CmdSirenOn
+	})
+}
+
+// soundsAgain lets the next cycle start, and its order be carried out.
+func soundsAgain(r *rig) {
+	nextCycle(r)
+	sirenAnswers(r, sirenOrders(r)[len(sirenOrders(r))-1], contract.CmdDone, "")
+	r.settle()
+}
+
+// A fire raised during an alarm whose siren is known silent says so: the people on
+// the site are not warned by it. A siren that sounded again since is no longer known
+// silent, until it refuses again, and neither is one whose alarm is over: a fire then
+// says nothing of it.
+func TestAFireSaysTheSirenKnownSilent(t *testing.T) {
+	const said = " La sirene (dev_siren) ne repond pas."
+	for _, c := range []struct {
+		name string
+		then func(r *rig)
+		say  bool
+	}{
+		{"during the alarm", func(*rig) {}, true},
+		{"in the pause", func(r *rig) { r.clock.Advance(5 * time.Minute) }, true},
+		{"after the siren sounded again", soundsAgain, false},
+		{"after the siren sounded, then refused again", func(r *rig) {
+			soundsAgain(r)
+			nextCycle(r)
+			failEveryOrder(r)
+		}, true},
+		{"after the alarm was disarmed", func(r *rig) {
+			r.order(contract.CmdDisarm, contract.CommandArgs{Code: "482915"}, contract.OriginApp, "u_owner")
+			r.mustBe(engine.ModeDisarmed)
+		}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			for _, text := range sirenFailsThen(t, c.then) {
+				if strings.Contains(text, said) != c.say || !strings.Contains(text, "ALARME INCENDIE") {
+					t.Fatalf("the silent siren must be said: %v; the fire's text: %q", c.say, text)
+				}
+			}
+		})
+	}
+}

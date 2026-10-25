@@ -250,7 +250,8 @@ appareil est retiré, l'adaptateur efface ses états retenus (message vide).
   par la centrale ; si la sirène refuse encore, les contacts reçoivent l'alerte
   `siren_failed`, sous un incident à elle qui nomme l'alarme (`alarm_incident`), et la
   centrale publie `alarm.siren_failed` pour l'historique (voir « Événements d'alarme »,
-  « Alertes » et `adapter-zigbee.md`).
+  « Alertes » et `adapter-zigbee.md`). Un `done` à un `siren.on` d'un cycle suivant dit
+  que la sirène sonne de nouveau : un feu levé ensuite ne la dit plus muette.
 
 Commandes de la v1 : `siren.on`, `siren.off`. `device.identify` (faire clignoter
 ou biper un appareil pour le repérer) est réservée : rien ne l'envoie, aucun profil ne
@@ -419,7 +420,10 @@ donne plus de nouvelles, d'après sa présence en ligne, et attend l'état suiva
   `arming_bypassed`, `battery_low_hub`, `mains_restored`, `device_offline`, `battery_low`, `gsm_degraded`, `zigbee_down`, `siren_failed`), `urgency` (`critical`, `high`, `low`),
   `incident_at`, `zone`, `wave`, `contact`, `channel` (`app`, `whatsapp`, `sms`, `call`) et `text`, écrit
   pour son canal : seul le texte d'un SMS dit comment acquitter (`Repondre 1 si vous
-  gerez.`), l'application et WhatsApp ont leur propre bouton. `devices` (liste d'appareils, facultatif) est rempli quand l'alerte en concerne
+  gerez.`), l'application et WhatsApp ont leur propre bouton. Le texte d'un `fire` levé
+  pendant une alarme dont une sirène est connue muette finit par une phrase comme
+  `La sirene ne repond pas.` (avant la manière d'acquitter), sans autre champ (voir
+  `escalation.md`, « Un feu dit la sirène muette »). `devices` (liste d'appareils, facultatif) est rempli quand l'alerte en concerne
   plusieurs, par exemple `arming_bypassed`, et `percent` (0 à 100) le niveau de
   batterie pour les alertes de batterie.
   `alarm_incident` (facultatif) nomme l'alarme en cours dont l'alerte fait partie,

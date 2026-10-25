@@ -247,6 +247,12 @@ cycle suivant renvoie l'ordre, avec ses propres tentatives. Les textes nomment l
 sirène par son nom d'installation (`siren_names`), ou par défaut « Sirène »,
 « Sirène 2 » (voir `escalation.md`, « Le nom d'une sirène »).
 
+Une sirène signalée muette le reste, pour la centrale, jusqu'à la fin de l'alarme ou
+jusqu'à ce qu'elle réponde `done` à un `siren.on` d'un cycle suivant (elle sonne de
+nouveau). Pendant ce temps, un feu levé dit dans son texte que la sirène ne répond pas
+(voir `escalation.md`, « Un feu dit la sirène muette »). Un `done` ne fait rien
+d'autre : ni nouvel événement, ni message aux contacts.
+
 ## État de la liaison
 
 L'adaptateur surveille l'état du pont Zigbee2MQTT et de la clé :

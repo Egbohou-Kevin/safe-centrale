@@ -11,24 +11,28 @@ import (
 const (
 	maxText = 160
 	ackHint = " Repondre 1 si vous gerez."
+	// maxSilent bounds the sentence on silent sirens: longer, it leaves their names out.
+	maxSilent = 64
 )
 
 // text builds the message for an alert sent through a channel. Only an SMS says how
 // to answer, since the answer is a "1" sent back by SMS: the application and WhatsApp
 // carry their own button ("Je gere", "Je m'en occupe"), and a call shows no text.
 // An alert of an alarm already handled asks for no answer: it says the alarm is
-// handled instead, a sentence kept whole when the text is cut.
+// handled instead. An alert raised while sirens are known silent says so. These
+// sentences are kept whole when the text is cut.
 func (e *Escalation) text(in IncidentSnap, ch Channel) string {
 	msg, answer := e.message(in)
+	silent := e.silentSirens(in.Silent)
 	switch {
 	case in.Quiet && e.s.Handled[in.Alarm].Closed:
-		return fit(msg, " L'alarme a ete arretee.")
+		return fit(msg, silent+" L'alarme a ete arretee.")
 	case in.Quiet:
-		return fit(msg, " L'alarme est deja prise en charge.")
+		return fit(msg, silent+" L'alarme est deja prise en charge.")
 	case answer && ch == ChannelSMS:
-		return fit(msg, ackHint)
+		return fit(msg, silent+ackHint)
 	}
-	return fit(msg, "")
+	return fit(msg, silent)
 }
 
 // message builds what an alert says, and whether it asks to be answered.
@@ -116,6 +120,28 @@ func saysSiren(name string) bool {
 	n := len(sirenWord)
 	return len(name) >= n && strings.EqualFold(name[:n], sirenWord) && (len(name) == n || name[n] == ' ')
 }
+
+// silentSirens is the sentence an alert raised while sirens are known silent ends
+// with (Raise.Silent): the people on the site are not warned by them. Their names
+// are left out when they would take too much of the text.
+func (e *Escalation) silentSirens(ids []string) string {
+	var s, short string
+	switch len(ids) {
+	case 0:
+		return ""
+	case 1:
+		s, short = " "+capital(e.theSiren(ids))+" ne repond pas.", " La sirene ne repond pas."
+	default:
+		s, short = " Les sirenes ("+e.deviceList(ids)+") ne repondent pas.", " Les sirenes ne repondent pas."
+	}
+	if len(s) > maxSilent {
+		return short
+	}
+	return s
+}
+
+// capital puts a sentence's first letter in capital.
+func capital(s string) string { return strings.ToUpper(s[:1]) + s[1:] }
 
 // fit cuts a message to one SMS with its tail (the way to answer) whole: what is cut
 // is the message, never the tail.
