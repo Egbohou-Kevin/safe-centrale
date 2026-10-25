@@ -1,6 +1,7 @@
 // Package atmodem drives a GSM modem through AT commands (3GPP TS 27.005 and 27.007)
 // over a serial port: send an SMS in text mode with a delivery report, ring a number,
-// read incoming SMS, report the network state, restart the modem.
+// read incoming SMS (in PDU mode, see decodeDeliver), report the network state,
+// restart the modem.
 //
 // It needs nothing beyond the standard library: the port is any io.ReadWriteCloser
 // (the serial device file, configured beforehand with stty). Modems differ in their
@@ -45,13 +46,17 @@ type Options struct {
 	OnDeliveryReport func(ref string, ok bool)
 
 	CommandTimeout time.Duration // per command, 10 s by default
-	// SMSTimeout bounds sending one SMS (AT+CMGS), 120 s by default: the network
-	// decides how long it takes, up to the 120 s the modems' manuals give. Cut off
-	// earlier, an SMS that left anyway would be reported failed and sent again.
+	// SMSTimeout bounds sending one SMS (AT+CMGS), DefaultSMSTimeout by default.
 	SMSTimeout  time.Duration
 	RestartWait time.Duration // after a restart, before reopening: 20 s by default
 	Logger      *slog.Logger  // nil discards
 }
+
+// DefaultSMSTimeout bounds sending one SMS (AT+CMGS), counted once the modem is free
+// for it: the network decides how long it takes, up to the 120 s the modems' manuals
+// give. Cut off earlier, an SMS that left anyway would be reported failed and sent
+// again. Whoever gives SendSMS a deadline must leave it that, and the waits before.
+const DefaultSMSTimeout = 120 * time.Second
 
 // Info is what the modem says about the network.
 type Info struct {
@@ -73,10 +78,9 @@ type Modem struct {
 	pending chan string // the answer lines of the command in progress
 	dialing bool        // the command in progress is ATD: call results are its own
 	calls   chan string // call progress after ATD (BUSY, NO CARRIER...)
-	cmtFrom string      // an SMS delivered directly (+CMT): its text is the next line
-	// listing: the command in progress reads stored SMS (AT+CMGR, AT+CMGL); inText:
-	// its answer reached their text, which is data up to the final OK (see textLine).
-	listing, inText bool
+	// pduMode: a reading of stored SMS switched the modem to PDU mode and may not have
+	// put text mode back; the next SMS sent does (see textMode).
+	pduMode bool
 	// unsynced: a command timed out, and its late answer may still come; the next
 	// command waits for it to be over first (see resync).
 	unsynced bool
@@ -108,7 +112,7 @@ func Open(ctx context.Context, o Options) (*Modem, error) {
 		o.CommandTimeout = 10 * time.Second
 	}
 	if o.SMSTimeout <= 0 {
-		o.SMSTimeout = 120 * time.Second
+		o.SMSTimeout = DefaultSMSTimeout
 	}
 	if o.RestartWait <= 0 {
 		o.RestartWait = 20 * time.Second
@@ -140,6 +144,7 @@ func (m *Modem) connect(ctx context.Context) error {
 		return ErrClosed
 	}
 	m.port, m.closed, m.gone, m.unsynced = port, false, false, false
+	m.pduMode = true // until the setup sets text mode
 	m.mu.Unlock()
 	go m.read(port)
 	for _, c := range setup {
@@ -148,6 +153,9 @@ func (m *Modem) connect(ctx context.Context) error {
 			return fmt.Errorf("atmodem: setting up the modem (%s): %w", c, err)
 		}
 	}
+	m.mu.Lock()
+	m.pduMode = false
+	m.mu.Unlock()
 	if err := m.sweep(ctx); err != nil {
 		m.log.Warn("listing the SMS stored on the modem failed", "err", err)
 	}

@@ -68,6 +68,7 @@ type bridge struct {
 	mu      sync.Mutex
 	names   map[string]string // ieee -> friendly name
 	qos     map[string]byte   // ieee -> the QoS of its messages, when set by device options
+	seen    map[string]string // ieee -> the last_seen of its last frame
 	answers bool              // false: requests go unanswered, as with a Zigbee2MQTT stuck
 }
 
@@ -166,6 +167,8 @@ func (z *bridge) apply(req string, body request, payload []byte) any {
 			z.qos[body.ID] = byte(q)
 		}
 		return map[string]any{"id": body.ID, "from": map[string]any{}, "to": body.Options, "restart_required": false}
+	case "health_check":
+		return map[string]any{"healthy": true}
 	}
 	return json.RawMessage(payload)
 }

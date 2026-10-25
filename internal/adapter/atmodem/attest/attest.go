@@ -21,6 +21,7 @@ type Sim struct {
 	Mu     sync.Mutex // guards the fields below
 	conn   net.Conn
 	echo   bool   // echo commands, until ATE0
+	pdu    bool   // SMS in PDU mode (AT+CMGF=0) rather than text mode
 	Silent bool   // read and never answer
 	CREG   string // answer to AT+CREG?
 	CSQ    string
@@ -54,7 +55,7 @@ func (s *Sim) Open() (io.ReadWriteCloser, error) {
 	s.Mu.Lock()
 	s.conn = server
 	s.Opens++
-	s.echo = true
+	s.echo, s.pdu = true, false
 	s.Mu.Unlock()
 	go s.serve(server)
 	return client, nil
@@ -166,21 +167,11 @@ func (s *Sim) answer(c net.Conn, r *bufio.Reader, cmd string) {
 			line, wait := s.AfterDial, s.AfterWait
 			go func() { time.Sleep(wait); s.write(c, line) }()
 		}
-	case strings.HasPrefix(cmd, "AT+CMGR="):
-		var i int
-		fmt.Sscanf(cmd, "AT+CMGR=%d", &i)
-		m, ok := s.Inbox[i]
-		if !ok {
-			s.write(c, "+CMS ERROR: 321")
-			return
-		}
-		s.write(c, fmt.Sprintf(`+CMGR: "REC UNREAD","%s",,"26/10/17,21:05:00+00"`, m[0]), m[1], "OK")
-	case strings.HasPrefix(cmd, "AT+CMGL="):
-		for _, i := range slices.Sorted(maps.Keys(s.Inbox)) {
-			m := s.Inbox[i]
-			s.write(c, fmt.Sprintf(`+CMGL: %d,"REC UNREAD","%s",,"26/10/17,21:05:00+00"`, i, m[0]), m[1])
-		}
+	case cmd == "AT+CMGF=0", cmd == "AT+CMGF=1":
+		s.pdu = cmd == "AT+CMGF=0"
 		s.write(c, "OK")
+	case strings.HasPrefix(cmd, "AT+CMGR="), strings.HasPrefix(cmd, "AT+CMGL="):
+		s.readStored(c, cmd)
 	case cmd == "AT+CMEE?":
 		s.write(c, "+CMEE: 1", "OK")
 	case strings.HasPrefix(cmd, "AT+CMGD="):
@@ -223,4 +214,41 @@ func (s *Sim) takeSMS(c net.Conn, r *bufio.Reader, cmd string) {
 	s.ref++
 	s.Sent = append(s.Sent, [2]string{number, text})
 	s.write(c, fmt.Sprintf("+CMGS: %d", s.ref), "OK")
+}
+
+// readStored answers AT+CMGR (one SMS) or AT+CMGL (all of them). s.Mu is held.
+func (s *Sim) readStored(c net.Conn, cmd string) {
+	var i int
+	if _, err := fmt.Sscanf(cmd, "AT+CMGR=%d", &i); err != nil {
+		for _, i := range slices.Sorted(maps.Keys(s.Inbox)) {
+			s.write(c, s.stored(fmt.Sprintf("+CMGL: %d,%s", i, s.status()), s.Inbox[i])...)
+		}
+		s.write(c, "OK")
+		return
+	}
+	m, ok := s.Inbox[i]
+	if !ok {
+		s.write(c, "+CMS ERROR: 321")
+		return
+	}
+	s.write(c, s.stored("+CMGR: "+s.status(), m)...)
+	s.write(c, "OK")
+}
+
+func (s *Sim) status() string {
+	if s.pdu {
+		return "0"
+	}
+	return `"REC UNREAD"`
+}
+
+// stored gives the lines of a stored SMS in an answer to AT+CMGR or AT+CMGL, after
+// head: in PDU mode the PDU's length and the PDU, in text mode the sender, the time
+// stamp and the text as it is, line breaks included.
+func (s *Sim) stored(head string, m [2]string) []string {
+	if !s.pdu {
+		return []string{fmt.Sprintf(`%s,"%s",,"26/10/17,21:05:00+00"`, head, m[0]), m[1]}
+	}
+	pdu := DeliverPDU(m[0], m[1])
+	return []string{fmt.Sprintf("%s,,%d", head, len(pdu)/2-8), pdu}
 }

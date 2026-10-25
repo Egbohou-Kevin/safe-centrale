@@ -81,6 +81,10 @@ type Deps struct {
 	Logger      *slog.Logger
 }
 
+// StateKey names the adapter's saved state in its state folder: the paired devices,
+// which the program's check reads.
+const StateKey = keyZigbee
+
 const (
 	src        = contract.AdapterZigbee
 	keyZigbee  = "zigbee"
@@ -133,6 +137,9 @@ func New(cfg Config, deps Deps) (*App, error) {
 	}
 	a.loop, err = driver.New(driver.Options[zigbee.Input, zigbee.Action, zigbee.Snapshot]{
 		Name: keyZigbee, Clock: deps.Clock, Store: deps.Store, Logger: log,
+		// Zigbee2MQTT's last_seen follows the system clock, set back too: so does the
+		// core, which pulls back what that leaves in the future (see zigbee.pullBack).
+		FollowsClock: true,
 		Core: driver.Core[zigbee.Input, zigbee.Action, zigbee.Snapshot]{
 			Handle: a.core.Handle, NextWake: a.core.NextWake, Snapshot: a.core.Snapshot, Restore: a.core.Restore,
 			Tick: func(t time.Time) zigbee.Input { return zigbee.Tick{Now: t} },
@@ -142,6 +149,10 @@ func New(cfg Config, deps Deps) (*App, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, d := range zigbee.WithoutProfile(a.core.Snapshot(), cfg.Zigbee.Profiles) {
+		log.Error("a paired device has no profile: its messages are dropped; put its profile back (site/profiles)",
+			"device", d.ID, "profile", d.Profile)
 	}
 	return a, nil
 }

@@ -46,17 +46,28 @@ Cloud ──maint.open──► Agent ──► safehome-maint ──maint.sessi
   servir.
 - **Le bastion est épinglé** : sa clé d'hôte est dans
   `/etc/safehome/maint_known_hosts`, vérifiée strictement. Un faux bastion est refusé.
-- **La clé de la centrale ne sert qu'au tunnel.** Sur le bastion, sa ligne
-  `authorized_keys` interdit tout sauf écouter sur le port du site :
+- **La clé de la centrale ne sert qu'au tunnel.** Deux réglages du bastion le font,
+  et il faut les deux. Sa ligne `authorized_keys` coupe le terminal, l'agent et X11,
+  et limite l'écoute au port du site :
 
   ```text
   restrict,port-forwarding,permitlisten="localhost:22001" ssh-ed25519 AAAA... tg-lom-0001
   ```
 
+  Mais `port-forwarding` rouvre les redirections **dans les deux sens** :
+  `permitlisten` ne limite que l'écoute (`-R`). Seule, cette ligne laisserait la
+  clé ouvrir des connexions depuis le bastion (`-L`, `-W`) vers tout ce qu'il
+  atteint, dont les ports des tunnels des autres sites sur sa boucle locale.
+  `permitopen="none"` ne s'écrit pas sur la ligne : OpenSSH 10.3 refuse alors la clé.
+  C'est le compte des tunnels qui l'interdit, dans la configuration de sshd
+  (`AllowTcpForwarding remote`, réservé à ce compte : voir plus bas). Le compte n'a
+  pas de shell (`/usr/sbin/nologin`).
+
   Une centrale volée ne permet donc ni d'ouvrir un shell sur le bastion, ni d'écouter
-  sur le port d'un autre site. On retire sa ligne, et c'est fini. Vérifié sur le kit
-  virtuel (`kit-virtuel.md`, étape 10) : la demande `-R localhost:22001:localhost:22`
-  passe, un shell et le port d'un autre site sont refusés.
+  sur le port d'un autre site, ni de s'y connecter. On retire sa ligne, et c'est fini.
+  Vérifié sur le kit virtuel (`kit-virtuel.md`, étape 10) : la demande
+  `-R localhost:22001:localhost:22` passe ; un shell, l'écoute sur le port d'un autre
+  site et une connexion depuis le bastion (`-W`) sont refusés.
 - **Une session à la fois, une heure au plus**, refusée si l'ordre arrive après son
   `exp`. Le tunnel meurt avec le service (systemd et le noyau tuent `ssh`).
 - **Coupure possible par l'installateur** : `"enabled": false` dans `maint.json` ; la
@@ -123,10 +134,24 @@ par site**, à noter dans la fiche du site), `key_file`, `known_hosts`, `local_p
 (22), `max_length` (1 h au plus), `enabled`.
 
 Sur le bastion (à faire) : un serveur Debian minimal, un compte `tunnel` sans shell
-dont `authorized_keys` liste une ligne par site, `AllowTcpForwarding remote`,
-`GatewayPorts no` (les ports restent sur la boucle locale), et les comptes des
-administrateurs. Son adresse et sa clé d'hôte sont les mêmes pour toutes les
-centrales.
+dont `authorized_keys` liste une ligne par site, et les comptes des administrateurs.
+Son adresse et sa clé d'hôte sont les mêmes pour toutes les centrales. Les réglages
+de sshd propres au compte des tunnels vont dans un bloc `Match User tunnel`, comme
+dans le kit virtuel (`vkit/install-kit.sh`) :
+
+```text
+Match User tunnel
+	AllowTcpForwarding remote
+	GatewayPorts no
+	PermitTTY no
+	X11Forwarding no
+```
+
+`AllowTcpForwarding remote` (écouter, jamais se connecter depuis le bastion) est ce
+qui empêche la clé d'une centrale d'atteindre le port d'un autre site. **Jamais pour
+tout le serveur** : la connexion des administrateurs (`ssh -J`, ci-dessous) passe
+par une redirection locale, qu'il couperait ; et l'assouplir ensuite pour la rétablir
+rouvrirait le trou. `GatewayPorts no` garde les ports sur la boucle locale.
 
 ## Se connecter
 

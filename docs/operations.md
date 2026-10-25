@@ -54,8 +54,14 @@ read -s CODE; echo "$CODE" | sudo -u safehome safehome-hub codes -config /etc/sa
 Les **zones et les sirènes** réglées par l'installateur (console locale ou outil en
 ligne de commande) sont gardées dans le dossier d'état, `site-devices.json`. Elles
 remplacent alors celles de `hub.json`, qui ne servent plus qu'au départ. `check` dit
-d'où elles viennent. Un fichier abîmé est laissé de côté : la centrale démarre avec
-les zones de `hub.json` et l'écrit dans son journal.
+d'où elles viennent. Un fichier abîmé, ou que la centrale refuse (modifié à la main,
+règle rendue plus stricte par une mise à jour), est laissé de côté : la centrale
+démarre quand même, avec les zones de `hub.json`, et l'écrit dans son journal. Ce
+n'est qu'un secours : `check` échoue alors (le script d'installation s'arrête avant de
+redémarrer quoi que ce soit), et la console comme `safehome-install devices` et
+`check` refusent de montrer ou de vérifier ces zones que la centrale ne surveille pas,
+avec la raison. Corriger le fichier (ou le retirer pour repartir de `hub.json`). Rien
+ne part au cloud : seul le journal de la centrale en garde la trace.
 
 ## Configuration
 
@@ -182,8 +188,10 @@ de suite, un contact retiré ne désarme plus.
 Le client règle depuis l'application ses contacts, ses horaires de fermeture, ses
 délais et, en données mobiles, son forfait vidéo (`config.set`, voir `contract.md`).
 
-1. La centrale vérifie la configuration avec son propre fichier (un contact
-   propriétaire, des délais dans les limites, des horaires lisibles). Refusée, elle
+1. La centrale vérifie la configuration avec son propre fichier (un propriétaire
+   parmi les contacts s'il y en a, des délais dans les limites, des horaires
+   lisibles). Une liste vide envoyée (aucun contact, aucun horaire) est une liste :
+   elle remplace celle du fichier, et le reste après le redémarrage. Refusée, elle
    répond tout de suite `config.applied` `rejected`, avec la raison ; rien ne change.
 2. Acceptée, elle la garde dans `site-config.json`, dans le dossier d'état
    (`/var/lib/safehome`, lisible par le service seul : le fichier contient les

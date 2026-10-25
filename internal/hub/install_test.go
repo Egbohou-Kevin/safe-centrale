@@ -293,6 +293,35 @@ func TestATamperLeftOpenIsReportedWhenTheModeCloses(t *testing.T) {
 	}
 }
 
+// A device removed during the mode with its cover open is gone: closing the mode by
+// arming does not report its tamper, which would ring the siren for a device that no
+// longer exists.
+func TestATamperOfADeviceRemovedDuringTheModeIsNotReported(t *testing.T) {
+	r := newRig(t, nil, func(c *Config) {
+		c.Engine.Zones["dev_box"] = engine.Zone{Name: "box", Kind: engine.ZoneTamper}
+	})
+	r.withInstaller()
+	r.start()
+	r.openInstall()
+	r.device("dev_box", contract.CapTamper, contract.ValTriggered)
+	r.send(contract.RegistryEventTopic(site), contract.TypeRegistryDeviceRemoved, contract.RegistryDeviceRemovedData{DeviceID: "dev_box"})
+	var held bool
+	r.hub.alarm.loop.Do(context.Background(), func(time.Time) []engine.Action {
+		held = r.hub.alarm.inst.quieted["dev_box"]
+		return nil
+	})
+	if held {
+		t.Fatal("the mode still holds the tamper of a removed device")
+	}
+	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_owner")
+	drivertest.WaitFor(t, "the mode closed by the arming", func() bool { return r.lastInstall().Reason == contract.InstallArmed })
+	r.settle()
+	r.mustBe(engine.ModeArming)
+	if n := len(eventsOf(r, contract.TypeAlertRequest)); n != 0 {
+		t.Fatalf("%d alert request(s) for a removed device", n)
+	}
+}
+
 // The timer of a mode that closed early goes with it, and the timer of a new mode
 // starts with it: the mode lasts exactly its half hour.
 func TestTheInstallTimerFollowsTheMode(t *testing.T) {

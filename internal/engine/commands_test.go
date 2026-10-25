@@ -185,8 +185,8 @@ func TestALockoutThatIsAlsoTheThirdWrongCodeAlertsOnce(t *testing.T) {
 
 // aheadThenBack restores the engine from a snapshot saved while the clock ran ahead
 // by d, and boots it now: the clock was pulled back meanwhile (an RTC glitch or a bad
-// time at boot, corrected while the hub was off). Within a run, the driver never
-// hands the engine a time earlier than the last.
+// time at boot, corrected while the hub was off). Within a run, the time handed to
+// the engine goes back with the clock (see TestATimeGoneBackIsPulledBackWithinARun).
 func (h *harness) aheadThenBack(d time.Duration, edit func(s *Snapshot, ahead time.Time)) {
 	h.t.Helper()
 	snap := h.e.Snapshot()
@@ -289,5 +289,29 @@ func TestArmRefusedDuringEntryDelayAndAlarm(t *testing.T) {
 	h.advance(45 * time.Second)
 	if r := replyOf(t, h.arm()); r.Reason != ReasonWrongState {
 		t.Fatalf("%+v", r)
+	}
+}
+
+// Within a run, the hub's loop hands the engine the clock as it is, corrected
+// backwards too: what was stamped ahead of it is pulled back as at a restart. A delay
+// lasts at most its own length, a lockout ends at most LockoutDuration from now.
+func TestATimeGoneBackIsPulledBackWithinARun(t *testing.T) {
+	h := newHarness(t)
+	h.armed()
+	h.now = h.now.Add(time.Hour)
+	for range h.cfg.LockoutAttempts {
+		h.cmd(CmdDisarm, badCode)
+	}
+	h.open(door)
+	h.now = h.now.Add(-time.Hour) // the clock is corrected
+	h.advance(time.Second)
+	if ends := h.e.State(h.now).EndsAt; ends.After(h.now.Add(h.cfg.EntryDelay)) {
+		t.Fatalf("the entry delay ends at %v, more than its length from %v", ends, h.now)
+	}
+	h.advance(h.cfg.EntryDelay)
+	h.mustBe(ModeTriggered)
+	h.advance(h.cfg.LockoutDuration - h.cfg.EntryDelay)
+	if r := replyOf(t, h.cmd(CmdDisarm, goodCode("u_owner"))); r.Status != StatusDone {
+		t.Fatalf("still locked once the lockout's duration has passed: %+v", r)
 	}
 }

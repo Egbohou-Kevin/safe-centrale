@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"safehome/internal/access"
+	"safehome/internal/adapter/filelock"
 	"safehome/internal/adapter/filestore"
 	"safehome/internal/consoleapp"
 	"safehome/internal/hub"
@@ -15,10 +17,37 @@ import (
 
 // codes fits the hub's access codes to the console's Codes port. Each call reads the
 // hub's files again: the contacts may have changed from the app, the codes from the
-// command line.
+// command line. A change holds the codes' lock from the read to the write (see
+// hubconfig.CodesLock): two phones may set codes at once.
 type codes struct {
 	hubConfig string
 	log       *slog.Logger
+}
+
+// codesWait bounds the wait for the codes' lock: a change hashes a few codes, some
+// seconds on the hub.
+const codesWait = 30 * time.Second
+
+// change runs do on the codes opened under their lock, then tells a running hub.
+func (c codes) change(do func(*hub.SiteCodes) error) error {
+	cfg, err := hubconfig.Load(c.hubConfig)
+	if err != nil {
+		return fmt.Errorf("the hub's configuration: %w", err)
+	}
+	release, err := filelock.Hold(cfg.StateDir, hubconfig.CodesLock, codesWait)
+	if err != nil {
+		return err
+	}
+	defer release()
+	site, _, err := c.open()
+	if err != nil {
+		return err
+	}
+	if err := do(site); err != nil {
+		return err
+	}
+	c.notifyHub(cfg.StateDir)
+	return nil
 }
 
 func (c codes) open() (*hub.SiteCodes, string, error) {
@@ -57,11 +86,8 @@ func (c codes) Set(user, code string) error {
 	if user == hub.InstallerUser {
 		return fmt.Errorf("%w: %s", consoleapp.ErrNotAContact, user)
 	}
-	site, dir, err := c.open()
-	if err != nil {
-		return err
-	}
-	if err := site.Set(user, code); err != nil {
+	return c.change(func(site *hub.SiteCodes) error {
+		err := site.Set(user, code)
 		switch {
 		case errors.Is(err, hub.ErrNotAContact):
 			return fmt.Errorf("%w: %s", consoleapp.ErrNotAContact, user)
@@ -75,9 +101,7 @@ func (c codes) Set(user, code string) error {
 			return consoleapp.ErrCodeFull
 		}
 		return err
-	}
-	c.notifyHub(dir)
-	return nil
+	})
 }
 
 // Remove removes the code of user, then tells a running hub to read the codes again.
@@ -86,18 +110,13 @@ func (c codes) Remove(user string) error {
 	if user == hub.InstallerUser {
 		return consoleapp.ErrNoSuchCode
 	}
-	site, dir, err := c.open()
-	if err != nil {
-		return err
-	}
-	if err := site.Remove(user); err != nil {
+	return c.change(func(site *hub.SiteCodes) error {
+		err := site.Remove(user)
 		if errors.Is(err, access.ErrNoSuchUser) {
 			return consoleapp.ErrNoSuchCode
 		}
 		return err
-	}
-	c.notifyHub(dir)
-	return nil
+	})
 }
 
 func (c codes) notifyHub(dir string) {

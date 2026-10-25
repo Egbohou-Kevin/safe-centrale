@@ -12,6 +12,9 @@ import (
 //
 //	pair MODEL IEEE     a device joins, and its interview succeeds
 //	send IEEE JSON      the device reports (last_seen is added)
+//	say IEEE JSON       Zigbee2MQTT publishes by itself, with the device's last last_seen:
+//	                    no frame came from it (the motion sensor's "no movement", on
+//	                    Zigbee2MQTT's own timer)
 //	leave IEEE          the device leaves the network
 //	bridge online|offline
 //	answers on|off      off: requests go unanswered (a Zigbee2MQTT stuck)
@@ -27,7 +30,9 @@ func (z *bridge) order(f []string) error {
 		z.event("device_joined", f[2], "")
 		z.event("device_interview", f[2], f[1])
 	case "send":
-		return z.report(f[1], strings.Join(f[2:], " "))
+		return z.report(f[1], strings.Join(f[2:], " "), false)
+	case "say":
+		return z.report(f[1], strings.Join(f[2:], " "), true)
 	case "leave":
 		z.event("device_leave", f[1], "")
 	case "bridge":
@@ -52,16 +57,22 @@ func (z *bridge) event(kind, ieee, model string) {
 	z.publish("bridge/event", map[string]any{"type": kind, "data": data}, false)
 }
 
-// report publishes what a device says, on its current name.
-func (z *bridge) report(ieee, raw string) error {
+// report publishes what a device says, on its current name. Zigbee2MQTT stamps every
+// message with when the device was last heard, to the millisecond: a new time for a
+// frame from the device, the last one for what Zigbee2MQTT says by itself (own).
+func (z *bridge) report(ieee, raw string, own bool) error {
 	fields := map[string]any{}
 	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
 		return err
 	}
-	// To the millisecond, as Zigbee2MQTT writes it: the adapter takes a message that
-	// says it was heard no later than the last one for a replay of its cache.
-	fields["last_seen"] = time.Now().UTC().Format("2006-01-02T15:04:05.000Z07:00")
 	z.mu.Lock()
+	if z.seen == nil {
+		z.seen = map[string]string{}
+	}
+	if _, heard := z.seen[ieee]; !own || !heard {
+		z.seen[ieee] = time.Now().UTC().Format("2006-01-02T15:04:05.000Z07:00")
+	}
+	fields["last_seen"] = z.seen[ieee]
 	name, ok := z.names[ieee]
 	qos, set := z.qos[ieee]
 	z.mu.Unlock()

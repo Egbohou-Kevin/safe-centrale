@@ -14,7 +14,7 @@ type exchange struct {
 	text     string // written after the "> " prompt, when withText
 	withText bool
 	prompted bool // the text was written
-	reading  bool // the answer reached the text of a stored SMS: data up to OK
+	reading  bool // the answer reached a stored SMS: its PDU, data up to OK
 	lines    []string
 }
 
@@ -33,6 +33,53 @@ func (m *Modem) commandWithText(ctx context.Context, cmd, text string) ([]string
 func (m *Modem) run(ctx context.Context, x *exchange) ([]string, error) {
 	m.cmdMu.Lock()
 	defer m.cmdMu.Unlock()
+	if x.withText {
+		if err := m.textMode(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return m.runLocked(ctx, x)
+}
+
+// readStored runs a command that reads stored SMS (AT+CMGR, AT+CMGL) in PDU mode (see
+// decodeDeliver), then puts text mode back for the sending. If that fails, the next
+// SMS sent puts it back first (see textMode).
+func (m *Modem) readStored(ctx context.Context, cmd string) ([]string, error) {
+	m.cmdMu.Lock()
+	defer m.cmdMu.Unlock()
+	m.mu.Lock()
+	m.pduMode = true
+	m.mu.Unlock()
+	if _, err := m.runLocked(ctx, &exchange{cmd: "AT+CMGF=0"}); err != nil {
+		return nil, err
+	}
+	lines, err := m.runLocked(ctx, &exchange{cmd: cmd})
+	if terr := m.textMode(ctx); err == nil {
+		err = terr
+	}
+	return lines, err
+}
+
+// textMode puts the modem back in text mode if a reading of stored SMS may have left
+// it in PDU mode. m.cmdMu is held.
+func (m *Modem) textMode(ctx context.Context) error {
+	m.mu.Lock()
+	pdu := m.pduMode
+	m.mu.Unlock()
+	if !pdu {
+		return nil
+	}
+	if _, err := m.runLocked(ctx, &exchange{cmd: "AT+CMGF=1"}); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.pduMode = false
+	m.mu.Unlock()
+	return nil
+}
+
+// runLocked runs one exchange. m.cmdMu is held.
+func (m *Modem) runLocked(ctx context.Context, x *exchange) ([]string, error) {
 	timeout := m.o.CommandTimeout
 	if x.withText {
 		timeout = m.o.SMSTimeout
@@ -85,23 +132,22 @@ func (m *Modem) begin(cmd string) (io.Writer, <-chan string, bool, error) {
 	}
 	answers := make(chan string, 64)
 	m.pending, m.dialing = answers, strings.HasPrefix(cmd, "ATD")
-	m.listing, m.inText = readsStored(cmd), false
 	return m.port, answers, m.unsynced, nil
 }
 
 func (m *Modem) end() {
 	m.mu.Lock()
-	m.pending, m.dialing, m.listing, m.inText = nil, false, false, false
+	m.pending, m.dialing = nil, false
 	m.mu.Unlock()
 }
 
-// readsStored tells whether a command reads stored SMS, whose text comes in its answer.
+// readsStored tells whether a command reads stored SMS, whose PDU comes in its answer.
 func readsStored(cmd string) bool {
 	return strings.HasPrefix(cmd, "AT+CMGR=") || strings.HasPrefix(cmd, "AT+CMGL=")
 }
 
-// storedHeader tells whether line heads a stored SMS in such an answer: what follows
-// it is the SMS's text.
+// storedHeader tells whether line heads a stored SMS in such an answer: its PDU
+// follows.
 func storedHeader(line string) bool {
 	return strings.HasPrefix(line, "+CMGR:") || strings.HasPrefix(line, "+CMGL:")
 }
@@ -140,7 +186,7 @@ func (m *Modem) resync(ctx context.Context, port io.Writer, answers <-chan strin
 func (x *exchange) take(port io.Writer, l string) (done bool, err error) {
 	switch {
 	case x.reading && l != "OK":
-		x.lines = append(x.lines, l) // the text of an SMS, whatever it says
+		x.lines = append(x.lines, l) // an SMS's PDU, or an error line kept as data
 	case readsStored(x.cmd) && storedHeader(l):
 		x.reading = true
 		x.lines = append(x.lines, l)

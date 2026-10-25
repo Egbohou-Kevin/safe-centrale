@@ -46,6 +46,7 @@ type ruleFile struct {
 	Step      int               `json:"step"`
 	Momentary bool              `json:"momentary"`
 	CodeFrom  string            `json:"code_from"`
+	Rest      string            `json:"rest"`
 }
 
 type commandFile struct {
@@ -167,7 +168,7 @@ func ParseProfile(data []byte) (zigbee.Profile, error) {
 		return zigbee.Profile{}, err
 	}
 	for c, rf := range f.Capabilities {
-		rule := zigbee.Rule{From: rf.From, Map: rf.Map, Max: rf.Max, Step: rf.Step, Momentary: rf.Momentary, CodeFrom: rf.CodeFrom}
+		rule := zigbee.Rule{From: rf.From, Map: rf.Map, Max: rf.Max, Step: rf.Step, Momentary: rf.Momentary, CodeFrom: rf.CodeFrom, Rest: rf.Rest}
 		if err := checkCapability(c, rule); err != nil {
 			return zigbee.Profile{}, err
 		}

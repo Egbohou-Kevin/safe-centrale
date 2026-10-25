@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -450,5 +451,43 @@ func TestThePolkitRuleGrantsOnlyWhatTheHotspotUses(t *testing.T) {
 	}
 	if !slices.Equal(granted, want) {
 		t.Fatalf("granted %q, want %q", granted, want)
+	}
+}
+
+// NetworkManager's shared mode routes the console's phones to the hub's other
+// networks: the dispatcher script turns forwarding off on that network once it is up,
+// and on no other (the hub reaches the internet through them).
+func TestTheConsolesNetworkRoutesNothing(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh is not installed")
+	}
+	script, err := filepath.Abs(filepath.Join("system", "nm-dispatcher-safehome-console"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		connection, action, want string
+	}{
+		{"safehome-console", "up", "0"},
+		{"safehome-console", "down", "1"},
+		{"Wired connection 1", "up", "1"},
+	} {
+		root := t.TempDir()
+		setting := filepath.Join(root, "proc", "sys", "net", "ipv4", "conf", "wlan0", "forwarding")
+		if err := os.MkdirAll(filepath.Dir(setting), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(setting, []byte("1\n"), 0o644) // what the shared mode leaves
+		cmd := exec.Command(script, "wlan0", c.action)
+		cmd.Env = []string{"CONNECTION_ID=" + c.connection, "SAFEHOME_ROOT=" + root, "PATH=" + os.Getenv("PATH")}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%s %s: %v %s", c.connection, c.action, err, out)
+		}
+		if got, _ := os.ReadFile(setting); strings.TrimSpace(string(got)) != c.want {
+			t.Errorf("%s %s: forwarding %q, want %s", c.connection, c.action, got, c.want)
+		}
+	}
+	if info, err := os.Stat(script); err != nil || info.Mode().Perm() != 0o755 {
+		t.Fatalf("NetworkManager runs only an executable script: %v", err)
 	}
 }

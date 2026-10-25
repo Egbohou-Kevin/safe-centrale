@@ -104,7 +104,18 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   l'adaptateur MQTT, utilisée par l'adaptateur Zigbee et l'agent). Le temps ne recule jamais pour le
   domaine, même si l'horloge système est corrigée en arrière : la boucle lui donne
   l'heure murale, sans la lecture monotone que Go ajoute à `time.Now` (deux heures qui
-  en portent une se comparent par elle seule, ce qui cacherait le recul). `driver.Every` répète un
+  en portent une se comparent par elle seule, ce qui cacherait le recul). Ce garde a un
+  prix : après un recul de X, le temps du domaine s'arrête jusqu'à ce que l'horloge le
+  rattrape, et chaque échéance posée ou tenue pendant ce temps arrive X plus tard (une
+  étape d'escalade, une ligne GSM vérifiée). Le moteur d'alarme y échappe : sa boucle
+  suit l'horloge telle qu'elle est, en arrière aussi (option `FollowsClock`), et le
+  moteur ramène lui-même ce qu'une horloge en avance a daté dans le futur (voir
+  `engine.md`, « une horloge qui a avancé puis reculé »). L'adaptateur Zigbee aussi :
+  le `last_seen` de Zigbee2MQTT recule avec l'horloge, et un temps arrêté aurait pris
+  chaque nouveau message pour un ancien (voir `adapter-zigbee.md`, « Cache rejoué »).
+  Les autres domaines gardent le garde : il leur faudrait chacun la même reprise. Le
+  garde ne vaut que pendant une exécution : un nouveau processus part de l'horloge
+  telle qu'elle est. `driver.Every` répète un
   travail (un statut, le battement de cœur) sur la même horloge. La fausse horloge des
   tests (`drivertest`) fait comme la vraie : ses minuteries suivent une horloge
   monotone, que `Set` ne bouge pas.
@@ -187,7 +198,13 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   Un message qui arrive pendant ce temps est abandonné sans erreur au journal ;
   l'adaptateur Zigbee et l'agent ne l'acquittent pas, et le broker le leur redonne au
   démarrage suivant. Les autres programmes l'acquittent encore, et il est perdu (un
-  état retenu revient à la connexion suivante, un événement non).
+  état retenu revient à la connexion suivante, un événement non). Dans la centrale, la
+  boucle de l'escalade a son propre contexte et s'arrête après celles du moteur et de
+  la supervision : ce qu'elles font encore pendant l'arrêt (une tâche déjà prise, une
+  échéance qui tombe à ce moment) est sauvegardé comme fait, et l'alerte d'une alarme
+  levée alors, ou la fin d'une escalade, doit encore arriver à l'escalade. Avant le
+  25 octobre 2026, elle pouvait être perdue sans trace : la sirène reprenait au
+  redémarrage, mais personne n'était jamais prévenu.
 - **Les lectures de configuration** (`internal/hubconfig`, `internal/gsmconfig`, etc.)
   partagent `internal/configfile` : JSON strict, niveau de journal, durées, secrets,
   écriture atomique. L'en-tête commun des fichiers (`site`, `broker_url`, `client_id`,

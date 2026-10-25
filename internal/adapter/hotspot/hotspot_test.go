@@ -29,13 +29,29 @@ func calls(t *testing.T, log string) []string {
 	return strings.Split(strings.TrimSpace(string(b)), "\n")
 }
 
-func good(nmcli string) Config {
-	return Config{Interface: "wlan0", SSID: "safehome-tg-lom-0001", Passphrase: "k7p2m9x4q8", Address: "10.42.0.1", NMCLI: nmcli}
+// good is a network whose interface forwards nothing, as the dispatcher script leaves
+// it once the network is up.
+func good(t *testing.T, nmcli string) Config {
+	return Config{Interface: "wlan0", SSID: "safehome-tg-lom-0001", Passphrase: "k7p2m9x4q8", Address: "10.42.0.1", NMCLI: nmcli,
+		Forwarding: forwarding(t, "0")}
+}
+
+// forwarding makes a folder of IPv4 settings where wlan0's forwarding is value.
+func forwarding(t *testing.T, value string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "wlan0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "wlan0", "forwarding"), []byte(value+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func TestUpMakesAnAccessPointThatNeverStartsAtBoot(t *testing.T) {
 	nmcli, log := fakeNMCLI(t)
-	h, err := New(good(nmcli))
+	h, err := New(good(t, nmcli))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +81,7 @@ func TestUpMakesAnAccessPointThatNeverStartsAtBoot(t *testing.T) {
 func TestAFailedStartLeavesNoNetworkAndNoPassphraseInTheError(t *testing.T) {
 	nmcli, log := fakeNMCLI(t)
 	t.Setenv("FAIL", "connection up")
-	h, _ := New(good(nmcli))
+	h, _ := New(good(t, nmcli))
 	err := h.Up(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "no Wi-Fi device") {
 		t.Fatalf("err %v", err)
@@ -80,7 +96,7 @@ func TestAFailedStartLeavesNoNetworkAndNoPassphraseInTheError(t *testing.T) {
 
 func TestDownRunsEvenAfterTheEnd(t *testing.T) {
 	nmcli, log := fakeNMCLI(t)
-	h, _ := New(good(nmcli))
+	h, _ := New(good(t, nmcli))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := h.Down(ctx); err != nil {
@@ -102,8 +118,9 @@ func TestNewRefusesABadNetwork(t *testing.T) {
 		"control":          func(c *Config) { c.Passphrase = "k7p2m9x4\tq8" },
 		"no address":       func(c *Config) { c.Address = "" },
 		"IPv6 address":     func(c *Config) { c.Address = "fe80::1" },
+		"path":             func(c *Config) { c.Interface = "../wlan0" },
 	} {
-		c := good("nmcli")
+		c := good(t, "nmcli")
 		edit(&c)
 		if _, err := New(c); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -118,7 +135,7 @@ func TestDownKeepsTheCallersDeadline(t *testing.T) {
 	if err := os.WriteFile(path, []byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	h, _ := New(good(path))
+	h, _ := New(good(t, path))
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	start := time.Now()
@@ -146,7 +163,7 @@ func TestAStartPastItsDeadlineIsCleanedUp(t *testing.T) {
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	h, _ := New(good(path))
+	h, _ := New(good(t, path))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	go func() {
@@ -160,5 +177,46 @@ func TestAStartPastItsDeadlineIsCleanedUp(t *testing.T) {
 	}
 	if got := calls(t, log); len(got) != 4 || got[3] != "connection delete safehome-console" {
 		t.Fatalf("the network may come up and stay: %q", got)
+	}
+}
+
+// NetworkManager's shared mode routes the phones to the hub's other networks: a network
+// whose interface still forwards once up is taken down, not left for the installation.
+func TestARoutedNetworkIsTakenDown(t *testing.T) {
+	for name, dir := range map[string]string{
+		"forwarding on": forwarding(t, "1"),
+		"no setting":    t.TempDir(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			nmcli, log := fakeNMCLI(t)
+			c := good(t, nmcli)
+			c.Forwarding, c.RoutingWait = dir, 300*time.Millisecond
+			h, _ := New(c)
+			if err := h.Up(context.Background()); err == nil || !strings.Contains(err.Error(), "wlan0") {
+				t.Fatalf("a routed network was taken for a success: %v", err)
+			}
+			if got := calls(t, log); len(got) != 4 || got[3] != "connection delete safehome-console" {
+				t.Fatalf("the routed network is left: %q", got)
+			}
+		})
+	}
+}
+
+// The dispatcher script runs once the network is up, after nmcli returned: Up waits
+// for it.
+func TestUpWaitsForTheRoutingToStop(t *testing.T) {
+	nmcli, log := fakeNMCLI(t)
+	c := good(t, nmcli)
+	c.Forwarding = forwarding(t, "1")
+	h, _ := New(c)
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		os.WriteFile(filepath.Join(c.Forwarding, "wlan0", "forwarding"), []byte("0\n"), 0o644)
+	}()
+	if err := h.Up(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls(t, log); len(got) != 3 {
+		t.Fatalf("calls %q", got)
 	}
 }

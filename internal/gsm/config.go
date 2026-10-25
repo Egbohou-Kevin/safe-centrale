@@ -31,7 +31,12 @@ type Config struct {
 	RetryMax  time.Duration
 	AckWindow time.Duration // how long after a message a "1" acknowledges it
 
-	SMSTimeout     time.Duration // a line that does not answer by then failed
+	// SMSTimeout is how long a line has to send an SMS: one that does not answer by
+	// then failed. It must cover the modem's own bound for AT+CMGS (120 s, counted
+	// once the modem is free) and the waits before it (another command on the modem,
+	// a resync, text mode put back), or an SMS that left would be reported failed and
+	// sent again.
+	SMSTimeout     time.Duration
 	CheckTimeout   time.Duration
 	RestartTimeout time.Duration
 }
@@ -46,7 +51,7 @@ func DefaultConfig(lines []Line, contacts map[string]string) Config {
 			PriorityLifeSafety: 10 * time.Minute, PriorityIntrusion: 10 * time.Minute, PriorityOther: time.Hour,
 		},
 		RetryMin: 5 * time.Second, RetryMax: 2 * time.Minute, AckWindow: 24 * time.Hour,
-		SMSTimeout: 90 * time.Second, CheckTimeout: 30 * time.Second, RestartTimeout: 3 * time.Minute,
+		SMSTimeout: 3 * time.Minute, CheckTimeout: 30 * time.Second, RestartTimeout: 3 * time.Minute,
 	}
 }
 

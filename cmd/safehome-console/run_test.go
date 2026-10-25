@@ -57,9 +57,13 @@ func setup(t *testing.T, broker string, port int) (consolePath, hubPath, nmcliLo
 	nmcliLog = filepath.Join(dir, "nmcli.log")
 	fake := filepath.Join(dir, "nmcli")
 	os.WriteFile(fake, []byte("#!/bin/sh\necho \"$1 $2\" >> "+nmcliLog+"\n"), 0o755)
-	old := nmcli
-	nmcli = fake
-	t.Cleanup(func() { nmcli = old })
+	old, oldForwarding, oldScript := nmcli, forwarding, dispatcherScript
+	nmcli, forwarding, dispatcherScript = fake, filepath.Join(dir, "conf"), filepath.Join(dir, "50-safehome-console")
+	t.Cleanup(func() { nmcli, forwarding, dispatcherScript = old, oldForwarding, oldScript })
+	// What the dispatcher script leaves once the network is up: nothing forwarded.
+	os.MkdirAll(filepath.Join(forwarding, "wlan0"), 0o755)
+	os.WriteFile(filepath.Join(forwarding, "wlan0", "forwarding"), []byte("0\n"), 0o644)
+	os.WriteFile(dispatcherScript, []byte("#!/bin/sh\n"), 0o755)
 	return consolePath, hubPath, nmcliLog
 }
 
@@ -85,6 +89,13 @@ func TestUsageVersionAndCheck(t *testing.T) {
 	}
 	if strings.Contains(out+errb, "k7p2m9x4q8wd") {
 		t.Fatal("the passphrase is printed")
+	}
+	if strings.Contains(out, "warning") {
+		t.Fatalf("warnings on a good install: %q", out)
+	}
+	os.Remove(dispatcherScript)
+	if code, out, _ := cli("check", "-config", path); code != 0 || !strings.Contains(out, "50-safehome-console is missing") {
+		t.Fatalf("no dispatcher script: %d %q", code, out)
 	}
 
 	// The console writes in the hub's state folder: it must be the same as its own.

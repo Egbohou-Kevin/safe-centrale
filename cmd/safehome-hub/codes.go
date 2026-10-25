@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"safehome/internal/access"
+	"safehome/internal/adapter/filelock"
 	"safehome/internal/adapter/filestore"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
@@ -29,22 +31,26 @@ func codes(cfg hubconfig.Result, args []string, stdin io.Reader, stdout, stderr 
 		fmt.Fprint(stderr, usage)
 		return 2
 	}
-	store, err := filestore.Open(cfg.StateDir, nil)
+	var code string
+	if args[0] == "set" { // read before the lock is held: whoever types takes their time
+		var err error
+		if code, err = readCode(stdin); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+	}
+	site, release, err := openCodes(cfg, args[0] != "list")
 	if err != nil {
-		fmt.Fprintf(stderr, "cannot open the state directory: %v\n", err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	site, err := hub.OpenSiteCodes(cfg.Hub, store)
-	if err != nil {
-		fmt.Fprintf(stderr, "cannot read the access codes: %v\n", err)
-		return 1
-	}
+	defer release()
 	switch args[0] {
 	case "list":
 		list(site.List(), stdout)
 		return 0
 	case "set":
-		err = set(site, args[1], stdin, stdout)
+		err = set(site, args[1], code, stdout)
 	case "remove":
 		err = remove(site, args[1], stdout)
 	}
@@ -54,6 +60,33 @@ func codes(cfg hubconfig.Result, args []string, stdin io.Reader, stdout, stderr 
 	}
 	notifyRunningHub(cfg.StateDir, stdout)
 	return 0
+}
+
+// codesWait bounds the wait for the codes' lock, held by the local console while it
+// saves a code (a few seconds).
+const codesWait = 30 * time.Second
+
+// openCodes reads the access codes; to change them, under their lock (see
+// hubconfig.CodesLock), held from the read to the write until release.
+func openCodes(cfg hubconfig.Result, change bool) (*hub.SiteCodes, func(), error) {
+	release := func() {}
+	if change {
+		var err error
+		if release, err = filelock.Hold(cfg.StateDir, hubconfig.CodesLock, codesWait); err != nil {
+			return nil, nil, fmt.Errorf("the access codes are being changed elsewhere: %w", err)
+		}
+	}
+	store, err := filestore.Open(cfg.StateDir, nil)
+	if err != nil {
+		release()
+		return nil, nil, fmt.Errorf("cannot open the state directory: %w", err)
+	}
+	site, err := hub.OpenSiteCodes(cfg.Hub, store)
+	if err != nil {
+		release()
+		return nil, nil, fmt.Errorf("cannot read the access codes: %w", err)
+	}
+	return site, release, nil
 }
 
 func list(l hub.CodeList, stdout io.Writer) {
@@ -75,13 +108,9 @@ func list(l hub.CodeList, stdout io.Writer) {
 	}
 }
 
-// set reads the code on in and gives it to user, a contact of the site or the
-// installer.
-func set(site *hub.SiteCodes, user string, in io.Reader, stdout io.Writer) error {
-	code, err := readCode(in)
-	if err != nil {
-		return err
-	}
+// set gives the code read on the standard input to user, a contact of the site or
+// the installer.
+func set(site *hub.SiteCodes, user, code string, stdout io.Writer) error {
 	if err := site.Set(user, code); errors.Is(err, hub.ErrNotAContact) {
 		return fmt.Errorf("the code was not set: %s is not a contact of the site (see the configuration), the hub would leave it aside", user)
 	} else if err != nil {

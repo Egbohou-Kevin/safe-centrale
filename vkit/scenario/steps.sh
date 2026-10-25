@@ -62,7 +62,10 @@ step_install() {
 	sleep 3
 	# Every device says how it is, as real ones do soon after pairing.
 	zigbee send $DOOR '{"contact":true,"battery":95,"linkquality":200}'
-	zigbee send $MOTION '{"occupancy":false,"battery":95,"linkquality":200}'
+	# The motion sensor never says "no movement": Zigbee2MQTT does, on its own timer,
+	# with the last_seen of the sensor's last frame.
+	zigbee send $MOTION '{"occupancy":true,"battery":95,"linkquality":200}'
+	zigbee say $MOTION '{"occupancy":false,"battery":95,"linkquality":200}'
 	zigbee send $SMOKE '{"smoke":false,"tamper":false,"battery":95,"linkquality":200}'
 	zigbee send $KEYPAD '{"tamper":false,"battery":95,"linkquality":200}'
 	sleep 2
@@ -245,6 +248,14 @@ step_console() {
 		{ $PHONE ip -4 -br addr; $PHONE ip route; $PHONE ip neigh; ip -4 -br addr
 			ss -ltnp 'sport = :80'; nft list ruleset 2>/dev/null | grep -n 10.42 || true; } 2>&1 | sed 's/^/        /'
 	fi
+	# The network serves the page and nothing else: the hub's own way out (its default
+	# gateway) must not answer the phone (docs/security-install.md).
+	gw="$(ip -4 route show default | awk '{print $3; exit}')"
+	if [ -n "$gw" ] && $PHONE ping -c 1 -W 2 "$gw" >/dev/null 2>&1; then
+		check_failed "the console's network routes nothing (the phone reached $gw through the hub)"
+	else
+		check_passed "the console's network routes nothing"
+	fi
 	leave_wifi
 	mark
 	mosquitto_pub -h 127.0.0.1 -q 1 -t "safehome/$SITE/install/cmd" -m \
@@ -283,6 +294,15 @@ step_maint() {
 		check_passed "the hub's key cannot listen on another site's port"
 	else
 		check_failed "the hub's key cannot listen on another site's port (exit $rc: $said)"
+	fi
+	# Nor connect from the bastion to a site's port: "port-forwarding" on its key line
+	# allows both ways, the tunnel account's "AllowTcpForwarding remote" forbids it.
+	rc=0
+	said="$(timeout 10 sudo -u safehome ssh "${key[@]}" -W localhost:22001 tunnel@127.0.0.1 </dev/null 2>&1)" || rc=$?
+	if [ "$rc" = 255 ] && echo "$said" | grep -qi "prohibited"; then
+		check_passed "the hub's key cannot reach a site's port from the bastion"
+	else
+		check_failed "the hub's key cannot reach a site's port from the bastion (exit $rc: $said)"
 	fi
 	mark
 	cloud_send maint/cmd maint.close '{"session":"m1"}'

@@ -110,10 +110,13 @@ Quand internet est coupé :
   message n'écrit que son fichier, jamais toute la file. Le dernier numéro donné au
   cloud a son propre fichier de quelques octets (`agent_uplink.json`). Le reste de
   l'état (`agent.json`, jusqu'à 60 Ko avec les `id` déjà reçus du cloud) n'est pas
-  réécrit pour chaque message. Vider 20 000 messages après une coupure écrit ainsi
-  environ 7 Mo de données, au lieu de 1,2 Go (mesuré par
-  `TestDrainingTheQueueWritesItemsNotTheQueue` : 330 Ko pour 1000 messages). Après une
-  coupure de courant, l'agent remet les fichiers d'accord au démarrage.
+  réécrit pour chaque message. Un message parti laisse à la place de son fichier une
+  trace de quelques octets, effacée 10 minutes plus tard (voir « Messages redonnés
+  après leur envoi »). Vider 20 000 messages après une coupure écrit ainsi environ
+  10 Mo de données, au lieu de 1,2 Go (mesuré par
+  `TestDrainingTheQueueWritesItemsNotTheQueue` : 500 Ko pour 1000 messages, traces
+  comprises). Après une coupure de courant, l'agent remet les fichiers d'accord au
+  démarrage.
 - **Numérotation pour le cloud** : chaque programme numérote ses propres messages, et
   beaucoup restent sur le site. L'agent numérote donc de nouveau ce qui part au cloud,
   à la première tentative d'envoi : là-bas, `seq` est continu par site, et un trou
@@ -129,6 +132,20 @@ Quand internet est coupé :
   centrale : encore en file à un redémarrage, il ne remplace pas l'`id` gardé, sinon
   l'état de la centrale redonné par le broker repartirait sous un nouveau numéro. L'agent ne lit pas ses propres topics (`agent/status`, `agent/replayed`) sur
   la centrale.
+- **Messages redonnés après leur envoi** : le broker de la centrale peut aussi redonner
+  un événement, une alerte ou une annonce de photo déjà partis au cloud. Mosquitto ne
+  sauvegarde ses sessions que toutes les 5 minutes (`autosave_interval`) : après une
+  coupure de courant, il rend ce qu'il gardait pour l'agent à sa dernière sauvegarde,
+  dont ce que l'agent avait pris et envoyé depuis ; et les accusés de réception vers
+  le broker local partent par lots, perdus si la connexion se coupe. Remis en file, un
+  tel message prendrait un nouveau numéro, que le cloud jetterait comme doublon : un
+  trou qui ne se refermerait jamais. Une photo annoncée de nouveau serait suivie de
+  nouveau, une alerte attendrait une confirmation qui ne peut pas venir. L'agent garde
+  donc l'`id` de ce qui est parti pendant 10 minutes, sur disque : le fichier du
+  message est remplacé à l'envoi par une trace de quelques octets (au lieu d'être
+  effacé), effacée ensuite. Un message redonné dans ce délai, même après un
+  redémarrage de l'agent, est écarté. Les états retenus sont reconnus autrement (voir
+  ci-dessus).
 - **L'état du moment à chaque connexion au cloud** : un cloud qui a perdu l'état de
   l'alarme, la santé ou la liste des appareils (base remise à zéro, ou cloud qui ne
   les gardait pas encore) n'aurait rien jusqu'au prochain changement. À chaque
@@ -211,7 +228,10 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
   envoyé (`alert.result`, `alert.ack`, `photo.upload`), vérifiées contre ce qu'il a
   envoyé, n'y comptent pas : leur nombre croît avec les contacts et les canaux d'une
   grande alarme (trois résultats par alerte), et une réponse refusée serait perdue
-  pour de bon (un acquittement, une photo jamais envoyée).
+  pour de bon (un acquittement, une photo jamais envoyée). Une limite sauvegardée avec
+  une heure à venir (l'horloge avançait, puis a reculé, voir « Horloge ») est rendue
+  entière, une fois, à partir de maintenant : attendre que l'horloge la rattrape
+  refuserait chaque ordre de l'application pendant tout ce temps.
 - **Un ordre de l'application qui ne va pas à la centrale reçoit une réponse tout de
   suite** : sans elle, le cloud attendrait plus d'une minute pour conclure `expired`.
   L'agent publie lui-même `alarm.ack` vers le cloud, `ref` à l'`id` de l'ordre :
@@ -315,7 +335,11 @@ un module DS3231 (voir `kit.md`). L'heure est alors juste dès le démarrage, ma
 `clock_ok` reste à `false` jusqu'au retour d'internet, le noyau ne connaissant que la
 synchronisation par NTP. À valider avec le module choisi. Si l'horloge se trompe
 malgré tout puis recule, le moteur ne prolonge ni un verrouillage ni le compte des
-codes faux (voir `engine.md`).
+codes faux, ni ses délais, après un redémarrage comme pendant que la centrale tourne
+(voir `engine.md`). L'agent rend entière une limite de débit datée dans le futur
+(voir plus haut) ; mais pendant qu'il tourne, son temps s'arrête jusqu'à ce que
+l'horloge le rattrape (voir `architecture.md`) : seul ce qui restait de ses limites
+passe pendant ce temps.
 
 ## Authentification
 

@@ -190,7 +190,21 @@ En mode installation, la centrale allume **son propre réseau Wi-Fi**. Par défa
 s'appelle `safehome-tg-lom-0001` et la page est à l'adresse `http://10.42.0.1/`.
 
 - **Rien n'écoute sur le réseau du commerce.** La page n'est servie que sur ce réseau à
-  part, et seulement pendant le mode.
+  part, et seulement pendant le mode. Elle ne répond qu'aux appareils de ce réseau
+  (`10.42.0.0/24`) : Linux remet un paquet adressé à `10.42.0.1` quelle que soit
+  l'interface par laquelle il arrive, et un appareil du réseau du commerce qui ferait
+  passer `10.42.0.1` par la centrale atteindrait la page sans la phrase de passe.
+  Une demande venue d'une autre adresse est refusée.
+- **Le réseau ne mène nulle part ailleurs.** NetworkManager donne les adresses aux
+  téléphones (son mode « partagé »), mais ce mode allume aussi le routage et fait
+  sortir les téléphones par les autres connexions de la centrale : un téléphone entré
+  avec la phrase de l'étiquette atteindrait le réseau du commerce (les flux des
+  caméras, la page d'administration de la box) et internet. Un script de
+  NetworkManager (`/etc/NetworkManager/dispatcher.d/50-safehome-console`, posé par le
+  script d'installation) coupe le routage de ce réseau dès qu'il est levé. La console
+  attend qu'il soit coupé, et retire le réseau sinon (10 s au plus) : le journal
+  donne la raison, et `safehome-console check` signale un script absent. Seule la
+  centrale elle-même reste joignable depuis ce réseau.
 - **Le réseau est protégé (WPA2).** Sa phrase de passe est sur l'étiquette de la
   centrale. Le script d'installation la tire au sort une fois et l'affiche pour
   l'étiquette (`/etc/safehome/console.secret`).
@@ -206,7 +220,13 @@ s'appelle `safehome-tg-lom-0001` et la page est à l'adresse `http://10.42.0.1/`
 - **Le réseau ne survit pas au mode.** Il est créé à l'ouverture, jamais démarré au
   boot, et supprimé à la fin. Il est aussi supprimé quand le service s'arrête, et
   quand son démarrage a échoué (coupé par son délai, NetworkManager a pu le lever
-  quand même) : la fin du mode le retire alors aussi.
+  quand même) : la fin du mode le retire alors aussi. Un service mort pendant un mode
+  (plantage, chien de garde) n'a pas pu le supprimer : le service le supprime à son
+  démarrage, avant tout nouveau mode, même si le mode est fini entre-temps.
+- **Un réseau qui n'a pas démarré est retenté.** La puce Wi-Fi occupée par le réseau
+  de la box, par exemple : l'installateur ne voit pas le réseau, et retape le code
+  installateur. La centrale ouvre une nouvelle demi-heure, et la console relance le
+  réseau (au lieu de seulement prolonger un mode sans page).
 - NetworkManager crée le réseau (`nmcli`). Le service tourne sans droits
   d'administration. Une règle polkit lui permet de créer, lever, baisser et supprimer
   des connexions (jamais d'éteindre la radio Wi-Fi), et une capacité systemd seulement
@@ -241,7 +261,9 @@ est conseillé.
 - **Retirer un appareil** du réseau Zigbee. Un retrait que la centrale refuserait
   (la dernière sirène) est refusé avant que rien ne parte. Pendant le retrait,
   l'appareil est tenu pour parti : un autre onglet ne peut pas retirer l'autre sirène
-  entre-temps. Un ordre parti sans réponse de l'adaptateur peut encore s'exécuter :
+  entre-temps. Un second retrait du même appareil (un double appui, un autre onglet)
+  est refusé : la page dit que le retrait est déjà en cours. Un ordre parti sans
+  réponse de l'adaptateur peut encore s'exécuter :
   l'appareil quitte la configuration quand même, et la page le dit.
 - **Vérifier** : la page montre ce qui manque, comme `safehome-install check`. Par
   exemple un appareil sans usage, ou une zone qui ne pourra jamais se déclencher.
@@ -251,7 +273,11 @@ est conseillé.
   lui-même son code, deux fois, sur le téléphone. Le code n'est ni affiché, ni dans
   l'adresse, ni dans les journaux. Il est refusé s'il est trop facile, déjà pris, ou
   si c'est le code installateur. La centrale le prend aussitôt (`SIGHUP`, comme après
-  `safehome-hub codes set`). La page ne retire que les codes d'anciens contacts
+  `safehome-hub codes set`). Deux codes posés au même moment (deux téléphones, ou la
+  page et `codes set`) sont gardés tous les deux : chaque changement relit la liste,
+  calcule quelques secondes et la récrit en entier, sous un verrou
+  (`codes.lock` dans le dossier d'état) que la page et l'outil prennent l'un après
+  l'autre. La page ne retire que les codes d'anciens contacts
   (« Codes d'anciens contacts ») ; retirer le code d'un contact reste en SSH. Le code
   installateur lui-même ne se règle ni ne se retire depuis la page, même par un ordre
   forgé : celui qui atteindrait la page s'ouvrirait sinon le mode installation. Il se
@@ -264,7 +290,10 @@ donner au moteur, qui ne les tient donc pas pour signalés. Le feu et la panique
 jamais coupés. Dès la fermeture du mode, le sabotage alerte de nouveau, et un sabotage
 noté pendant le mode et toujours actif (un couvercle laissé ouvert) est signalé à la
 fermeture. Avant le 25 octobre 2026, le moteur le tenait pour signalé : il ne l'était
-jamais, même après un redémarrage.
+jamais, même après un redémarrage. Un appareil retiré pendant le mode n'a plus de
+sabotage noté : remplacer un capteur ouvert, le retirer à la console, puis armer le soir
+ne fait pas sonner la sirène pour un appareil qui n'existe plus (corrigé le 25 octobre
+2026 après une revue).
 
 ### Après le mode
 
@@ -299,6 +328,9 @@ zones de `hub.json` et le dit dans son journal.
 - Le kit virtuel tourne sur Debian 13, où NetworkManager et `dnsmasq-base` (le mode
   « partagé »), la règle polkit et le réseau de la console marchent. Reste à le
   vérifier sur Raspberry Pi OS Lite, avec la vraie puce Wi-Fi et sa portée.
+- Le script qui coupe le routage du réseau de la console n'a pas encore tourné dans
+  le kit virtuel (il le vérifie maintenant : la passerelle de la centrale ne doit pas
+  répondre au téléphone), ni sur un vrai Pi.
 
 ## Sauvegarde et remplacement
 

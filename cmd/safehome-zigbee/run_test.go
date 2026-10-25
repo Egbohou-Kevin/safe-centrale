@@ -18,6 +18,7 @@ import (
 	"safehome/internal/contract"
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/schematest"
+	"safehome/internal/zigbeeapp"
 )
 
 const site = "tg-lom-0001"
@@ -59,6 +60,22 @@ func TestUsageVersionAndCheck(t *testing.T) {
 		t.Fatalf("%d %q", code, out)
 	}
 	if code, _, errb := cli("check", "-config", filepath.Join(t.TempDir(), "none.json")); code != 1 || !strings.Contains(errb, "configuration error") {
+		t.Fatalf("%d %q", code, errb)
+	}
+}
+
+// An update left out the profile of a paired device (one added by hand on the hub,
+// not in the site's folder): every message of the device would be dropped without a
+// word. The check fails, so the installation puts the previous configuration back.
+func TestTheCheckFailsForAPairedDeviceWithoutProfile(t *testing.T) {
+	state := t.TempDir()
+	saved := `{"devices": {"dev_door": {"id": "dev_door", "ieee": "0x01", "model": "MCCGQ11LM", "profile": "aqara.contact.mccgq11lm"},
+		"dev_pir": {"id": "dev_pir", "ieee": "0x02", "model": "XYZ", "profile": "site.motion.xyz"}}}`
+	if err := os.WriteFile(filepath.Join(state, zigbeeapp.StateKey+".json"), []byte(saved), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errb := cli("check", "-config", writeConfig(t, "mqtt://127.0.0.1:1", state))
+	if code != 1 || !strings.Contains(errb, "dev_pir is paired with profile site.motion.xyz") || strings.Contains(errb, "dev_door") {
 		t.Fatalf("%d %q", code, errb)
 	}
 }
@@ -194,6 +211,13 @@ func TestTheAdapterEndToEndWithASimulatedZigbee2MQTT(t *testing.T) {
 		d, _ := contract.DecodeData[contract.ZigbeeStatusData](st[len(st)-1])
 		return d
 	}
+	// The retained "online" may date from before a power cut: the adapter asks
+	// Zigbee2MQTT whether it runs, and believes it once it answers.
+	drivertest.WaitFor(t, "a health check", func() bool { return len(f.on("zigbee2mqtt/bridge/request/health_check")) > 0 })
+	var check map[string]any
+	json.Unmarshal(f.on("zigbee2mqtt/bridge/request/health_check")[0].Payload, &check)
+	healthy, _ := json.Marshal(map[string]any{"data": map[string]any{"healthy": true}, "status": "ok", "transaction": check["transaction"]})
+	f.publish(t, "zigbee2mqtt/bridge/response/health_check", string(healthy), false)
 	drivertest.WaitFor(t, "the bridge online", func() bool { return status().Bridge == contract.BridgeOnline })
 
 	// The installer pairs a door sensor and a siren.

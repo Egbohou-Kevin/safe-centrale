@@ -105,6 +105,9 @@ var (
 	// ErrLastSiren: the hub refuses a site without a siren. The editor says so before
 	// asking the hub, for a tool to explain it.
 	ErrLastSiren = errors.New("the site must keep at least one siren")
+	// ErrRemoving: the device's removal is already under way (a second tap, another
+	// tab). Accepted, it would end with the first one's hold.
+	ErrRemoving = errors.New("its removal is already under way")
 )
 
 // Editor changes the use of the devices in the site that Sites keeps, for the
@@ -308,7 +311,8 @@ func useOf(s Site, id string) Use {
 // removed from the network: a removal cannot be undone (the device would have to be
 // paired again, with a new id). It returns what the device does now. Once it says
 // yes, the device is held as being removed until FinishRemoval, or CancelRemoval if
-// the order never went out.
+// the order never went out. A device whose removal is under way is refused: the
+// second order would not go out, and cancelling it would drop the first one's hold.
 func (e *Editor) CheckRemoval(id string) (Use, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -317,6 +321,9 @@ func (e *Editor) CheckRemoval(id string) (Use, error) {
 		return Use{}, err
 	}
 	u := useOf(site, id)
+	if e.removing[id] {
+		return u, fmt.Errorf("%s: %w", id, ErrRemoving)
+	}
 	if u.Used() {
 		if err := e.checkWithout(site, id); err != nil {
 			return u, fmt.Errorf("%s cannot be removed yet, the configuration could not follow (add its replacement first): %w", id, err)

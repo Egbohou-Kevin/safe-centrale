@@ -38,7 +38,11 @@ func (w *Watch) forget() { w.Seen, w.assumed = time.Time{}, false }
 
 // resume gives a known component whose last state was not saved a Seen: the
 // restart, so that its silence counts from there. One that was silent stays so:
-// a restart is no news from it.
+// a restart is no news from it. An outage not told yet starts again from the restart
+// too: the component stopped with the hub (a GSM line that lost its network as the
+// power cut went on, a Zigbee bridge stopped at the shutdown), and comes back with
+// it; dated from before, it would be told at once at every boot. One already told is
+// not told again.
 func (w *Watch) resume(now time.Time, r watchRule) {
 	if !w.Known || !w.Seen.IsZero() {
 		return
@@ -46,6 +50,9 @@ func (w *Watch) resume(now time.Time, r watchRule) {
 	w.Seen, w.assumed = now, true
 	if w.Silent {
 		w.Seen = now.Add(-r.silentAfter)
+	}
+	if !w.Alerted {
+		w.DownSince = time.Time{}
 	}
 }
 

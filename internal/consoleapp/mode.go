@@ -3,6 +3,7 @@ package consoleapp
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"safehome/internal/contract"
@@ -15,16 +16,25 @@ type mode struct {
 	deadline  <-chan time.Time   // the mode's end, should the hub say nothing
 	stopTimer func()
 	down      chan struct{} // closed once the network is down again
+	failed    atomic.Bool   // the network did not start
 }
 
 // Run serves the console until ctx is cancelled. Its loop never waits for the
 // network, which nmcli may take long to start or stop: it keeps answering Alive.
+//
+// It starts by taking down a network a console that died during a mode may have
+// left (a crash, the watchdog): nothing else would, should that mode be over by now,
+// and the hub's Wi-Fi would stay on for good (and off the box's network, the same
+// chip cannot hold both).
 func (a *App) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	wg.Go(func() { a.worker(ctx) })
 	defer wg.Wait()
 
-	var current, last *mode // the open mode (nil when closed), and the latest one
+	// The open mode (nil when closed), and the latest one, whose network the next
+	// one waits to be down: first, the cleanup of the start.
+	var current *mode
+	last := a.cleanup(ctx)
 	defer func() {
 		a.end(current, "the console stops")
 		if last != nil {
@@ -49,7 +59,11 @@ func (a *App) Run(ctx context.Context) error {
 			case d.Status == contract.InstallClosed:
 				a.end(current, d.Reason)
 				current = nil
-			case current == nil:
+			case current == nil || current.failed.Load() && d.Until.After(a.ends()):
+				// A new mode; or the installer typed the code again, as the network
+				// did not come: it is started again, for the new half hour.
+				a.end(current, "the network did not start: once more")
+				current = nil
 				if m := a.begin(ctx, d.Until.Time, last); m != nil {
 					current, last = m, m
 				}
@@ -83,9 +97,31 @@ func (a *App) begin(ctx context.Context, until time.Time, prev *mode) *mode {
 		if prev != nil {
 			<-prev.down
 		}
-		a.network(ctx, sctx)
+		a.network(ctx, sctx, m)
 	}()
 	return m
+}
+
+// cleanup takes down, in the background, a network an earlier run left; the mode
+// it returns is down once that is done.
+func (a *App) cleanup(ctx context.Context) *mode {
+	m := &mode{down: make(chan struct{})}
+	go func() {
+		defer close(m.down)
+		downCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.cfg.Wait)
+		defer cancel()
+		if err := a.deps.Hotspot.Down(downCtx); err != nil {
+			a.log.Debug("no network left by an earlier run to take down", "err", err)
+		}
+	}()
+	return m
+}
+
+// ends is when the open mode ends.
+func (a *App) ends() time.Time {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.until
 }
 
 // extend moves the end of the open mode m to until, if that is later: the installer
@@ -119,15 +155,18 @@ func (a *App) end(m *mode, why string) {
 	a.mu.Unlock()
 }
 
-// network brings the hub's network up, serves the page until the mode's context
-// sctx ends, then brings the network down, even when ctx is over too.
-func (a *App) network(ctx, sctx context.Context) {
+// network brings the network of the mode m up, serves the page until the mode's
+// context sctx ends, then brings the network down, even when ctx is over too. A
+// network that does not start is started again if the installer types the code
+// again (see Run).
+func (a *App) network(ctx, sctx context.Context, m *mode) {
 	upCtx, cancel := context.WithTimeout(sctx, a.cfg.Wait)
 	err := a.deps.Hotspot.Up(upCtx)
 	cancel()
 	switch {
 	case err != nil && sctx.Err() == nil:
-		a.log.Error("the console's network did not start: the page cannot be reached", "err", err)
+		a.log.Error("the console's network did not start: the page cannot be reached; type the installer code again to try once more", "err", err)
+		m.failed.Store(true)
 		a.mu.Lock()
 		if a.session == sctx {
 			a.hotspotErr = err.Error()

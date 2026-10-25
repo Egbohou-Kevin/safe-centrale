@@ -137,3 +137,24 @@ func TestTheCloudCheckLaysTheDevicesAsTheHubDoes(t *testing.T) {
 		t.Fatalf("sirens %v, %d zones: want the file's own", r.Hub.SirenIDs, len(r.Hub.Engine.Zones))
 	}
 }
+
+// An empty list from the cloud (no contact, no automatic arming) is a list sent: it is
+// checked as such, and the hub runs on it after the restart too, not on its file's.
+func TestEmptyListsFromTheCloudOutliveTheRestart(t *testing.T) {
+	path, state := exampleWithState(t)
+	d := contract.ConfigSetData{Version: 7, Contacts: []contract.ConfigContact{}, Closing: map[string]string{}}
+	checked, err := WithSiteConfig(path, d)
+	if err != nil || len(checked.Hub.Escalation.Contacts) != 0 || len(checked.Hub.Engine.Closing) != 0 {
+		t.Fatalf("checked: %v, %d contact(s), %d closing day(s)", err, len(checked.Hub.Escalation.Contacts), len(checked.Hub.Engine.Closing))
+	}
+	if err := siteconfig.Write(state, d); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Load(path)
+	if err != nil || r.SiteErr != nil || r.SiteVersion != 7 {
+		t.Fatalf("%v %v %d", err, r.SiteErr, r.SiteVersion)
+	}
+	if len(r.Hub.Escalation.Contacts) != 0 || len(r.Hub.Engine.Closing) != 0 {
+		t.Fatalf("after the restart: %d contact(s), %d closing day(s), the file's lists came back", len(r.Hub.Escalation.Contacts), len(r.Hub.Engine.Closing))
+	}
+}

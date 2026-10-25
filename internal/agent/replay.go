@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"slices"
+	"time"
 
 	"safehome/internal/contract"
 )
@@ -38,9 +39,9 @@ func stamp(it *Item, seq uint64) {
 	}
 }
 
-// sent takes an acknowledged item out of the queue, or of the replays, and keeps a
-// numbered one in the journal.
-func (r *Relay) sent(id string) []Action {
+// sent takes an acknowledged item out of the queue, or of the replays, keeps a
+// numbered one in the journal, and leaves its tombstone (see sent.go).
+func (r *Relay) sent(now time.Time, id string) []Action {
 	if i := slices.IndexFunc(r.queue, func(it Item) bool { return it.ID == id }); i >= 0 {
 		it := r.queue[i]
 		r.queue = slices.Delete(r.queue, i, i+1)
@@ -48,7 +49,7 @@ func (r *Relay) sent(id string) []Action {
 		if it.Seq != 0 {
 			r.remember(it)
 		}
-		return dropOf([]Item{it})
+		return r.bury(now, it)
 	}
 	if i := slices.IndexFunc(r.replay, func(it Item) bool { return it.ID == id }); i >= 0 {
 		r.replay = slices.Delete(r.replay, i, i+1)

@@ -73,6 +73,46 @@ func TestANetworkThatDoesNotStartIsSaid(t *testing.T) {
 	drivertest.WaitFor(t, "the network down", func() bool { _, down := r.hotspot.counts(); return down == 1 })
 }
 
+// The console died during a mode (a crash, the watchdog) and comes back once it is
+// over: the network it left is taken down at its start, before any new mode's.
+func TestANetworkLeftByAConsoleThatDiedIsTakenDown(t *testing.T) {
+	hotspot := &fakeHotspot{}
+	app, err := New(DefaultConfig(site), Deps{Clock: drivertest.NewFakeClock(t0), Publisher: &rig{}, NewID: contract.NewIDGenerator().New,
+		Hotspot: hotspot, Sites: &fakeSites{}, Codes: &fakeCodes{codes: map[string]string{}}, Serve: func(ctx context.Context) error { <-ctx.Done(); return nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { app.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+	drivertest.WaitFor(t, "the network taken down", func() bool { up, down := hotspot.counts(); return up == 0 && down == 1 })
+}
+
+// The network did not start (the Wi-Fi chip busy with the box's network): the
+// installer, seeing no network, types the code again. The hub starts a new half
+// hour, and the console tries the network once more.
+func TestANetworkThatDidNotStartIsTriedAgainWhenTheCodeIsTypedAgain(t *testing.T) {
+	r := newRig(t)
+	r.hotspot.mu.Lock()
+	r.hotspot.fail = errors.New("device busy")
+	r.hotspot.mu.Unlock()
+	r.mode(contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(t0.Add(30 * time.Minute))})
+	drivertest.WaitFor(t, "the failure", func() bool { return r.app.Overview().Hotspot != "" })
+	r.hotspot.mu.Lock()
+	r.hotspot.fail = nil
+	r.hotspot.mu.Unlock()
+	r.clock.Advance(5 * time.Minute)
+	r.mode(contract.InstallModeData{Status: contract.InstallOpen, Until: contract.TSPtr(r.clock.Now().Add(30 * time.Minute))})
+	drivertest.WaitFor(t, "the page", func() bool { return r.isServing() })
+	if o := r.app.Overview(); !o.Open || o.Hotspot != "" || !o.Until.Equal(t0.Add(35*time.Minute)) {
+		t.Fatalf("%+v", o)
+	}
+	if up, down := r.hotspot.counts(); up != 1 || down != 1 {
+		t.Fatalf("up %d, down %d: the failed start's network taken down first", up, down)
+	}
+}
+
 func TestPairingShowsTheDevicesAsTheyJoin(t *testing.T) {
 	r := newRig(t)
 	r.open()
@@ -337,6 +377,46 @@ func TestTheCodeOfAFormerContactIsShownAndRemoved(t *testing.T) {
 
 // A removal the adapter confirms after the mode ended still leaves the site: the
 // site must not keep a device the network lost.
+// A second tap on "remove", or another tab, while the removal is under way: refused,
+// and the first removal keeps its hold: the other siren cannot be taken off, and the
+// site never ends with the removed device as its only siren.
+func TestASecondRemovalOfTheSameDeviceIsRefused(t *testing.T) {
+	r := newRig(t)
+	r.mu.Lock()
+	r.devices = append(r.devices, dev("dev_siren2", "siren", "mains"))
+	r.mu.Unlock()
+	r.registry()
+	r.open()
+	if err := r.app.Siren("dev_siren2", true); err != nil {
+		t.Fatal(err)
+	}
+	sent, release := make(chan struct{}), make(chan struct{})
+	r.mu.Lock()
+	r.hold = func(env contract.Envelope) {
+		if env.Type == contract.TypeRegistryRemove {
+			close(sent)
+			<-release
+		}
+	}
+	r.mu.Unlock()
+	result := make(chan error, 1)
+	go func() { result <- r.app.Remove(context.Background(), "dev_siren") }()
+	<-sent
+	if err := r.app.Remove(context.Background(), "dev_siren"); !errors.Is(err, ErrRemoving) {
+		t.Fatalf("the same removal again: %v", err)
+	}
+	if err := r.app.Siren("dev_siren2", false); !errors.Is(err, ErrLastSiren) {
+		t.Fatalf("the other siren taken off during the removal: %v", err)
+	}
+	close(release)
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	if site, _ := r.sites.Read(); !slices.Equal(site.SirenIDs, []string{"dev_siren2"}) {
+		t.Fatalf("sirens %v", site.SirenIDs)
+	}
+}
+
 func TestARemovalEndingAfterTheModeStillLeavesTheSite(t *testing.T) {
 	r := newRig(t)
 	r.open()

@@ -2,8 +2,8 @@
 // with nothing loaded from elsewhere (the hub's network has no internet). The texts
 // are in French, for the installers; they are in the templates, not here.
 //
-// It serves only the hub's address on its own network, and only while the
-// installation mode lasts (the program starts and stops it).
+// It serves only the hub's address on its own network, to the phones on that network,
+// and only while the installation mode lasts (the program starts and stops it).
 package web
 
 import (
@@ -12,6 +12,7 @@ import (
 	"errors"
 	"html/template"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -38,22 +39,31 @@ var files embed.FS
 
 // Handler serves the page.
 type Handler struct {
-	c     Console
-	host  string // the only Host accepted: the hub's address on its network
-	loc   *time.Location
-	pages *template.Template
-	mux   *http.ServeMux
-	csrf  *http.CrossOriginProtection
+	c    Console
+	host string // the only Host accepted: the hub's address on its network
+	// clients is that network: a request from elsewhere is refused. Linux delivers a
+	// packet for the hub's address on its own network whatever the interface it came
+	// in by: a device on the shop's network that routes 10.42.0.1 through the hub
+	// would reach the page without the Wi-Fi passphrase.
+	clients netip.Prefix
+	loc     *time.Location
+	pages   *template.Template
+	mux     *http.ServeMux
+	csrf    *http.CrossOriginProtection
 }
 
 // New builds the page for the console, answering only requests made to host (the
 // hub's address, with its port unless 80): a page reached under another name is
-// refused (DNS rebinding).
-func New(c Console, host string, loc *time.Location) (*Handler, error) {
+// refused (DNS rebinding). Only the addresses of clients are answered: the hub's own
+// network.
+func New(c Console, host string, clients netip.Prefix, loc *time.Location) (*Handler, error) {
 	if loc == nil {
 		loc = time.UTC
 	}
-	h := &Handler{c: c, host: host, loc: loc, mux: http.NewServeMux(), csrf: http.NewCrossOriginProtection()}
+	if !clients.IsValid() {
+		return nil, errors.New("web: the hub's own network is required")
+	}
+	h := &Handler{c: c, host: host, clients: clients, loc: loc, mux: http.NewServeMux(), csrf: http.NewCrossOriginProtection()}
 	funcs := template.FuncMap{
 		"clock": func(t time.Time) string { return t.In(h.loc).Format("15:04:05") },
 		"hour":  func(t time.Time) string { return t.In(h.loc).Format("15:04") },
@@ -91,6 +101,10 @@ func New(c Console, host string, loc *time.Location) (*Handler, error) {
 // answer. An order posted from another site's page is refused: the installer's
 // phone may browse the internet over its mobile data while on the hub's network.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if from, err := netip.ParseAddrPort(r.RemoteAddr); err != nil || !h.clients.Contains(from.Addr().Unmap()) {
+		http.Error(w, "only from the hub's own network", http.StatusForbidden)
+		return
+	}
 	if r.Host != h.host {
 		http.Error(w, "unknown host", http.StatusMisdirectedRequest)
 		return
@@ -192,6 +206,7 @@ var refusals = []struct {
 	{consoleapp.ErrHasZone, "siren_zoned"},
 	{consoleapp.ErrNoRegistry, "no_registry"},
 	{consoleapp.ErrLastSiren, "last_siren"},
+	{consoleapp.ErrRemoving, "removing"},
 	{consoleapp.ErrEmptyName, "empty_name"},
 	{consoleapp.ErrNameTooLong, "long_name"},
 	{consoleapp.ErrCannotServe, "cannot_serve"},

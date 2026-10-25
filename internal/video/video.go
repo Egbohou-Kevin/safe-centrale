@@ -300,35 +300,6 @@ func shortest(a, b time.Duration) time.Duration {
 	return a
 }
 
-// alarm decides the photos of an alarm: once per incident, PerHour alarms an hour at
-// most, of the first cameras. They are taken even past the month's allowance: a few
-// hundred kilobytes that may show who broke in.
-func (v *Service) alarm(a Alarm) []Action {
-	p := v.cfg.Photos
-	if p.Count == 0 || a.Incident == "" || slices.Contains(v.s.Photographed, a.Incident) {
-		return nil
-	}
-	v.s.Photographed = append(v.s.Photographed, a.Incident)
-	if over := len(v.s.Photographed) - photoMemory; over > 0 {
-		v.s.Photographed = slices.Delete(v.s.Photographed, 0, over)
-	}
-	for i, t := range v.s.PhotosAt {
-		if t.After(a.Now) {
-			v.s.PhotosAt[i] = a.Now // saved while the clock was ahead: not an hour of refusals more
-		}
-	}
-	v.s.PhotosAt = slices.DeleteFunc(v.s.PhotosAt, func(t time.Time) bool { return !a.Now.Before(t.Add(time.Hour)) })
-	if len(v.s.PhotosAt) >= p.PerHour {
-		return []Action{NoPhotos{Incident: a.Incident, Why: fmt.Sprintf("already %d alarms photographed this hour", p.PerHour)}}
-	}
-	v.s.PhotosAt = append(v.s.PhotosAt, a.Now)
-	var cams []string
-	for _, c := range v.cfg.Cameras[:min(len(v.cfg.Cameras), MaxPhotoCameras)] {
-		cams = append(cams, c.ID)
-	}
-	return []Action{TakePhotos{Incident: a.Incident, Cameras: cams, Count: p.Count, Every: p.Every, Width: p.Width}}
-}
-
 func (v *Service) overQuota() bool { return v.cfg.Quota > 0 && v.used() >= v.cfg.Quota }
 
 // used is the month's usage, sessions under way included.

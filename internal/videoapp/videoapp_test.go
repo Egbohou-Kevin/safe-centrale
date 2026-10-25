@@ -478,9 +478,12 @@ func TestConfigValidation(t *testing.T) {
 
 // --- photos ----------------------------------------------------------------------------
 
-func (h *harness) alarm(incident string) {
+func (h *harness) alarm(incident string) { h.alarmAt(incident, h.clock.Now()) }
+
+// alarmAt delivers an alarm.triggered written at ts.
+func (h *harness) alarmAt(incident string, ts time.Time) {
 	h.t.Helper()
-	env, _ := contract.NewEnvelope(site, "engine", 1, h.ids.New(), h.clock.Now(), contract.TypeAlarmTriggered,
+	env, _ := contract.NewEnvelope(site, "engine", 1, h.ids.New(), ts, contract.TypeAlarmTriggered,
 		contract.TriggeredData{Incident: incident, DeviceID: "dev_door", Capability: contract.CapContact, Zone: "entrance"})
 	b, _ := json.Marshal(env)
 	h.app.HandleMessage(inbox.Message{Topic: contract.AlarmEventTopic(site), Payload: b})
@@ -489,6 +492,24 @@ func (h *harness) alarm(incident string) {
 
 func quickPhotos(c *Config) {
 	c.Video.Photos = video.PhotoPolicy{Count: 2, Every: 500 * time.Millisecond, Width: 320, PerHour: 6}
+}
+
+// An alarm the broker kept for the service while it was down comes hours late: it
+// gets no photos, which would show the shop as it is now.
+func TestALateAlarmIsNotPhotographed(t *testing.T) {
+	h := start(t, func(c *Config) {
+		c.Video.Photos = video.PhotoPolicy{Count: 1, Every: time.Second, Width: 320, PerHour: 6}
+	})
+	h.alarmAt("inc1", h.clock.Now().Add(-5*time.Hour))
+	h.idle()
+	if frames, opened, _ := h.camera.count(); frames != 0 || opened != 0 {
+		t.Fatalf("%d pictures, camera opened %d times", frames, opened)
+	}
+	h.alarmAt("inc2", h.clock.Now().Add(-time.Minute)) // a live one is
+	h.idle()
+	if frames, _, _ := h.camera.count(); frames != 2 {
+		t.Fatalf("%d pictures of a live alarm", frames)
+	}
 }
 
 func TestAnAlarmIsPhotographedAndEachPhotoAnnounced(t *testing.T) {

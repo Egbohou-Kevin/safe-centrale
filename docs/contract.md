@@ -320,7 +320,8 @@ le planning arme dans le moteur.
   gardée par le broker pendant une coupure répond `expired`. Un ordre périmé n'est pas
   vérifié : son code ne compte pas comme faux.
 - L'âge d'un ordre se mesure à l'horloge de la centrale, celle qui date les messages
-  du site : après un recul de l'horloge, un ordre récent reste valable. L'heure d'une
+  du site : après un recul de l'horloge, un ordre récent reste valable, qu'il porte son
+  `exp` (l'application) ou non (le clavier). L'heure d'une
   touche du clavier (le `ts` de son `device.event`) est celle où Zigbee2MQTT l'a entendue (`last_seen`) : une touche
   gardée par le broker pendant une coupure de l'adaptateur expire aussi.
 
@@ -543,7 +544,9 @@ vit) :
 }
 ```
 
-- `bridge` : `online` quand Zigbee2MQTT et sa clé tournent, `offline` sinon.
+- `bridge` : `online` quand Zigbee2MQTT et sa clé tournent, `offline` sinon, et au
+  démarrage de l'adaptateur tant que Zigbee2MQTT n'a pas prouvé qu'il tourne (voir
+  `adapter-zigbee.md`, « État de la liaison »).
 - `devices` : appareils enregistrés ; `offline` : ceux qui ne répondent plus ;
   `pairing` : le réseau est ouvert aux nouveaux appareils, Zigbee2MQTT l'a confirmé,
   ou un appareil entré pendant la fenêtre est encore interrogé (3 minutes au plus).
@@ -671,9 +674,12 @@ et en données mobiles son forfait vidéo. Le cloud envoie le tout à chaque cha
 
 - Le message porte **toute** la configuration réglée par le cloud, pas une
   différence : un champ absent garde la valeur des fichiers du site. Une liste
-  envoyée (`contacts`, `closing`) remplace celle des fichiers.
+  envoyée (`contacts`, `closing`) remplace celle des fichiers, même vide :
+  `"contacts": []` retire tous les contacts, `"closing": {}` toute mise en service
+  automatique, y compris après un redémarrage.
 - Limites : délais de 10 à 300 s (sortie) et de 10 à 180 s (entrée), 5 contacts au
-  plus, un propriétaire (`owner`) au moins. Rôles : `owner`, `deputy`, `guard`,
+  plus, dont un propriétaire (`owner`) dès qu'il y en a un (une liste vide est
+  acceptée : personne n'est prévenu d'une alarme, `check` le signale). Rôles : `owner`, `deputy`, `guard`,
   `manager`, `other`. `sms` et `call` demandent un numéro au format international
   (`+228...`). `quota_mb` de 0 à 8 388 608. `max_s` ne dépasse pas la plus longue
   session vidéo.

@@ -478,6 +478,34 @@ func TestTimeNeverGoesBackward(t *testing.T) {
 	}
 }
 
+// A core that pulls back what it stamped ahead (FollowsClock) gets the clock as it is,
+// corrected backwards too: an entry delay started after the correction lasts its
+// length, not that plus the step.
+func TestACoreThatFollowsTheClockSeesItGoBack(t *testing.T) {
+	r := newRig(t, nil)
+	r.loop.o.FollowsClock = true
+	r.start()
+	r.arm()
+	r.settle()
+	r.clock.PassTimer(t, 2*time.Minute) // the exit delay
+	r.clock.Advance(time.Hour)
+	r.settle()
+	r.clock.Set(t0.Add(30 * time.Minute)) // the system clock is corrected backwards
+	var seen time.Time
+	r.loop.Submit(r.ctx, func(now time.Time) engine.Input {
+		seen = now
+		return engine.Signal{Now: now, DeviceID: "dev_door", Sensor: engine.SensorContact, Active: true}
+	})
+	r.settle()
+	if !seen.Equal(t0.Add(30 * time.Minute)) {
+		t.Fatalf("the core saw %v, want the corrected clock", seen)
+	}
+	r.clock.PassTimer(t, 45*time.Second)
+	if m := r.mode(); m != engine.ModeTriggered {
+		t.Fatalf("mode %s 45 s into the entry delay, want triggered", m)
+	}
+}
+
 func TestRunStopsWithTheContextAndLaterCallsAreRefused(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()

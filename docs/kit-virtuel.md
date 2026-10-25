@@ -21,7 +21,7 @@ d'intégration entre programmes et de comportement face aux pannes.
 | Caméra du commerce | `vkit-camera` : un go2rtc qui diffuse une mire de test en RTSP (H.264) sur `127.0.0.1:8554` |
 | Relais vidéo du cloud | `vkit-relay` (ffmpeg qui reçoit le flux RTMP) derrière `vkit-relay-tls` (rtmps sur `127.0.0.1:1936`, certificat du faux cloud, reconnu par le système comme le serait le vrai) |
 | Stockage des photos du cloud | `vkit-fakeupload` : reçoit les `PUT` HTTPS de l'agent (certificat du faux cloud), vérifie qu'il s'agit d'un JPEG ; un jeton qui ne commence pas par `vkit-ok` est refusé (401) |
-| Bastion de maintenance | Le serveur SSH de la VM : un compte `tunnel` sans shell, la clé de la centrale limitée à son port (`permitlisten`), comme dans `maintenance.md` |
+| Bastion de maintenance | Le serveur SSH de la VM : un compte `tunnel` sans shell, qui ne peut qu'écouter (`AllowTcpForwarding remote` sous `Match User tunnel`), la clé de la centrale limitée à son port (`permitlisten`), comme dans `maintenance.md` |
 | Module batterie (Geekworm X728) | `vkit-power` : les simulateurs du noyau `gpio-sim` (ses broches, sur une puce nommée comme celle du Pi 4) et `i2c-stub` (sa jauge à `0x36`), compilés par `up.sh` ; `safehome-power` les lit par les mêmes interfaces que sur le Pi |
 | Wi-Fi de la console, téléphone de l'installateur | Deux radios simulées par le noyau (`mac80211_hwsim`) : `wlan0` pour la centrale, `wlan1` pour le téléphone |
 
@@ -88,10 +88,12 @@ Les ordres reconnus sont décrits en tête de `vkit/fakemodem/control.go`,
 8. **Plantage** de la centrale armée (elle reste armée), **gel** (le chien de garde de
    systemd la redémarre).
 9. **Mode installation** au clavier, réseau Wi-Fi de la console, un « téléphone » s'y
-   connecte et ouvre la page.
+   connecte et ouvre la page, sans pouvoir aller plus loin (la passerelle de la
+   centrale ne lui répond pas).
 10. **Maintenance à distance** demandée par le cloud : le tunnel s'ouvre, le port du
     bastion mène au SSH de la centrale ; la clé de la centrale n'ouvre ni shell sur
-    le bastion ni le port d'un autre site ; le tunnel se referme.
+    le bastion, ni l'écoute sur le port d'un autre site, ni une connexion depuis le
+    bastion vers le port d'un site (`-W`) ; le tunnel se referme.
 11. **Vidéo en direct** demandée depuis l'application : la caméra est joignable, le
     flux arrive au relais en H.264 sans réencodage, s'arrête sur demande, et son jeton
     n'apparaît dans aucun journal.

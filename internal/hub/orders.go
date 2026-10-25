@@ -46,14 +46,17 @@ func (h *Hub) expired(o order) bool {
 }
 
 // engineCommand builds the engine's input for the order at the engine loop's time
-// now. The loop's time never goes back while the hub's clock may (a correction): the
-// default expiry is carried over to the loop's time line from the order's age, so
-// that after a backward step of the clock a fresh order is not taken for an old one.
+// now. The order's expiry, its own (an order from the app) or the default one, is
+// carried over to the loop's time line as the time it has left on the hub's clock,
+// which checked it (expired): the two need not agree, and a fresh order must never be
+// answered expired by the engine after the hub took it.
 func (h *Hub) engineCommand(o order, now time.Time, auth engine.Auth) engine.Command {
 	c := engwire.Command(o.cmd, o.ref, now, auth)
-	if o.cmd.Exp == nil {
-		c.Exp = now.Add(orderMaxAge - h.age(o))
+	left := orderMaxAge - h.age(o)
+	if o.cmd.Exp != nil {
+		left = o.cmd.Exp.Sub(h.deps.Clock.Now())
 	}
+	c.Exp = now.Add(left)
 	return c
 }
 

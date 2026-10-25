@@ -21,8 +21,8 @@ programmes et leurs configurations d'exemple : même broker, même dossier d'ét
 - **Journaux en mémoire** : la carte SD n'est pas usée à chaque ligne.
 - **Pas de Docker** : neuf services, autant de fichiers simples, moins de mémoire.
 - **Rien n'écoute sur le réseau du commerce**, sauf SSH par clé (pas de mot de passe).
-  La console locale n'écoute que sur le réseau Wi-Fi propre à la centrale, et
-  seulement pendant le mode installation.
+  La console locale n'écoute que sur le réseau Wi-Fi propre à la centrale, ne répond
+  qu'aux appareils de ce réseau, et seulement pendant le mode installation.
 
 ## Ce qui tourne
 
@@ -37,14 +37,16 @@ programmes et leurs configurations d'exemple : même broker, même dossier d'ét
 | `safehome-video` | La vidéo en direct (un go2rtc par session, sans port ouvert) et les photos à l'alarme (site avec caméras) | `systemd/safehome-video.service` |
 | `safehome-maint` | La maintenance à distance : un tunnel SSH sortant vers notre bastion, sur demande, une heure au plus (`maintenance.md`) | `systemd/safehome-maint.service` |
 | `safehome-power` | Le module batterie (Geekworm X728) : coupure du secteur, charge, arrêt propre avant la batterie vide (`alimentation.md`) | `systemd/safehome-power.service` |
-| `safehome-console` | La console locale : pendant le mode installation seulement, le réseau Wi-Fi de la centrale et la page de l'installateur (`security-install.md`) | `systemd/safehome-console.service`, `system/polkit-safehome-console.rules` |
+| `safehome-console` | La console locale : pendant le mode installation seulement, le réseau Wi-Fi de la centrale et la page de l'installateur (`security-install.md`) | `systemd/safehome-console.service`, `system/polkit-safehome-console.rules`, `system/nm-dispatcher-safehome-console` |
 
 Réglages système : `system/journald-safehome.conf` (journaux),
 `system/watchdog-safehome.conf` (chien de garde), `system/fstab-data` (partition de
 données), `system/polkit-safehome-console.rules` (la console peut créer, lever,
 baisser et supprimer les connexions de NetworkManager, sans éteindre la radio ; la
 règle vaut pour tout programme lancé sous `safehome`, voir la limite dans
-`security-install.md`).
+`security-install.md`), `system/nm-dispatcher-safehome-console` (le réseau de la
+console ne route pas les téléphones vers le réseau du commerce ni vers internet ;
+sans lui, la console ne lève pas son réseau).
 
 Nos programmes tournent sous l'utilisateur `safehome`, sans droits
 d'administration, et ne peuvent écrire que dans `/var/lib/safehome`
@@ -331,6 +333,7 @@ sudo systemctl enable --now zigbee2mqtt safehome-zigbee safehome-gsm safehome-hu
 sudo systemctl enable --now safehome-video        # seulement sur un site avec caméras
 sudo systemctl enable --now safehome-maint
 sudo cp deploy/system/polkit-safehome-console.rules /etc/polkit-1/rules.d/50-safehome-console.rules
+sudo install -m 755 deploy/system/nm-dispatcher-safehome-console /etc/NetworkManager/dispatcher.d/50-safehome-console
 sudo systemctl enable --now safehome-console
 systemctl --failed                       # doit être vide
 journalctl -u safehome-hub -b            # les journaux depuis le démarrage
@@ -464,7 +467,9 @@ Ensuite, dans l'ordre :
    appareils. Il crée `maint.key` s'il n'existe pas encore et que la maintenance est
    configurée.
 4. Il vérifie chaque configuration avec les **nouveaux** programmes (`check`). Si l'une
-   est mauvaise, il remet les fichiers d'avant et s'arrête. Aucun de nos programmes
+   est mauvaise, il remet les fichiers d'avant et s'arrête. La vérification de
+   l'adaptateur Zigbee échoue aussi quand un appareil appairé n'a plus son profil :
+   tous ses messages seraient écartés sans un mot. Aucun de nos programmes
    n'a été remplacé ; seul go2rtc a pu l'être, la vérification de la vidéo en a
    besoin. Aucun service n'a redémarré.
 5. Il pose les programmes, les services, les journaux, le chien de garde et Mosquitto.
@@ -478,7 +483,12 @@ Ensuite, dans l'ordre :
 
 Ce que le script ne touche pas à la relance :
 
-- une configuration absente du dossier du site reste celle de la centrale ;
+- une configuration absente du dossier du site reste celle de la centrale. Pas les
+  profils des appareils : ils sont remplacés à chaque relance par ceux du paquet et du
+  dossier du site (`site/profiles`). Un profil posé à la main sur la centrale
+  disparaît donc ; s'il sert à un appareil appairé, la vérification échoue et la
+  relance s'arrête sur la configuration d'avant. Le profil propre au site va dans
+  `site/profiles` ;
 - `maint.key` n'est jamais refaite : le bastion connaît déjà l'ancienne ;
 - le fichier de Zigbee2MQTT n'est posé que la première fois. Ensuite il contient la
   clé du réseau Zigbee.
@@ -566,7 +576,7 @@ se changent à tout moment.
   centrale elle-même, le temps d'un arrêt de l'adaptateur.
 - La console locale n'a pas encore tourné sur un vrai Pi. À vérifier : NetworkManager
   et `dnsmasq-base` (mode « partagé ») présents sur Raspberry Pi OS Lite, la règle
-  polkit, la portée du réseau.
+  polkit, le script qui coupe le routage de son réseau, la portée du réseau.
 - Le script d'installation (`deploy/install.sh`) n'a pas encore tourné sur un vrai Pi :
   il est testé sur un faux système. Les partitions, le module RTC, l'installation de
   Zigbee2MQTT et la lecture seule restent à la main. L'image maîtresse viendra après

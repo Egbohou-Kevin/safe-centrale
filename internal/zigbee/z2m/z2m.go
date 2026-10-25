@@ -53,11 +53,13 @@ func Parse(base, topic string, payload []byte, retained bool, now time.Time) (in
 	if bridge, isBridge := strings.CutPrefix(rest, "bridge/"); isBridge || rest == "bridge" {
 		switch bridge {
 		case "state":
-			return parseState(payload, now)
+			return parseState(payload, retained, now)
 		case "event":
 			return parseEvent(payload, now)
 		case "response/permit_join":
 			return parsePermitJoin(payload, now)
+		case "response/health_check":
+			return parseHealth(payload, now)
 		}
 		return nil, false, nil
 	}
@@ -93,8 +95,9 @@ func lastSeen(fields map[string]any) time.Time {
 }
 
 // parseState reads bridge/state: "online" or {"state": "online"} depending on the
-// version.
-func parseState(payload []byte, now time.Time) (zigbee.Input, bool, error) {
+// version. Zigbee2MQTT publishes it retained: the copy the broker hands over at the
+// start may date from before a power cut (see zigbee.Bridge).
+func parseState(payload []byte, retained bool, now time.Time) (zigbee.Input, bool, error) {
 	state := strings.TrimSpace(string(payload))
 	if strings.HasPrefix(state, "{") {
 		var v struct {
@@ -107,9 +110,9 @@ func parseState(payload []byte, now time.Time) (zigbee.Input, bool, error) {
 	}
 	switch state {
 	case "online":
-		return zigbee.Bridge{Now: now, Online: true}, true, nil
+		return zigbee.Bridge{Now: now, Online: true, Retained: retained}, true, nil
 	case "offline":
-		return zigbee.Bridge{Now: now}, true, nil
+		return zigbee.Bridge{Now: now, Retained: retained}, true, nil
 	}
 	return nil, false, fmt.Errorf("%w: unknown bridge state %q", ErrInvalid, state)
 }
@@ -180,6 +183,20 @@ func parsePermitJoin(payload []byte, now time.Time) (zigbee.Input, bool, error) 
 	return nil, false, fmt.Errorf("%w: permit_join answer with status %q", ErrInvalid, r.Status)
 }
 
+// parseHealth reads Zigbee2MQTT's answer to a health check:
+// {"data":{"healthy":true},"status":"ok","transaction":"..."}. Whatever it says,
+// Zigbee2MQTT runs; only the transaction matters.
+func parseHealth(payload []byte, now time.Time) (zigbee.Input, bool, error) {
+	var r struct {
+		Transaction any `json:"transaction"`
+	}
+	if err := json.Unmarshal(payload, &r); err != nil {
+		return nil, false, fmt.Errorf("%w: health_check answer: %v", ErrInvalid, err)
+	}
+	txn, _ := r.Transaction.(string)
+	return zigbee.Health{Now: now, Txn: txn}, true, nil
+}
+
 // ResponseError reads Zigbee2MQTT's answer to one of our requests: when it reports
 // an error, it returns the request and the error, for the logs.
 func ResponseError(base, topic string, payload []byte) (request, reason string, failed bool) {
@@ -213,6 +230,8 @@ func Build(base string, a zigbee.Action) (Message, bool, error) {
 			req["transaction"] = v.Txn
 		}
 		topic, body = base+"/bridge/request/permit_join", req
+	case zigbee.HealthCheck:
+		topic, body = base+"/bridge/request/health_check", map[string]any{"transaction": v.Txn}
 	case zigbee.CarriesCode:
 		// A device option, kept by Zigbee2MQTT in its configuration and read at each
 		// message: its messages go out at QoS 0, over device_options' QoS 1.

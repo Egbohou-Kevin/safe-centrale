@@ -59,7 +59,7 @@ func openSim(t *testing.T, s *attest.Sim) (*Modem, *events) {
 func TestOpenSetsTheModemUp(t *testing.T) {
 	s := attest.New()
 	openSim(t, s)
-	want := []string{"ATE0", "AT+CMEE=1", "AT+CMGF=1", "AT+CSMP=49,167,0,0", "AT+CNMI=2,1,0,1,0", `AT+CMGL="ALL"`}
+	want := []string{"ATE0", "AT+CMEE=1", "AT+CMGF=1", "AT+CSMP=49,167,0,0", "AT+CNMI=2,1,0,1,0", "AT+CMGF=0", "AT+CMGL=4", "AT+CMGF=1"}
 	if got := s.Commands(); !slices.Equal(got, want) {
 		t.Fatalf("%v", got)
 	}
@@ -205,10 +205,15 @@ func TestIncomingSMSAreReadThenDeleted(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 	drivertest.WaitFor(t, "the deletion", func() bool { return slices.Contains(s.Commands(), "AT+CMGD=3") })
-	// An SMS delivered directly, without being stored.
+	// An SMS delivered directly, without being stored, is not taken: the modem is set
+	// to store them all, and the raw text after such a line could hold lines of its own.
 	s.Push(`+CMT: "+22870000001",,"26/10/17,21:06:00+00"`)
-	s.Push("STOP")
-	drivertest.WaitFor(t, "the direct SMS", func() bool { n, _ := ev.counts(); return n == 2 })
+	s.Push("1")
+	s.Push(`+CMTI: "SM",9`) // a mark: the lines before it were handled
+	drivertest.WaitFor(t, "the mark", func() bool { return slices.Contains(s.Commands(), "AT+CMGR=9") })
+	if n, _ := ev.counts(); n != 1 {
+		t.Fatalf("%d SMS: one delivered directly was taken", n)
+	}
 }
 
 func TestDeliveryReports(t *testing.T) {

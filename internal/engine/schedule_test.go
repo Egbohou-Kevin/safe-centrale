@@ -494,3 +494,15 @@ func TestScheduleIsCopiedInSnapshots(t *testing.T) {
 		t.Fatal("changing a copy must not change the engine")
 	}
 }
+
+// An automatic arming planned while the clock ran ahead is planned again once the
+// time goes back: the closing it skipped as past may still be to come today.
+func TestTheScheduleIsPlannedAgainWhenTheTimeGoesBack(t *testing.T) {
+	h := newHarness(t, closes22)
+	h.advance(70 * time.Minute) // 22:10 on a clock an hour ahead: the shop armed itself
+	h.cmd(CmdDisarm, goodCode("u_owner"))
+	h.mustPlan(nextDay)
+	h.now = t0.Add(10 * time.Minute) // 21:10: the clock is corrected
+	h.e.Handle(Tick{Now: h.now})
+	h.mustPlan(closing)
+}

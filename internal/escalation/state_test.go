@@ -176,3 +176,37 @@ func TestAResultFindsItsMessageByRequestIDAfterARestart(t *testing.T) {
 		t.Fatalf("a result for an unknown request must change nothing: %+v", out)
 	}
 }
+
+// An incident saved with steps still due, restored under a plan that has fewer (the
+// plans changed in hub.json, or with an update, and the hub restarted to apply them),
+// concludes: it must not fall due forever, which hung the hub's loop and had the
+// watchdog restart it on the same state again and again.
+func TestAnIncidentRestoredUnderAShorterPlanConcludes(t *testing.T) {
+	a := newEsc(t)
+	raise(a, t0, KindFire)
+	tick(a, t0.Add(20*time.Minute+time.Second)) // the 2nd reminder: step 3, the next at +30 min
+	raw, err := json.Marshal(a.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snap Snapshot
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		t.Fatal(err)
+	}
+	b := newEsc(t, func(c *Config) {
+		p := c.Plans[KindFire]
+		p.Repeat.Times = 1
+		c.Plans[KindFire] = p
+	})
+	b.Restore(snap)
+	done := make(chan []Action, 1)
+	go func() { done <- tick(b, t0.Add(31*time.Minute)) }()
+	select {
+	case out := <-done:
+		if c := concluded(out); len(c) != 1 || c[0].Outcome != OutcomeUnanswered {
+			t.Fatalf("the incident must conclude: %+v", out)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a step past the end of the plan falls due forever")
+	}
+}

@@ -24,9 +24,9 @@ func Request(d contract.VideoRequestData, now time.Time) video.Request {
 	}
 }
 
-// Alarm turns an alarm.triggered into a core input: time for photos.
-func Alarm(d contract.TriggeredData, now time.Time) video.Alarm {
-	return video.Alarm{Now: now, Incident: d.Incident}
+// Alarm turns an alarm.triggered, written at ts, into a core input: time for photos.
+func Alarm(d contract.TriggeredData, ts, now time.Time) video.Alarm {
+	return video.Alarm{Now: now, At: ts, Incident: d.Incident}
 }
 
 // Stop turns a video.stop into a core input.

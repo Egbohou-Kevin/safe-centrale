@@ -129,13 +129,13 @@ func newSide(t *testing.T, ctx context.Context, url, caFile string) *side {
 	return s
 }
 
-// of returns the envelopes of a type received, in order.
+// of returns the envelopes of a type received, in order; of every type for "".
 func (s *side) of(typ string) []contract.Envelope {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []contract.Envelope
 	for _, m := range s.msgs {
-		if env, err := contract.ParseEnvelope(m.Payload); err == nil && env.Type == typ {
+		if env, err := contract.ParseEnvelope(m.Payload); err == nil && (typ == "" || env.Type == typ) {
 			out = append(out, env)
 		}
 	}
@@ -322,7 +322,12 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	drivertest.WaitFor(t, "the alarm on the disk", func() bool { _, err := os.Stat(waiting); return err == nil })
 	link.restore()
 	drivertest.WaitFor(t, "the queued alarm on the cloud", func() bool { return cloud.has(contract.TypeAlarmTriggered, second) })
-	drivertest.WaitFor(t, "the alarm off the disk", func() bool { _, err := os.Stat(waiting); return os.IsNotExist(err) })
+	// Sent, its file is replaced by a tombstone of a few bytes, which keeps its id for
+	// a while (internal/agent/sent.go).
+	drivertest.WaitFor(t, "the alarm off the disk", func() bool {
+		b, err := os.ReadFile(waiting)
+		return err == nil && strings.Contains(string(b), `"sent":true`) && !strings.Contains(string(b), "engine.alarm")
+	})
 	drivertest.WaitFor(t, "the link up again", func() bool { return hub.lastStatus().Uplink == contract.UplinkUp })
 	drivertest.WaitFor(t, "the site online on the cloud", func() bool { return cloud.lastStatus().Uplink == contract.UplinkUp })
 
@@ -341,25 +346,7 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 
 	// The cloud numbers what it got without a hole, whatever stayed on the site, and
 	// gets a message again by asking for its number.
-	seqs := map[uint64]bool{}
-	var firstSeq, last uint64
-	for _, typ := range []string{contract.TypeAgentStatus, contract.TypeAlarmTriggered, contract.TypePhotoTaken, contract.TypePhotoSent, contract.TypeConfigApplied} {
-		for _, env := range cloud.of(typ) {
-			if env.Seq == 0 {
-				continue // the Last Will, not numbered
-			}
-			seqs[env.Seq] = true
-			last = max(last, env.Seq)
-			if env.ID == first {
-				firstSeq = env.Seq
-			}
-		}
-	}
-	for n := uint64(1); n <= last; n++ {
-		if !seqs[n] {
-			t.Fatalf("the cloud got numbers up to %d but not %d: it would ask for it in vain", last, n)
-		}
-	}
+	firstSeq := noHole(t, cloud, first)
 	cloud.publish(contract.AgentCmdTopic(site), "cloud", contract.TypeAgentReplay, contract.ReplayData{From: firstSeq, To: firstSeq})
 	drivertest.WaitFor(t, "agent.replayed on the cloud", func() bool { return len(cloud.of(contract.TypeAgentReplayed)) == 1 })
 	if d, _ := contract.DecodeData[contract.ReplayedData](cloud.of(contract.TypeAgentReplayed)[0]); d.Resent != 1 || len(d.Missing) != 0 {
@@ -467,4 +454,36 @@ func startPhotoEndpoint(t *testing.T, files mqtttest.TLSFiles) *photoEndpoint {
 	t.Cleanup(srv.Close)
 	e.url = strings.Replace(srv.URL, "127.0.0.1", "localhost", 1) // the certificate is for localhost
 	return e
+}
+
+// noHole checks that the cloud got every number up to the last one, and returns the
+// number of the message first. Every message the agent sent counts, whatever its type
+// (the alarm.ack it answered a stale order with).
+func noHole(t *testing.T, cloud *side, first string) uint64 {
+	t.Helper()
+	seqs := map[uint64]bool{}
+	var firstSeq, last uint64
+	for _, env := range cloud.of("") {
+		if env.Seq == 0 || env.Src == "cloud" {
+			continue // the Last Will, not numbered; or the test's own cloud
+		}
+		seqs[env.Seq] = true
+		last = max(last, env.Seq)
+		if env.ID == first {
+			firstSeq = env.Seq
+		}
+	}
+	acked := false
+	for _, env := range cloud.of(contract.TypeAlarmAck) {
+		acked = acked || env.Seq != 0
+	}
+	if !acked {
+		t.Fatal("the agent's answer to the stale order goes numbered")
+	}
+	for n := uint64(1); n <= last; n++ {
+		if !seqs[n] {
+			t.Fatalf("the cloud got numbers up to %d but not %d: it would ask for it in vain", last, n)
+		}
+	}
+	return firstSeq
 }

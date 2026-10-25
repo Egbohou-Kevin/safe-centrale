@@ -77,7 +77,7 @@ func (e *Engine) forget(id string) {
 	delete(e.s.Open, id)
 	delete(e.s.Bypassed, id)
 	delete(e.s.Tampered, id)
-	e.dropWaiting(func(c Cause) bool { return c.DeviceID == id })
+	e.dropWaiting(func(w Incident) bool { return w.Cause.DeviceID == id })
 }
 
 // armedZone applies the rules of the zones that only watch while the system is
@@ -122,15 +122,22 @@ func (e *Engine) trigger(at time.Time, cause Cause, kind AlertKind) []Action {
 }
 
 // ring starts the siren program of an alarm: it rings from at, for its cycles, and
-// the system goes back to the mode it was in once they are over.
+// the system goes back to the mode it was in once they are over. An alarm of another
+// kind than an intrusion during an entry delay does not drop it: the delay goes on
+// behind the alarm, and becomes an intrusion if no code ends it (see lateEntry).
 func (e *Engine) ring(at time.Time, inc Incident) []Action {
 	inc.ReturnTo = ModeArmed
 	if e.s.Mode == ModeDisarmed {
 		inc.ReturnTo = ModeDisarmed
 	}
+	if e.s.Mode == ModeEntryDelay && inc.Kind != AlertIntrusion {
+		e.s.EntryEnds = e.s.Deadline
+	} else {
+		e.s.EntryCause = nil
+	}
 	inc.Cycle, inc.SirenOn = 1, true
 	e.setMode(ModeTriggered, at)
-	e.s.EntryCause, e.s.Raised = nil, nil
+	e.s.Raised = nil
 	e.s.Incident = &inc
 	e.s.Deadline = at.Add(e.cfg.SirenCycle)
 	last := inc.Cause
@@ -192,6 +199,20 @@ func (e *Engine) endIncident(at time.Time) {
 	e.s.Incident, e.s.Raised = nil, nil
 	e.s.Deadline = time.Time{}
 	e.setMode(ModeArmed, at)
+	if e.s.EntryCause != nil && !e.s.EntryEnds.IsZero() {
+		// The alarm interrupted an entry delay that has not ended yet: it goes on.
+		e.setMode(ModeEntryDelay, at)
+		e.s.Deadline, e.s.EntryEnds = e.s.EntryEnds, time.Time{}
+	}
+}
+
+// lateEntry ends an entry delay that another alarm interrupted, and that no code
+// ended: whoever came in is an intruder. The intrusion alerts under its own incident,
+// with an intrusion's escalation, as one raised during that alarm (see during).
+func (e *Engine) lateEntry(at time.Time) []Action {
+	cause := *e.s.EntryCause
+	e.s.EntryCause, e.s.EntryEnds = nil, time.Time{}
+	return e.during(at, cause, AlertIntrusion)
 }
 
 // clearIncident stops the siren on a user's order: the person ended the incident,

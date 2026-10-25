@@ -23,11 +23,12 @@ import (
 // RestoreQueue reconciles.
 
 // QueueSave: keep this item of the queue on disk, new or changed (numbered). Done
-// before the item is sent, so that it keeps its number after a crash.
+// before the item is sent, so that it keeps its number after a crash. Once sent, the
+// item is saved again as a tombstone (see sent.go).
 type QueueSave struct{ Item Item }
 
-// QueueDrop: these items left the queue (sent, replaced, dropped); their copy on
-// disk goes.
+// QueueDrop: these items left the queue (replaced, dropped), or their tombstones are
+// forgotten; their copy on disk goes.
 type QueueDrop struct{ IDs []string }
 
 // UplinkSave: keep the last number given to a message for the cloud. Done before
@@ -144,16 +145,21 @@ func (r *Relay) mostImportant() int {
 // come before the snapshot recorded it, and the hub's broker gives it again.
 //
 // The numbering goes on after the highest number found, saved at once if it is not
-// the one read: an item numbered just before a crash.
+// the one read: an item numbered just before a crash. The tombstones of items sent
+// are remembered, not queued (see sent.go).
 func (r *Relay) RestoreQueue(stored []Item, uplink uint64) []Action {
 	var out []Action
+	for _, it := range stored {
+		r.uplink = max(r.uplink, it.Seq) // a number sent before the crash is never given again
+		r.order = max(r.order, it.Order)
+	}
+	stored = r.restoreSent(stored)
 	slices.SortFunc(stored, func(a, b Item) int {
 		return cmp.Or(cmp.Compare(a.Order, b.Order), strings.Compare(a.ID, b.ID))
 	})
 	newest := map[string]string{} // key -> id of the newest item
 	r.uplink = max(r.uplink, uplink)
 	for _, it := range stored {
-		r.uplink = max(r.uplink, it.Seq) // a number sent before the crash is never given again
 		if it.Key != "" {
 			newest[it.Key] = it.ID
 		}
@@ -161,7 +167,7 @@ func (r *Relay) RestoreQueue(stored []Item, uplink uint64) []Action {
 	if r.uplink != uplink {
 		out = append(out, UplinkSave{Last: r.uplink})
 	}
-	r.queue, r.order = nil, 0
+	r.queue = nil
 	var gone []Item
 	for _, it := range stored {
 		if (it.Key != "" && newest[it.Key] != it.ID) || r.orphanAlert(it) {

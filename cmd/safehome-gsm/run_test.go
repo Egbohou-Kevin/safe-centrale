@@ -22,6 +22,7 @@ import (
 	"safehome/internal/contract"
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/gateway"
+	"safehome/internal/gsm"
 	"safehome/internal/gsmconfig"
 	"safehome/internal/schematest"
 	"safehome/internal/siteconfig"
@@ -389,5 +390,13 @@ func TestTheGatewayRestartsForANewConfigurationFromTheCloud(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), "91112233") {
 		t.Fatal("a phone number in the logs")
+	}
+}
+
+// The gateway gives a line its SMS bound for the whole send: the modem's own bound for
+// AT+CMGS, counted once the modem is free, and the waits before it must fit in it.
+func TestTheGatewayLeavesTheModemItsTimeForAnSMS(t *testing.T) {
+	if got := gsm.DefaultConfig(nil, nil).SMSTimeout; got < atmodem.DefaultSMSTimeout+time.Minute {
+		t.Fatalf("the gateway gives an SMS %v, the modem alone may take %v", got, atmodem.DefaultSMSTimeout)
 	}
 }

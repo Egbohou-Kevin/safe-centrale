@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -50,6 +51,14 @@ type Result struct {
 
 // Listen is where the page is served: the hub's address on its own network.
 func (r Result) Listen() string { return net.JoinHostPort(r.Wifi.Address, strconv.Itoa(r.Port)) }
+
+// Clients is the hub's own network, the /24 of its address (see hotspot): the only
+// addresses the page answers.
+func (r Result) Clients() netip.Prefix {
+	addr, _ := netip.ParseAddr(r.Wifi.Address) // checked at load: an IPv4 address
+	p, _ := addr.Prefix(24)
+	return p
+}
 
 // Host is what the phone's browser sends as Host: the address, and the port unless 80.
 func (r Result) Host() string {

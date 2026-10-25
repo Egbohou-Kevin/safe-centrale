@@ -5,7 +5,12 @@
 //
 // The phone of the installer joins it with the passphrase printed on the hub's label
 // and finds the console at the hub's address on it. NetworkManager gives the
-// addresses (its "shared" mode). Standard library only.
+// addresses (its "shared" mode). That mode also turns IPv4 forwarding on and
+// masquerades the phones through the hub's other connections: a phone would reach the
+// shop's network (the cameras, the box) and the internet. NetworkManager's dispatcher
+// script (deploy/system/nm-dispatcher-safehome-console) turns forwarding off for what
+// comes in on this network once it is up; Up waits for it, and takes a network still
+// routed down. Standard library only.
 package hotspot
 
 import (
@@ -14,7 +19,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -27,6 +34,12 @@ type Config struct {
 	Address    string // the hub's address on it, "10.42.0.1" (a /24)
 	Connection string // NetworkManager's name for it, "safehome-console"
 	NMCLI      string // the client's path, "nmcli" by default
+
+	// Forwarding is the folder of the interfaces' IPv4 settings,
+	// "/proc/sys/net/ipv4/conf" by default; RoutingWait how long Up waits for the
+	// dispatcher script to turn forwarding off, 10 s by default. For the tests.
+	Forwarding  string
+	RoutingWait time.Duration
 }
 
 // Hotspot turns the network on and off.
@@ -40,10 +53,18 @@ func New(cfg Config) (*Hotspot, error) {
 	if cfg.Connection == "" {
 		cfg.Connection = "safehome-console"
 	}
+	if cfg.Forwarding == "" {
+		cfg.Forwarding = "/proc/sys/net/ipv4/conf"
+	}
+	if cfg.RoutingWait <= 0 {
+		cfg.RoutingWait = 10 * time.Second
+	}
 	ip := net.ParseIP(cfg.Address)
 	switch {
 	case cfg.Interface == "":
 		return nil, errors.New("hotspot: the Wi-Fi interface is required")
+	case strings.Contains(cfg.Interface, "/") || cfg.Interface == "." || cfg.Interface == "..":
+		return nil, fmt.Errorf("hotspot: %q is not an interface name", cfg.Interface)
 	case len(cfg.SSID) < 1 || len(cfg.SSID) > 32:
 		return nil, errors.New("hotspot: the network name must be 1 to 32 bytes")
 	case !validPassphrase(cfg.Passphrase):
@@ -81,7 +102,11 @@ func (h *Hotspot) Up(ctx context.Context) error {
 	); err != nil {
 		return err
 	}
-	if err := h.run(ctx, "connection", "up", c.Connection); err != nil {
+	err := h.run(ctx, "connection", "up", c.Connection)
+	if err == nil {
+		err = h.unrouted(ctx)
+	}
+	if err != nil {
 		// On a time of its own: the start may have failed by running out of ctx's,
 		// and NetworkManager may still bring the network up after nmcli is killed.
 		cleanCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupWait)
@@ -90,6 +115,31 @@ func (h *Hotspot) Up(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// unrouted waits until the kernel forwards nothing that comes in on the network: the
+// dispatcher script turns it off once NetworkManager has turned it on. A network still
+// routed after RoutingWait, or whose setting cannot be read, is an error: the
+// phones of whoever knows the label's passphrase would reach the shop's network.
+func (h *Hotspot) unrouted(ctx context.Context) error {
+	file := filepath.Join(h.cfg.Forwarding, h.cfg.Interface, "forwarding")
+	deadline := time.Now().Add(h.cfg.RoutingWait)
+	for {
+		b, err := os.ReadFile(file)
+		if err == nil && strings.TrimSpace(string(b)) == "0" {
+			return nil
+		}
+		if ctx.Err() != nil || time.Now().After(deadline) {
+			if err != nil {
+				return fmt.Errorf("hotspot: cannot tell whether %s is routed: %v", h.cfg.Interface, err)
+			}
+			return fmt.Errorf("hotspot: %s still routes the phones to the hub's other networks after %v: is NetworkManager's dispatcher script installed (deploy/install.sh)?", h.cfg.Interface, h.cfg.RoutingWait)
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // Down stops the network and deletes it. It runs even when ctx is cancelled: the

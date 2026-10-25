@@ -187,6 +187,12 @@ func TestDefaultsAndValidation(t *testing.T) {
 		"confirm a number out of range": func(c *Config) {
 			c.Profiles[0].Commands = map[string]ProfileCommand{"x": {Payload: map[string]any{"a": 1}, Confirm: &Expect{Capability: "battery", Value: "101"}}}
 		},
+		"rest never read": func(c *Config) {
+			c.Profiles[0].Capabilities["tamper"] = Rule{From: "tamper", Map: map[string]string{"true": "triggered"}, Rest: "clear"}
+		},
+		"rest of an action": func(c *Config) {
+			c.Profiles[2].Capabilities["panic"] = Rule{From: "action", Map: map[string]string{"emergency": "pressed"}, Momentary: true, Rest: "pressed"}
+		},
 		"confirm an action": func(c *Config) {
 			c.Profiles[2].Commands = map[string]ProfileCommand{"x": {Payload: map[string]any{"a": 1}, Confirm: &Expect{Capability: "panic", Value: "pressed"}}}
 		},
@@ -226,7 +232,9 @@ func TestTheStateSurvivesARestart(t *testing.T) {
 	again := newHarness(t)
 	again.n.Restore(s)
 	again.now = h.now
-	if !reflect.DeepEqual(again.n.Snapshot(), h.n.Snapshot()) || !again.n.Status().Bridge || again.n.Status().Devices != 2 {
+	want := h.n.Snapshot()
+	want.Bridge = false // Zigbee2MQTT running before is no evidence that it runs now
+	if !reflect.DeepEqual(again.n.Snapshot(), want) || again.n.Status().Bridge || again.n.Status().Devices != 2 {
 		t.Fatalf("%+v", again.n.Snapshot())
 	}
 	none(t, again.report("dev_door", map[string]any{"contact": false})) // known: no change
@@ -269,6 +277,50 @@ func TestBridgeStatus(t *testing.T) {
 	h.do(Bridge{Now: h.now, Online: false})
 	if h.n.Status().Bridge {
 		t.Fatal("offline")
+	}
+}
+
+// After a power cut, the broker hands over the "online" Zigbee2MQTT said before it:
+// Zigbee2MQTT may be unable to start (a stick that fails), and then never says
+// otherwise. It is asked whether it runs, and counts as online once it answers; not
+// before, nor when it does not answer.
+func TestARetainedOnlineIsCheckedWithZigbee2MQTT(t *testing.T) {
+	h := newHarness(t)
+	h.add("dev_kp", ieeeKeypad, "KP-1")
+	out := h.do(Bridge{Now: h.now, Online: true, Retained: true})
+	check, ok := find[HealthCheck](out)
+	if !ok || h.n.Status().Bridge || len(all[CarriesCode](out)) != 0 {
+		t.Fatalf("asked, not believed: %+v", out)
+	}
+	last := check
+	for i := range 2 {
+		again, ok := find[HealthCheck](h.advance(3 * time.Second))
+		if !ok || again.Txn == last.Txn {
+			t.Fatalf("attempt %d: %+v", i+2, again)
+		}
+		last = again
+	}
+	h.advance(3 * time.Second)
+	if h.n.Status().Bridge || !h.n.NextWake().After(h.now.Add(time.Hour)) {
+		t.Fatal("no answer: offline, and no more requests")
+	}
+	if _, ok := find[HealthCheck](h.advance(time.Minute)); ok {
+		t.Fatal("given up")
+	}
+	// A late answer counts; an answer to another request does not.
+	if _, ok := find[Ignored](h.do(Health{Now: h.now, Txn: check.Txn})); !ok || h.n.Status().Bridge {
+		t.Fatal("an older request's answer")
+	}
+	if out := h.do(Health{Now: h.now, Txn: last.Txn}); !h.n.Status().Bridge || len(all[CarriesCode](out)) != 1 {
+		t.Fatalf("Zigbee2MQTT answers: online, and told the keypad again: %+v", out)
+	}
+	// Restarted, the adapter checks again; Zigbee2MQTT's live word is its own.
+	again := h.restarted(h.now)
+	if again.n.Status().Bridge {
+		t.Fatal("the state saved is no evidence")
+	}
+	if out := again.do(Bridge{Now: again.now, Online: true}); !again.n.Status().Bridge || len(all[HealthCheck](out)) != 0 {
+		t.Fatalf("a live online: %+v", out)
 	}
 }
 

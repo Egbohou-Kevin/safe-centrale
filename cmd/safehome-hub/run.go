@@ -55,20 +55,25 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	switch cmd.Name {
 	case "check":
-		check(cfg, stdout)
-		return 0
+		return check(cfg, stdout, stderr)
 	case "codes":
 		return codes(cfg, cmd.Args, stdin, stdout, stderr)
 	}
 	return runHub(ctx, cfg, cmd.Config, stderr)
 }
 
-func check(cfg hubconfig.Result, stdout io.Writer) {
+// check says what the configuration is. Zones and sirens set by the installer's tools
+// that the hub would leave aside fail it: the hub would run on the configuration
+// file's own, older ones, and the installation script must stop there (an update
+// that made a rule stricter, a file edited by hand).
+func check(cfg hubconfig.Result, stdout, stderr io.Writer) int {
+	if cfg.DevicesErr != nil {
+		fmt.Fprintf(stderr, "configuration error: the zones and sirens set by the installer's tools would be left aside, the hub would watch those of its own file: %v\n", cfg.DevicesErr)
+		return 1
+	}
 	fmt.Fprintf(stdout, "configuration OK: site %s, %d zone(s), %d siren(s), %d contact(s), state in %s\n",
 		cfg.Hub.Site, len(cfg.Hub.Engine.Zones), len(cfg.Hub.SirenIDs), len(cfg.Hub.Escalation.Contacts), cfg.StateDir)
-	if cfg.DevicesErr != nil {
-		fmt.Fprintf(stdout, "warning: the zones and sirens set by the installer's tools are left aside: %v\n", cfg.DevicesErr)
-	} else if cfg.DevicesSum != "" {
+	if cfg.DevicesSum != "" {
 		fmt.Fprintf(stdout, "zones and sirens: set by the installer's tools (%s in %s)\n", hubconfig.DevicesFile, cfg.StateDir)
 	}
 	switch {
@@ -80,6 +85,7 @@ func check(cfg hubconfig.Result, stdout io.Writer) {
 	if len(cfg.Hub.Escalation.Contacts) == 0 {
 		fmt.Fprintln(stdout, "warning: no contact is configured, nobody would be told of an alarm")
 	}
+	return 0
 }
 
 func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr io.Writer) int {

@@ -41,10 +41,25 @@ func TestTheBridgeStateInBothFormats(t *testing.T) {
 	for payload, online := range map[string]bool{
 		`online`: true, `offline`: false, `{"state":"online"}`: true, `{"state":"offline"}`: false,
 	} {
-		in, ok := parse(t, "zigbee2mqtt/bridge/state", payload, true)
-		if !ok || in != (zigbee.Bridge{Now: now, Online: online}) {
-			t.Errorf("%s: %+v", payload, in)
+		for _, retained := range []bool{true, false} {
+			in, ok := parse(t, "zigbee2mqtt/bridge/state", payload, retained)
+			if !ok || in != (zigbee.Bridge{Now: now, Online: online, Retained: retained}) {
+				t.Errorf("%s: %+v", payload, in)
+			}
 		}
+	}
+}
+
+// Zigbee2MQTT's answer to a health check carries the request's transaction; the
+// request is built with it.
+func TestAHealthCheckAndItsAnswer(t *testing.T) {
+	in, ok := parse(t, "zigbee2mqtt/bridge/response/health_check", `{"data":{"healthy":true},"status":"ok","transaction":"health.1"}`, false)
+	if !ok || in != (zigbee.Health{Now: now, Txn: "health.1"}) {
+		t.Fatalf("%+v", in)
+	}
+	msg, ok, err := Build(DefaultBase, zigbee.HealthCheck{Txn: "health.1"})
+	if err != nil || !ok || msg.Topic != "zigbee2mqtt/bridge/request/health_check" || string(msg.Payload) != `{"transaction":"health.1"}` {
+		t.Fatalf("%s %s %v", msg.Topic, msg.Payload, err)
 	}
 }
 

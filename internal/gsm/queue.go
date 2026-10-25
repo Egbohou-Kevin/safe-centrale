@@ -141,11 +141,12 @@ func (g *Gateway) queueTest(now time.Time) {
 
 // --- scheduling -----------------------------------------------------------------------
 
-// schedule gives work to the free lines: the most urgent jobs first (an alert must
-// not wait behind a routine check), then the checks that are due on the lines left
-// idle.
+// schedule gives work to the free lines: a restart to a modem that stopped answering,
+// then the most urgent jobs (an alert must not wait behind a routine check), then the
+// checks that are due on the lines left idle.
 func (g *Gateway) schedule(now time.Time) []Action {
 	out := g.closeRounds(now)
+	out = append(out, g.restartStuck(now)...)
 	out = append(out, g.startJobs(now)...)
 	return append(out, g.startChecks(now)...)
 }

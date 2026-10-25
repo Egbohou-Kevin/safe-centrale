@@ -87,3 +87,75 @@ func TestAnOldValueReplayedByZigbee2MQTTIsNotAnnounced(t *testing.T) {
 		t.Fatalf("%+v", out)
 	}
 }
+
+// --- Zigbee2MQTT's own word: a motion sensor back at rest --------------------------
+
+const ieeeMotion = "0x00158d0001000004"
+
+// withMotion adds the profile of a motion sensor that never says "no movement":
+// Zigbee2MQTT says it on its own timer.
+func withMotion(c *Config) {
+	c.Profiles = append(c.Profiles, Profile{
+		Name: "aqara.motion.rtcgq11lm", Models: []string{"RTCGQ11LM"},
+		Capabilities: map[string]Rule{
+			"motion":  {From: "occupancy", Map: map[string]string{"true": "detected", "false": "clear"}, Rest: "clear"},
+			"battery": {From: "battery"},
+		},
+	})
+}
+
+// Zigbee2MQTT publishes "no movement" about 90 s after a movement, with the last_seen
+// of the movement: no frame came from the sensor. That return to rest is heard, or
+// the sensor would stay "detected" and its next movements would change nothing.
+func TestZigbee2MQTTsOwnReturnToRestIsHeard(t *testing.T) {
+	h := newHarness(t, withMotion)
+	h.add("dev_pir", ieeeMotion, "RTCGQ11LM")
+	h.now = t0.Add(time.Minute)
+	moved := h.now
+	if ch := all[Changed](h.heardAt("dev_pir", moved, map[string]any{"occupancy": true, "battery": 90.0})); len(ch) != 2 {
+		t.Fatalf("the movement and the battery: %+v", ch)
+	}
+	h.now = h.now.Add(90 * time.Second)
+	out := h.heardAt("dev_pir", moved, map[string]any{"occupancy": false, "battery": 40.0})
+	if ch := all[Changed](out); len(ch) != 1 || ch[0].Capability != "motion" || ch[0].Value != "clear" || !ch[0].Notify {
+		t.Fatalf("the return to rest is heard, and only it: %+v", out)
+	}
+	h.now = h.now.Add(time.Minute)
+	if ch := all[Changed](h.heardAt("dev_pir", h.now, map[string]any{"occupancy": true})); len(ch) != 1 || ch[0].Value != "detected" {
+		t.Fatalf("the next movement is heard: %+v", ch)
+	}
+	// The cache replayed with the same last_seen raises nothing: a movement already
+	// cleared is not seen again.
+	h.heardAt("dev_pir", h.now, map[string]any{"occupancy": false})
+	h.now = h.now.Add(time.Hour)
+	if out := h.heardAt("dev_pir", h.now.Add(-time.Hour), map[string]any{"occupancy": true}); len(all[Changed](out)) != 0 {
+		t.Fatalf("a replayed movement: %+v", out)
+	}
+}
+
+// The clock is set back (an RTC running fast, corrected by NTP): Zigbee2MQTT's
+// last_seen follows it, and the devices' new messages say they were heard before the
+// last ones. They are news all the same; for an offline device, after a restart too.
+func TestAClockSetBackDoesNotSilenceTheDevices(t *testing.T) {
+	for name, offline := range map[string]bool{"online": false, "offline, then a restart": true} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			h.add("dev_door", ieeeDoor, "MCCGQ11LM")
+			h.now = t0.Add(time.Hour)
+			h.heardAt("dev_door", h.now, map[string]any{"contact": true})
+			if offline {
+				h.advance(4 * time.Hour) // its last news is kept, and it is later than the clock set back
+				h = h.restarted(h.now.Add(-5 * time.Hour))
+			} else {
+				h.now = h.now.Add(-30 * time.Minute)
+			}
+			out := h.heardAt("dev_door", h.now.Add(-time.Second), map[string]any{"contact": false})
+			if ch := all[Changed](out); len(ch) != 1 || ch[0].Value != "open" {
+				t.Fatalf("the door opening is heard: %+v", out)
+			}
+			if p := all[Presence](out); offline && (len(p) != 1 || !p[0].Online) {
+				t.Fatalf("the door is back online: %+v", out)
+			}
+		})
+	}
+}

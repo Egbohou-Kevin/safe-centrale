@@ -112,6 +112,7 @@ var (
 	ErrNoSiren     = install.ErrNoSiren
 	ErrHasZone     = install.ErrHasZone
 	ErrLastSiren   = install.ErrLastSiren
+	ErrRemoving    = install.ErrRemoving
 	ErrEmptyName   = install.ErrEmptyName
 	ErrNameTooLong = install.ErrNameTooLong
 	ErrCannotServe = install.ErrCannotServe

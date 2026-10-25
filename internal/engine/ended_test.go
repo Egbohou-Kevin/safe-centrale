@@ -81,9 +81,9 @@ func TestADisarmEndsEveryAlarmOfItsArmingThatRanOut(t *testing.T) {
 	second := onlyEvent[Triggered](t, h.signal(tamper, SensorTamper, true)).Incident
 	h.advance(10 * time.Second)
 
-	// Restarted in the middle: the memory of the first alarm is kept.
-	snap := h.e.Snapshot()
-	h.e.Restore(snap)
+	// Restarted in the middle, through the saved file: the memory of the first alarm
+	// is kept.
+	h.e = restart(t, h)
 	h.e.Boot(h.now, nil)
 
 	as := h.cmd(CmdDisarm, goodCode("u_owner"))

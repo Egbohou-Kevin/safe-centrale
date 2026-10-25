@@ -333,29 +333,32 @@ func TestAnAnswerToAnOlderSirenOrderIsIgnored(t *testing.T) {
 	}
 }
 
-// A device event handled while the retained states still arrive already tells the
-// siren where the cycle is: the boot that follows must not tell it again.
+// An alarm rung by a device event handled while the retained states still arrive
+// already told the siren where the cycle is: the boot that follows must not tell it
+// again.
 func TestTheBootDoesNotRepeatASirenOrderOfTheBootWindow(t *testing.T) {
 	first := newRig(t, nil)
 	first.start()
-	trigger(first) // at t0+2m: cycle 1 until +7m, pause until +9m, cycle 2 until +14m
+	first.armedNow()
 	first.stop()
 
 	second := newRig(t, first.store, func(c *Config) { c.BootWindow = 300 * time.Millisecond })
-	second.clock.Advance(10 * time.Minute) // in cycle 2, four minutes left
+	second.clock.Advance(time.Minute)
 	second.startWithoutWaiting()
-	second.device(devDoor, contract.CapContact, "closed")
+	second.device(devBack, contract.CapContact, "open") // rings before the boot
+	second.settle()
 	second.clock.PassTimer(t, 300*time.Millisecond)
 	drivertest.WaitFor(t, "the boot", func() bool { return len(second.broker.OfType(contract.TypeInstallMode)) > 0 })
 	second.settle()
+	second.mustBe(engine.ModeTriggered)
 	var on []contract.DeviceCommandData
 	for _, o := range sirenOrders(second) {
 		if cmd := dataOf[contract.DeviceCommandData](t, o); cmd.Command == contract.CmdSirenOn {
 			on = append(on, cmd)
 		}
 	}
-	if len(on) != 1 || on[0].Args.DurationS != 240 {
-		t.Fatalf("siren.on orders: %+v, want one for 240 s", on)
+	if len(on) != 1 || on[0].Args.DurationS != 300 {
+		t.Fatalf("siren.on orders: %+v, want one for 300 s", on)
 	}
 }
 

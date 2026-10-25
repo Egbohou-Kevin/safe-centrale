@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -385,8 +386,9 @@ func TestARealStreamFromACameraToARelay(t *testing.T) {
 }
 
 // TestTheRealGo2rtcStartsAndAnswers runs the real go2rtc when it is installed: it
-// checks that it accepts our configuration, answers on its socket only, and says
-// when the camera does not answer.
+// checks that it accepts our configuration, answers on its socket, and says when the
+// camera does not answer. That it opens no network port is checked while it runs, in
+// TestRealPhotosFromACamera.
 func TestTheRealGo2rtcStartsAndAnswers(t *testing.T) {
 	bin, err := exec.LookPath("go2rtc")
 	if err != nil {
@@ -439,6 +441,11 @@ func TestRealPhotosFromACamera(t *testing.T) {
 			t.Fatalf("%d bytes, not a JPEG", len(jpeg))
 		}
 		t.Logf("%d px: %d bytes in %v", width, len(jpeg), time.Since(start))
+	}
+	// It answers on its socket only: no network port, whatever its version makes of
+	// our configuration (docs/video.md, "aucun port ouvert").
+	if l := listening(t, s.cmd.Process.Pid); l != "" {
+		t.Fatalf("go2rtc opened network ports:\n%s", l)
 	}
 	start := time.Now()
 	if _, err := s.Frame(ctx, "cam_cour", 320); !errors.Is(err, ErrCameraUnreachable) {
@@ -508,4 +515,21 @@ func TestStillsTakePicturesOfEveryCamera(t *testing.T) {
 	if strings.Contains(string(raw), `"ffmpeg": {`) {
 		t.Fatalf("%s", raw)
 	}
+}
+
+// listening lists the network ports a process listens on (TCP) or holds (UDP), with
+// lsof; nothing is checked without it.
+func listening(t *testing.T, pid int) string {
+	t.Helper()
+	lsof, err := exec.LookPath("lsof")
+	if err != nil {
+		t.Log("lsof is not installed: the open ports are not checked")
+		return ""
+	}
+	var out strings.Builder
+	for _, sel := range [][]string{{"-iTCP", "-sTCP:LISTEN"}, {"-iUDP"}} {
+		b, _ := exec.Command(lsof, append([]string{"-a", "-p", strconv.Itoa(pid), "-P", "-n"}, sel...)...).Output() // exit 1: none
+		out.Write(b)
+	}
+	return out.String()
 }

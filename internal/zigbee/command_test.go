@@ -138,3 +138,21 @@ func TestAWaitingCommandItsProfileLostFailsInsteadOfSendingNothing(t *testing.T)
 		t.Fatalf("%+v", out)
 	}
 }
+
+// The clock is set back while a command waits for its confirmation, and a pairing
+// window runs: the siren is sent again 3 s later, not an hour, and the window stays
+// open no longer than the longest one.
+func TestAClockSetBackStretchesNoWait(t *testing.T) {
+	h := newHarness(t)
+	h.add("dev_siren", ieeeSiren, "HS2WD-E")
+	h.do(Command{Now: h.now, Ref: "c1", DeviceID: "dev_siren", Name: "siren.off"})
+	h.do(Pair{Now: h.now, Ref: "pair-2", For: 2 * time.Minute})
+	h.now = h.now.Add(-time.Hour)
+	h.do(Tick{Now: h.now})
+	if _, ok := find[Send](h.advance(3 * time.Second)); !ok {
+		t.Fatal("the siren is sent again after its wait")
+	}
+	if !h.n.Snapshot().PairUntil.Equal(h.now.Add(-3*time.Second + h.n.cfg.PairMax)) {
+		t.Fatalf("the window ends at most its length after the step: %v", h.n.Snapshot().PairUntil)
+	}
+}

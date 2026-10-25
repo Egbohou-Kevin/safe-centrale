@@ -53,12 +53,14 @@ type ConfigVideo struct {
 }
 
 // ConfigSetData: config.set, from the cloud on config/set. It holds phone numbers:
-// never logged.
+// never logged. A list not sent (nil) leaves the program's file in charge; an empty
+// list sent ("contacts": [], "closing": {}) is a list, kept as such when saved
+// (omitzero, not omitempty, which would drop it and let the file's lists come back).
 type ConfigSetData struct {
 	Version     int               `json:"version"`
 	SiteName    string            `json:"site_name,omitempty"`
-	Contacts    []ConfigContact   `json:"contacts,omitempty"`
-	Closing     map[string]string `json:"closing,omitempty"` // "daily", "mon".."sun" -> "20:00" or "off"
+	Contacts    []ConfigContact   `json:"contacts,omitzero"`
+	Closing     map[string]string `json:"closing,omitzero"` // "daily", "mon".."sun" -> "20:00" or "off"
 	ExitDelayS  int               `json:"exit_delay_s,omitempty"`
 	EntryDelayS int               `json:"entry_delay_s,omitempty"`
 	Video       *ConfigVideo      `json:"video,omitempty"`

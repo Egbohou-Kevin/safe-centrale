@@ -197,6 +197,25 @@ func TestAnUnreachableWaveDoesNotDelayTheNext(t *testing.T) {
 	want(t, "next wave at once", got, "owner/sms/2")
 }
 
+// The usual contact has the app: its internet message failing hands the round to the
+// GSM at once, and the GSM failing in turn leaves nothing to wait for. The takeover
+// the wave planned to double it has nothing left to send, and must not hold the next
+// wave back.
+func TestAnUnreachableWaveOfContactsWithTheAppDoesNotDelayTheNext(t *testing.T) {
+	e := newEsc(t, func(c *Config) {
+		c.Contacts = []Contact{
+			{ID: "owner", Role: RoleOwner, Channels: []Channel{ChannelApp, ChannelSMS}},
+			{ID: "manager", Role: RoleManager, Channels: []Channel{ChannelSMS}},
+		}
+	})
+	first := raise(e, t0, KindIntrusion)
+	want(t, "wave 1", sends(first), "owner/app/1")
+	app := e.Handle(Result{Now: t0.Add(time.Second), Key: keyOf(first, "owner", ChannelApp), Status: ResultFailed})
+	want(t, "the GSM at once", sends(app), "owner/sms/1")
+	got := sends(e.Handle(Result{Now: t0.Add(3 * time.Second), Key: keyOf(app, "owner", ChannelSMS), Status: ResultFailed}))
+	want(t, "next wave at once", got, "owner/app/2")
+}
+
 func TestAFailedWaveWithOtherChannelsLeftWaits(t *testing.T) {
 	e := newEsc(t)
 	first := raise(e, t0, KindIntrusion)
@@ -353,9 +372,10 @@ func TestASilentSirenTellsTheFirstContactAndTheGuardOnce(t *testing.T) {
 			t.Fatalf("%+v", s)
 		}
 	}
-	// No reminder of its own: the alarm's plan already insists.
+	// No reminder of its own: the alarm's plan already insists. Every channel went, so
+	// nothing is left to wait for.
 	end := tick(e, t0.Add(30*time.Minute))
-	if c := concluded(end); len(sends(end)) != 0 || len(c) != 1 || c[0].Outcome != OutcomeUnanswered || c[0].Kind != KindSirenFailed {
+	if c := concluded(append(again, end...)); len(sends(end)) != 0 || len(c) != 1 || c[0].Outcome != OutcomeUnanswered || c[0].Kind != KindSirenFailed {
 		t.Fatalf("%+v", end)
 	}
 }

@@ -51,17 +51,23 @@ type Snapshot struct {
 	Open       map[string]bool `json:"open"`        // contacts that are currently open
 	EntryCause *Cause          `json:"entry_cause"` // what started the entry delay
 	Incident   *Incident       `json:"incident"`
+	// EntryEnds is the end of an entry delay that another alarm (a tamper, a fire, a
+	// panic that sounds the siren) interrupted: EntryCause stays, and unless a code
+	// ends that alarm first, the entry becomes an intrusion then (see lateEntry).
+	EntryEnds time.Time `json:"entry_ends,omitzero"`
 	// TimedOut are the incidents of this arming (intrusions, tampers) that no longer
 	// ring and that nobody ended: their siren ran out, or they were raised while
 	// another alarm rang. Their escalation goes on: the disarm that ends this arming
 	// ends them too.
 	TimedOut []string `json:"timed_out,omitempty"`
-	// Raised are the other kinds of alarm raised while the current one rings, each
-	// alerted once under its own incident (see during).
+	// Raised are the other kinds of alarm raised while the current one rings that
+	// neither wait for the siren nor alert per device (an intrusion), each alerted once
+	// under its own incident (see during).
 	Raised []AlertKind `json:"raised,omitempty"`
 	// Waiting are the fires (and panics that sound the siren) raised while another
-	// alarm rang: they ring in turn once it is over, if their device is still in
-	// alarm (see wake).
+	// alarm rang, one entry per device still in alarm, the devices of a kind sharing
+	// the incident of its alert: they ring in turn once it is over, if one of their
+	// devices is still in alarm (see waitFor and wake).
 	Waiting []Incident `json:"waiting,omitempty"`
 	// Checking are the orders whose code is being checked, with the time it was typed:
 	// the end of an entry delay waits for them (see CodeEntered). A restart drops them.

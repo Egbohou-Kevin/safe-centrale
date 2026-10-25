@@ -29,6 +29,10 @@ func TestTheExampleFileAndProfilesAreValidAndRepeatTheDefaults(t *testing.T) {
 	names := map[string]bool{}
 	for _, p := range z.Profiles {
 		names[p.Name] = true
+		// The motion sensor never says "no movement": Zigbee2MQTT does, by itself.
+		if rest := p.Capabilities["motion"].Rest; p.Name == "aqara.motion.rtcgq11lm" && rest != "clear" {
+			t.Errorf("the motion sensor rests at %q", rest)
+		}
 	}
 	for _, want := range []string{"aqara.contact.mccgq11lm", "aqara.motion.rtcgq11lm", "heiman.smoke.hs1sa", "heiman.siren.hs2wd", "develco.keypad.kepzb110"} {
 		if !names[want] {
@@ -137,6 +141,7 @@ func TestProfilesAreCheckedAgainstTheContract(t *testing.T) {
 		"bad offline":         `{"name": "p", "models": ["M"], "capabilities": {"link": {"from": "linkquality"}}, "offline_after": "later"}`,
 		"no model":            `{"name": "p", "capabilities": {"link": {"from": "linkquality"}}}`,
 		"confirm a raw value": `{"name": "p", "models": ["M"], "capabilities": {"siren": {"from": "alarm", "map": {"ON": "on", "OFF": "off"}}}, "commands": {"siren.on": {"payload": {"a": 1}, "confirm": {"capability": "siren", "value": "ON"}}}}`,
+		"rest never read":     `{"name": "p", "models": ["M"], "capabilities": {"motion": {"from": "occupancy", "map": {"true": "detected"}, "rest": "clear"}}}`,
 		"confirm unknown cap": `{"name": "p", "models": ["M"], "capabilities": {"link": {"from": "linkquality"}}, "commands": {"siren.off": {"payload": {"a": 1}, "confirm": {"capability": "siren", "value": "off"}}}}`,
 	} {
 		if _, err := ParseProfile([]byte(body)); err == nil {
