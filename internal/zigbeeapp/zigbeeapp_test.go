@@ -243,6 +243,33 @@ func TestASirenCommandIsConfirmed(t *testing.T) {
 	r.validateAll()
 }
 
+// The first real hub (25 October 2026): its siren was configured but not paired, and
+// each of its orders, retries included, logged the same unknown_device line. The
+// failure is still answered each time, but logged once until it changes or a command
+// of that device succeeds.
+func TestAFailingDeviceCommandIsLoggedOnceUntilItChanges(t *testing.T) {
+	r := newRig(t, nil)
+	order := func() {
+		r.order(contract.DeviceCmdTopic(site, "dev_siren"), contract.TypeCommand,
+			contract.DeviceCommandData{DeviceID: "dev_siren", Command: contract.CmdSirenOff})
+	}
+	acks := func() int { return len(r.broker.On(contract.DeviceAckTopic(site, "dev_siren"))) }
+	logged := func() int { return strings.Count(r.logs.String(), "reason=unknown_device") }
+	for i := range 3 {
+		order()
+		drivertest.WaitFor(t, "the failure answered", func() bool { return acks() == i+1 })
+	}
+	if logged() != 1 {
+		t.Fatalf("logged %d times:\n%s", logged(), r.logs.String())
+	}
+	// Paired now: its command succeeds, and the log says so.
+	r.pair("dev_siren", "0x02", "HS2WD-E")
+	order()
+	r.z2m("dev_siren", `{"alarm":"OFF"}`, false)
+	drivertest.WaitFor(t, "succeeded again", func() bool { return strings.Contains(r.logs.String(), "succeeded again") })
+	r.validateAll()
+}
+
 func TestRemovingADeviceClearsItsStates(t *testing.T) {
 	r := newRig(t, nil)
 	r.pair("dev_door", "0x01", "MCCGQ11LM")

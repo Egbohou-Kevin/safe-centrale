@@ -95,13 +95,59 @@ func lastSirenCommand(r *rig) string {
 
 // failEveryOrder answers each order of the current sounding failed, retries included,
 // until the hub stops sending it again.
-func failEveryOrder(r *rig) {
+func failEveryOrder(r *rig) { failEveryOrderFor(r, "no_confirmation") }
+
+// failEveryOrderFor is failEveryOrder, for the reason given.
+func failEveryOrderFor(r *rig, reason string) {
 	r.t.Helper()
 	for range 1 + sirenRetries + 1 {
 		orders := sirenOrders(r)
-		sirenAnswers(r, orders[len(orders)-1], contract.CmdFailed, "no_confirmation")
+		sirenAnswers(r, orders[len(orders)-1], contract.CmdFailed, reason)
 		r.settle()
 	}
+}
+
+// The first real hub (25 October 2026): a siren configured but not paired fails every
+// order, unknown_device, and the same lines every cycle drowned the log. It still
+// counts as failed, its orders told again and reported, but each line is logged once
+// until the failure changes or the siren takes an order.
+func TestASirenThatIsNotPairedIsLoggedOnceUntilItChanges(t *testing.T) {
+	r := newRig(t, nil)
+	r.start()
+	trigger(r)
+	failEveryOrderFor(r, "unknown_device")
+	drivertest.WaitFor(t, "the alert", func() bool { r.settle(); return len(sirenAlerts(r)) > 0 })
+	count := func(msg string) int { return strings.Count(r.logs.String(), msg) }
+	if count("sending it again") != 1 || count("does not take the order to sound") != 1 {
+		t.Fatalf("each line once:\n%s", r.logs.String())
+	}
+	// Cycle 2: the same failure, told again and retried, logs nothing new.
+	n := len(sirenOrders(r))
+	r.clock.Advance(7 * time.Minute)
+	drivertest.WaitFor(t, "cycle 2", func() bool {
+		r.settle()
+		return len(sirenOrders(r)) > n && lastSirenCommand(r) == contract.CmdSirenOn
+	})
+	n = len(sirenOrders(r))
+	failEveryOrderFor(r, "unknown_device")
+	if got := len(sirenOrders(r)); got != n+sirenRetries {
+		t.Fatalf("siren orders: %d, want %d: the siren is still told again", got, n+sirenRetries)
+	}
+	if count("sending it again") != 1 || count("does not take the order to sound") != 1 {
+		t.Fatalf("the same failure again is not logged again:\n%s", r.logs.String())
+	}
+	// Another failure is a change: logged.
+	r.clock.Advance(7 * time.Minute)
+	drivertest.WaitFor(t, "cycle 3", func() bool {
+		r.settle()
+		return len(sirenOrders(r)) > n+sirenRetries && lastSirenCommand(r) == contract.CmdSirenOn
+	})
+	sirenAnswers(r, sirenOrders(r)[len(sirenOrders(r))-1], contract.CmdExpired, "")
+	drivertest.WaitFor(t, "the change logged", func() bool { r.settle(); return count("sending it again") == 2 })
+	// The siren takes an order: the next failure is logged again.
+	sirenAnswers(r, sirenOrders(r)[len(sirenOrders(r))-1], contract.CmdDone, "")
+	drivertest.WaitFor(t, "the siren back", func() bool { r.settle(); return count("the siren takes orders again") == 1 })
+	r.validateAll()
 }
 
 func TestASirenThatNeverConfirmsIsToldAFewTimesThenReported(t *testing.T) {

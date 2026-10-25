@@ -79,11 +79,34 @@ func (a *App) publishAck(now time.Time, v zigbee.Ack) error {
 	if err != nil {
 		return err
 	}
-	if v.Status == zigbee.AckFailed || v.Status == zigbee.AckExpired {
-		a.log.Warn("a device command did not succeed", "device", v.DeviceID, "status", v.Status, "reason", v.Reason)
-	}
+	a.logAck(v)
 	a.out.Send(src, contract.DeviceAckTopic(a.cfg.Site, v.DeviceID), contract.TypeCommandAck, ack, false, now)
 	return nil
+}
+
+// logAck logs a device command that did not succeed, once per device until the
+// failure changes or a command of that device succeeds: a siren configured but not
+// paired (unknown_device) fails every order, its retries included, and the same line
+// every few seconds drowned the log of the first real hub (25 October 2026). It runs on
+// the loop's goroutine.
+func (a *App) logAck(v zigbee.Ack) {
+	switch v.Status {
+	case zigbee.AckFailed, zigbee.AckExpired:
+		why := v.Status + "/" + v.Reason
+		if a.failing[v.DeviceID] == why {
+			return
+		}
+		if a.failing == nil {
+			a.failing = map[string]string{}
+		}
+		a.failing[v.DeviceID] = why
+		a.log.Warn("a device command did not succeed; logged again when this changes", "device", v.DeviceID, "status", v.Status, "reason", v.Reason)
+	case zigbee.AckDone:
+		if _, ok := a.failing[v.DeviceID]; ok {
+			delete(a.failing, v.DeviceID)
+			a.log.Info("a device command succeeded again", "device", v.DeviceID)
+		}
+	}
 }
 
 // publishRegistryNews publishes what changed in the registry.

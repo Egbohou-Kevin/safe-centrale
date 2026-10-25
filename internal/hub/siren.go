@@ -1,6 +1,8 @@
 package hub
 
 import (
+	"context"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -37,6 +39,17 @@ type sirenOrder struct {
 	until   time.Time         // end of the sounding, when on
 	sent    map[string]string // command id -> siren, for the commands of this order
 	retries map[string]int    // siren -> commands sent again for this order
+}
+
+// sirenMemory is what the hub knows of the sirens' failures. It is owned by the
+// engine's loop.
+type sirenMemory struct {
+	// sirenFailed is, for each siren reported silent, the alarm it was reported for
+	// and whether it took an order to sound since.
+	sirenFailed map[string]sirenReport
+	// sirenLogged is, for each siren whose orders do not take, what was logged about
+	// it and for which failure (see logSiren).
+	sirenLogged map[string]map[string]string
 }
 
 // sirenReport is a siren reported silent: the alarm it was reported for, and whether
@@ -95,6 +108,7 @@ func (h *Hub) sirenAckMessage(sirenID string, m inbox.Message) {
 	}
 	err := h.alarm.loop.Post(h.life, func(now time.Time) []engine.Action {
 		if d.Status == contract.CmdDone {
+			h.sirenTakesOrders(sirenID)
 			h.sirenOrderDone(sirenID, d)
 		} else {
 			h.retrySiren(now, sirenID, d)
@@ -164,14 +178,12 @@ func (h *Hub) retrySiren(now time.Time, sirenID string, ack contract.CommandAckD
 		return // the sounding is over anyway
 	}
 	if h.alarm.siren.retries[sirenID] >= sirenRetries {
-		h.log.Error("the siren does not take the order to sound", "siren", sirenID,
-			"status", ack.Status, "reason", ack.Reason, "attempts", 1+sirenRetries)
+		h.logSiren(slog.LevelError, sirenID, "the siren does not take the order to sound", ack, "attempts", 1+sirenRetries)
 		h.reportSilentSiren(now, sirenID)
 		return
 	}
 	h.alarm.siren.retries[sirenID]++
-	h.log.Warn("the siren did not take the order to sound, sending it again", "siren", sirenID,
-		"status", ack.Status, "reason", ack.Reason, "left", left.Round(time.Second))
+	h.logSiren(slog.LevelWarn, sirenID, "the siren did not take the order to sound, sending it again", ack, "left", left.Round(time.Second))
 	h.sendSiren(now, sirenID, engine.SirenOn{Duration: left})
 }
 
@@ -179,13 +191,11 @@ func (h *Hub) retrySiren(now time.Time, sirenID string, ack contract.CommandAckD
 // the engine's loop.
 func (h *Hub) retrySirenOff(now time.Time, sirenID string, ack contract.CommandAckData) {
 	if h.alarm.siren.retries[sirenID] >= sirenRetries {
-		h.log.Error("the siren does not take the order to stop: it sounds until its own end", "siren", sirenID,
-			"status", ack.Status, "reason", ack.Reason, "attempts", 1+sirenRetries)
+		h.logSiren(slog.LevelError, sirenID, "the siren does not take the order to stop: it sounds until its own end", ack, "attempts", 1+sirenRetries)
 		return
 	}
 	h.alarm.siren.retries[sirenID]++
-	h.log.Warn("the siren did not take the order to stop, sending it again", "siren", sirenID,
-		"status", ack.Status, "reason", ack.Reason)
+	h.logSiren(slog.LevelWarn, sirenID, "the siren did not take the order to stop, sending it again", ack)
 	h.sendSiren(now, sirenID, engine.SirenOff{})
 }
 
@@ -221,4 +231,35 @@ func (h *Hub) reportSilentSiren(now time.Time, sirenID string) {
 		Now: now, Incident: h.deps.NewID(), Kind: escalation.KindSirenFailed,
 		Urgency: escalation.UrgencyHigh, Devices: []string{sirenID}, Alarm: alarm,
 	})
+}
+
+// logSiren logs what became of a siren order that did not take, once per siren and
+// message until its failure changes or the siren takes an order again: a siren
+// configured but not paired fails every order with unknown_device, its retries
+// included, and the same lines every cycle drowned the log of the first real hub (25
+// October 2026). The siren still counts as failed: only the log is spared. It runs on
+// the engine's loop.
+func (h *Hub) logSiren(level slog.Level, sirenID, msg string, ack contract.CommandAckData, args ...any) {
+	why := ack.Status + "/" + ack.Reason
+	if h.alarm.sirenLogged[sirenID][msg] == why {
+		return
+	}
+	if h.alarm.sirenLogged == nil {
+		h.alarm.sirenLogged = map[string]map[string]string{}
+	}
+	if h.alarm.sirenLogged[sirenID] == nil {
+		h.alarm.sirenLogged[sirenID] = map[string]string{}
+	}
+	h.alarm.sirenLogged[sirenID][msg] = why
+	args = append([]any{"siren", sirenID, "status", ack.Status, "reason", ack.Reason}, args...)
+	h.log.Log(context.Background(), level, msg+" (logged again when this changes)", args...)
+}
+
+// sirenTakesOrders records a siren that took an order: what logSiren kept quiet about
+// it is logged again the next time. It runs on the engine's loop.
+func (h *Hub) sirenTakesOrders(sirenID string) {
+	if _, ok := h.alarm.sirenLogged[sirenID]; ok {
+		delete(h.alarm.sirenLogged, sirenID)
+		h.log.Info("the siren takes orders again", "siren", sirenID)
+	}
 }

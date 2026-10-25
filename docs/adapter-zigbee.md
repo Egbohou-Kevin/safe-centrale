@@ -343,6 +343,14 @@ reste de son cycle (5 minutes au plus), sans trace, alors que l'alarme disait d�
 que plus rien ne pouvait la faire taire (corrigé le 25 octobre 2026 après une revue). Le
 `expired` arrive justement quand l'adaptateur répond de nouveau.
 
+Une sirène qui refuse chaque ordre (configurée dans `siren_ids` sans être appairée :
+`unknown_device`) reste comptée en panne, ses ordres renvoyés et l'alerte levée comme
+plus haut, mais le journal ne le dit qu'une fois : l'adaptateur journalise l'échec d'une
+commande une fois par appareil, puis seulement quand l'échec change ou qu'une commande de
+l'appareil réussit de nouveau (« succeeded again ») ; la centrale fait de même pour chaque
+ligne de ses renvois (« the siren takes orders again »). Sur la première vraie centrale (25
+octobre 2026), les mêmes lignes revenaient à chaque cycle et noyaient le journal.
+
 Une sirène signalée muette le reste, pour la centrale, jusqu'à la fin de l'alarme ou
 jusqu'à ce qu'un `siren.on` d'un cycle suivant lui soit répondu `done`. Pendant ce
 temps, un feu levé dit dans son texte que la sirène ne répond pas (voir

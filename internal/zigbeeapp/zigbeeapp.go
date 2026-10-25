@@ -105,6 +105,9 @@ type App struct {
 
 	last contract.ZigbeeStatusData // the last status published, owned by the loop
 	sent bool
+	// failing is, for each device whose commands do not succeed, the failure last
+	// logged (see logAck). It is owned by the loop.
+	failing map[string]string
 
 	// life ends with Run: the loop runs on it, and work handed to it after it ended
 	// is given up quietly.
