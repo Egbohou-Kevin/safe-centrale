@@ -113,10 +113,16 @@ func New(cfg Config, newID func() string, now time.Time) (*Monitor, error) {
 func (m *Monitor) Snapshot() Snapshot { return m.s.clone() }
 
 // Restore replaces the state with a saved one. What is not saved (when each
-// component last spoke) is dropped, as a load from disk would.
+// component last spoke) is dropped, as a load from disk would. A summary time later
+// than the monitor's own (computed by New from the clock at start) was saved while
+// the clock ran ahead: the summary would keep quiet about the faults until then,
+// restarts included. The monitor's own stands instead.
 func (m *Monitor) Restore(s Snapshot) {
 	s = s.clone()
 	s.fill()
+	if !m.s.NextSummary.IsZero() && s.NextSummary.After(m.s.NextSummary) {
+		s.NextSummary = m.s.NextSummary
+	}
 	m.s = s
 	for _, w := range m.watches() {
 		w.watch.forget()

@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // maxLine bounds an answer line: a modem gone mad must not fill the memory.
@@ -157,9 +158,9 @@ func (m *Modem) deliveryReport(line string) {
 	go m.o.OnDeliveryReport(ref, ok)
 }
 
-func (m *Modem) notifySMS(from, text string) {
+func (m *Modem) notifySMS(from, text string, sent time.Time) {
 	if m.o.OnSMS != nil {
-		go m.o.OnSMS(from, text)
+		go m.o.OnSMS(from, text, sent)
 	}
 }
 
@@ -171,7 +172,7 @@ func (m *Modem) readInbox() {
 			return
 		case i := <-m.inbox:
 			if err := m.takeStored(i); err != nil {
-				m.log.Warn("reading an incoming SMS failed, it is read again at the next check", "index", i, "err", err)
+				m.log.Warn("reading or deleting an incoming SMS failed, it is read again at the next check", "index", i, "err", err)
 			}
 			m.mu.Lock()
 			delete(m.queued, i)
@@ -180,27 +181,38 @@ func (m *Modem) readInbox() {
 	}
 }
 
-// takeStored reads the SMS stored at index i, hands it over and deletes it. One that
-// cannot be read is deleted all the same, or it would be read again at every check
-// and fill the SIM. Each command has its own time limit, counted once it holds the
-// modem: a limit for the whole would run out while an SMS is being sent.
+// takeStored reads the SMS stored at index i, deletes it, and only then hands it over:
+// one whose delete failed stays stored, is read again at the next check, and is handed
+// over once its delete succeeds. Handed over first, it would be handed over again, and
+// a contact's "1" read twice ends a second incident. A delete that timed out may have
+// deleted it all the same: that "1" is lost, the safe side (the escalation goes on, and
+// the contact can answer again). One that cannot be read is deleted all the same, or it
+// would be read again at every check and fill the SIM. Each command has its own time
+// limit, counted once it holds the modem: a limit for the whole would run out while an
+// SMS is being sent.
 func (m *Modem) takeStored(i int) error {
 	ctx := context.Background()
 	lines, err := m.readStored(ctx, fmt.Sprintf("AT+CMGR=%d", i))
 	if err != nil {
 		return err
 	}
+	var hand func()
 	for k, l := range lines {
 		if !strings.HasPrefix(l, "+CMGR:") || k+1 >= len(lines) {
 			continue
 		}
-		if from, text, err := decodeDeliver(lines[k+1]); err == nil {
-			m.notifySMS(from, text)
+		if from, text, sent, err := decodeDeliver(lines[k+1]); err == nil {
+			hand = func() { m.notifySMS(from, text, sent) }
 		} else {
 			m.log.Warn("an incoming SMS cannot be read, deleting it", "index", i, "err", err)
 		}
 		break
 	}
-	_, err = m.command(ctx, fmt.Sprintf("AT+CMGD=%d", i))
-	return err
+	if _, err := m.command(ctx, fmt.Sprintf("AT+CMGD=%d", i)); err != nil {
+		return err
+	}
+	if hand != nil {
+		hand()
+	}
+	return nil
 }

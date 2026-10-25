@@ -30,6 +30,10 @@ func TestVideoRequestValidate(t *testing.T) {
 		"credentials":     func(d *VideoRequestData) { d.PushURL = "rtmps://user:pw@relay.example/x" },
 		"query":           func(d *VideoRequestData) { d.PushURL = "rtmps://relay.example/x?token=t" },
 		"not a URL":       func(d *VideoRequestData) { d.PushURL = "://" },
+		// go2rtc checks no certificate for an address: anyone on the way would read
+		// the token and the video.
+		"an IPv4 address": func(d *VideoRequestData) { d.PushURL = "rtmps://203.0.113.10/live/s1" },
+		"an IPv6 address": func(d *VideoRequestData) { d.PushURL = "rtmps://[2001:db8::1]:443/live/s1" },
 	} {
 		d := goodVideoRequest(exp)
 		mutate(&d)

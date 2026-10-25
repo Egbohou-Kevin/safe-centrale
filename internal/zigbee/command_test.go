@@ -140,19 +140,48 @@ func TestAWaitingCommandItsProfileLostFailsInsteadOfSendingNothing(t *testing.T)
 }
 
 // The clock is set back while a command waits for its confirmation, and a pairing
-// window runs: the siren is sent again 3 s later, not an hour, and the window stays
-// open no longer than the longest one.
+// window runs: the siren is sent again 3 s later, not an hour, and the window keeps
+// what was left of it, no more: stretched, it would say "pairing" over a network
+// Zigbee2MQTT closed at the end of the piece it was asked for.
 func TestAClockSetBackStretchesNoWait(t *testing.T) {
 	h := newHarness(t)
 	h.add("dev_siren", ieeeSiren, "HS2WD-E")
 	h.do(Command{Now: h.now, Ref: "c1", DeviceID: "dev_siren", Name: "siren.off"})
 	h.do(Pair{Now: h.now, Ref: "pair-2", For: 2 * time.Minute})
+	h.do(JoinAnswer{Now: h.now, Txn: h.n.Snapshot().PairAsk.Txn, OK: true})
+	h.now = h.now.Add(10 * time.Second)
+	h.do(Tick{Now: h.now})
 	h.now = h.now.Add(-time.Hour)
 	h.do(Tick{Now: h.now})
 	if _, ok := find[Send](h.advance(3 * time.Second)); !ok {
 		t.Fatal("the siren is sent again after its wait")
 	}
-	if !h.n.Snapshot().PairUntil.Equal(h.now.Add(-3*time.Second + h.n.cfg.PairMax)) {
-		t.Fatalf("the window ends at most its length after the step: %v", h.n.Snapshot().PairUntil)
+	if left := h.n.Snapshot().PairUntil.Sub(h.now); left != 2*time.Minute-13*time.Second {
+		t.Fatalf("the window keeps what was left of it: %v", left)
+	}
+	h.advance(2*time.Minute - 14*time.Second)
+	if !h.n.Status().Pairing {
+		t.Fatal("open until its end")
+	}
+	h.advance(time.Second)
+	if h.n.Status().Pairing {
+		t.Fatal("the window ends when it would have")
+	}
+}
+
+// A 5-minute window set back 100 s after its first piece: the piece asked for the next
+// one keeps its time before the first one ends, so that the network never closes in
+// between.
+func TestAClockSetBackKeepsThePiecesOfAWindowTogether(t *testing.T) {
+	h := newHarness(t)
+	h.do(Pair{Now: h.now, Ref: "pair-1", For: 5 * time.Minute})
+	h.do(JoinAnswer{Now: h.now, Txn: h.n.Snapshot().PairAsk.Txn, OK: true})
+	renew := h.n.Snapshot().PairRenew.Sub(h.now)
+	h.now = h.now.Add(100 * time.Second)
+	h.do(Tick{Now: h.now})
+	h.now = h.now.Add(-time.Hour)
+	h.do(Tick{Now: h.now})
+	if left := h.n.Snapshot().PairRenew.Sub(h.now); left != renew-100*time.Second {
+		t.Fatalf("the next piece is asked %v from now, want %v", left, renew-100*time.Second)
 	}
 }

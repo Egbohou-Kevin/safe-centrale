@@ -1,9 +1,11 @@
 // Package configapp applies the site's configuration set from the cloud
 // (config.set, see docs/contract.md). It runs in the hub's program: it checks a new
 // configuration against the site's files, keeps it in the state folder, and has the
-// hub restart to load it, at a quiet moment: never during an exit or entry delay, an
-// alarm, nor the installation mode. The engine itself says whether the moment is
-// quiet: the alarm/state it publishes comes back through the broker, behind it. It
+// hub restart to load it, at a quiet moment: disarmed or armed, never during an entry
+// delay, an alarm, nor the installation mode; when the zones or the sirens changed,
+// during the exit delay rather than armed (see QuietState). The engine itself says
+// whether the moment is quiet: the alarm/state it publishes comes back through the
+// broker, behind it. It
 // answers with config.applied, retained, once the hub runs with it, or at once when it
 // refuses it. The zones and sirens changed by the installer's tools are applied the
 // same way.
@@ -78,10 +80,11 @@ type Deps struct {
 	Save func(contract.ConfigSetData) error
 	// Restart has the hub's program stop, to be started again with it.
 	Restart func()
-	// Quiet says, from the engine itself, whether the moment is quiet now: the alarm
-	// disarmed or armed, no installation mode. It waits for the inputs queued before it
-	// (a door opened a moment ago), until ctx ends: false then.
-	Quiet func(ctx context.Context) bool
+	// Quiet says, from the engine itself, whether the moment is quiet now: the alarm's
+	// state (contract.State*) one that quiet accepts (see QuietState), no installation
+	// mode. It waits for the inputs queued before it (a door opened a moment ago), until
+	// ctx ends: false then.
+	Quiet func(ctx context.Context, quiet func(state string) bool) bool
 	// DevicesChanged says whether the installer's tools (the local console, the
 	// command-line tool) changed the zones or the sirens since the hub loaded them: the
 	// hub restarts for them too. Asked at each quiet moment; nil when none can change.
@@ -296,21 +299,20 @@ func (a *App) configSet(ctx context.Context, m inbox.Message) {
 }
 
 // restartIfQuiet restarts the hub when a configuration or new devices wait and the
-// moment is quiet: the alarm disarmed or armed, never in the middle of a delay or of
-// an alarm, and no installation under way. The state said on the broker must be
-// quiet, and the engine must say so too: its states reach the broker behind it, and a
-// delay begun a moment ago is not said yet. Its next state asks again.
+// moment is quiet (see QuietState), and no installation is under way. The state said on
+// the broker must be quiet, and the engine must say so too: its states reach the broker
+// behind it, and a delay begun a moment ago is not said yet. Its next state asks again.
 func (a *App) restartIfQuiet(ctx context.Context) {
 	devices := a.deps.DevicesChanged != nil && a.deps.DevicesChanged() // reads a file: outside the lock
 	a.mu.Lock()
 	pending := (a.saved != 0 || devices) && !a.restarted
-	said := (a.state == contract.StateDisarmed || a.state == contract.StateArmed) && !a.installing
+	said := QuietState(a.state, devices) && !a.installing
 	version, state, installing := a.saved, a.state, a.installing
 	a.mu.Unlock()
 	if !pending {
 		return
 	}
-	if said && ctx.Err() == nil && a.engineQuiet(ctx) {
+	if said && ctx.Err() == nil && a.engineQuiet(ctx, devices) {
 		a.mu.Lock()
 		a.restarted = true
 		a.mu.Unlock()
@@ -321,10 +323,30 @@ func (a *App) restartIfQuiet(ctx context.Context) {
 	a.log.Info("waiting for a quiet moment to restart", "version", version, "devices", devices, "alarm", state, "installing", installing)
 }
 
-func (a *App) engineQuiet(ctx context.Context) bool {
+func (a *App) engineQuiet(ctx context.Context, devices bool) bool {
 	ctx, cancel := context.WithTimeout(ctx, quietWait)
 	defer cancel()
-	return a.deps.Quiet(ctx)
+	return a.deps.Quiet(ctx, func(state string) bool { return QuietState(state, devices) })
+}
+
+// QuietState tells whether the alarm's state (contract.State*) lets the hub restart:
+// disarmed or armed, never in the middle of a delay or of an alarm. When the zones or
+// the sirens changed (devices), the exit delay is quiet and armed is not: an arming
+// made on the old zones never saw the new devices, and the restart once armed would take
+// a window of a new zone left open for one opened while the hub was off, a siren the
+// moment the shop arms. Restarted during the exit delay, the hub ends it on the new
+// zones: that window is bypassed and told, as at the end of any exit delay. New devices
+// found armed wait for the next disarm.
+func QuietState(state string, devices bool) bool {
+	switch state {
+	case contract.StateDisarmed:
+		return true
+	case contract.StateArmed:
+		return !devices
+	case contract.StateArming:
+		return devices
+	}
+	return false
 }
 
 // answer publishes config.applied: applied when why is empty, rejected otherwise.

@@ -3,6 +3,7 @@ package contract
 import (
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"net/url"
 	"slices"
 )
@@ -115,6 +116,12 @@ func (d VideoRequestData) Validate() error {
 	u, err := url.Parse(d.PushURL)
 	if err != nil || u.Scheme != "rtmps" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return fmt.Errorf("%w: push_url must be an rtmps address without credentials nor query", ErrInvalid)
+	}
+	// go2rtc checks no certificate when the host is an IP address: anyone on the way
+	// (the operator, the shop's box, a spoofer on its network) would read the token,
+	// which the connection carries, and the shop's video. Only a name is checked.
+	if _, err := netip.ParseAddr(u.Hostname()); err == nil {
+		return fmt.Errorf("%w: push_url must name its host, not give its address", ErrInvalid)
 	}
 	return nil
 }

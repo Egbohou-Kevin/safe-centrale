@@ -34,20 +34,24 @@ type Config struct {
 	PairMax time.Duration
 	// Step is how much a number (battery, link) must move to be announced.
 	Step int
+	// RestAfter is how long a state with a rest value (a movement) may stay away from
+	// it with no message from the device before the adapter brings it back itself (see
+	// restDue).
+	RestAfter time.Duration
 }
 
 // DefaultConfig returns the defaults of docs/adapter-zigbee.md.
 func DefaultConfig(profiles []Profile) Config {
 	return Config{
 		Profiles: profiles, ConfirmWait: 3 * time.Second, Attempts: 3,
-		OfflineAfter: 4 * time.Hour, PairMax: 10 * time.Minute, Step: 5,
+		OfflineAfter: 4 * time.Hour, PairMax: 10 * time.Minute, Step: 5, RestAfter: 5 * time.Minute,
 	}
 }
 
 // Validate checks the configuration, profiles included.
 func (c Config) Validate() error {
-	if c.ConfirmWait <= 0 || c.Attempts < 1 || c.OfflineAfter <= 0 || c.PairMax <= 0 || c.Step < 1 {
-		return fmt.Errorf("zigbee: ConfirmWait, Attempts, OfflineAfter, PairMax and Step must be positive")
+	if c.ConfirmWait <= 0 || c.Attempts < 1 || c.OfflineAfter <= 0 || c.PairMax <= 0 || c.Step < 1 || c.RestAfter <= 0 {
+		return fmt.Errorf("zigbee: ConfirmWait, Attempts, OfflineAfter, PairMax, Step and RestAfter must be positive")
 	}
 	names, models := map[string]bool{}, map[string]string{}
 	for _, p := range c.Profiles {
@@ -184,6 +188,9 @@ type Network struct {
 	// health is the health check that waits for Zigbee2MQTT's answer (see bridge).
 	// Not saved: the retained state that calls for it comes again at each start.
 	health Asking
+	// last is the latest time the core was handed: one before it means the clock was
+	// set back (see pullBack). Not saved: a new process starts from the clock as it is.
+	last time.Time
 }
 
 // New creates the core. newID proposes device ids (for example "dev_k7p2"); one
@@ -297,6 +304,11 @@ func (n *Network) NextWake() time.Time {
 	for _, p := range n.s.Pending {
 		add(p.Deadline)
 	}
+	for id := range n.s.States {
+		if due, away := n.restAt(id); len(away) > 0 {
+			add(due)
+		}
+	}
 	for id, d := range n.s.Devices {
 		if n.s.Offline[id] {
 			continue
@@ -347,11 +359,13 @@ func (n *Network) Handle(in Input) []Action {
 }
 
 // due runs what the clock has made due: the end of a pairing window or its next
-// piece, commands not confirmed in time, devices silent for too long.
+// piece, commands not confirmed in time, states whose return to rest was lost, devices
+// silent for too long.
 func (n *Network) due(now time.Time) []Action {
 	out := append(n.pairingDue(now), n.healthDue(now)...)
 	n.joinsDue(now)
 	out = append(out, n.retryPending(now)...)
+	out = append(out, n.restDue(now)...)
 	return append(out, n.markSilent(now)...)
 }
 

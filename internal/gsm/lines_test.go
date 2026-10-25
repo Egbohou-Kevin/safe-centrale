@@ -126,24 +126,9 @@ func TestAContactAnswering1AcknowledgesTheLastAlert(t *testing.T) {
 // everyone because of a reply meant for the tamper would stop its waves. A second "1"
 // ends the intrusion. Alerts told far apart leave the last one to the "1".
 func TestAnAmbiguous1EndsTheLessUrgentAlert(t *testing.T) {
-	g := newGW(t, 1)
-	up(t, g, t0)
-	sms := func(id string, p Priority, at time.Time) {
-		up(t, g, at)
-		ex := of[Execute](g.Handle(req(id, "owner", ChannelSMS, p, at)))[0]
-		g.Handle(Outcome{Now: at, Job: ex.Job, Line: "line1", OK: true})
-	}
-	one := func(at time.Time) string {
-		out := g.Handle(Incoming{Now: at, Line: "line1", From: "90123456", Text: "1"})
-		for _, c := range of[CheckLine](out) {
-			g.Handle(Probe{Now: at, Line: c.Line, Responding: true, Registered: true})
-		}
-		acks := of[Acknowledge](out)
-		if len(acks) != 1 {
-			t.Fatalf("one acknowledgement, got %+v", acks)
-		}
-		return acks[0].Incident
-	}
+	a := newAckRig(t)
+	sms := func(id string, p Priority, at time.Time) { a.sms(req(id, "owner", ChannelSMS, p, at)) }
+	one := a.one
 	sms("tamper", PriorityOther, t0)
 	sms("intrusion", PriorityIntrusion, t0.Add(2*time.Minute))
 	if got := one(t0.Add(2*time.Minute + 10*time.Second)); got != "inc-tamper" {
@@ -165,6 +150,96 @@ func TestAnAmbiguous1EndsTheLessUrgentAlert(t *testing.T) {
 	sms("intrusion3", PriorityIntrusion, t0.Add(12*time.Hour))
 	if got := one(t0.Add(12*time.Hour + time.Minute)); got != "inc-intrusion3" {
 		t.Fatalf("the 1 ended %s, want the intrusion told last", got)
+	}
+}
+
+// ackRig is a gateway with one line, whose owner is told SMS (sms) and answers "1"
+// (one, which returns the incident it ended).
+type ackRig struct {
+	t *testing.T
+	g *Gateway
+}
+
+func newAckRig(t *testing.T) *ackRig {
+	g := newGW(t, 1)
+	up(t, g, t0)
+	return &ackRig{t: t, g: g}
+}
+
+func (a *ackRig) sms(r Request) {
+	a.t.Helper()
+	up(a.t, a.g, r.Now)
+	ex := of[Execute](a.g.Handle(r))[0]
+	a.g.Handle(Outcome{Now: r.Now, Job: ex.Job, Line: "line1", OK: true})
+}
+
+func (a *ackRig) one(at time.Time) string {
+	a.t.Helper()
+	out := a.g.Handle(Incoming{Now: at, Line: "line1", From: "90123456", Text: "1"})
+	for _, c := range of[CheckLine](out) {
+		a.g.Handle(Probe{Now: at, Line: c.Line, Responding: true, Registered: true})
+	}
+	acks := of[Acknowledge](out)
+	if len(acks) != 1 {
+		a.t.Fatalf("one acknowledgement, got %+v", acks)
+	}
+	return acks[0].Incident
+}
+
+// The silent siren's alert goes to the same people as its alarm, a few seconds after
+// it, at the same queue priority. A "1" then ends the siren's alert, which ends only
+// it: ending the intrusion would stop its waves and reminders for everyone.
+func TestAnAmbiguous1EndsTheSilentSirenBeforeItsAlarm(t *testing.T) {
+	a := newAckRig(t)
+	a.sms(req("intrusion", "owner", ChannelSMS, PriorityIntrusion, t0))
+	siren := req("siren", "owner", ChannelSMS, PriorityIntrusion, t0.Add(30*time.Second))
+	siren.Secondary = true
+	a.sms(siren)
+	if got := a.one(t0.Add(40 * time.Second)); got != "inc-siren" {
+		t.Fatalf("the 1 ended %s, want the silent siren's alert", got)
+	}
+	if got := a.one(t0.Add(time.Minute)); got != "inc-intrusion" {
+		t.Fatalf("the second 1 ended %s, want the intrusion", got)
+	}
+}
+
+// An incident still reminded is as recent as its last message, not its first: a fire
+// raised 20 minutes into an intrusion is told within 10 minutes of the intrusion's
+// reminders, and an ambiguous "1" ends the intrusion, not the fire.
+func TestAReminderKeepsItsIncidentAmbiguous(t *testing.T) {
+	a := newAckRig(t)
+	told := func(incident string, p Priority, minutes ...int) {
+		for _, m := range minutes {
+			r := req(fmt.Sprintf("%s-%d", incident, m), "owner", ChannelSMS, p, t0.Add(time.Duration(m)*time.Minute))
+			r.Incident = "inc-" + incident
+			a.sms(r)
+		}
+	}
+	told("intrusion", PriorityIntrusion, 0, 2, 15)
+	told("fire", PriorityLifeSafety, 20)
+	told("intrusion", PriorityIntrusion, 25)
+	told("fire", PriorityLifeSafety, 30)
+	told("intrusion", PriorityIntrusion, 35)
+	told("fire", PriorityLifeSafety, 40)
+	if got := a.one(t0.Add(41 * time.Minute)); got != "inc-intrusion" {
+		t.Fatalf("the 1 ended %s, want the intrusion reminded 6 minutes before", got)
+	}
+}
+
+// A "1" held by the network (the hub's SIM off the air) or stored while the gateway
+// was down is read late: written long before the alert it would now answer was sent,
+// it cannot be meant for it, and ends nothing. The service centre's clock may be a
+// few minutes off: a "1" stamped a little before the alert still counts.
+func TestA1WrittenBeforeTheAlertEndsNothing(t *testing.T) {
+	a := newAckRig(t)
+	a.sms(req("intrusion", "owner", ChannelSMS, PriorityIntrusion, t0.Add(time.Hour)))
+	in := Incoming{Now: t0.Add(time.Hour + time.Minute), Line: "line1", From: "90123456", Text: "1", Sent: t0}
+	if out := a.g.Handle(in); len(of[Acknowledge](out)) != 0 || len(of[Ignored](out)) != 1 {
+		t.Fatalf("a 1 written an hour before the alert: %+v", out)
+	}
+	in.Sent = t0.Add(time.Hour - 3*time.Minute)
+	if out := a.g.Handle(in); len(of[Acknowledge](out)) != 1 {
+		t.Fatalf("a 1 from a service centre a few minutes behind: %+v", out)
 	}
 }
 

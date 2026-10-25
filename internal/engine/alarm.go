@@ -1,6 +1,10 @@
 package engine
 
-import "time"
+import (
+	"maps"
+	"strings"
+	"time"
+)
 
 // signal applies a sensor change. A device's tamper sensor always means tamper,
 // whatever its zone and even without one; any other sensor counts only if the
@@ -9,6 +13,7 @@ import "time"
 func (e *Engine) signal(sig Signal) []Action {
 	zone, known := e.cfg.Zones[sig.DeviceID]
 	if sig.Sensor == SensorTamper {
+		e.hear(sig)
 		if !sig.Active {
 			delete(e.s.Tampered, sig.DeviceID)
 			return nil
@@ -22,6 +27,7 @@ func (e *Engine) signal(sig Signal) []Action {
 	if !known || !Accepts(zone.Kind, sig.Sensor) {
 		return nil
 	}
+	e.hear(sig)
 	e.trackContact(sig)
 	if !sig.Active {
 		e.calm(sig)
@@ -77,7 +83,9 @@ func (e *Engine) forget(id string) {
 	delete(e.s.Open, id)
 	delete(e.s.Bypassed, id)
 	delete(e.s.Tampered, id)
+	maps.DeleteFunc(e.s.Heard, func(key string, _ time.Time) bool { return strings.HasPrefix(key, id+"/") })
 	e.dropWaiting(func(w Incident) bool { return w.Cause.DeviceID == id })
+	e.dropSounding(func(c Cause) bool { return c.DeviceID == id })
 }
 
 // armedZone applies the rules of the zones that only watch while the system is
@@ -122,13 +130,15 @@ func (e *Engine) trigger(at time.Time, cause Cause, kind AlertKind) []Action {
 }
 
 // ring starts the siren program of an alarm: it rings from at, for its cycles, and
-// the system goes back to the mode it was in once they are over. An alarm of another
-// kind than an intrusion during an entry delay does not drop it: the delay goes on
-// behind the alarm, and becomes an intrusion if no code ends it (see lateEntry).
+// the system goes back to the mode it was in once they are over (see endIncident). An
+// alarm of another kind than an intrusion during an entry delay does not drop it: the
+// delay goes on behind the alarm, and becomes an intrusion if no code ends it (see
+// lateEntry). The automatic arming planned, while disarmed or during the exit delay it
+// started, is kept for the end of the alarm.
 func (e *Engine) ring(at time.Time, inc Incident) []Action {
 	inc.ReturnTo = ModeArmed
-	if e.s.Mode == ModeDisarmed {
-		inc.ReturnTo = ModeDisarmed
+	if e.s.Mode == ModeDisarmed || e.s.Mode == ModeArming {
+		inc.ReturnTo = e.s.Mode
 	}
 	if e.s.Mode == ModeEntryDelay && inc.Kind != AlertIntrusion {
 		e.s.EntryEnds = e.s.Deadline
@@ -136,8 +146,13 @@ func (e *Engine) ring(at time.Time, inc Incident) []Action {
 		e.s.EntryCause = nil
 	}
 	inc.Cycle, inc.SirenOn = 1, true
+	sch := e.s.Schedule
 	e.setMode(ModeTriggered, at)
-	e.s.Raised = nil
+	e.s.Schedule = sch
+	e.s.Raised, e.s.Sounding = nil, nil
+	if waits(inc.Kind) {
+		e.s.Sounding = []Cause{inc.Cause}
+	}
 	e.s.Incident = &inc
 	e.s.Deadline = at.Add(e.cfg.SirenCycle)
 	last := inc.Cause
@@ -164,7 +179,7 @@ func (e *Engine) sirenStep(ref time.Time) []Action {
 			if endsWithArming(inc.Kind) {
 				e.s.TimedOut = append(e.s.TimedOut, inc.ID)
 			}
-			e.endIncident(ref)
+			out = append(out, e.endIncident(ref)...)
 			return append(out, e.wake(ref)...)
 		}
 		inc.SirenOn = false
@@ -190,13 +205,22 @@ func endsWithArming(kind AlertKind) bool {
 	return kind == AlertIntrusion || kind == AlertTamper
 }
 
-// endIncident closes the incident and goes back to the mode held before it.
-func (e *Engine) endIncident(at time.Time) {
-	if e.s.Incident != nil && e.s.Incident.ReturnTo == ModeDisarmed {
-		e.disarm(at)
-		return
+// endIncident closes the incident, when its siren ran out or a code silenced it, and
+// goes back to the mode held before it: disarmed (see resumePlan), the exit delay (see
+// resumeArming) or armed, with what is left of an entry delay it interrupted.
+func (e *Engine) endIncident(at time.Time) []Action {
+	var back Mode
+	if e.s.Incident != nil {
+		back = e.s.Incident.ReturnTo
 	}
-	e.s.Incident, e.s.Raised = nil, nil
+	e.s.Incident, e.s.Raised, e.s.Sounding = nil, nil, nil
+	switch back {
+	case ModeDisarmed:
+		e.resumePlan(at)
+		return nil
+	case ModeArming:
+		return e.resumeArming(at)
+	}
 	e.s.Deadline = time.Time{}
 	e.setMode(ModeArmed, at)
 	if e.s.EntryCause != nil && !e.s.EntryEnds.IsZero() {
@@ -204,6 +228,34 @@ func (e *Engine) endIncident(at time.Time) {
 		e.setMode(ModeEntryDelay, at)
 		e.s.Deadline, e.s.EntryEnds = e.s.EntryEnds, time.Time{}
 	}
+	return nil
+}
+
+// resumePlan goes back to disarmed with the automatic arming planned before the alarm:
+// nobody chose not to arm when the siren ran out, nor when a code silenced it (a disarm
+// does choose, and plans again from its time). An alarm that ends after the closing
+// time must not cancel tonight's arming, the very risk the plan removes: an arming
+// whose time went by during the alarm starts now, with a whole exit delay, within the
+// plan's limit, as one missed while the hub was off (see checkPlan and scheduleStep).
+func (e *Engine) resumePlan(at time.Time) {
+	sch := e.s.Schedule
+	e.disarm(at)
+	if sch != nil {
+		e.s.Schedule = sch
+		e.checkPlan(at)
+	}
+}
+
+// resumeArming gives the exit delay back once an alarm raised during it ends, whole and
+// from now: the people inside spent it on the alarm (a smoke false alarm silenced at the
+// keypad). Arming at once would set off an intrusion with their next step, and skip
+// what the end of the delay does (see finishArming). An automatic arming keeps its
+// plan, so that it can still be postponed.
+func (e *Engine) resumeArming(at time.Time) []Action {
+	sch := e.s.Schedule
+	ev := e.beginArming(at, e.s.ArmOrigin, e.s.ArmUser, nil)
+	e.s.Schedule = sch
+	return []Action{ev}
 }
 
 // lateEntry ends an entry delay that another alarm interrupted, and that no code

@@ -193,7 +193,11 @@ sudo systemctl restart mosquitto
 ```
 
 Le fichier remplace celui de Debian : un seul point d'écoute, sur la centrale, et les
-messages retenus sauvegardés sur la partition de données toutes les 5 minutes.
+messages retenus sauvegardés sur la partition de données toutes les 5 minutes. Après
+un arrêt brutal (coupure de courant, redémarrage par le chien de garde), les états des
+appareils sont donc ceux de la dernière sauvegarde, vieux de 5 minutes au plus : le
+moteur d'alarme écarte au démarrage un état plus ancien que ce qu'il avait entendu
+(voir `engine.md`, « Persistance et redémarrage »).
 
 **Le code d'accès n'attend pas dans le broker.** Les programmes gardent leur session
 un jour : en QoS 1, Mosquitto garde pour un programme absent (un redémarrage pour une

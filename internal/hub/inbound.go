@@ -165,6 +165,17 @@ func signalOf(d contract.DeviceEventData) (engine.Signal, bool) {
 	return engwire.Signal(d, time.Time{})
 }
 
+// retainedSignal is the signal of a retained state, dated when it began (since): the
+// engine gives no credit to one older than what it heard before the restart (see
+// engine.Boot).
+func retainedSignal(d contract.DeviceEventData) (engine.Signal, bool) {
+	sig, ok := signalOf(d)
+	if d.Since != nil {
+		sig.Now = d.Since.Time
+	}
+	return sig, ok
+}
+
 func (h *Hub) feedHealth(d contract.DeviceEventData) {
 	if _, ok := healthwire.Input(d, time.Time{}); !ok {
 		return

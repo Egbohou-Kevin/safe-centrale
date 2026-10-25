@@ -230,7 +230,9 @@ func TestOptions(t *testing.T) {
 	if _, err := New(Options{Sources: map[string]string{"c": good}}); err == nil {
 		t.Error("no binary accepted")
 	}
-	for src, want := range map[string]string{"rtsp://h/x": "h:554", "rtsps://h/x": "h:322", "rtsp://h:8554/x": "h:8554"} {
+	// go2rtc itself connects to 554 for an rtsps address without a port (seen with
+	// 1.9.14): the probe tests where the stream and the photos go.
+	for src, want := range map[string]string{"rtsp://h/x": "h:554", "rtsps://h/x": "h:554", "rtsps://h:322/x": "h:322", "rtsp://h:8554/x": "h:8554"} {
 		if got, _ := hostPort(src); got != want {
 			t.Errorf("%s: %s, want %s", src, got, want)
 		}

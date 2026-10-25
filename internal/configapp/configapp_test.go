@@ -96,7 +96,7 @@ func start(t *testing.T, cfg Config) *rig {
 			return nil
 		},
 		Restart:        func() { r.mu.Lock(); r.restarts++; r.mu.Unlock() },
-		Quiet:          func(context.Context) bool { r.mu.Lock(); defer r.mu.Unlock(); return !r.busy },
+		Quiet:          func(context.Context, func(string) bool) bool { r.mu.Lock(); defer r.mu.Unlock(); return !r.busy },
 		DevicesChanged: func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.devices },
 		Logger:         slog.New(slog.NewTextHandler(r.logs, nil)),
 	})
@@ -297,26 +297,43 @@ func TestAConfigurationIsHandledOffTheBrokersGoroutine(t *testing.T) {
 	}
 }
 
+// New zones or sirens are loaded at the latest during the exit delay: an arming made
+// on the old zones never saw the new devices, and a restart once armed would take a
+// window of a new zone left open for an opening (a siren the moment the shop arms),
+// where the end of the exit delay bypasses it and tells the contacts.
 func TestNewZonesRestartTheHubAtAQuietMoment(t *testing.T) {
 	r := start(t, DefaultConfig(site, 0))
 	r.alarm(contract.StateDisarmed)
 	r.install("")
 	r.changeDevices()
 	r.alarm(contract.StateArming) // the installation mode closes because the alarm is arming
-	r.install(contract.InstallArmed)
 	if r.restarted() != 0 {
-		t.Fatal("never during a delay")
+		t.Fatal("never during the installation mode")
+	}
+	r.install(contract.InstallArmed)
+	if r.restarted() != 1 {
+		t.Fatal("restart during the exit delay, before the arming ends on the old zones")
 	}
 	r.alarm(contract.StateArmed)
-	if r.restarted() != 1 {
-		t.Fatal("restart once quiet")
-	}
 	r.alarm(contract.StateDisarmed)
 	if r.restarted() != 1 {
 		t.Fatal("once only")
 	}
 	if _, n := r.broker.last(); n != 0 {
 		t.Fatal("new zones are no configuration from the cloud: nothing to answer")
+	}
+
+	// Changed while armed: they wait for the next disarm.
+	r = start(t, DefaultConfig(site, 0))
+	r.alarm(contract.StateArmed)
+	r.changeDevices()
+	r.alarm(contract.StateArmed)
+	if r.restarted() != 0 {
+		t.Fatal("never armed on zones the arming did not check")
+	}
+	r.alarm(contract.StateDisarmed)
+	if r.restarted() != 1 {
+		t.Fatal("restart once disarmed")
 	}
 }
 
@@ -353,9 +370,8 @@ func TestZonesChangedAfterTheModeClosedAreAppliedLater(t *testing.T) {
 	}
 	r.changeDevices()
 	r.alarm(contract.StateArming)
-	r.alarm(contract.StateArmed)
 	if r.restarted() != 1 {
-		t.Fatal("the late change is applied at the next quiet moment")
+		t.Fatal("the late change is applied at the next quiet moment: the exit delay")
 	}
 }
 

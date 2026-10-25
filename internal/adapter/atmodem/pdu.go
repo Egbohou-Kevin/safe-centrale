@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"strings"
+	"time"
 	"unicode/utf16"
 )
 
@@ -45,28 +46,56 @@ const (
 )
 
 // decodeDeliver reads an SMS-DELIVER PDU, as AT+CMGR gives it in PDU mode (with the
-// service centre's address first), and returns the sender and the text.
-func decodeDeliver(pdu string) (from, text string, err error) {
+// service centre's address first), and returns the sender, the text, and when the
+// service centre took it (zero if its time stamp cannot be read).
+func decodeDeliver(pdu string) (from, text string, sent time.Time, err error) {
 	b, err := hex.DecodeString(strings.TrimSpace(pdu))
 	if err != nil {
-		return "", "", errPDU
+		return "", "", time.Time{}, errPDU
 	}
 	r := &pduReader{b: b}
 	r.take(int(r.octet())) // the service centre
 	first := r.octet()
 	if first&0x03 != 0 {
-		return "", "", errPDU // not an SMS-DELIVER
+		return "", "", time.Time{}, errPDU // not an SMS-DELIVER
 	}
 	from = r.address()
 	r.octet() // protocol identifier
 	dcs := r.octet()
-	r.take(7) // the service centre's time stamp
+	sent = serviceCentreTime(r.take(7))
 	length := int(r.octet())
 	text = r.userData(dcs, length, first&0x40 != 0)
 	if r.err != nil {
-		return "", "", r.err
+		return "", "", time.Time{}, r.err
 	}
-	return from, text, nil
+	return from, text, sent, nil
+}
+
+// serviceCentreTime reads the service centre's time stamp: year, month, day, hour,
+// minute, second in swapped semi-octets, then the zone in quarters of an hour, its sign
+// in bit 3. A stamp that cannot be read gives the zero time.
+func serviceCentreTime(b []byte) time.Time {
+	if len(b) != 7 {
+		return time.Time{}
+	}
+	var v [6]int
+	for i := range v {
+		lo, hi := int(b[i]&0x0f), int(b[i]>>4)
+		if lo > 9 || hi > 9 {
+			return time.Time{}
+		}
+		v[i] = lo*10 + hi
+	}
+	quarters := int(b[6]&0x07)*10 + int(b[6]>>4)
+	if b[6]&0x08 != 0 {
+		quarters = -quarters
+	}
+	zone := time.FixedZone("", quarters*15*60)
+	t := time.Date(2000+v[0], time.Month(v[1]), v[2], v[3], v[4], v[5], 0, zone)
+	if v[1] < 1 || v[1] > 12 || t.Day() != v[2] {
+		return time.Time{} // month or day out of range: Date would have moved it
+	}
+	return t.UTC()
 }
 
 // address reads the originating address: digits in swapped semi-octets, "+" first for

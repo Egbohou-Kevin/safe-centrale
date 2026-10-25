@@ -32,7 +32,7 @@ func (g *Gateway) request(r Request) []Action {
 	}
 	g.addJob(Job{
 		Ref: r.ID, Incident: r.Incident, Contact: r.Contact, Number: number,
-		Channel: r.Channel, Priority: r.Priority, Text: r.Text, Received: asked,
+		Channel: r.Channel, Priority: r.Priority, Secondary: r.Secondary, Text: r.Text, Received: asked,
 	})
 	return []Action{Report{Ref: r.ID, Status: StatusQueued}}
 }

@@ -11,6 +11,7 @@ import (
 	"safehome/internal/adapter/go2rtc"
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/photodir"
+	"safehome/internal/adapter/sysclock"
 	"safehome/internal/contract"
 	"safehome/internal/driver"
 	"safehome/internal/service"
@@ -127,7 +128,7 @@ func runService(ctx context.Context, cfg videoconfig.Result, stderr io.Writer) i
 	pub := &service.Publisher{}
 	app, err := videoapp.New(cfg.App, videoapp.Deps{
 		Clock: driver.SystemClock(), Store: store, Publisher: pub, Streamer: streamer{runner},
-		Camera: photographer{runner}, Photos: photos, NewID: ids.New, Logger: log,
+		Camera: photographer{runner}, Photos: photos, NewID: ids.New, ClockSynced: sysclock.Synced, Logger: log,
 	})
 	if err != nil {
 		log.Error("cannot start the video service", "err", err)

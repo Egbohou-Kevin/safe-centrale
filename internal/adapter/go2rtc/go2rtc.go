@@ -62,21 +62,21 @@ func New(o Options) (*Runner, error) {
 	return &Runner{o: o, log: log}, nil
 }
 
-// hostPort returns where an RTSP camera listens. The error never repeats the
-// address: it may hold a password.
+// hostPort returns where go2rtc connects to an RTSP camera: the address's port, or
+// 554 without one, for rtsps too (go2rtc 1.9.14 does so, not the 322 of the RTSPS
+// standard). The probe must test where the stream and the photos go. The error never
+// repeats the address: it may hold a password.
 func hostPort(src string) (string, error) {
 	u, err := url.Parse(src)
 	if err != nil || u.Hostname() == "" {
 		return "", errors.New("invalid address (rtsp://user:password@host/path)")
 	}
-	port := u.Port()
-	switch {
-	case u.Scheme == "rtsp" && port == "":
-		port = "554"
-	case u.Scheme == "rtsps" && port == "":
-		port = "322"
-	case u.Scheme != "rtsp" && u.Scheme != "rtsps":
+	if u.Scheme != "rtsp" && u.Scheme != "rtsps" {
 		return "", fmt.Errorf("scheme %q: use rtsp:// or rtsps://", u.Scheme)
+	}
+	port := u.Port()
+	if port == "" {
+		port = "554"
 	}
 	return net.JoinHostPort(u.Hostname(), port), nil
 }

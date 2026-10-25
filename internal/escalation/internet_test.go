@@ -36,6 +36,24 @@ func TestAnInternetFailureIsRetriedWhenTheUplinkComesBack(t *testing.T) {
 	want(t, "uplink back", sends(e.Handle(Uplink{Now: t0.Add(20 * time.Second), Up: true})), "deputy/app/1")
 }
 
+// Without uplink, the GSM is the only path: a wave whose SMS and calls all failed (no
+// credit, a number unreachable) moves on at once, whether its contacts have the app or
+// not. The app message held for the uplink is still owed, and goes when it returns.
+func TestWithoutUplinkAWaveWhoseGSMAllFailedDoesNotDelayTheNext(t *testing.T) {
+	e := newEsc(t, func(c *Config) {
+		c.Contacts = []Contact{
+			{ID: "owner", Role: RoleOwner, Channels: []Channel{ChannelApp, ChannelSMS}},
+			{ID: "manager", Role: RoleManager, Channels: []Channel{ChannelSMS}},
+		}
+	})
+	e.Handle(Uplink{Now: t0, Up: false})
+	first := raise(e, t0, KindIntrusion)
+	want(t, "wave 1", sends(first), "owner/sms/1")
+	got := sends(e.Handle(Result{Now: t0.Add(3 * time.Second), Key: keyOf(first, "owner", ChannelSMS), Status: ResultFailed}))
+	want(t, "next wave at once", got, "owner/sms/2")
+	want(t, "uplink back", sends(e.Handle(Uplink{Now: t0.Add(time.Minute), Up: true})), "owner/app/2")
+}
+
 // --- alerts that wait for the internet ---------------------------------------------------
 
 func TestSummariesUseTheInternetOnly(t *testing.T) {

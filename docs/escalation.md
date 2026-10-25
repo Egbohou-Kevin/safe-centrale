@@ -214,7 +214,10 @@ réponse » : personne ne l'a pris en charge, l'alerte de la sirène reste bruya
 **Ce qui ne change pas.**
 
 - Acquitter l'alerte de la sirène (« 1 » ou « Je gère » sur elle) ne termine qu'elle, pas
-  l'alarme, qui sonne peut-être encore chez d'autres (décidé le 24 octobre 2026).
+  l'alarme, qui sonne peut-être encore chez d'autres (décidé le 24 octobre 2026). Un
+  « 1 » par SMS ne dit pas à quelle alerte il répond : reçu quand l'alarme et la sirène
+  muette ont été envoyées au contact à quelques minutes d'écart, il acquitte d'abord la
+  sirène muette, et un deuxième « 1 » l'alarme (voir `gsm-gateway.md`, « 1 »).
 - Un désarmement ne termine pas `siren_failed` : il la rend discrète. La sirène reste à
   réparer, et le fait arrive quand même.
 - Un contact qui n'accepte que l'appel ne reçoit pas l'alerte discrète. C'est journalisé,
@@ -381,7 +384,11 @@ consigne du SMS à côté de son propre bouton.
   contacts aient l'application ou non : un relais par GSM qui n'a plus rien à envoyer
   (tous les canaux GSM du contact sont déjà partis, après l'échec d'internet) n'est plus
   attendu. Avant le 25 octobre 2026, ce relais prévu à 60 secondes retenait la vague
-  suivante jusqu'à son délai pour tout contact qui avait l'application. Sans aucune
+  suivante jusqu'à son délai pour tout contact qui avait l'application. De même sans
+  liaison internet : le message internet retenu jusqu'à son retour ne retient pas la
+  vague suivante quand tous les messages GSM de la vague ont échoué. Il reste dû et part
+  au retour de la liaison (corrigé le 25 octobre 2026 après une revue : il retenait la
+  vague suivante jusqu'à son délai, au moment où le GSM venait d'échouer). Sans aucune
   ligne utilisable, la demande attend dans la file de la passerelle, puis échoue à son
   âge maximum (10 minutes pour une intrusion).
 - **Aucun canal ne marche** : la sirène continue et l'incident reste en attente.
@@ -408,7 +415,10 @@ consigne du SMS à côté de son propre bouton.
   rien pour les détecteurs suivants : l'incident ne connaît que le premier. Un feu ou
   une panique pendant une intrusion part quand même, comme une alerte à part.
 - Un maximum de messages par contact et par heure limite le coût et le bruit. Les
-  alertes de type `fire`, `panic` et `siren_failed` ne sont jamais bridées. Pour la
+  alertes moins graves qu'une intrusion (sabotage, codes faux, zone contournée…) n'en
+  prennent que la moitié : un flot de codes faux tapés à l'application ne doit pas
+  laisser une intrusion sans message. Les alertes de type `fire`, `panic` et
+  `siren_failed` ne sont jamais bridées. Pour la
   sirène, c'est le seul message qui dit que le magasin est silencieux : il ne doit pas
   être retenu après les vagues et les relances de l'alarme. Son volume est borné
   autrement : une vague sans relance, une fois par sirène et par alarme.
@@ -512,7 +522,11 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
   lève jamais deux fois la même intrusion (il se tait une fois déclenché) : c'est une
   sécurité, qui ne sert pas aujourd'hui pour les intrusions.
 - **Limite par heure.** 20 messages par contact et par heure (réglable), sauf fire, panic
-  et siren_failed. Un message retenu est journalisé.
+  et siren_failed. Les intrusions peuvent tous les prendre ; les autres alertes bridées
+  la moitié au plus (10), comptée à part, pour qu'il en reste toujours aux intrusions.
+  Un message retenu est journalisé. Corrigé le 25 octobre 2026 après une revue : un
+  flot d'alertes moins graves (codes faux, sabotages) pouvait user la limite avant
+  l'intrusion.
 - **Alertes non urgentes** (résumés, retour du courant, protection dégradée) : internet
   seulement. Si internet est coupé elles attendent son retour. Le retour du courant peut
   partir par GSM après une heure sans internet.

@@ -95,8 +95,13 @@ entrer la centrale).
 
 ## Comportement
 
-- Le tunnel est `open` quand le bastion a accordé le port (ligne `remote forward
-  success` d'OpenSSH).
+- Le tunnel est `open` quand le bastion a accordé le port : la ligne d'OpenSSH qui
+  commence par `debug1: remote forward success for: listen`, et seulement elle. Avant
+  de vérifier la clé d'hôte, OpenSSH montre des textes choisis par le serveur (sa
+  bannière, sa version), derrière un préfixe à lui : n'importe qui répondant à
+  l'adresse du bastion pouvait y écrire ces mots, et faire dire `open` au propriétaire
+  et au cloud pour un tunnel que la clé d'hôte allait refuser (corrigé le 25 octobre
+  2026 après une revue).
 - S'il ne s'ouvre jamais : `failed` / `unreachable`, avec la cause dans le journal
   (refus de connexion, clé refusée, clé d'hôte inconnue…).
 - S'il tombe une fois ouvert (internet coupé) : il est rouvert 10 s plus tard, tant

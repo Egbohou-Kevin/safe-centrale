@@ -90,7 +90,14 @@ un par fichier, dans le dossier `profiles_dir` (exemples dans `config/profiles/`
   mouvement » : Zigbee2MQTT le publie sur sa propre minuterie, environ 90 s après le
   mouvement, avec le `last_seen` du mouvement (voir « Cache rejoué par Zigbee2MQTT »).
   Sans `rest`, ce retour au repos serait écarté, et le détecteur resterait « detected »
-  pour toujours : ses mouvements suivants ne changeraient plus rien.
+  pour toujours : ses mouvements suivants ne changeraient plus rien. Cette minuterie
+  n'est qu'en mémoire : un Zigbee2MQTT arrêté dans les 90 s (plantage, mise à jour,
+  coupure) la perd, et son cache rejoué au démarrage dit encore « detected ». Un état
+  qui a un `rest` et en reste écarté `RestAfter` (5 minutes) sans aucun message de
+  l'appareil revient donc de lui-même à son repos, publié comme un changement. Un
+  mouvement qui dure fait parler l'appareil (un message par minute environ) : son état
+  reste. Corrigé le 25 octobre 2026 après une revue : le « detected » gardé ne changeait
+  plus jamais, et déclenchait l'alarme au redémarrage suivant de la centrale armée.
 - Une commande envoie `payload` ; la chaîne `"{duration_s}"` y est remplacée par la
   durée. Avec `confirm` (`capability`, `value`), la commande n'est `done` que quand
   l'appareil rapporte cet état ; sans, elle l'est dès l'envoi.
@@ -279,8 +286,12 @@ est enregistré chez nous » (voir `architecture.md`).
   comparée, sans quoi chaque nouveau message, une porte qui s'ouvre comme une fumée,
   serait écarté jusqu'à ce que l'horloge la rattrape (pour un appareil hors ligne,
   même après un redémarrage). L'adaptateur suit donc l'horloge, en arrière aussi, et
-  ramène à sa durée normale une attente qu'elle aurait repoussée (relance d'une
-  commande, fenêtre d'appairage). Le réglage de Zigbee2MQTT n'est pas changé : une clé
+  recule de même chaque attente en cours (relance d'une commande, fenêtre d'appairage
+  et son renouvellement, retour au repos) : elle garde ce qui lui restait. Après un
+  redémarrage, une attente n'est jamais plus loin que sa durée entière. Corrigé le 25
+  octobre 2026 après une revue : une fenêtre d'appairage ramenée à sa durée entière
+  disait « appairage ouvert » sur un réseau que Zigbee2MQTT avait déjà fermé, et son
+  morceau suivant, demandé en retard, laissait le réseau fermé entre les deux. Le réglage de Zigbee2MQTT n'est pas changé : une clé
   que sa version refuserait l'empêcherait de démarrer.
 - **`battery` et `link`** : publiés seulement quand la valeur change de façon utile
   (voir `contract.md`).

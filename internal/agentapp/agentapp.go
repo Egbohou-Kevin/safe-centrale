@@ -221,13 +221,18 @@ func (a *App) HandleLocal(m inbox.Message) bool {
 	return a.submit(func(now time.Time) agent.Input { return agent.Local{Now: now, Topic: m.Topic, Payload: m.Payload} })
 }
 
-// HandleCloud takes a message from the cloud's broker, like HandleLocal.
+// HandleCloud takes a message from the cloud's broker, like HandleLocal. The clock as
+// it is goes with it: after the clock was set back, the loop's time stands still until
+// the clock catches up, and the expiry of a fresh order from the app is judged on the
+// clock that stamped it (see agent.Cloud), as the hub judges it.
 func (a *App) HandleCloud(m inbox.Message) bool {
 	if len(m.Payload) > maxPayload {
 		a.log.Warn("refusing an oversized message from the cloud", "topic", m.Topic, "bytes", len(m.Payload))
 		return true
 	}
-	return a.submit(func(now time.Time) agent.Input { return agent.Cloud{Now: now, Topic: m.Topic, Payload: m.Payload} })
+	return a.submit(func(now time.Time) agent.Input {
+		return agent.Cloud{Now: now, Wall: a.deps.Clock.Now(), Topic: m.Topic, Payload: m.Payload}
+	})
 }
 
 // LinkChanged is told when the connection to the cloud comes up or goes down, with

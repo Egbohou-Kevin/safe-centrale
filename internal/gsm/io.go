@@ -60,7 +60,11 @@ type Request struct {
 	Contact  string
 	Channel  Channel
 	Priority Priority
-	Text     string
+	// Secondary marks an alert that belongs to an alarm told alongside it, to the same
+	// people (a silent siren): acknowledging it ends only it, less than the alarm, so
+	// a "1" that may be meant for either ends it first (see ackTarget).
+	Secondary bool
+	Text      string
 }
 
 // Outcome is what a line did with an Execute. MsgRef is the operator's reference
@@ -89,6 +93,10 @@ type Incoming struct {
 	Line string
 	From string // as the modem gives it
 	Text string
+	// Sent is when the operator's service centre took the SMS (its time stamp), zero
+	// if unknown: a reply held by the network, or stored while the gateway was down,
+	// may be read long after (see incoming).
+	Sent time.Time
 }
 
 // Probe is the answer to a CheckLine.

@@ -133,6 +133,42 @@ func TestZigbee2MQTTsOwnReturnToRestIsHeard(t *testing.T) {
 	}
 }
 
+// Zigbee2MQTT keeps the timer that says "no movement" in memory: stopped within the
+// 90 s (a crash, an update), it loses it, and its cache replays "detected" with the
+// movement's last_seen. Nothing would ever say "no movement": the next movement would
+// change nothing, and the stale "detected" would set off a restart while armed. Unheard
+// for RestAfter, the sensor goes back to rest by the adapter's own word.
+func TestAMotionWhoseReturnToRestIsLostGoesBackToRest(t *testing.T) {
+	h := newHarness(t, withMotion)
+	h.add("dev_pir", ieeeMotion, "RTCGQ11LM")
+	h.now = t0.Add(time.Minute)
+	moved := h.now
+	h.heardAt("dev_pir", moved, map[string]any{"occupancy": true})
+	h.now = h.now.Add(30 * time.Second)
+	h.do(Bridge{Now: h.now})
+	h.now = h.now.Add(10 * time.Second)
+	h.do(Bridge{Now: h.now, Online: true})
+	h.heardAt("dev_pir", moved, map[string]any{"occupancy": true}) // the cache
+	if out := h.advance(h.n.cfg.RestAfter - 50*time.Second); len(all[Changed](out)) != 0 {
+		t.Fatalf("not before RestAfter: %+v", out)
+	}
+	out := h.advance(10 * time.Second)
+	if ch := all[Changed](out); len(ch) != 1 || ch[0].Value != "clear" || !ch[0].Notify || !ch[0].State {
+		t.Fatalf("back to rest, announced: %+v", out)
+	}
+	h.now = h.now.Add(3 * time.Hour)
+	if ch := all[Changed](h.heardAt("dev_pir", h.now, map[string]any{"occupancy": true})); len(ch) != 1 || ch[0].Value != "detected" {
+		t.Fatalf("the next movement is heard: %+v", ch)
+	}
+	// A movement that goes on (a message every minute or so) keeps the sensor detected.
+	for range 10 {
+		h.now = h.now.Add(time.Minute)
+		if ch := all[Changed](h.heardAt("dev_pir", h.now, map[string]any{"occupancy": true})); len(ch) != 0 {
+			t.Fatalf("still moving: %+v", ch)
+		}
+	}
+}
+
 // The clock is set back (an RTC running fast, corrected by NTP): Zigbee2MQTT's
 // last_seen follows it, and the devices' new messages say they were heard before the
 // last ones. They are news all the same; for an offline device, after a restart too.

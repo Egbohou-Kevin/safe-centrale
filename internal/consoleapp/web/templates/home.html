@@ -21,7 +21,7 @@
 {{if .Findings}}<section>
   <h2>À vérifier</h2>
   <ul>{{range .Findings}}<li class="{{if eq .Level "problem"}}problem{{else}}warn{{end}}">{{if .DeviceID}}<span class="id">{{.DeviceID}}</span> : {{end}}{{.Text}}</li>{{end}}</ul>
-</section>{{else if .Known}}<section class="ok">Tout est en ordre : chaque appareil a un usage, au moins une sirène.</section>{{end}}
+</section>{{else if and .Known (not .SiteErr)}}<section class="ok">Tout est en ordre : chaque appareil a un usage, au moins une sirène.</section>{{end}}
 
 <section>
   <h2>Appareils</h2>

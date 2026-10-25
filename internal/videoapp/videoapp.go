@@ -112,6 +112,10 @@ type Deps struct {
 	Camera    Photographer
 	Photos    PhotoStore
 	NewID     func() string
+	// ClockSynced says whether NTP vouches for the system clock, known false where
+	// it cannot tell; nil for never. Only a clock vouched for takes back a month of
+	// usage saved while the clock ran ahead.
+	ClockSynced func() (synced, known bool)
 	// Logger: never given a request's target nor token.
 	Logger *slog.Logger
 }
@@ -173,7 +177,7 @@ func New(cfg Config, deps Deps) (*App, error) {
 		Name: keyVideo, Clock: deps.Clock, Store: deps.Store, Logger: log,
 		Core: driver.Core[video.Input, video.Action, video.Snapshot]{
 			Handle: a.core.Handle, NextWake: a.core.NextWake, Snapshot: a.core.Snapshot, Restore: a.core.Restore,
-			Tick: func(t time.Time) video.Input { return video.Tick{Now: t} },
+			Tick: func(t time.Time) video.Input { return video.Tick{Now: t, Synced: a.synced()} },
 		},
 		Dispatch: a.dispatch,
 		OnChange: func(_ context.Context, now time.Time) { a.publishStatus(now) },
@@ -182,6 +186,15 @@ func New(cfg Config, deps Deps) (*App, error) {
 		return nil, err
 	}
 	return a, nil
+}
+
+// synced says whether NTP vouches for the system clock.
+func (a *App) synced() bool {
+	if a.deps.ClockSynced == nil {
+		return false
+	}
+	synced, known := a.deps.ClockSynced()
+	return synced && known
 }
 
 // Subscriptions lists what the service listens to: the cloud's orders, and the

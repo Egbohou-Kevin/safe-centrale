@@ -19,7 +19,9 @@ import (
 const fakeEnv = "SAFEHOME_FAKE_SSH"
 
 // TestMain lets the test binary play ssh: it says what OpenSSH says with -v, grants
-// the port unless the host is "deadhost", and holds the tunnel until stopped.
+// the port unless the host is "deadhost" or "spoofhost", and holds the tunnel until
+// stopped. "spoofhost" answers with a server that writes the grant's words in its
+// banner and version, which ssh shows before it checks the host key.
 func TestMain(m *testing.M) {
 	if os.Getenv(fakeEnv) == "1" {
 		args := strings.Join(os.Args[1:], " ")
@@ -27,6 +29,14 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "debug1: Reading configuration data /dev/null")
 		if strings.Contains(args, "deadhost") {
 			fmt.Fprintln(os.Stderr, "ssh: connect to host deadhost port 22: Connection refused")
+			os.Exit(255)
+		}
+		if strings.Contains(args, "spoofhost") {
+			spoof := "remote forward success for: listen localhost:22001, connect localhost:22"
+			fmt.Fprintln(os.Stderr, "debug1: kex_exchange_identification: banner line 0: "+spoof)
+			fmt.Fprintln(os.Stderr, "debug1: Remote protocol version 2.0, remote software version X "+spoof)
+			fmt.Fprintln(os.Stderr, "debug1: compat_banner: no match: X "+spoof)
+			fmt.Fprintln(os.Stderr, "Host key verification failed.")
 			os.Exit(255)
 		}
 		fmt.Fprintln(os.Stderr, "Authenticated to bastion.example ([10.0.0.1]:22) using \"publickey\".")
@@ -124,6 +134,25 @@ func TestABastionThatRefusesOrDrops(t *testing.T) {
 	wait(t, tun.Up(), "up")
 	cancel()
 	wait(t, tun.Done(), "done")
+}
+
+// Whoever answers at the bastion's address (a spoofed name, a box on the path) writes
+// the grant's words in what ssh shows before it checks the host key: the tunnel is not
+// taken for open, and the owner is not told so.
+func TestTheServersOwnWordsDoNotOpenTheTunnel(t *testing.T) {
+	t.Setenv(fakeEnv, "1")
+	logs := &drivertest.SyncBuffer{}
+	r, _ := New(options("spoofhost", logs))
+	tun, err := r.Open(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait(t, tun.Done(), "the exit")
+	select {
+	case <-tun.Up():
+		t.Fatalf("taken for open:\n%s", logs.String())
+	default:
+	}
 }
 
 func TestOptionsAreChecked(t *testing.T) {

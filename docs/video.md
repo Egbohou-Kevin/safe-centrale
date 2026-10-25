@@ -95,7 +95,11 @@ images des caméras, sans attendre personne :
   donne toutes d'un coup à son retour, parfois des heures plus tard. Prises alors,
   les photos montreraient la boutique telle qu'elle est, personnel et clients compris,
   rangées comme celles de l'intrusion, et rempliraient le plafond de l'heure dont une
-  vraie alarme a besoin. Elles ne comptent pas dans ce plafond ;
+  vraie alarme a besoin. Elles ne comptent pas dans ce plafond. L'âge est mesuré sur
+  l'horloge système telle qu'elle est, celle sur laquelle le moteur date l'alarme :
+  après un recul de l'horloge, le temps du service s'arrête jusqu'à ce qu'elle le
+  rattrape, et une alarme en direct aurait paru vieille de tout le recul (corrigé le
+  25 octobre 2026 après une revue : elle n'avait pas ses photos) ;
 - `"photos": false` dans `video.json` les coupe.
 
 Les images sont prises même au-delà du plafond du mois : quelques centaines de
@@ -142,6 +146,10 @@ dans `contract.md`. Il ne peut toujours pas commander les appareils ni l'appaira
 - **`push_url` en rtmps seulement**, sans identifiants ni requête dans l'adresse : le
   site y ajoute le jeton en `?token=` au moment d'envoyer. Ni l'adresse complète ni le
   jeton n'apparaissent dans les journaux, même quand go2rtc les écrit dans les siens.
+  Le relais y est un nom d'hôte, jamais une adresse IP : go2rtc ne vérifie pas le
+  certificat d'un relais donné par son adresse, et n'importe qui sur le chemin lirait
+  alors le jeton et la vidéo. Le service refuse une telle demande (corrigé le 25 octobre
+  2026 après une revue).
 - **Adresses des caméras** (avec leur mot de passe) seulement dans
   `/etc/safehome/video.json`, lisible seulement par le compte `safehome` (celui de
   tous nos programmes), et dans le dossier privé
@@ -198,14 +206,22 @@ consommer les données mobiles du client.
   disque et repart de zéro le 1er de chaque mois (heure UTC, celle du Togo), et
   seulement dans un mois plus tard : une horloge reculée au démarrage (module
   d'horloge mort, corrigé ensuite par le réseau) n'efface pas ce que le client a déjà
-  payé ce mois-ci. Celle d'une session en cours rejoint le disque tous les 10 Mo et à
+  payé ce mois-ci. Seule une horloge que NTP garantit (`sysclock`, comme `clock_ok`)
+  ramène à un mois plus tôt : le mois gardé venait alors d'une horloge en avance, qui
+  aurait gardé la consommation des vrais mois sous ce mois-là jusqu'à sa venue, des
+  années plus tard peut-être, et refusé chaque session (`quota`) une fois le plafond
+  atteint. Le vrai mois reprend la consommation d'avant le saut de l'horloge, plus ce
+  qui a été consommé depuis (corrigé le 25 octobre 2026 après une revue). Celle d'une session en cours rejoint le disque tous les 10 Mo et à
   la fin de la session, pas à chaque comptage (toutes les 2 s, la carte SD s'userait) :
   un arrêt brutal en perd moins de 10 Mo. Les sessions, elles, ne sont pas gardées :
   après un redémarrage du service, leurs flux sont arrêtés et le relais le voit.
 - **Le comptage** : les octets de vidéo et de son que go2rtc envoie, lus toutes les
   2 secondes. L'enveloppe RTMP et TLS n'est pas comptée (quelques pour cent en plus,
   à mesurer sur le kit).
-- **Les caméras** sont testées toutes les 5 minutes (connexion à leur port RTSP) ;
+- **Les caméras** sont testées au démarrage du service puis toutes les 5 minutes
+  (connexion à leur port RTSP, 554 sans port dans l'adresse, en `rtsps` aussi, comme
+  go2rtc ; avant le 25 octobre 2026, le test visait 322 en `rtsps` et disait joignable
+  ou non une autre porte que celle du flux) ;
   `video.status` dit lesquelles répondent.
 - **Une caméra en H.265** est refusée comme injoignable (`camera_unreachable`), avec
   la cause dans le journal : go2rtc ne pousse que du H.264 en RTMP.

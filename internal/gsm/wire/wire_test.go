@@ -22,6 +22,10 @@ func TestRequest(t *testing.T) {
 		if !ok || r.Priority != want || r.Channel != gsm.ChannelSMS || r.ID != "id1" || r.Contact != "owner" || r.Text != "x" || r.Incident != "i" || !r.Asked.Equal(now) || !r.Now.IsZero() {
 			t.Errorf("%s: %+v %v", kind, r, ok)
 		}
+		// The silent siren's alert alone is secondary to the alarm told with it.
+		if r.Secondary != (kind == contract.AlertSirenFailed) {
+			t.Errorf("%s: secondary %v", kind, r.Secondary)
+		}
 	}
 	if r, ok := Request(contract.AlertRequestData{Kind: contract.AlertFire, Contact: "c", Channel: contract.ChannelCall}, "id", now); !ok || r.Channel != gsm.ChannelCall {
 		t.Fatalf("%+v", r)

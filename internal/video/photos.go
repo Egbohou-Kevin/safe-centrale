@@ -27,7 +27,11 @@ func (v *Service) alarm(a Alarm) []Action {
 	if over := len(v.s.Photographed) - photoMemory; over > 0 {
 		v.s.Photographed = slices.Delete(v.s.Photographed, 0, over)
 	}
-	if age := a.Now.Sub(a.At); !a.At.IsZero() && age > photoLate {
+	arrived := a.Now
+	if !a.Wall.IsZero() {
+		arrived = a.Wall // the clock At was written on, set back or not
+	}
+	if age := arrived.Sub(a.At); !a.At.IsZero() && age > photoLate {
 		return []Action{NoPhotos{Incident: a.Incident, Why: fmt.Sprintf("the alarm is %s old: photos now would not show it", age.Round(time.Second))}}
 	}
 	for i, t := range v.s.PhotosAt {

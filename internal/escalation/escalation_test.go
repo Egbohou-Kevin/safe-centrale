@@ -380,6 +380,32 @@ func TestASilentSirenTellsTheFirstContactAndTheGuardOnce(t *testing.T) {
 	}
 }
 
+// A keypad tried every ten minutes raises an auth_failed alert each time, a new
+// incident, four messages to the first contact with every channel: within the hour
+// they would use up the limit, and the intrusion that follows would reach the owner
+// by nothing. The alerts below an intrusion take half the limit at most.
+func TestLesserAlertsLeaveTheIntrusionItsMessages(t *testing.T) {
+	e := newEsc(t, func(c *Config) {
+		c.Contacts = []Contact{
+			{ID: "owner", Role: RoleOwner, Channels: []Channel{ChannelApp, ChannelWhatsApp, ChannelSMS, ChannelCall}},
+			{ID: "guard", Role: RoleGuard, Channels: []Channel{ChannelSMS, ChannelCall}},
+		}
+	})
+	for i := range 6 {
+		at := t0.Add(time.Duration(i) * 10 * time.Minute)
+		e.Handle(Raise{Now: at, Incident: fmt.Sprintf("auth%d", i), Kind: KindAuthFailed, Urgency: UrgencyHigh})
+		tick(e, at.Add(time.Minute)) // the GSM doubles the unanswered internet messages
+	}
+	at := t0.Add(52 * time.Minute)
+	got := sends(e.Handle(Raise{Now: at, Incident: "intrusion", Kind: KindIntrusion, Urgency: UrgencyHigh}))
+	if !slices.Contains(got, "owner/app/1") || !slices.Contains(got, "owner/whatsapp/1") {
+		t.Fatalf("the intrusion reaches the owner: %v", got)
+	}
+	if got := sends(tick(e, at.Add(time.Minute))); !slices.Contains(got, "owner/sms/1") || !slices.Contains(got, "owner/call/1") {
+		t.Fatalf("and its GSM double too: %v", got)
+	}
+}
+
 func TestFireAndPanicAreNeverThrottled(t *testing.T) {
 	for _, kind := range []AlertKind{KindFire, KindPanic} {
 		e := newEsc(t, func(c *Config) { c.MaxPerHour = 1 })

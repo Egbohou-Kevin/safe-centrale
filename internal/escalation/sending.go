@@ -127,21 +127,39 @@ func (e *Escalation) send(in *IncidentSnap, ct Contact, ch Channel, round *Round
 // may go. Fire and panic are never held back, and do not count. Nor is a silent
 // siren: it is the one message that says the shop is silent, it must not be held
 // back by the alarm's own waves and reminders, and it is bounded on its own (one
-// wave, once per siren and per alarm).
+// wave, once per siren and per alarm). An intrusion may use the whole limit; the other
+// alerts (a tamper, wrong codes, the faults) half of it at most, counted apart too: a
+// keypad tried every ten minutes, or covers opened one after the other, must not use
+// up the messages the intrusion that follows needs to reach the owner.
 func (e *Escalation) allow(kind AlertKind, contact string, at time.Time) bool {
 	if kind == KindFire || kind == KindPanic || kind == KindSirenFailed {
 		return true
 	}
+	recent := lastHour(e.s.Recent, contact, at)
+	lesser := lastHour(e.s.Lesser, contact, at)
+	if len(recent) >= e.cfg.MaxPerHour || kind != KindIntrusion && len(lesser) >= max(e.cfg.MaxPerHour/2, 1) {
+		return false
+	}
+	e.s.Recent[contact] = append(recent, at)
+	if kind != KindIntrusion {
+		e.s.Lesser[contact] = append(lesser, at)
+	}
+	return true
+}
+
+// lastHour drops from sent the messages to contact older than an hour, and returns
+// those left.
+func lastHour(sent map[string][]time.Time, contact string, at time.Time) []time.Time {
 	var recent []time.Time
-	for _, t := range e.s.Recent[contact] {
+	for _, t := range sent[contact] {
 		if at.Sub(t) < time.Hour {
 			recent = append(recent, t)
 		}
 	}
-	if len(recent) >= e.cfg.MaxPerHour {
-		e.s.Recent[contact] = recent
-		return false
+	if len(recent) == 0 {
+		delete(sent, contact)
+	} else {
+		sent[contact] = recent
 	}
-	e.s.Recent[contact] = append(recent, at)
-	return true
+	return recent
 }

@@ -38,8 +38,8 @@
     },
     "push_url": {
       "type": "string",
-      "pattern": "^rtmps://[^?#]+$",
-      "description": "Relais du cloud où envoyer le flux (RTMPS, sans requête : le jeton est ajouté en ?token=)"
+      "pattern": "^rtmps://[^?#/\\[]*[A-Za-z][^?#/]*(/[^?#]*)?$",
+      "description": "Relais du cloud où envoyer le flux (RTMPS, sans requête : le jeton est ajouté en ?token=). L'hôte est un nom, jamais une adresse IP : go2rtc ne vérifie aucun certificat pour une adresse"
     },
     "token": {
       "type": "string",

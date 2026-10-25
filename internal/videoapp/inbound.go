@@ -66,7 +66,7 @@ func (a *App) alarmEvent(m inbox.Message) {
 		return
 	}
 	if a.seen.FirstTime(env.ID) {
-		a.submit(func(now time.Time) video.Input { return videowire.Alarm(d, env.TS.Time, now) })
+		a.submit(func(now time.Time) video.Input { return videowire.Alarm(d, env.TS.Time, now, a.deps.Clock.Now()) })
 	}
 }
 

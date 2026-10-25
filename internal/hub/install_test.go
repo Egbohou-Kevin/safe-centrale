@@ -62,22 +62,27 @@ func TestQuietIsTheEnginesOwnWord(t *testing.T) {
 	r.withInstaller()
 	r.start()
 	ctx := context.Background()
-	if !r.hub.Quiet(ctx) {
+	var asked []string
+	quiet := func(state string) bool { asked = append(asked, state); return state != contract.StateArming }
+	if !r.hub.Quiet(ctx, quiet) {
 		t.Fatal("disarmed is quiet")
 	}
 	r.openInstall()
-	if r.hub.Quiet(ctx) {
+	if r.hub.Quiet(ctx, quiet) {
 		t.Fatal("the installation mode is no quiet moment")
 	}
 	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_owner") // closes the mode
 	r.mustBe(engine.ModeArming)
 	drivertest.WaitFor(t, "the mode closed", func() bool { return r.lastInstall().Status == contract.InstallClosed })
-	if r.hub.Quiet(ctx) {
-		t.Fatal("an exit delay is no quiet moment")
+	if r.hub.Quiet(ctx, quiet) {
+		t.Fatal("the engine's state is asked")
+	}
+	if want := []string{contract.StateDisarmed, contract.StateDisarmed, contract.StateArming}; !slices.Equal(asked, want) {
+		t.Fatalf("the states asked: %v, want %v", asked, want)
 	}
 	done, cancel := context.WithCancel(ctx)
 	cancel()
-	if r.hub.Quiet(done) {
+	if r.hub.Quiet(done, func(string) bool { return true }) {
 		t.Fatal("no answer, no quiet moment")
 	}
 }

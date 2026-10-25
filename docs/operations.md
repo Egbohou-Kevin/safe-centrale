@@ -38,8 +38,9 @@ La centrale ignore le code d'une personne qui n'est plus contact du site (journa
 sans le code). `codes set` refuse un utilisateur qui n'est pas un contact (ni
 `installer`) ; `codes list` signale ces codes restants, à retirer avec `codes remove`
 ou depuis la console (« Codes d'anciens contacts »). Les fichiers d'état écrits par un
-outil lancé avec `sudo` prennent le propriétaire du dossier ; sinon l'outil échoue en
-le disant (il faut alors le lancer avec `sudo -u safehome`).
+outil lancé avec `sudo` prennent le propriétaire du dossier, le verrou des codes
+(`codes.lock`) aussi ; sinon l'outil échoue en le disant (il faut alors le lancer avec
+`sudo -u safehome`).
 
 L'utilisateur `installer` porte le **code installateur**. Tapé au clavier puis
 « désarmer », alarme désarmée, il ouvre le mode installation pour 30 minutes, et donc la
@@ -144,7 +145,10 @@ installation dans `systeme.md`, fichiers dans `deploy/`.
 4. Quand les abonnements sont actifs, la **fenêtre de démarrage** (`boot_window`, 2 s)
    commence : la centrale écoute les états retenus des appareils, puis dit au moteur à
    quoi ressemble le site (une porte restée ouverte est connue avant le premier
-   événement). Si la liaison ne vient pas en 30 s, la centrale écoute quand même.
+   événement), chaque état daté de son début (`since`). Le moteur écarte un état plus
+   ancien que ce qu'il avait entendu : après une coupure, Mosquitto rend les états de sa
+   dernière sauvegarde, vieux de 5 minutes au plus (voir `engine.md`, « Persistance et
+   redémarrage »). Si la liaison ne vient pas en 30 s, la centrale écoute quand même.
 5. Le moteur reprend où il s'était arrêté (armé reste armé), le premier état retenu, le
    premier message de santé et la liste des appareils (`system.devices`) partent.
 
@@ -529,7 +533,14 @@ quand même le fichier à cet utilisateur.
 celui qu'elle a chargé à chaque état de l'alarme, à chaque ouverture ou fermeture du
 mode installation et à chaque configuration reçue. Une modification faite avec
 `safehome-install` hors mode installation est ainsi appliquée au prochain moment calme
-(alarme désarmée ou armée, mode fermé) : la centrale redémarre. Pour l'appliquer tout
+(alarme désarmée, ou pendant le délai de sortie, mode fermé) : la centrale redémarre.
+Pas une fois armée : l'armement fait sur les anciennes zones n'a jamais vu les nouveaux
+appareils, et une fenêtre d'une nouvelle zone restée ouverte serait prise au
+redémarrage pour une fenêtre ouverte pendant l'arrêt, une sirène dès l'armement.
+Redémarrée pendant le délai de sortie, la centrale le finit sur les nouvelles zones :
+cette fenêtre est contournée et signalée, comme à la fin de tout délai de sortie. Des
+zones changées trouvées armées attendent le prochain désarmement. Corrigé le 25
+octobre 2026 après une revue. Pour l'appliquer tout
 de suite, la redémarrer (`sudo systemctl restart safehome-hub`). L'état est conservé :
 une alarme armée le reste. Avec la console locale, la centrale redémarre d'elle-même à
 la fin du mode installation.

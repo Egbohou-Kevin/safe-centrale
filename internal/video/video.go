@@ -125,10 +125,13 @@ func (p PhotoPolicy) Validate() error {
 // Snapshot is the state saved after every change. The sessions are not in it: a
 // restarted service has lost their streams, and the relay sees them end.
 type Snapshot struct {
-	Month     string          `json:"month"` // "2026-10", in UTC (Togo's time)
-	Used      int64           `json:"used"`  // bytes sent this month
-	Reachable map[string]bool `json:"reachable"`
-	NextProbe time.Time       `json:"next_probe"`
+	Month string `json:"month"` // "2026-10", in UTC (Togo's time)
+	Used  int64  `json:"used"`  // bytes sent this month
+	// Prior is the usage of PriorMonth, the month before Month: given back if Month
+	// came from a clock that ran ahead (see month).
+	Prior      int64           `json:"prior,omitempty"`
+	PriorMonth string          `json:"prior_month,omitempty"`
+	Reachable  map[string]bool `json:"reachable"`
 	// Photographed lists the last alarms photographed, PhotosAt when, to keep to
 	// PerHour.
 	Photographed []string    `json:"photographed,omitempty"`
@@ -155,6 +158,10 @@ type Service struct {
 	// the file on the SD card every 2 s of viewing. They join it every usedStep, and
 	// when a session ends; a crash loses less than usedStep of the count.
 	unsaved int64
+	// nextProbe is when the cameras are checked next. It is not saved: they are
+	// checked at once on each start, what they answered before is old news, and a
+	// time saved while the clock ran ahead would hold every check until then.
+	nextProbe time.Time
 }
 
 // usedStep is how many bytes of a session under way join the saved usage at once.
@@ -192,7 +199,7 @@ var asap = time.Unix(0, 0).UTC()
 
 // NextWake returns when the core wants a tick.
 func (v *Service) NextWake() time.Time {
-	next := v.s.NextProbe
+	next := v.nextProbe
 	if next.IsZero() {
 		return asap
 	}
@@ -227,14 +234,10 @@ func (v *Service) State() State {
 	return st
 }
 
-// Handle processes one input. The usage starts again from zero in a later month
-// only: a clock set back (a dead clock module at boot, corrected later by the
-// network) must not wipe the usage the client already paid for this month, twice.
+// Handle processes one input.
 func (v *Service) Handle(in Input) []Action {
 	now := in.at()
-	if month := now.UTC().Format("2006-01"); month > v.s.Month {
-		v.s.Month, v.s.Used, v.unsaved = month, 0, 0
-	}
+	v.month(in)
 	switch in := in.(type) {
 	case Request:
 		return v.request(in)
@@ -303,11 +306,6 @@ func shortest(a, b time.Duration) time.Duration {
 func (v *Service) overQuota() bool { return v.cfg.Quota > 0 && v.used() >= v.cfg.Quota }
 
 // used is the month's usage, sessions under way included.
-func (v *Service) used() int64 { return v.s.Used + v.unsaved }
-
-// keepUsed puts the bytes counted since the last save into the saved usage.
-func (v *Service) keepUsed() { v.s.Used, v.unsaved = v.used(), 0 }
-
 func (v *Service) progress(p Progress) []Action {
 	s, ok := v.sessions[p.Session]
 	if !ok || p.Bytes <= s.bytes {
@@ -343,8 +341,8 @@ func (v *Service) tick(now time.Time) []Action {
 			acts = append(acts, v.end(id, now, RelayUnreachable)...)
 		}
 	}
-	if !now.Before(v.s.NextProbe) {
-		v.s.NextProbe = now.Add(v.cfg.ProbeEvery)
+	if !now.Before(v.nextProbe) {
+		v.nextProbe = now.Add(v.cfg.ProbeEvery)
 		acts = append(acts, CheckCameras{})
 	}
 	return acts

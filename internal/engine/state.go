@@ -21,7 +21,7 @@ type Incident struct {
 	StartedAt time.Time `json:"started_at"`
 	Cycle     int       `json:"cycle"`     // current siren cycle, starting at 1
 	SirenOn   bool      `json:"siren_on"`  // false during the pause between two cycles
-	ReturnTo  Mode      `json:"return_to"` // mode to go back to when the incident ends
+	ReturnTo  Mode      `json:"return_to"` // mode to go back to when the incident ends: disarmed, arming or armed
 }
 
 // Schedule is the automatic arming planned for the next closing time. It exists
@@ -69,6 +69,12 @@ type Snapshot struct {
 	// the incident of its alert: they ring in turn once it is over, if one of their
 	// devices is still in alarm (see waitFor and wake).
 	Waiting []Incident `json:"waiting,omitempty"`
+	// Sounding are the devices of the fire (or the panic that sounds the siren) that
+	// rings still in alarm: its cause, and those of its kind set off while it rings.
+	// Another device of its kind joins it while one of them is; once all went back to
+	// rest, one set off again is a new fire, which alerts and waits its turn (see
+	// joins).
+	Sounding []Cause `json:"sounding,omitempty"`
 	// Checking are the orders whose code is being checked, with the time it was typed:
 	// the end of an entry delay waits for them (see CodeEntered). A restart drops them.
 	Checking map[string]time.Time `json:"checking,omitempty"`
@@ -76,6 +82,11 @@ type Snapshot struct {
 	// Devices whose tamper is active and was reported, so that a restart does not
 	// report it again.
 	Tampered map[string]bool `json:"tampered"`
+	// Heard is, per sensor ("dev_door/contact"), when the engine took the last state of
+	// a door or a window, a smoke detector or a tamper: Boot gives no credit to a
+	// retained state older than that, which the broker may give back after an unclean
+	// stop (see older). Its Open and Tampered move with each change anyway.
+	Heard map[string]time.Time `json:"heard,omitempty"`
 
 	// Memory of the last alarm, kept after the system goes back to armed.
 	LastTrigger   *Cause    `json:"last_trigger,omitempty"`
@@ -97,10 +108,12 @@ func (s Snapshot) clone() Snapshot {
 	s.Bypassed = maps.Clone(s.Bypassed)
 	s.Open = maps.Clone(s.Open)
 	s.Tampered = maps.Clone(s.Tampered)
+	s.Heard = maps.Clone(s.Heard)
 	s.Failures = slices.Clone(s.Failures)
 	s.TimedOut = slices.Clone(s.TimedOut)
 	s.Raised = slices.Clone(s.Raised)
 	s.Waiting = slices.Clone(s.Waiting)
+	s.Sounding = slices.Clone(s.Sounding)
 	s.Checking = maps.Clone(s.Checking)
 	s.EntryCause = clonePtr(s.EntryCause)
 	s.Incident = clonePtr(s.Incident)

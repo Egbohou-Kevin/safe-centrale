@@ -135,15 +135,19 @@ func (r *Runner) Open(ctx context.Context) (*Tunnel, error) {
 }
 
 // read follows what ssh says (-v): the line that grants the port means the tunnel is
-// up. Its warnings and errors go to the logs; its debug chatter does not. What the
-// scanner cannot take (a line too long) is drained, so that ssh never blocks on it.
+// up. Only ssh's own line counts, from its start: before it checks the host key, ssh
+// shows text the server chose (its banner, its version), behind a prefix of its own
+// and on one line (a banner cannot hold a line break), and whoever answers at the
+// bastion's address could write the grant's words there. Its warnings and errors go to
+// the logs; its debug chatter does not. What the scanner cannot take (a line too long)
+// is drained, so that ssh never blocks on it.
 func (t *Tunnel) read(r io.Reader, log *slog.Logger) {
 	defer io.Copy(io.Discard, r)
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		switch {
-		case strings.Contains(line, "remote forward success for: listen"):
+		case strings.HasPrefix(line, "debug1: remote forward success for: listen"):
 			log.Info("the bastion granted the tunnel", "line", line)
 			t.upOnce.Do(func() { close(t.up) })
 		case strings.HasPrefix(line, "Authenticated to "):

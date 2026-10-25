@@ -79,3 +79,46 @@ func TestALiveSessionSavesItsUsageInSteps(t *testing.T) {
 		t.Fatalf("saved %d at the end, want %d", h.v.Snapshot().Used, sent)
 	}
 }
+
+// The hub boots with its clock years ahead (a clock module set wrong), and the usage
+// starts again in that month. Once NTP vouches for the clock set right, the month is
+// the real one again, with what the client used in it before and since: the allowance
+// still holds, and starts again at the real next month, not years later.
+func TestAMonthSetAheadIsTakenBackOnceTheClockIsVouchedFor(t *testing.T) {
+	h := newHarness(t, func(c *Config) { mobile(c); c.Quota = 1_000_000 })
+	h.request("s1", "cam_caisse", 0)
+	h.progress("s1", 960_000)
+	h.v.Handle(Stop{Now: h.now, Session: "s1"})
+	h = h.restarted(t0.AddDate(3, 0, 0))
+	h.request("s2", "cam_caisse", 0)
+	h.progress("s2", 50_000)
+	h.v.Handle(Stop{Now: h.now, Session: "s2"})
+	h = h.restarted(t0.Add(time.Hour)) // NTP sets the clock right
+	h.v.Handle(Tick{Now: h.now})
+	if used := h.v.State().Used; used != 50_000 {
+		t.Fatalf("a clock not vouched for moves no month back: used %d", used)
+	}
+	h.v.Handle(Tick{Now: h.now, Synced: true})
+	if r := only(t, h.request("s3", "cam_caisse", 0)); r.Reason != Quota || h.v.State().Used != 1_010_000 {
+		t.Fatalf("%+v, used %d", r, h.v.State().Used)
+	}
+	h.now = time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	if r := only(t, h.request("s4", "cam_caisse", 0)); r.Status != Starting || h.v.State().Used != 0 {
+		t.Fatalf("the real next month: %+v, used %d", r, h.v.State().Used)
+	}
+}
+
+// The cameras are checked at once after a restart: neither a check time saved while
+// the clock ran ahead, nor what they answered before, is waited on.
+func TestCamerasAreCheckedAtOnceAfterARestart(t *testing.T) {
+	h := newHarness(t)
+	h.now = t0.AddDate(1, 0, 0)
+	h.v.Handle(Tick{Now: h.now})
+	h = h.restarted(t0)
+	if !h.v.NextWake().Before(t0) {
+		t.Fatalf("next check %v", h.v.NextWake())
+	}
+	if acts := h.v.Handle(Tick{Now: t0}); len(acts) != 1 || acts[0] != (CheckCameras{}) {
+		t.Fatalf("%+v", acts)
+	}
+}

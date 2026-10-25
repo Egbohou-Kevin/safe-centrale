@@ -169,3 +169,47 @@ func TestBypassCommand(t *testing.T) {
 		t.Fatalf("bypassing while armed must be refused: %+v", r)
 	}
 }
+
+// An alarm during the exit delay goes back to the exit delay, not to armed, and gives
+// it back whole: the person who silences a smoke false alarm at the keypad is still
+// inside, and arming at once would set off an intrusion with their next step.
+func TestAnAlarmDuringTheExitDelayGivesTheExitDelayBack(t *testing.T) {
+	h := newHarness(t)
+	h.arm(func(c *Command) { c.User = "u_42" })
+	h.advance(20 * time.Second)
+	h.signal(smoke, SensorSmoke, true)
+	h.signal(smoke, SensorSmoke, false)
+	h.advance(time.Minute)
+	as := h.cmd(CmdSilence, goodCode("u_42"))
+	h.mustBe(ModeArming)
+	ev := onlyEvent[ArmingStarted](t, as)
+	if !ev.EndsAt.Equal(h.now.Add(h.cfg.ExitDelay)) || ev.User != "u_42" {
+		t.Fatalf("the exit delay starts again, whole: %+v", ev)
+	}
+	if as := h.moves(); len(eventsOf[Triggered](as)) != 0 {
+		t.Fatalf("whoever silenced the siren walks out: %v", as)
+	}
+	if armed := onlyEvent[Armed](t, h.advance(h.cfg.ExitDelay)); armed.User != "u_42" {
+		t.Fatalf("armed at the end of the delay: %+v", armed)
+	}
+}
+
+// Nobody there: the siren runs out, the exit delay starts again, and its end does what
+// every end of an exit delay does: alarm.armed, and a window left open is bypassed and
+// told.
+func TestAnAlarmThatRunsOutDuringTheExitDelayEndsTheArming(t *testing.T) {
+	h := newHarness(t)
+	h.arm()
+	h.advance(20 * time.Second)
+	h.open(window)
+	h.signal(smoke, SensorSmoke, true)
+	h.signal(smoke, SensorSmoke, false)
+	h.advance(19 * time.Minute)
+	h.mustBe(ModeArming)
+	as := h.advance(h.cfg.ExitDelay)
+	h.mustBe(ModeArmed)
+	onlyEvent[Armed](t, as)
+	if al := alerts(as); len(al) != 1 || al[0].Kind != AlertArmingBypassed || !reflect.DeepEqual(al[0].Devices, []string{window}) {
+		t.Fatalf("the open window is bypassed and told: %v", al)
+	}
+}

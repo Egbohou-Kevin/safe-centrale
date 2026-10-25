@@ -232,6 +232,32 @@ func TestAnAppAlertWithoutTheCloudFailsOnTheHub(t *testing.T) {
 	}
 }
 
+// The system clock is set back 30 minutes (an RTC that ran fast, corrected by NTP):
+// the agent's own time stands still until the clock catches up, but an order the app
+// sends now, stamped on the corrected clock, is fresh. It reaches the hub, which judges
+// it on the same clock, instead of being answered expired for half an hour.
+func TestAnOrderAfterTheClockWasSetBackReachesTheHub(t *testing.T) {
+	r := newRig(t, nil)
+	r.app.LinkChanged(true, "mqtts")
+	r.fromHub(topic("alarm", "state"), contract.TypeAlarmState, contract.AlarmStateData{State: contract.StateArmed, Since: contract.TS(t0)})
+	r.settle()
+	back := t0.Add(-30 * time.Minute)
+	r.clock.Set(back)
+	r.fromCloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, contract.AlarmCommandData{Command: contract.CmdDisarm,
+		Args: contract.CommandArgs{Code: "482915"}, Origin: contract.OriginApp, User: "u_owner", Exp: contract.TSPtr(back.Add(time.Minute))})
+	drivertest.WaitFor(t, "the order on the hub", func() bool {
+		for _, m := range r.local.All() {
+			if m.Topic == topic("alarm", "cmd") {
+				return true
+			}
+		}
+		return false
+	})
+	if acks := r.cloud.OfType(contract.TypeAlarmAck); len(acks) != 0 {
+		t.Fatalf("a fresh order answered by the agent: %+v", acks)
+	}
+}
+
 // An order from the app that came too late is answered to the cloud at once, by the
 // agent: the hub never gets it, and the answer never carries the code.
 func TestAnOrderTheHubWillNotGetIsAnsweredToTheCloud(t *testing.T) {

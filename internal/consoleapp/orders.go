@@ -136,8 +136,14 @@ func (a *App) remove(sctx, wctx context.Context, id string) error {
 		a.site.CancelRemoval(id)
 		return err
 	}
-	_, ferr := a.site.FinishRemoval(id)
-	return errors.Join(err, ferr)
+	if _, ferr := a.site.FinishRemoval(id); ferr != nil {
+		if err != nil {
+			// The site still uses the device: not the page of an unconfirmed removal.
+			return fmt.Errorf("%w; %v", ferr, err)
+		}
+		return ferr
+	}
+	return err
 }
 
 // Finish asks the hub to close the installation mode: the console stops when the hub

@@ -170,14 +170,15 @@ func (e *Engine) disarmOrSilence(c Command) []Action {
 	return append(out, e.wake(c.Now)...)
 }
 
-// silence stops the siren: the incident ends and the alarm stays armed. A fire that
-// waited behind it rings in turn (see wake).
+// silence stops the siren: the incident ends and the alarm goes back to the mode it
+// was in, without disarming (see endIncident). A fire that waited behind it rings in
+// turn (see wake).
 func (e *Engine) silence(c Command, user string) []Action {
 	if e.s.Mode != ModeTriggered {
 		return refused(c, ReasonWrongState)
 	}
 	out := e.clearIncident(c.Now, user)
-	e.endIncident(c.Now)
+	out = append(out, e.endIncident(c.Now)...)
 	out = append(out, reply(c, StatusDone, ""))
 	return append(out, e.wake(c.Now)...)
 }

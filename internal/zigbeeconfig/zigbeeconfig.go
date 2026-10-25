@@ -185,7 +185,7 @@ func ParseProfile(data []byte) (zigbee.Profile, error) {
 		}
 		p.Commands[name] = pc
 	}
-	if err := (zigbee.Config{Profiles: []zigbee.Profile{p}, ConfirmWait: 1, Attempts: 1, OfflineAfter: 1, PairMax: 1, Step: 1}).Validate(); err != nil {
+	if err := (zigbee.Config{Profiles: []zigbee.Profile{p}, ConfirmWait: 1, Attempts: 1, OfflineAfter: 1, PairMax: 1, Step: 1, RestAfter: 1}).Validate(); err != nil {
 		return zigbee.Profile{}, err
 	}
 	return p, nil

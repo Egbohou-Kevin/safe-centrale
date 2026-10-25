@@ -17,13 +17,15 @@ import (
 type events struct {
 	mu      sync.Mutex
 	sms     [][2]string
+	sent    []time.Time
 	reports []string
 }
 
-func (e *events) onSMS(from, text string) {
+func (e *events) onSMS(from, text string, sent time.Time) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.sms = append(e.sms, [2]string{from, text})
+	e.sent = append(e.sent, sent)
 }
 
 func (e *events) onReport(ref string, ok bool) {

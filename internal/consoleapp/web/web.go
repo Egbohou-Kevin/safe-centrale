@@ -197,6 +197,7 @@ var refusals = []struct {
 	err  error
 	code string
 }{
+	{consoleapp.ErrUnconfirmed, "unconfirmed"}, // ahead of what it wraps: the device left the site
 	{consoleapp.ErrClosed, "closed"},
 	{consoleapp.ErrBusy, "busy"},
 	{consoleapp.ErrUnknown, "unknown"},

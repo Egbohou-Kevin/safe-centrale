@@ -70,6 +70,7 @@
   {{else if eq .Code "no_siren"}}{{.ID}} ne sert pas de sirène.
   {{else if eq .Code "siren_zoned"}}{{.ID}} a une zone : les alertes l'appellent par le nom de sa zone.
   {{else if eq .Code "no_answer"}}L'adaptateur Zigbee n'a pas répondu : tourne-t-il ?
+  {{else if eq .Code "unconfirmed"}}L'adaptateur Zigbee n'a pas confirmé le retrait : {{.ID}} quitte la configuration quand même, sans zone ni rôle de sirène. S'il est encore appairé, la centrale ne le surveille plus : vérifiez que l'adaptateur tourne, puis retirez-le de nouveau ou rendez-lui sa zone.
   {{else if eq .Code "not_contact"}}{{.ID}} n'est pas un contact du site.
   {{else if eq .Code "code_mismatch"}}Les deux codes tapés diffèrent : recommencez.
   {{else if eq .Code "code_invalid"}}Un code fait de 4 à 8 chiffres.

@@ -81,9 +81,10 @@ disarm : depuis arming, armed, entry_delay ou triggered, retour à disarmed.
 ```
 
 Après les cycles de sirène (voir « Reprise de la sirène »), le système repasse dans
-son état d'avant l'alarme (`armed`, ou `disarmed` pour un feu déclenché désarmé),
-avec la mémoire de ce qui s'est déclenché. Il ne reste pas bloqué en
-`triggered`.
+son état d'avant l'alarme (`armed` ; `disarmed` pour un feu déclenché désarmé ;
+`arming` pour une alarme pendant le délai de sortie, qui repart alors en entier, voir
+« Armement et délai de sortie »), avec la mémoire de ce qui s'est déclenché. Il ne
+reste pas bloqué en `triggered`.
 
 ## Zones
 
@@ -123,13 +124,13 @@ zone qu'il ne peut pas déclencher.
 | `entry_delay` | sabotage, fumée, panique qui sonne | `triggered` | idem déclenchement ; le délai d'entrée continue derrière l'alarme et devient une intrusion s'il n'est pas arrêté (voir « Une alarme pendant une autre ») |
 | `armed` | ordre de désarmement | `disarmed` | publie `alarm.disarmed` ; termine l'escalade des intrusions et sabotages de cet armement dont la sirène s'est arrêtée seule, que `alarm.disarmed` nomme dans `incidents` |
 | `triggered` | ordre de désarmement | `disarmed` | `siren.off`, publie `alarm.cleared` et `alarm.disarmed` ; termine l'escalade de l'alarme en cours (et de celles de l'armement arrêtées seules), toutes nommées dans `incidents` d'`alarm.disarmed` |
-| `triggered` | `alarm.silence`, code valide | état d'avant l'alarme | `siren.off`, `alarm.cleared` ; termine l'escalade de l'alarme en cours |
+| `triggered` | `alarm.silence`, code valide | état d'avant l'alarme | `siren.off`, `alarm.cleared` ; termine l'escalade de l'alarme en cours ; un délai de sortie repart en entier |
 | `arming` | ordre `arm_now` | `armed` | termine le délai de sortie, publie `alarm.armed` |
 | `triggered` | cycle de sirène écoulé, cycles restants | `triggered` | `siren.off`, pause, puis `siren.on` au cycle suivant ; un acquittement (« Je gère », SMS « 1 ») n'y change rien, seuls le code et le désarmement arrêtent la sirène |
-| `triggered` | cycles de sirène épuisés | état d'avant l'alarme (`armed`, ou `disarmed` pour un feu déclenché désarmé) | `siren.off`, publie `alarm.cleared` |
+| `triggered` | cycles de sirène épuisés | état d'avant l'alarme (`armed`, `disarmed` pour un feu déclenché désarmé, `arming` pendant le délai de sortie) | `siren.off`, publie `alarm.cleared` ; un délai de sortie repart en entier |
 | tout état sauf `triggered` | fumée | `triggered` (cause fumée) | sirène et alerte |
 | tout état | panique | inchangé | alerte urgente, sans sirène par défaut (réglable par site) |
-| `triggered` | fumée, panique qui sonne, sabotage, zone `instant` (site armé sous l'alarme), d'un genre autre que l'alarme qui sonne | `triggered` | alerte sous son propre incident, une fois par genre ; un feu sonne à son tour quand l'alarme finit (voir « Une alarme pendant une autre ») |
+| `triggered` | fumée, panique qui sonne, sabotage, zone `instant` (site armé sous l'alarme), d'un genre autre que l'alarme qui sonne, ou feu pendant un feu dont tous les détecteurs sont revenus au repos | `triggered` | alerte sous son propre incident, une fois par genre ; un feu sonne à son tour quand l'alarme finit (voir « Une alarme pendant une autre ») |
 
 ## Délais et durées (valeurs par défaut)
 
@@ -160,6 +161,15 @@ l'alarme, donc cette action est réservée à celui qui sait être sorti.
 
 Le désarmement pendant le délai de sortie annule l'armement.
 
+Une alarme pendant le délai de sortie (un feu, un sabotage, une panique qui sonne) ne
+l'arme pas à sa fin : le système revient en `arming`, avec un délai de sortie entier
+(`alarm.arming` de nouveau, au nom de la même personne). Celui qui coupe au clavier la
+sirène d'une fausse alerte de fumée est encore à l'intérieur : armé tout de suite, son
+pas suivant déclencherait une intrusion. Si personne n'arrête la sirène, la fin de ce
+délai fait ce que fait toute fin de délai de sortie (`alarm.armed`, zones restées
+ouvertes contournées et signalées). Corrigé le 25 octobre 2026 après une revue :
+l'alarme finie, le système passait en `armed` sans délai ni contournement.
+
 À la fin du délai de sortie (ou à `arm_now`), une porte `entry` restée ouverte
 démarre le délai d'entrée, comme si elle venait de s'ouvrir. Une zone `instant`
 restée ouverte est contournée, et une alerte `arming_bypassed` liste les appareils
@@ -172,8 +182,9 @@ dirait plus rien ensuite.
 Quand l'alarme se déclenche, la sirène sonne 5 minutes. Si personne n'a rien fait
 (ni désarmement ni coupure de la sirène par un code valide), elle s'arrête deux
 minutes, puis reprend pour un nouveau cycle, jusqu'à 3 cycles. À la fin des
-cycles, le système repasse dans son état d'avant l'alarme (`armed`, ou `disarmed`
-pour un feu déclenché désarmé), avec la mémoire de ce qui s'est déclenché.
+cycles, le système repasse dans son état d'avant l'alarme (`armed`, `disarmed`
+pour un feu déclenché désarmé, `arming` pendant le délai de sortie), avec la mémoire
+de ce qui s'est déclenché.
 Les alertes continuent de suivre leur escalade pendant ce temps.
 
 Un désarmement ou une coupure de sirène avec un code valide arrête tout
@@ -213,7 +224,8 @@ muette »).
 Rien de ce qui arrive pendant une alarme n'est perdu. Une autre alarme d'un genre
 différent de celle qui sonne lève son alerte, sous son propre incident, une fois par
 genre et par alarme qui sonne (un sabotage une fois par appareil). Une alarme du genre
-de celle qui sonne n'ajoute rien : elle est déjà dite. Corrigé le 25 octobre 2026 après
+de celle qui sonne n'ajoute rien : elle est déjà dite. Sauf un feu pendant un feu dont
+tous les détecteurs sont revenus au repos : c'est un nouveau feu (voir plus bas). Corrigé le 25 octobre 2026 après
 une revue : jusque-là, seuls un feu ou une panique alertaient, et un feu n'avait jamais
 de sirène à lui.
 
@@ -230,8 +242,16 @@ de sirène à lui.
   nouvel incident (la première alerte a pu être acquittée « ce n'était que de la
   vapeur »), et attend la sirène à son tour. Corrigé le 25 octobre 2026 après une
   revue : ce second feu était perdu, sans alerte ni sirène.
+- **Feu pendant un feu qui sonne** : la même règle. Tant qu'un détecteur du feu qui
+  sonne est encore en alarme, un autre détecteur le rejoint, sans nouvelle alerte. Une
+  fois qu'ils sont tous revenus au repos, un détecteur qui se déclenche est un nouveau
+  feu : il alerte sous son propre incident et sonne quand le premier finit, quelle
+  que soit cette fin. Corrigé le 25 octobre 2026 après une revue : il était tenu pour
+  le feu déjà dit, et le code qui coupait la sirène du premier (« ce n'était que de la
+  vapeur ») le laissait sans sirène ni alerte.
 - **Intrusion** (une zone `instant`) quand le site est armé sous l'alarme (un feu ou un
-  sabotage alors qu'il était armé) : une alerte, sans sirène à elle. Comme pendant un
+  sabotage alors qu'il était armé ou pendant le délai de sortie) : une alerte, sans
+  sirène à elle. Comme pendant un
   délai d'entrée, la porte d'entrée et l'intérieur ne disent rien : celui qui entre
   répond le plus souvent à l'alarme. Le désarmement qui termine l'armement termine son
   escalade, comme celle d'une intrusion dont la sirène s'est arrêtée seule.
@@ -323,7 +343,9 @@ doit aussi connaître le code.
 - Une alerte tous les 3 codes faux, pas à chaque code faux : c'est le rythme
   d'avant la fenêtre (le 3e code faux de suite verrouillait et alertait), et la limite
   par contact et par heure de l'escalade (20 messages, `escalation.md`) est partagée
-  avec les intrusions, qu'un flot d'alertes `auth_failed` ne doit pas étouffer. Un
+  avec les intrusions. Un flot d'alertes `auth_failed` ne l'étouffe pas : les alertes
+  moins graves qu'une intrusion n'en prennent que la moitié, l'autre reste aux
+  intrusions (corrigé le 25 octobre 2026 après une revue). Un
   téléphone au rythme du cloud déclenche une alerte toutes les 15 minutes, 4 par
   heure. Un code faux ne lève jamais deux alertes : quand le 3e code faux verrouille
   aussi, une seule part. Au pire (un verrouillage qui ne tombe pas sur un multiple de
@@ -374,7 +396,14 @@ Choix faits au codage :
 - **Le plan** n'existe que lorsque le système est désarmé (et pendant le délai de
   sortie qu'il a lancé, pour qu'on puisse encore le repousser). Il est recalculé à
   chaque désarmement : on désarme à 21 h 20, il réarmera donc à 22 h ; on désarme à
-  22 h 01 pendant le délai de sortie, il n'armera plus avant le lendemain.
+  22 h 01 pendant le délai de sortie, il n'armera plus avant le lendemain. Une alarme
+  pendant que le plan existe (un feu désarmé, pendant le délai de sortie) le garde : à
+  sa fin, par les cycles épuisés ou par un code qui coupe la sirène, le plan reprend,
+  et si l'heure de fermeture est passée entre-temps, la boutique arme alors, avec un
+  délai de sortie entier, comme après un armement manqué (sous la limite du plan). Un
+  désarmement est un choix : il refait le plan depuis son heure. Corrigé le 25 octobre
+  2026 après une revue : un feu fini après l'heure de fermeture effaçait l'armement du
+  soir.
 - **Report pendant le délai de sortie** : il annule ce délai (événement
   `alarm.disarmed`, contournements effacés), puis le plan repart de l'heure prévue
   plus 30 minutes. Chaque report fait de nouveau l'objet d'un préavis.
@@ -429,8 +458,9 @@ L'état courant est écrit sur disque (écriture atomique) à chaque transition.
 redémarrage :
 
 1. le moteur lit son dernier état ;
-2. il lit l'état retenu des appareils sur le broker et note quelles portes et
-   fenêtres sont ouvertes, sans encore agir ;
+2. il lit l'état retenu des appareils sur le broker, chacun daté de son début
+   (`since`), et note quelles portes et fenêtres sont ouvertes, sans encore agir. Un
+   état plus ancien que ce que le moteur sait est écarté (voir plus bas) ;
 3. il rejoue à leur heure les échéances passées pendant l'arrêt, avec les portes et
    fenêtres telles qu'elles sont maintenant : une porte refermée pendant l'arrêt ne
    lance pas le délai d'entrée à la fin du délai de sortie, une fenêtre refermée n'est
@@ -447,13 +477,39 @@ redémarrage :
    ne déclenche rien (une porte intérieure laissée ouverte à l'armement, ou la porte
    d'entrée restée ouverte après une sirène coupée au code). Un contact ne dit que ses
    changements : sans le redémarrage, rien n'aurait sonné. Un sabotage apparu pendant
-   l'arrêt, ou une porte ouverte pendant l'arrêt, l'est ;
+   l'arrêt, ou une porte ouverte pendant l'arrêt, l'est. Un état plus ancien que ce
+   que le moteur sait ne déclenche rien non plus (voir plus bas) ;
 5. il publie son état retenu ; le redémarrage se voit au `boot_id` du heartbeat.
+
+Les états retenus du broker peuvent être vieux de quelques minutes : Mosquitto ne les
+écrit sur disque que toutes les 5 minutes (`autosave_interval`, pour la carte SD), et
+après un arrêt brutal (une coupure sans la carte X728, un redémarrage par le chien de
+garde) il rend chacun tel qu'il était à sa dernière écriture. Une porte refermée juste
+avant la coupure reviendrait ouverte, et serait prise pour une porte ouverte pendant
+l'arrêt : une sirène au retour du courant. De même un détecteur de fumée revenu au
+repos, ou un mouvement dont le retour au repos n'était pas encore écrit. Le moteur, lui,
+écrit son état à chaque changement. Il garde donc, dans son état, l'heure du dernier
+état qu'il a pris de chaque porte, fenêtre, détecteur de fumée et sabotage (`heard`),
+et écarte au démarrage l'état retenu qui n'est pas plus récent. Un capteur
+momentané (mouvement, vibration, bris de vitre) n'a pas cette heure, que chaque passant
+réécrirait : son état est écarté s'il a commencé avant le mode où est le moteur (ou
+avant la fin du délai de sortie en cours). Vivant, il a été entendu alors et a fait ce
+qu'il fait dans ce mode ; actif depuis, ce n'est pas un nouveau mouvement. Un état qui
+ne dit pas quand il a commencé, ou daté après maintenant (une horloge partie en avant),
+est pris tel quel. Un état changé pendant la fenêtre de démarrage est une nouvelle de
+ce démarrage, jamais écartée. Corrigé le 25 octobre 2026 après une revue : une fenêtre
+fermée deux minutes avant une coupure, la boutique armée, déclenchait l'intrusion au
+retour du courant.
 
 Après une restauration, le moteur ne rejoue aucune échéance avant `Boot` : ni tic, ni
 rattrapage au passage d'un ordre ou d'un signal reçu pendant la fenêtre de démarrage.
 Cet ordre ou ce signal s'applique à l'état sauvegardé. C'est `Boot` qui rejoue les
-échéances manquées, une fois les états connus. Un cycle de sirène rejoué en retard ne
+échéances manquées, une fois les états connus. Un signal reçu pendant la fenêtre est
+une nouvelle de ce démarrage : appliqué à l'état sauvegardé, il a pu y être écarté
+(l'alarme qui sonnait à l'arrêt, finie depuis), et `Boot` le reprend avec les états
+retenus. Une porte ouverte pendant la fenêtre n'est donc pas « déjà connue ouverte »
+(corrigé le 25 octobre 2026 après une revue : l'intrusion entendue dans la fenêtre
+était perdue). Un cycle de sirène rejoué en retard ne
 sonne que ce qui en reste, une seule fois (un seul `siren.on`, pas un par cycle
 rejoué).
 
@@ -535,7 +591,11 @@ règles : pur, sans horloge) :
   chaque coupure, la centrale pouvant s'éteindre pendant celle-ci), message de retour
   du courant seulement si une alerte de batterie est partie.
 - Piles faibles des capteurs (15 %, réarmées au-dessus de 30 %) et appareils muets,
-  regroupés dans un résumé quotidien à 9 h.
+  regroupés dans un résumé quotidien à 9 h. L'heure du prochain résumé est sauvegardée ;
+  au redémarrage, une heure plus tardive que le prochain 9 h vient d'une horloge partie
+  en avance puis reculée : elle est ramenée au prochain 9 h, sinon le résumé se tairait
+  sur les appareils muets et les piles mortes jusqu'à cette heure-là (corrigé le 25
+  octobre 2026 après une revue).
 - Services suivis par leur état répété (GSM, Zigbee, agent) : l'heure du dernier état
   de chaque service n'est pas sauvegardée (elle change chaque minute et userait la
   carte SD). Après un redémarrage, le silence compte depuis le redémarrage, même si
@@ -639,7 +699,8 @@ Choix faits au codage, à connaître :
 - Les échéances dépassées sont rejouées à leur heure, même si le tic arrive en
   retard (centrale suspendue, coupure) : le calendrier de la sirène reste exact.
 - Un désarmement sans code vérifié compte comme un code faux.
-- Un état « detected » périmé au redémarrage déclenche l'alarme : les adaptateurs
-  doivent publier le retour au repos (`clear`) des capteurs de mouvement.
+- Un état « detected » encore retenu au redémarrage déclenche l'alarme s'il a commencé
+  après le début du mode en cours (voir « Persistance et redémarrage ») : les
+  adaptateurs doivent publier le retour au repos (`clear`) des capteurs de mouvement.
 - Les événements d'alarme portent un `incident` (identifiant), repris par les
   alertes, pour relier la sirène, les SMS et les acquittements.
