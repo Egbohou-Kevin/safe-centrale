@@ -166,11 +166,18 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   bastion). Détail dans `maintenance.md`.
 - **La configuration réglée depuis le cloud** (`config.set`) : sa couche application
   (`internal/configapp`) tourne dans le programme de la centrale. Elle ne connaît ni
-  fichier ni processus : vérifier, garder et redémarrer sont des ports (`Check`,
-  `Save`, `Restart`), et elle ne lit pas l'horloge. Elle redémarre aussi la centrale,
-  à un moment calme, quand `site-devices.json` a changé (port `DevicesChanged`) : elle
-  le vérifie à chaque état de l'alarme, mode installation ou message de configuration.
-  `internal/hub` n'y a aucune part. Le fichier qui garde cette
+  fichier ni processus : vérifier, garder, redémarrer et savoir si le moment est calme
+  sont des ports (`Check`, `Save`, `Restart`, `Quiet`), et elle ne lit pas l'horloge.
+  Elle redémarre aussi la centrale, à un moment calme, quand `site-devices.json` a
+  changé (port `DevicesChanged`) : elle le vérifie à chaque état de l'alarme, mode
+  installation ou message de configuration. `internal/hub` ne fait que répondre à
+  `Quiet` (`Hub.Quiet`) : le moteur dit son propre état, après les entrées déjà en
+  file, car l'état publié sur `alarm/state` revient par le broker en retard sur lui.
+  Son travail (vérifier et écrire une configuration sur la carte SD, interroger le
+  moteur) se fait sur sa propre goroutine, jamais sur celle du client MQTT, qui porte
+  tous les messages de la centrale. Un arrêt normal finit ce travail ; un plantage
+  peut perdre une configuration reçue à l'instant, sans `config.applied` pour elle.
+  Le fichier qui garde cette
   configuration dans le dossier d'état est `internal/siteconfig`, qui ne connaît que le
   contrat ; la centrale, la passerelle GSM et la vidéo le lisent au démarrage.
 - **L'arrêt** a la même forme dans toutes les couches application qui ont une boucle

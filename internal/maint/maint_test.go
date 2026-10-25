@@ -160,6 +160,35 @@ func TestASessionSurvivesARestart(t *testing.T) {
 	}
 }
 
+// The installer switched the service off ("enabled": false) and restarted it: the
+// saved session ends at once, said disabled, instead of a tunnel that cannot start
+// being tried every 10 s until its end while the owner reads "open".
+func TestASessionSavedBeforeTheServiceWasSwitchedOffEnds(t *testing.T) {
+	v := newCore(t)
+	open(v, t0, "m1", time.Hour)
+	opening := v.Snapshot()
+	v.Handle(Up{Now: t0.Add(time.Second), Session: "m1"})
+	up := v.Snapshot()
+	for _, c := range []struct {
+		name  string
+		saved Snapshot
+		want  Report
+	}{
+		{"open", up, Report{Session: "m1", User: "kevin", Status: Closed, Reason: Disabled, Duration: 4 * time.Minute}},
+		{"opening", opening, Report{Session: "m1", User: "kevin", Status: Failed, Reason: Disabled}},
+	} {
+		off := newCore(t, func(c *Config) { c.Enabled = false })
+		off.Restore(c.saved)
+		acts := off.Handle(Boot{Now: t0.Add(time.Second + 4*time.Minute)})
+		if !reflect.DeepEqual(acts, []Action{c.want}) {
+			t.Fatalf("%s: %+v", c.name, acts)
+		}
+		if off.Snapshot() != (Snapshot{}) || !off.NextWake().IsZero() {
+			t.Fatalf("%s: the session is over", c.name)
+		}
+	}
+}
+
 // An order may reach the service before its Boot: the tunnel it started is not
 // started twice.
 func TestBootAfterAnOrderStartsNothingMore(t *testing.T) {

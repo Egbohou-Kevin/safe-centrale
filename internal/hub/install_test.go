@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -52,6 +53,33 @@ func (r *rig) openInstall() {
 	r.t.Helper()
 	r.keypad(contract.ValDisarm, installerCode)
 	drivertest.WaitFor(r.t, "the installation mode", func() bool { return r.lastInstall().Status == contract.InstallOpen })
+}
+
+// The configuration's application asks the engine itself whether the moment is
+// quiet for a restart: neither a delay nor the installation mode.
+func TestQuietIsTheEnginesOwnWord(t *testing.T) {
+	r := newRig(t, nil)
+	r.withInstaller()
+	r.start()
+	ctx := context.Background()
+	if !r.hub.Quiet(ctx) {
+		t.Fatal("disarmed is quiet")
+	}
+	r.openInstall()
+	if r.hub.Quiet(ctx) {
+		t.Fatal("the installation mode is no quiet moment")
+	}
+	r.order(contract.CmdArm, contract.CommandArgs{}, contract.OriginApp, "u_owner") // closes the mode
+	r.mustBe(engine.ModeArming)
+	drivertest.WaitFor(t, "the mode closed", func() bool { return r.lastInstall().Status == contract.InstallClosed })
+	if r.hub.Quiet(ctx) {
+		t.Fatal("an exit delay is no quiet moment")
+	}
+	done, cancel := context.WithCancel(ctx)
+	cancel()
+	if r.hub.Quiet(done) {
+		t.Fatal("no answer, no quiet moment")
+	}
 }
 
 func TestTheInstallerCodeOpensTheInstallationModeForHalfAnHour(t *testing.T) {

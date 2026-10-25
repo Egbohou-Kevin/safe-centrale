@@ -23,7 +23,10 @@ import (
 // FileName is the file in the state folder.
 const FileName = "site-config.json"
 
-// Read returns the configuration set from the cloud, if any.
+// Read returns the configuration set from the cloud, if any. A file that reads but no
+// longer fits the contract (an update made it stricter) comes back with its version
+// alone, found, and the error: the hub refuses that version to the cloud by its
+// number, instead of leaving the cloud believing it applied.
 func Read(dir string) (contract.ConfigSetData, bool, error) {
 	data, err := os.ReadFile(filepath.Join(dir, FileName))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -37,7 +40,7 @@ func Read(dir string) (contract.ConfigSetData, bool, error) {
 		return contract.ConfigSetData{}, false, fmt.Errorf("siteconfig: %s is damaged: %w", FileName, err)
 	}
 	if err := d.Validate(); err != nil {
-		return contract.ConfigSetData{}, false, fmt.Errorf("siteconfig: %s: %w", FileName, err)
+		return contract.ConfigSetData{Version: max(d.Version, 0)}, true, fmt.Errorf("siteconfig: %s: %w", FileName, err)
 	}
 	return d, true, nil
 }

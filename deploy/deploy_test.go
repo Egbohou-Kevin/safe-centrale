@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -427,5 +428,27 @@ func TestToolsAreNotServices(t *testing.T) {
 		if _, err := os.Stat(filepath.Join("systemd", "safehome-"+name+".service")); err == nil {
 			t.Errorf("tool %s has a unit: it runs by hand", name)
 		}
+	}
+}
+
+// The console's polkit rule grants what nmcli needs to make and remove the hub's
+// network, and nothing more: every service runs as safehome, and would get it too
+// (turning the radio off would cut a site that reaches the internet by Wi-Fi).
+func TestThePolkitRuleGrantsOnlyWhatTheHotspotUses(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("system", "polkit-safehome-console.rules"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var granted []string
+	for _, m := range regexp.MustCompile(`case "([^"]+)":`).FindAllStringSubmatch(string(data), -1) {
+		granted = append(granted, m[1])
+	}
+	want := []string{
+		"org.freedesktop.NetworkManager.settings.modify.system", // connection add, delete
+		"org.freedesktop.NetworkManager.network-control",        // connection up, down
+		"org.freedesktop.NetworkManager.wifi.share.protected",   // a protected shared network
+	}
+	if !slices.Equal(granted, want) {
+		t.Fatalf("granted %q, want %q", granted, want)
 	}
 }

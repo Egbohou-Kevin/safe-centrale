@@ -190,6 +190,8 @@ délais et, en données mobiles, son forfait vidéo (`config.set`, voir `contrac
    numéros). `/etc/safehome` reste en lecture seule.
 3. Elle redémarre pour l'appliquer, **jamais pendant un délai, une alarme ni le mode
    installation** : elle attend que l'alarme soit désarmée ou armée et le mode fermé.
+   Le moteur le confirme lui-même au moment de redémarrer : un délai commencé à
+   l'instant (une porte ouverte) n'est pas encore sur `alarm/state`.
    Une configuration reçue pendant le mode installation est gardée et appliquée à sa
    fermeture. systemd la relance (`Restart=always`), l'état armé ou désarmé est repris
    comme après une coupure.
@@ -203,7 +205,7 @@ Ce que le cloud règle remplace le fichier du programme ; le reste du fichier ne
 change pas. Une liste envoyée (contacts, horaires) remplace celle du fichier.
 
 Un `site-config.json` abîmé ou qui ne convient plus (fichier de la centrale modifié
-depuis) **n'empêche jamais un programme de démarrer** : il est laissé de côté, le
+depuis, ou contrat rendu plus strict par une mise à jour) **n'empêche jamais un programme de démarrer** : il est laissé de côté, le
 programme tourne sur son propre fichier et le dit dans son journal. La centrale
 répond alors `rejected` avec la raison si le fichier se lit mais ne convient plus ; un
 fichier illisible est seulement journalisé. `check` affiche la version en service, ou

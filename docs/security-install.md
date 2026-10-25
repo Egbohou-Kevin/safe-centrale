@@ -208,12 +208,21 @@ s'appelle `safehome-tg-lom-0001` et la page est à l'adresse `http://10.42.0.1/`
   quand son démarrage a échoué (coupé par son délai, NetworkManager a pu le lever
   quand même) : la fin du mode le retire alors aussi.
 - NetworkManager crée le réseau (`nmcli`). Le service tourne sans droits
-  d'administration. Une règle polkit lui permet seulement de gérer les réseaux, et
-  une capacité systemd seulement d'écouter sur le port 80.
+  d'administration. Une règle polkit lui permet de créer, lever, baisser et supprimer
+  des connexions (jamais d'éteindre la radio Wi-Fi), et une capacité systemd seulement
+  d'écouter sur le port 80.
 
-**Limite.** Si la centrale va sur internet par le Wi-Fi de la box, la même puce Wi-Fi
-ne peut pas tenir les deux réseaux. Pendant le mode installation, la centrale perd
-alors la box : l'agent garde ses messages et le GSM reste là. Le câble est conseillé.
+**Limite de la règle polkit.** polkit connaît l'utilisateur, pas le programme : tous
+nos services tournent sous `safehome`, et chacun a donc ces droits. Un service
+compromis pourrait lire le mot de passe du Wi-Fi de la box, changer ou supprimer
+cette connexion, ou la baisser. Un réseau réservé à `safehome` seul
+(`settings.modify.own`) demanderait une session que NetworkManager voie, ce qu'un
+service n'a pas ; c'est à essayer sur la centrale avant de le changer.
+
+**Limite du Wi-Fi.** Si la centrale va sur internet par le Wi-Fi de la box, la même
+puce Wi-Fi ne peut pas tenir les deux réseaux. Pendant le mode installation, la
+centrale perd alors la box : l'agent garde ses messages et le GSM reste là. Le câble
+est conseillé.
 
 ### Ce que fait la page
 

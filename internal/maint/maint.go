@@ -147,13 +147,21 @@ func (v *Service) down(d Down) []Action {
 // boot runs once the service started: a session saved before a restart goes on
 // until its time, or is said to be over. An order may come before it: the session it
 // opened is live already (its tunnel started, or waits to be started again), and is
-// left alone.
+// left alone. The installer may have switched the service off before the restart:
+// the session ends then, said disabled, failed if it never opened.
 func (v *Service) boot(now time.Time) []Action {
 	if v.s.Session == "" || v.running || !v.retryAt.IsZero() {
 		return nil
 	}
-	if !now.Before(v.s.Until) {
+	switch {
+	case !now.Before(v.s.Until):
 		return v.end(now, Timeout)
+	case !v.cfg.Enabled && v.s.OpenedAt.IsZero():
+		r := Report{Session: v.s.Session, User: v.s.User, Status: Failed, Reason: Disabled}
+		v.s = Snapshot{}
+		return []Action{r}
+	case !v.cfg.Enabled:
+		return v.end(now, Disabled)
 	}
 	v.running = true
 	return []Action{Start{Session: v.s.Session}}

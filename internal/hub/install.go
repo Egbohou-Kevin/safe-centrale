@@ -37,6 +37,20 @@ type installMode struct {
 	quieted map[string]bool
 }
 
+// Quiet says whether the moment is quiet for the hub to restart (a configuration from
+// the cloud to apply): the alarm disarmed or armed, and no installation mode. It is
+// the engine's own state, after the inputs queued before the question: the state on
+// alarm/state comes back through the broker later. False if ctx ends first.
+func (h *Hub) Quiet(ctx context.Context) bool {
+	quiet := false
+	err := h.alarm.loop.Do(ctx, func(time.Time) []engine.Action {
+		m := h.alarm.eng.Mode()
+		quiet = (m == engine.ModeDisarmed || m == engine.ModeArmed) && !h.alarm.inst.open
+		return nil
+	})
+	return err == nil && quiet
+}
+
 // installerCode tells whether a code that is nobody's is the installer's. Only a
 // "disarm" from a keypad may open the mode: never an order from the app.
 func (h *Hub) installerCode(cmd contract.AlarmCommandData) bool {

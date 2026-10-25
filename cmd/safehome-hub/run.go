@@ -112,7 +112,7 @@ func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr
 	}
 	log.Info("starting", "site", cfg.Hub.Site, "broker", cfg.BrokerURL, "version", version)
 	conf, err := newConfigApp(cfg, configPath, configapp.Deps{Store: store, Publisher: pub, NewID: ids.New, Logger: log,
-		Restart: restart.Ask}, func() {
+		Restart: restart.Ask, Quiet: h.Quiet}, func() {
 		// The contacts may have changed and the hub may not restart yet (the
 		// installation mode): their codes follow now.
 		if err := h.ReloadCodes(); err != nil {
