@@ -674,9 +674,12 @@ et en données mobiles son forfait vidéo. Le cloud envoie le tout à chaque cha
 
 - Le message porte **toute** la configuration réglée par le cloud, pas une
   différence : un champ absent garde la valeur des fichiers du site. Une liste
-  envoyée (`contacts`, `closing`) remplace celle des fichiers.
+  envoyée (`contacts`, `closing`) remplace celle des fichiers, même vide :
+  `"contacts": []` retire tous les contacts, `"closing": {}` toute mise en service
+  automatique, y compris après un redémarrage.
 - Limites : délais de 10 à 300 s (sortie) et de 10 à 180 s (entrée), 5 contacts au
-  plus, un propriétaire (`owner`) au moins. Rôles : `owner`, `deputy`, `guard`,
+  plus, dont un propriétaire (`owner`) dès qu'il y en a un (une liste vide est
+  acceptée : personne n'est prévenu d'une alarme, `check` le signale). Rôles : `owner`, `deputy`, `guard`,
   `manager`, `other`. `sms` et `call` demandent un numéro au format international
   (`+228...`). `quota_mb` de 0 à 8 388 608. `max_s` ne dépasse pas la plus longue
   session vidéo.

@@ -106,3 +106,22 @@ func TestChanged(t *testing.T) {
 		t.Fatal("a damaged file would restart the program forever")
 	}
 }
+
+// An empty list is kept as sent, apart from a list not sent: "contacts": [] removes
+// every contact, no "contacts" leaves the program's file in charge.
+func TestAnEmptyListIsKept(t *testing.T) {
+	dir := t.TempDir()
+	d := contract.ConfigSetData{Version: 2, Contacts: []contract.ConfigContact{}, Closing: map[string]string{}}
+	if err := Write(dir, d); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, err := Read(dir); err != nil || got.Contacts == nil || got.Closing == nil {
+		t.Fatalf("%+v %v: the empty lists were dropped", got, err)
+	}
+	if err := Write(dir, contract.ConfigSetData{Version: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, err := Read(dir); err != nil || got.Contacts != nil || got.Closing != nil {
+		t.Fatalf("%+v %v: lists not sent came back as sent", got, err)
+	}
+}

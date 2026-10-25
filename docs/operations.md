@@ -188,8 +188,10 @@ de suite, un contact retiré ne désarme plus.
 Le client règle depuis l'application ses contacts, ses horaires de fermeture, ses
 délais et, en données mobiles, son forfait vidéo (`config.set`, voir `contract.md`).
 
-1. La centrale vérifie la configuration avec son propre fichier (un contact
-   propriétaire, des délais dans les limites, des horaires lisibles). Refusée, elle
+1. La centrale vérifie la configuration avec son propre fichier (un propriétaire
+   parmi les contacts s'il y en a, des délais dans les limites, des horaires
+   lisibles). Une liste vide envoyée (aucun contact, aucun horaire) est une liste :
+   elle remplace celle du fichier, et le reste après le redémarrage. Refusée, elle
    répond tout de suite `config.applied` `rejected`, avec la raison ; rien ne change.
 2. Acceptée, elle la garde dans `site-config.json`, dans le dossier d'état
    (`/var/lib/safehome`, lisible par le service seul : le fichier contient les
