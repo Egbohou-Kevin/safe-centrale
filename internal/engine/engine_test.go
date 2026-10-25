@@ -255,6 +255,48 @@ func TestStateForgetsTheSirenOnceTheAlarmIsStopped(t *testing.T) {
 	}
 }
 
+// A fire during an intrusion alerts under an incident of its own, but the siren
+// keeps the intrusion's schedule: the state still names the intrusion, on the same
+// times, in a cycle as in the pause.
+func TestAFireDuringAnAlarmLeavesTheStateToThatAlarm(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		after time.Duration // since the intrusion
+		want  sirenAt
+	}{
+		{"in a cycle", 2 * time.Minute, sirenAt{1, true, 5 * time.Minute}},
+		{"in the pause", 6 * time.Minute, sirenAt{1, false, 7 * time.Minute}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.armed()
+			start := h.now
+			intrusion := onlyEvent[Triggered](t, h.breakWindow()).Incident
+			h.advance(c.after)
+			fire := alerts(h.signal(smoke, SensorSmoke, true))
+			if len(fire) != 1 || fire[0].Kind != AlertFire || fire[0].Incident == intrusion {
+				t.Fatalf("the fire must alert under its own incident: %+v", fire)
+			}
+			h.mustRing(intrusion, start, c.want)
+		})
+	}
+}
+
+// A fire while disarmed rings, then goes back to disarmed once its cycles ran out:
+// the state then says only the next automatic arming.
+func TestStateAfterAFireWhileDisarmedSaysOnlyTheNextArming(t *testing.T) {
+	h := newHarness(t, closes22)
+	start := h.now
+	fire := onlyEvent[Triggered](t, h.signal(smoke, SensorSmoke, true)).Incident
+	h.mustRing(fire, start, sirenAt{1, true, 5 * time.Minute})
+	h.advance(19 * time.Minute) // three cycles and two pauses
+	s := h.e.State(h.now)
+	if s.Mode != ModeDisarmed || s.Incident != "" || s.SirenOn || s.Cycle != 0 || s.Of != 0 || !s.EndsAt.IsZero() ||
+		!s.NextScheduled.Equal(closing) {
+		t.Fatalf("after the fire's cycles: %+v", s)
+	}
+}
+
 // --- configuration ---------------------------------------------------------
 
 func TestConfigValidation(t *testing.T) {
