@@ -353,6 +353,9 @@ func TestASiteWithTheConsoleGetsItsPassphraseOnce(t *testing.T) {
 	if !r.exists("etc/polkit-1/rules.d/50-safehome-console.rules") {
 		t.Error("the polkit rule is not installed: nmcli would be refused")
 	}
+	if info, err := os.Stat(r.path("etc/NetworkManager/dispatcher.d/50-safehome-console")); err != nil || info.Mode().Perm() != 0o755 {
+		t.Errorf("the dispatcher script is not installed (%v): the network would route the phones, the console would not start it", err)
+	}
 	r.mustRun()
 	if again, _ := os.ReadFile(r.path("etc/safehome/console.secret")); string(again) != string(secret) {
 		t.Fatal("the passphrase changed at the second run: the label would be wrong")

@@ -248,6 +248,14 @@ step_console() {
 		{ $PHONE ip -4 -br addr; $PHONE ip route; $PHONE ip neigh; ip -4 -br addr
 			ss -ltnp 'sport = :80'; nft list ruleset 2>/dev/null | grep -n 10.42 || true; } 2>&1 | sed 's/^/        /'
 	fi
+	# The network serves the page and nothing else: the hub's own way out (its default
+	# gateway) must not answer the phone (docs/security-install.md).
+	gw="$(ip -4 route show default | awk '{print $3; exit}')"
+	if [ -n "$gw" ] && $PHONE ping -c 1 -W 2 "$gw" >/dev/null 2>&1; then
+		check_failed "the console's network routes nothing (the phone reached $gw through the hub)"
+	else
+		check_passed "the console's network routes nothing"
+	fi
 	leave_wifi
 	mark
 	mosquitto_pub -h 127.0.0.1 -q 1 -t "safehome/$SITE/install/cmd" -m \

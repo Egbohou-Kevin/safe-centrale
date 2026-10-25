@@ -195,6 +195,16 @@ s'appelle `safehome-tg-lom-0001` et la page est à l'adresse `http://10.42.0.1/`
   l'interface par laquelle il arrive, et un appareil du réseau du commerce qui ferait
   passer `10.42.0.1` par la centrale atteindrait la page sans la phrase de passe.
   Une demande venue d'une autre adresse est refusée.
+- **Le réseau ne mène nulle part ailleurs.** NetworkManager donne les adresses aux
+  téléphones (son mode « partagé »), mais ce mode allume aussi le routage et fait
+  sortir les téléphones par les autres connexions de la centrale : un téléphone entré
+  avec la phrase de l'étiquette atteindrait le réseau du commerce (les flux des
+  caméras, la page d'administration de la box) et internet. Un script de
+  NetworkManager (`/etc/NetworkManager/dispatcher.d/50-safehome-console`, posé par le
+  script d'installation) coupe le routage de ce réseau dès qu'il est levé. La console
+  attend qu'il soit coupé, et retire le réseau sinon (10 s au plus) : le journal
+  donne la raison, et `safehome-console check` signale un script absent. Seule la
+  centrale elle-même reste joignable depuis ce réseau.
 - **Le réseau est protégé (WPA2).** Sa phrase de passe est sur l'étiquette de la
   centrale. Le script d'installation la tire au sort une fois et l'affiche pour
   l'étiquette (`/etc/safehome/console.secret`).
@@ -318,6 +328,9 @@ zones de `hub.json` et le dit dans son journal.
 - Le kit virtuel tourne sur Debian 13, où NetworkManager et `dnsmasq-base` (le mode
   « partagé »), la règle polkit et le réseau de la console marchent. Reste à le
   vérifier sur Raspberry Pi OS Lite, avec la vraie puce Wi-Fi et sa portée.
+- Le script qui coupe le routage du réseau de la console n'a pas encore tourné dans
+  le kit virtuel (il le vérifie maintenant : la passerelle de la centrale ne doit pas
+  répondre au téléphone), ni sur un vrai Pi.
 
 ## Sauvegarde et remplacement
 

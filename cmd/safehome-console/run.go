@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sync/atomic"
@@ -37,6 +38,14 @@ var commandLine = service.CLI{Program: "safehome-console", Version: version, Usa
 // nmcli is NetworkManager's client; the tests use a fake.
 var nmcli = "nmcli"
 
+// forwarding is the folder of the interfaces' IPv4 settings (empty: the system's),
+// and dispatcherScript the script that turns forwarding off on the console's network
+// (deploy/install.sh puts it there); the tests use their own.
+var (
+	forwarding       = ""
+	dispatcherScript = "/etc/NetworkManager/dispatcher.d/50-safehome-console"
+)
+
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	cmd, exit, ok := commandLine.Parse(args, stdout, stderr)
 	if !ok {
@@ -51,6 +60,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			cfg.App.Site, cfg.Wifi.SSID, cfg.Wifi.Interface, cfg.Host())
 		if _, err := exec.LookPath(nmcli); err != nil {
 			fmt.Fprintln(stdout, "warning: nmcli (NetworkManager) is not installed: the network cannot start")
+		}
+		if _, err := os.Stat(dispatcherScript); err != nil {
+			fmt.Fprintf(stdout, "warning: %s is missing: the network would route the phones to the shop's network, it will not start (deploy/install.sh puts the script there)\n", dispatcherScript)
 		}
 		return 0
 	}
@@ -125,7 +137,7 @@ func runConsole(ctx context.Context, cfg consoleconfig.Result, hub hubconfig.Res
 	defer release()
 
 	spot, err := hotspot.New(hotspot.Config{Interface: cfg.Wifi.Interface, SSID: cfg.Wifi.SSID, Passphrase: cfg.Wifi.Passphrase,
-		Address: cfg.Wifi.Address, NMCLI: nmcli})
+		Address: cfg.Wifi.Address, NMCLI: nmcli, Forwarding: forwarding})
 	if err != nil {
 		log.Error("cannot prepare the network", "err", err)
 		return 1

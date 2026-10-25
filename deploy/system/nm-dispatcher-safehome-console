@@ -1,0 +1,18 @@
+#!/bin/sh
+# NetworkManager runs this, as root, at each change of a connection: deploy/install.sh
+# puts it in /etc/NetworkManager/dispatcher.d/ when the site has the local console.
+#
+# The console's Wi-Fi network serves its page and nothing else. Its "shared" mode,
+# which gives the phones their addresses, also turns IPv4 forwarding on and
+# masquerades them through the hub's other connections: a phone that joined with the
+# label's passphrase would reach the shop's network (the cameras, the box) and the
+# internet. Once the network is up, the kernel forwards nothing that comes in on it;
+# the page, on the hub itself, is still served. safehome-console waits for it, and
+# takes a network still routed down.
+[ "$CONNECTION_ID" = safehome-console ] || exit 0
+case "$2" in
+up)
+	# SAFEHOME_ROOT: tests only (NetworkManager gives scripts its own environment).
+	printf '0\n' >"${SAFEHOME_ROOT:-}/proc/sys/net/ipv4/conf/$1/forwarding"
+	;;
+esac

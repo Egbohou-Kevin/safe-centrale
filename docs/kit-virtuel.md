@@ -88,7 +88,8 @@ Les ordres reconnus sont décrits en tête de `vkit/fakemodem/control.go`,
 8. **Plantage** de la centrale armée (elle reste armée), **gel** (le chien de garde de
    systemd la redémarre).
 9. **Mode installation** au clavier, réseau Wi-Fi de la console, un « téléphone » s'y
-   connecte et ouvre la page.
+   connecte et ouvre la page, sans pouvoir aller plus loin (la passerelle de la
+   centrale ne lui répond pas).
 10. **Maintenance à distance** demandée par le cloud : le tunnel s'ouvre, le port du
     bastion mène au SSH de la centrale ; la clé de la centrale n'ouvre ni shell sur
     le bastion ni le port d'un autre site ; le tunnel se referme.

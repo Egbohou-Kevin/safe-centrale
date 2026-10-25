@@ -37,14 +37,16 @@ programmes et leurs configurations d'exemple : même broker, même dossier d'ét
 | `safehome-video` | La vidéo en direct (un go2rtc par session, sans port ouvert) et les photos à l'alarme (site avec caméras) | `systemd/safehome-video.service` |
 | `safehome-maint` | La maintenance à distance : un tunnel SSH sortant vers notre bastion, sur demande, une heure au plus (`maintenance.md`) | `systemd/safehome-maint.service` |
 | `safehome-power` | Le module batterie (Geekworm X728) : coupure du secteur, charge, arrêt propre avant la batterie vide (`alimentation.md`) | `systemd/safehome-power.service` |
-| `safehome-console` | La console locale : pendant le mode installation seulement, le réseau Wi-Fi de la centrale et la page de l'installateur (`security-install.md`) | `systemd/safehome-console.service`, `system/polkit-safehome-console.rules` |
+| `safehome-console` | La console locale : pendant le mode installation seulement, le réseau Wi-Fi de la centrale et la page de l'installateur (`security-install.md`) | `systemd/safehome-console.service`, `system/polkit-safehome-console.rules`, `system/nm-dispatcher-safehome-console` |
 
 Réglages système : `system/journald-safehome.conf` (journaux),
 `system/watchdog-safehome.conf` (chien de garde), `system/fstab-data` (partition de
 données), `system/polkit-safehome-console.rules` (la console peut créer, lever,
 baisser et supprimer les connexions de NetworkManager, sans éteindre la radio ; la
 règle vaut pour tout programme lancé sous `safehome`, voir la limite dans
-`security-install.md`).
+`security-install.md`), `system/nm-dispatcher-safehome-console` (le réseau de la
+console ne route pas les téléphones vers le réseau du commerce ni vers internet ;
+sans lui, la console ne lève pas son réseau).
 
 Nos programmes tournent sous l'utilisateur `safehome`, sans droits
 d'administration, et ne peuvent écrire que dans `/var/lib/safehome`
@@ -331,6 +333,7 @@ sudo systemctl enable --now zigbee2mqtt safehome-zigbee safehome-gsm safehome-hu
 sudo systemctl enable --now safehome-video        # seulement sur un site avec caméras
 sudo systemctl enable --now safehome-maint
 sudo cp deploy/system/polkit-safehome-console.rules /etc/polkit-1/rules.d/50-safehome-console.rules
+sudo install -m 755 deploy/system/nm-dispatcher-safehome-console /etc/NetworkManager/dispatcher.d/50-safehome-console
 sudo systemctl enable --now safehome-console
 systemctl --failed                       # doit être vide
 journalctl -u safehome-hub -b            # les journaux depuis le démarrage
@@ -573,7 +576,7 @@ se changent à tout moment.
   centrale elle-même, le temps d'un arrêt de l'adaptateur.
 - La console locale n'a pas encore tourné sur un vrai Pi. À vérifier : NetworkManager
   et `dnsmasq-base` (mode « partagé ») présents sur Raspberry Pi OS Lite, la règle
-  polkit, la portée du réseau.
+  polkit, le script qui coupe le routage de son réseau, la portée du réseau.
 - Le script d'installation (`deploy/install.sh`) n'a pas encore tourné sur un vrai Pi :
   il est testé sur un faux système. Les partitions, le module RTC, l'installation de
   Zigbee2MQTT et la lecture seule restent à la main. L'image maîtresse viendra après

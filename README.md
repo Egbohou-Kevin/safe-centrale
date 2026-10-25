@@ -97,7 +97,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/adapter/go2rtc` | L'adaptateur go2rtc : un processus par session, piloté sur un socket Unix (bibliothèque standard seulement) ; `go2rtctest` est un faux go2rtc pour les tests |
 | `internal/adapter/sshtunnel` | Le tunnel : le client OpenSSH vers le bastion (`ssh -R`), bastion épinglé, aucune configuration lue |
 | `internal/adapter/x728` | Le module batterie Geekworm X728 : ligne du secteur et bouton d'alimentation par l'interface GPIO de Linux, jauge sur le bus I2C, bibliothèque standard seule |
-| `internal/adapter/hotspot` | Le réseau Wi-Fi propre à la centrale, créé et supprimé par `nmcli` (NetworkManager), jamais démarré au boot (bibliothèque standard seulement) |
+| `internal/adapter/hotspot` | Le réseau Wi-Fi propre à la centrale, créé et supprimé par `nmcli` (NetworkManager), jamais démarré au boot, retiré s'il route les téléphones ailleurs (bibliothèque standard seulement) |
 
 ### Les programmes
 

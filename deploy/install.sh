@@ -168,8 +168,10 @@ put "$BUNDLE/deploy/system/journald-safehome.conf" "$ROOT/etc/systemd/journald.c
 put "$BUNDLE/deploy/system/watchdog-safehome.conf" "$ROOT/etc/systemd/system.conf.d/safehome-watchdog.conf" 644
 put "$BUNDLE/deploy/mosquitto/mosquitto.conf" "$ROOT/etc/mosquitto/mosquitto.conf" 644
 if has console; then
-	# The console makes its network through NetworkManager, as the service's user.
+	# The console makes its network through NetworkManager, as the service's user,
+	# and this script keeps the network from routing the phones anywhere.
 	put "$BUNDLE/deploy/system/polkit-safehome-console.rules" "$ROOT/etc/polkit-1/rules.d/50-safehome-console.rules" 644
+	put "$BUNDLE/deploy/system/nm-dispatcher-safehome-console" "$ROOT/etc/NetworkManager/dispatcher.d/50-safehome-console" 755
 fi
 
 for p in $PROGRAMS $TOOLS; do
