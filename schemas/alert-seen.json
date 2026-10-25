@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/alert-seen.json",
+  "title": "alert.seen",
+  "description": "Publié par le cloud sur alert/seen : un contact a touché « Vu » dans l'application. Son téléphone se tait, l'escalade continue pour les autres, et ne lui envoie plus rien pour cet incident. Il n'arrête rien : c'est alert.ack qui arrête l'escalade.",
+  "type": "object",
+  "properties": {
+    "incident": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contact": {
+      "type": "string",
+      "minLength": 1
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Quand la personne a touché « Vu », à l'heure du cloud, UTC à la milliseconde"
+    }
+  },
+  "required": [
+    "incident",
+    "contact",
+    "at"
+  ]
+}

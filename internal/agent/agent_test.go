@@ -494,6 +494,30 @@ func TestAcknowledgementsFromTheApp(t *testing.T) {
 	}
 }
 
+// "Vu" from the app reaches the hub only for an incident the cloud was told about, and
+// in its shape.
+func TestSeenFromTheApp(t *testing.T) {
+	h := newHarness(t)
+	seen := func(d contract.AlertSeenData) []Action {
+		_, _, a := h.cloud(topic("alert", "seen"), contract.TypeAlertSeen, d)
+		return a
+	}
+	good := contract.AlertSeenData{Incident: "inc1", Contact: "u_owner", At: contract.TS(t0)}
+	if len(of[Refused](seen(good))) != 1 {
+		t.Fatal("a seen for an incident the cloud never heard of passed")
+	}
+	h.local(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered) // incident inc1 goes up
+	if acts := seen(good); len(of[PublishLocal](acts)) != 1 {
+		t.Fatalf("the app's seen was refused: %+v", acts)
+	}
+	if len(of[Refused](seen(contract.AlertSeenData{Incident: "inc1", Contact: "u_owner"}))) != 1 {
+		t.Fatal("a seen without a time passed")
+	}
+	if _, _, acts := h.cloud(topic("alert", "ack"), contract.TypeAlertSeen, good); len(of[Refused](acts)) != 1 {
+		t.Fatal("a seen on the acknowledgements' topic passed")
+	}
+}
+
 func TestTheCloudCannotFloodTheHub(t *testing.T) {
 	h := newHarness(t, func(c *Config) { c.DownBurst = 3; c.DownPerMinute = 6 })
 	order := contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp}
@@ -634,7 +658,7 @@ func TestFilters(t *testing.T) {
 	down := DownFilters(site)
 	want := []Filter{
 		{topic("agent", "cmd"), 1}, {topic("alarm", "cmd"), 0}, {topic("alert", "ack"), 1}, {topic("alert", "result"), 1},
-		{topic("config", "set"), 1}, {topic("maint", "cmd"), 1}, {topic("photo", "cmd"), 1}, {topic("video", "cmd"), 1},
+		{topic("alert", "seen"), 1}, {topic("config", "set"), 1}, {topic("maint", "cmd"), 1}, {topic("photo", "cmd"), 1}, {topic("video", "cmd"), 1},
 	}
 	if !reflect.DeepEqual(down, want) {
 		t.Errorf("down filters %v", down)

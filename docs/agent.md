@@ -35,6 +35,7 @@ sirène et la passerelle GSM continuent.
 | Cloud vers local | `video/cmd` | Sessions vidéo en direct |
 | Cloud vers local | Configuration (`config/set`) | Contacts, planning, délais, forfait vidéo : contrôlée, puis publiée sur la centrale |
 | Cloud vers local | Résultats et acquittements des canaux du cloud | Republiés en `alert.result` et `alert.ack` |
+| Cloud vers local | « Vu » dans l'application | Republié en `alert.seen` |
 
 Les événements `keypad` ne partent jamais, car ils portent le code. Les
 commandes d'appareils (`siren.on`…) ne descendent jamais du cloud.
@@ -199,7 +200,9 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
   `config/set` (vérifiée : version, limites, numéros), un ordre de maintenance sur
   `maint/cmd` (une heure au plus, voir `maintenance.md`), et sur `alert/result` et
   `alert/ack` les réponses à une alerte que l'agent a transmise (un `alert.ack` doit
-  venir de l'app et porter sur un incident que l'agent a vu passer) ; et pour l'agent
+  venir de l'app et porter sur un incident que l'agent a vu passer), et sur `alert/seen`
+  le « Vu » de l'application (`alert.seen`, un incident que l'agent a vu passer, un
+  contact et une heure) ; et pour l'agent
   lui-même `photo.upload` sur `photo/cmd` et `agent.replay` sur `agent/cmd`, jamais
   republiés sur la centrale. Le reste est refusé et enregistré dans le journal.
 - **Aucun ordre avec un code n'attend sur le broker du cloud.** L'agent s'abonne à
@@ -225,7 +228,7 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
   cloud défaillant ou piraté ne puisse pas noyer la centrale d'ordres. Un message
   refusé par cette limite ne change rien à ce que l'agent sauvegarde : un flot ne
   devient pas un flot d'écritures sur la carte SD. Les réponses à ce que l'agent a
-  envoyé (`alert.result`, `alert.ack`, `photo.upload`), vérifiées contre ce qu'il a
+  envoyé (`alert.result`, `alert.ack`, `alert.seen`, `photo.upload`), vérifiées contre ce qu'il a
   envoyé, n'y comptent pas : leur nombre croît avec les contacts et les canaux d'une
   grande alarme (trois résultats par alerte), et une réponse refusée serait perdue
   pour de bon (un acquittement, une photo jamais envoyée). Elles ont leur propre

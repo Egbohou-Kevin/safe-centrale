@@ -42,6 +42,10 @@ type Config struct {
 	// status stops counting: it repeats its status every minute, so a few missed
 	// ones mean it stopped or hangs.
 	GSMSilentAfter time.Duration
+	// WithoutGSM: the site has no SMS line, by choice. No gateway is watched, no
+	// gsm_degraded alert is raised, and the gsm link says so (LinkNone) instead of
+	// staying unknown, which a line installed but never heard from also is.
+	WithoutGSM bool
 
 	// The same for the Zigbee adapter. A blind alarm is worse than a missing SMS
 	// backup: the owner is told sooner.

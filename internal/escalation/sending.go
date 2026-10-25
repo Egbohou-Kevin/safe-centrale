@@ -10,7 +10,7 @@ import (
 func (e *Escalation) notify(in *IncidentSnap, ct Contact, step int, wave Wave, at time.Time) []Action {
 	plan := e.plan(*in)
 	round := Round{Step: step, Started: at}
-	internet, gsm := split(ct.Channels)
+	internet, gsm := e.split(ct)
 	var out []Action
 	send := func(chs ...Channel) {
 		for _, ch := range chs {
@@ -47,8 +47,11 @@ func (e *Escalation) notify(in *IncidentSnap, ct Contact, step int, wave Wave, a
 	return out
 }
 
-func split(chs []Channel) (internet, gsm []Channel) {
-	for _, ch := range chs {
+// split sorts the channels of a contact into the internet ones and the GSM ones. A
+// site without a GSM line (Config.WithoutGSM) has none of the latter: no SMS and no
+// call is ever asked for there, whatever the contact accepts.
+func (e *Escalation) split(ct Contact) (internet, gsm []Channel) {
+	for _, ch := range e.cfg.usable(ct.Channels) {
 		if ch.internet() {
 			internet = append(internet, ch)
 		} else {
@@ -65,7 +68,7 @@ func (e *Escalation) gsm(in *IncidentSnap, contact string, at time.Time) []Actio
 		return nil
 	}
 	round := in.Rounds[contact]
-	_, gsm := split(ct.Channels)
+	_, gsm := e.split(ct)
 	var out []Action
 	for _, ch := range gsm {
 		if !slices.Contains(round.Sent, ch) {

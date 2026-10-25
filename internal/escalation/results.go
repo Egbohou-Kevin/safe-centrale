@@ -179,7 +179,7 @@ func (e *Escalation) retryInternet(in *IncidentSnap, contact string, now time.Ti
 	if !ok || round.NetOK {
 		return nil
 	}
-	internet, _ := split(ct.Channels)
+	internet, _ := e.split(ct)
 	failed := !roundHasPending(*in, contact, round.Step, true) && roundAllFailedOn(*in, contact, round.Step, true)
 	if len(internet) == 0 || !(round.NetHeld || failed) {
 		return nil

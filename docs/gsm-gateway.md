@@ -9,6 +9,12 @@ les réponses des contacts et surveille l'état des SIM. C'est un canal d'alerte
 comme les autres (voir `escalation.md`) : elle reçoit des `alert.request` et
 répond par des `alert.result`, sans connaître le moteur.
 
+Une centrale peut n'avoir aucune ligne SMS, par choix (`"without_gsm": true` dans
+`hub.json`) : elle n'a ni `gsm.json` ni passerelle, l'escalade ne demande jamais de SMS
+ni d'appel, et le lien `gsm` de `system.health` vaut `none` (voir `escalation.md`,
+« Une centrale sans ligne SMS »). Le script d'installation refuse `gsm.json` sur une
+telle centrale.
+
 ## Responsabilités
 
 - Envoyer les SMS et lancer les appels (canaux `sms` et `call`).

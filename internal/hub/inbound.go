@@ -49,6 +49,8 @@ func (h *Hub) serviceMessage(topic string, m inbox.Message) {
 		h.alertResultMessage(m)
 	case "alert/ack":
 		h.alertAckMessage(m)
+	case "alert/seen":
+		h.alertSeenMessage(m)
 	case "gsm/status":
 		h.gsmStatusMessage(m)
 	case "zigbee/status":
@@ -222,6 +224,12 @@ func (h *Hub) registryMessage(m inbox.Message) {
 func (h *Hub) gsmStatusMessage(m inbox.Message) {
 	env, d, ok := decode[contract.GSMStatusData](h, m, contract.TypeGSMStatus, "GSM status")
 	if !ok {
+		return
+	}
+	if h.cfg.Health.WithoutGSM {
+		// A gateway run against the site's configuration: its lines are not the
+		// site's, and nothing asks it for an SMS.
+		h.log.Debug("ignoring a GSM status: the site has no GSM line")
 		return
 	}
 	h.gsm.Store(&contract.GSMHealth{Lines: d.Lines})

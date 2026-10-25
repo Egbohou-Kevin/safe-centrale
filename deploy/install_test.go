@@ -273,6 +273,10 @@ func TestInstallRefusesWhatWouldBreakTheSite(t *testing.T) {
 		{"read-only system", []string{"FAKE_FSTYPE=overlay"}, (*rig).minimalSite, "read-only"},
 		{"no configuration", nil, func(*rig) {}, "no hub.json gsm.json zigbee.json agent.json cloud.secret"},
 		{"camera without go2rtc", nil, func(r *rig) { r.minimalSite(); r.site("video.json", "{}") }, "not go2rtc"},
+		{"a GSM gateway on a site without a GSM line", nil, func(r *rig) {
+			r.minimalSite()
+			r.site("hub.json", `{"without_gsm": true}`)
+		}, "hub.json says without_gsm but gsm.json is there"},
 		{"battery module of another device", nil, func(r *rig) {
 			r.minimalSite()
 			r.site("hub.json", `{"hub_device_id": "dev_hubpower"}`)
@@ -296,6 +300,24 @@ func TestInstallRefusesWhatWouldBreakTheSite(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A site without a GSM line, by choice, needs no gsm.json and runs no gateway.
+func TestASiteWithoutGSMRunsNoGateway(t *testing.T) {
+	r := newRig(t)
+	for _, f := range []string{"zigbee.json", "agent.json", "cloud.secret"} {
+		r.site(f, "{}")
+	}
+	r.site("hub.json", `{"site": "tg-lom-0001", "without_gsm": true}`)
+	cmds := r.mustRun()
+	for _, c := range cmds {
+		if strings.Contains(c, "safehome-gsm") && !strings.HasPrefix(c, "install ") {
+			t.Errorf("ran %q on a site without a GSM line", c)
+		}
+	}
+	if !slices.Contains(cmds, "systemctl restart safehome-hub") {
+		t.Error("the hub did not start")
 	}
 }
 

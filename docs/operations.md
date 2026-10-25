@@ -117,6 +117,15 @@ prévenir le propriétaire). `gsm_silent_after` doit rester bien au-dessus du
 l'adaptateur Zigbee : `zigbee_silent_after` (3 min) et `zigbee_down_after` (3 min avant
 l'alerte « capteurs injoignables »).
 
+`without_gsm` (faux par défaut) : à `true`, la centrale n'a **aucune ligne SMS, par
+choix** (25 octobre 2026). Elle ne demande jamais de SMS ni d'appel, ne surveille aucune
+passerelle (pas de `gsm_degraded`) et dit `none` pour le lien `gsm` de `system.health` :
+l'application montre « Sans SMS » en gris au lieu d'une panne. Le site n'a alors pas de
+`gsm.json`, et `install.sh` refuse les deux ensemble. `safehome-hub check` le dit, et
+nomme les contacts qui n'acceptent que SMS et appel : personne ne les prévient. Sans la
+clé, la ligne SMS est attendue, et une passerelle muette est une panne (voir
+`escalation.md`, « Une centrale sans ligne SMS »).
+
 À noter : `timezone` (Lomé : `Africa/Lome`, UTC), `zones` (le rôle de chaque appareil),
 `siren_ids` (les sirènes) et `siren_names` (facultatif : le nom d'une sirène dans les
 textes des alertes, par identifiant, par exemple `{"dev_siren1": "Reserve"}` ; même
@@ -250,7 +259,8 @@ Sur la sortie d'erreur, au format texte (`log_level` : `debug`, `info`, `warn`,
 
 ## La passerelle GSM (`safehome-gsm`)
 
-Elle tourne à côté de la centrale et possède le modem. Elle exécute les demandes
+Elle tourne à côté de la centrale et possède le modem, sauf sur une centrale sans ligne
+SMS (`without_gsm` dans `hub.json`), qui n'en a pas. Elle exécute les demandes
 d'alerte `sms` et `call`, publie leurs résultats, transforme les réponses « 1 » en
 acquittements et publie l'état des lignes (`gsm.status`), que la centrale recopie dans
 `system.health`. Fonctionnement détaillé : `gsm-gateway.md`.

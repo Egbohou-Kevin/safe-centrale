@@ -180,6 +180,8 @@ func applyHealth(c *health.Config, h *healthFile) error {
 // its zone's name).
 func applyEscalation(cfg *hub.Config, f file) error {
 	e := &cfg.Escalation
+	// No SMS line, by choice: the gsm link says so, and no SMS nor call is asked for.
+	cfg.Health.WithoutGSM, e.WithoutGSM = f.WithoutGSM, f.WithoutGSM
 	e.SiteName = f.SiteName
 	if e.SiteName == "" {
 		e.SiteName = f.Site

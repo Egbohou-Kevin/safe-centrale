@@ -31,6 +31,7 @@ const (
 	TypeAlertRequest = "alert.request"
 	TypeAlertResult  = "alert.result"
 	TypeAlertAck     = "alert.ack"
+	TypeAlertSeen    = "alert.seen"
 
 	TypeRegistryPair           = "registry.pair"
 	TypeRegistryRemove         = "registry.remove"

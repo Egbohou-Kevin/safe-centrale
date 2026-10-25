@@ -146,6 +146,32 @@ func TestAnAcknowledgementStopsTheEscalation(t *testing.T) {
 	}
 }
 
+// "Vu" from the app: the owner gets no doubling SMS, the guard goes on being told.
+func TestSeenGoesOnWithTheOthers(t *testing.T) {
+	r := newRig(t, nil, withContacts)
+	r.start()
+	trigger(r)
+	ids := requestIDs(t, r)
+	r.send(contract.AlertResultTopic(site), contract.TypeAlertResult, contract.AlertResultData{Ref: ids["u_owner/app"], Status: contract.ResultDelivered})
+	incident := dataOf[contract.AlertRequestData](t, eventsOf(r, contract.TypeAlertRequest)[0]).Incident
+	r.send(contract.AlertSeenTopic(site), contract.TypeAlertSeen, contract.AlertSeenData{Incident: incident, Contact: "u_owner", At: contract.TS(r.clock.Now())})
+	r.settle()
+	r.clock.Advance(time.Minute)
+	r.settle()
+	if got := requested(t, r); len(got) != 3 {
+		t.Fatalf("%v: no doubling SMS for the owner who saw it", got)
+	}
+	r.clock.Advance(time.Minute) // +2 min: the second wave tells the guard again, not the owner
+	drivertest.WaitFor(t, "the second wave", func() bool { r.settle(); return len(requested(t, r)) == 5 })
+	if got := requested(t, r)[3:]; !sameSet(got, []string{"u_guard/sms/2", "u_guard/call/2"}) {
+		t.Fatalf("%v", got)
+	}
+	if !strings.Contains(r.logs.String(), "a contact has seen the alert") {
+		t.Fatalf("the seen must be logged:\n%s", r.logs.String())
+	}
+	r.validateAll()
+}
+
 func TestDisarmingEndsTheEscalation(t *testing.T) {
 	r := newRig(t, nil, withContacts)
 	r.start()

@@ -272,6 +272,7 @@ func (h *Hub) Subscriptions() []inbox.Subscription {
 		{Filter: contract.AlarmCmdTopic(site), QoS: 1},
 		{Filter: contract.AlertResultTopic(site), QoS: 1},
 		{Filter: contract.AlertAckTopic(site), QoS: 1},
+		{Filter: contract.AlertSeenTopic(site), QoS: 1},
 		{Filter: contract.GSMStatusTopic(site), QoS: 1},
 		{Filter: contract.ZigbeeStatusTopic(site), QoS: 1},
 		{Filter: contract.AgentStatusTopic(site), QoS: 1},

@@ -345,6 +345,7 @@ func TestSubscriptions(t *testing.T) {
 		"safehome/" + site + "/alarm/cmd":            true,
 		"safehome/" + site + "/alert/result":         true,
 		"safehome/" + site + "/alert/ack":            true,
+		"safehome/" + site + "/alert/seen":           true,
 		"safehome/" + site + "/gsm/status":           true,
 		"safehome/" + site + "/zigbee/status":        true,
 		"safehome/" + site + "/agent/status":         true,

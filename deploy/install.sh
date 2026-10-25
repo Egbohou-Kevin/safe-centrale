@@ -26,6 +26,7 @@ PROGRAMS="hub gsm zigbee agent video maint console power"
 TOOLS="install"
 # Every site runs these; video (cameras), maint (remote maintenance), console (the
 # local console) and power (the battery module) only when their configuration is there.
+# A site without a GSM line (without_gsm in hub.json) runs no gsm.
 REQUIRED="hub gsm zigbee agent"
 
 BUNDLE="$(cd "$(dirname "$0")/.." && pwd)"
@@ -68,13 +69,23 @@ if [ -d "$ROOT/opt/zigbee2mqtt" ]; then
 	esac
 fi
 
+site_file() { if [ -f "$SITE/$1" ]; then echo "$SITE/$1"; else echo "$ETC/$1"; fi; }
+# A site without a GSM line, by choice ("without_gsm": true in hub.json): no gsm.json,
+# no gateway (docs/gsm-gateway.md).
+required="$REQUIRED"
+if configured hub.json && grep -Eq '"without_gsm"[[:space:]]*:[[:space:]]*true' "$(site_file hub.json)"; then
+	configured gsm.json &&
+		fail "hub.json says without_gsm but gsm.json is there: remove it (and /etc/safehome/gsm.json), or drop without_gsm"
+	required="${required/ gsm / }"
+fi
+
 enabled=""
 missing=""
 for p in $PROGRAMS; do
 	if configured "$p.json"; then
 		enabled="$enabled $p"
 	else
-		case " $REQUIRED " in *" $p "*) missing="$missing $p.json" ;; esac
+		case " $required " in *" $p "*) missing="$missing $p.json" ;; esac
 	fi
 done
 configured cloud.secret || missing="$missing cloud.secret"
@@ -86,7 +97,6 @@ if has video && [ ! -x "$BUNDLE/bin/go2rtc" ] && [ ! -x "$BIN/go2rtc" ]; then
 fi
 # json_value KEY FILE: a string value of a configuration file (enough for an id).
 json_value() { sed -n 's/.*"'"$1"'": *"\([^"]*\)".*/\1/p' "$2" | head -n 1; }
-site_file() { if [ -f "$SITE/$1" ]; then echo "$SITE/$1"; else echo "$ETC/$1"; fi; }
 if has power; then
 	hub_device="$(json_value hub_device_id "$(site_file hub.json)")"
 	power_device="$(json_value device_id "$(site_file power.json)")"

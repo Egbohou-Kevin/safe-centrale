@@ -1,5 +1,7 @@
 package contract
 
+import "fmt"
+
 // AlertRequestData: alert.request.
 type AlertRequestData struct {
 	Incident string `json:"incident"`
@@ -43,4 +45,22 @@ type AlertAckData struct {
 	Incident string `json:"incident"`
 	Contact  string `json:"contact"`
 	Via      string `json:"via"` // "sms" or "app"
+}
+
+// AlertSeenData: alert.seen. A contact saw the alert in the app ("Vu") without
+// taking the incident in hand: the escalation goes on for the others.
+type AlertSeenData struct {
+	Incident string `json:"incident"`
+	Contact  string `json:"contact"`
+	// At is when the person said it, by the cloud's clock: the message may wait for
+	// the link to the hub.
+	At Timestamp `json:"at"`
+}
+
+// Validate checks the shape of a "Vu": an incident, a contact, and when.
+func (d AlertSeenData) Validate() error {
+	if d.Incident == "" || d.Contact == "" || d.At.IsZero() {
+		return fmt.Errorf("%w: alert.seen needs an incident, a contact and a time", ErrInvalid)
+	}
+	return nil
 }

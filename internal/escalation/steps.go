@@ -154,7 +154,7 @@ func (e *Escalation) runStep(in *IncidentSnap, at time.Time) []Action {
 			in.NextAt = in.RaisedAt.Add(plan.stepAt(in.Step))
 		}
 		wave := plan.step(step)
-		contacts := e.contactsOf(wave.To)
+		contacts := slices.DeleteFunc(e.contactsOf(wave.To), func(ct Contact) bool { return !e.reachable(*in, ct) })
 		if len(contacts) == 0 {
 			continue
 		}

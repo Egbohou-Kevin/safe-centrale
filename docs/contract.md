@@ -80,6 +80,7 @@ Tous les topics commencent par `safehome/{site}/`.
 | `.../alert/request` | Demande d'envoi d'alerte (SMS, appel) de l'escalade vers les canaux | non |
 | `.../alert/result` | Résultat d'un envoi (envoyé, échoué, acquitté) | non |
 | `.../alert/ack` | Acquittement d'un contact (SMS ou application) | non |
+| `.../alert/seen` | « Vu » d'un contact dans l'application, qui n'arrête rien (cloud vers site) | non |
 | `.../registry/cmd` | Appairage et retrait d'appareils, **local seulement** | non |
 | `.../registry/event` | Appareil ajouté, refusé ou retiré (la centrale oublie un appareil retiré) | non |
 | `.../registry/devices` | Liste des appareils connus | oui |
@@ -118,7 +119,7 @@ MQTT 5 limite la remise, pas la garde). Pour un abonnement en QoS 0, il ne garde
 | `alarm/cmd` | 0 | Porte le code d'accès (`alarm.disarm`, `alarm.silence`, `alarm.end`), que le cloud ne garde jamais : le broker ne doit pas le garder non plus. Un ordre ne vaut qu'une minute (`exp`) |
 | `video/cmd` | 1 | Le jeton est celui du cloud, pour une session ; un `video.stop` vaut encore après une coupure, une demande périmée est refusée par l'agent |
 | `photo/cmd` | 1 | Le jeton est celui du cloud, pour une photo ; l'adresse vaut jusqu'à son `exp` et la photo est une preuve de l'alarme |
-| `config/set`, `maint/cmd`, `agent/cmd`, `alert/result`, `alert/ack` | 1 | Pas de secret ; ils valent encore au retour de l'agent (un `maint.open` périmé est refusé) |
+| `config/set`, `maint/cmd`, `agent/cmd`, `alert/result`, `alert/ack`, `alert/seen` | 1 | Pas de secret ; ils valent encore au retour de l'agent (un `maint.open` périmé est refusé) |
 
 Le cloud publie toujours en QoS 1 : le broker lui accuse réception, puis remet
 l'ordre à l'agent en QoS 0 (la plus petite des deux). Le prix, accepté : un ordre donné
@@ -503,6 +504,17 @@ lecteur ne le montre pas comme un compte à rebours en cours (« reprend à 16:2
   secondes.
 - `alert.ack` : un contact acquitte. Champs : `incident`, `contact`, `via` (`sms`
   ou `app`). Il arrête l'escalade vers les autres contacts.
+- `alert.seen` : un contact a touché « Vu » sur l'écran de l'alarme, dans
+  l'application. Publié par le cloud seulement, sur `alert/seen`. Champs : `incident`,
+  `contact` et `at` (quand la personne l'a dit, à l'heure du cloud, UTC à la
+  milliseconde : le message peut attendre le retour de la liaison), tous obligatoires.
+  Il **n'arrête rien** : l'escalade continue pour les autres contacts. Elle n'envoie
+  plus rien à ce contact pour cet incident (ni le doublon GSM, ni les vagues suivantes,
+  ni les relances), et une vague qui ne compte plus que des contacts qui ont vu est
+  sautée sans attendre (voir `escalation.md`, « Vu »). Pour arrêter l'escalade, le
+  téléphone envoie ensuite `alert.ack` (« Je m'en occupe »). La centrale ne le redit
+  pas au cloud : le cloud le tient de l'application et le montre lui-même aux autres
+  contacts. L'agent ne le laisse passer que pour un incident qu'il a vu monter.
 - La passerelle GSM (`safehome-gsm`) lit aussi `alert/ack` et `alarm/event` (les
   `alarm.cleared` d'origine `user`, et les `incidents` d'`alarm.disarmed`) : elle
   abandonne alors les messages de ces incidents encore en attente (voir
@@ -761,7 +773,14 @@ pas) :
 Le lien `gsm` et les lignes viennent du message `gsm.status` de la passerelle. Le lien
 `gsm` vaut `ok`, `down` (la passerelle dit qu'elle ne peut pas envoyer) ou `silent`
 (elle ne donne plus de nouvelles depuis `gsm_silent_after`, 3 minutes par défaut). Il
-est absent tant que la passerelle n'a jamais parlé (site sans GSM).
+vaut `none` sur une centrale **sans ligne SMS par choix** (`without_gsm` dans
+`hub.json`, voir `operations.md`) : elle ne surveille aucune passerelle et ne demande
+jamais de SMS ni d'appel, et `gsm` (les lignes) est absent. Sinon, il est absent tant
+que la passerelle n'a jamais parlé : la ligne est installée, mais la centrale n'en a
+pas encore de nouvelles (elle démarre, ou la passerelle n'a jamais démarré). Un lecteur
+distingue donc `none` (pas de SMS, c'est voulu) de `down` et `silent` (la ligne est en
+panne). Avant le 25 octobre 2026, une centrale sans GSM n'envoyait aucun lien `gsm`,
+comme une passerelle pas encore entendue.
 
 Le lien `internet` vient de la même façon du message `agent.status` de l'agent de
 liaison : `ok`, `down` (l'agent n'atteint pas le cloud) ou `silent` (l'agent ne donne
@@ -795,7 +814,9 @@ personnes prévenues de l'application. Jamais un numéro de téléphone.
   intrusion ne le prévient jamais : il vient alors en dernier. À égalité, l'ordre de la
   configuration.
 - `name` : absent quand la configuration n'en donne pas. `role` et `channels` : les mots de
-  `config.set`.
+  `config.set`. Sur une centrale sans ligne SMS (`without_gsm`), `channels` ne garde que
+  `app` et `whatsapp`, les seuls qui partent : un contact qui n'acceptait que SMS et
+  appel a une liste vide et pas de `told_after_s`, personne ne le prévient.
 - Les contacts et les plans ne changent qu'avec la configuration du site, qui redémarre la
   centrale ; l'agent de liaison le redit au cloud à chaque connexion.
 
@@ -959,6 +980,18 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **25 octobre 2026, « Vu » et la centrale sans SMS** : nouveau message `alert.seen`
+  (`incident`, `contact`, `at`), du cloud vers la centrale sur `alert/seen` : un contact
+  a vu l'alarme dans l'application sans la prendre en charge (voir « Alertes »). Il
+  descend du cloud seulement, et la centrale ne le redit pas : le cloud l'envoie
+  quand il veut, une centrale qui ne le connaît pas encore le refuse sans dommage (son
+  agent n'a pas la route : l'escalade continue comme avant, le contact reçoit encore le
+  doublon). Le lien `gsm` de `system.health` vaut `none` sur une centrale sans ligne
+  SMS par choix (`without_gsm`), qui ne demande plus aucun SMS ni appel (voir
+  « `system.health` ») ; aucun schéma ne change pour cela (`links` est une table de
+  mots). Un cloud qui ne connaît pas `none` le laisse de côté, comme avant le lien
+  absent.
+
 - **25 octobre 2026, les messages abandonnés** : la passerelle GSM publie un `alert.result`
   `failed`, raison `dropped`, pour chaque SMS ou appel qu'elle abandonne parce que son incident a
   pris fin : celui qui lit l'escalade ne le prend jamais pour envoyé (voir « Alertes »).
@@ -1076,6 +1109,8 @@ Dans l'autre sens, le cloud peut publier seulement :
   jamais publiées sur la centrale ;
 - sur `alert/result` et `alert/ack`, les résultats et les acquittements des canaux du
   cloud (application, WhatsApp), pour une alerte que l'agent lui a transmise ;
+- sur `alert/seen`, le « Vu » d'un contact dans l'application, pour un incident que
+  l'agent lui a transmis ;
 - sur `maint/cmd`, l'ouverture et la fermeture d'un tunnel de maintenance (durée
   bornée à une heure, ordre périmé refusé) ;
 - sur `photo/cmd`, l'adresse d'envoi d'une photo que l'agent a annoncée (gardée par

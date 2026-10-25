@@ -30,6 +30,7 @@ const (
 	linkOK       = "ok"
 	linkDown     = "down"
 	linkSilent   = "silent" // the component stopped giving news (it is dead or stuck)
+	linkNone     = "none"   // the site has none, by choice: a hub without a GSM line
 )
 
 // dispatchEngine turns what the engine decided into messages. It runs on the
@@ -169,6 +170,8 @@ func linkOf(s health.LinkState) string {
 		return linkDown
 	case health.LinkSilent:
 		return linkSilent
+	case health.LinkNone:
+		return linkNone
 	}
 	return ""
 }

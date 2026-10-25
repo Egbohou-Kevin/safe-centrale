@@ -88,6 +88,66 @@ Un acquittement est enregistré dans un événement `alert.ack` avec le contact 
 moyen utilisé. Il rend aussi discrète l'alerte d'une sirène muette pendant cette
 alarme (voir « Sirène muette pendant une alarme »).
 
+## « Vu »
+
+Décidé par Kevin le 25 octobre 2026 (maquettes AlarmeVu et AlarmeVuChoix), fait le même
+jour. Sur l'écran de l'alarme, le bouton « Je gère » devient « Vu ». Toucher « Vu »
+fait taire ce téléphone et dit aux autres que ce contact a vu, **sans arrêter
+l'escalade** : le cloud publie `alert.seen` (`incident`, `contact`, `at`, voir
+`contract.md`). Un volet demande ensuite « Et les autres contacts ? » :
+
+- « Je m'en occupe » : l'acquittement de toujours (`alert.ack`, `via` à `app`),
+  l'escalade s'arrête ;
+- « Prévenir les autres » : rien de plus, l'escalade continue et les autres voient
+  « Kevin a vu à 13:43 » dans l'application ;
+- sans réponse : l'escalade continue.
+
+Ce que fait l'escalade d'un « Vu » d'un contact connu, pour l'incident en cours (toutes
+ses alertes), choix du 25 octobre 2026 :
+
+- **Elle ne s'arrête pas.** Les autres contacts sont prévenus comme prévu, vague après
+  vague, relances comprises, et l'incident finit « sans réponse » si personne ne le
+  prend en charge.
+- **Elle n'envoie plus rien à ce contact pour cet incident** : son téléphone s'est tu,
+  et ne doit pas sonner de nouveau. Le reste de son tour tombe (le relais GSM si le
+  cloud n'a pas confirmé, le doublon SMS et appel à +1 min, un message internet
+  retenu), et les vagues suivantes et les relances le sautent. Un SMS ou un appel déjà
+  remis à la passerelle GSM part encore : ce qui est parti n'est pas retiré.
+- **Une vague qui ne compte plus que des contacts qui ont vu est sautée sans attendre**,
+  comme une vague vide : les suivants sont prévenus plus tôt. C'est ce que veut
+  « Prévenir les autres ».
+- Le « Vu » est gardé avec l'état de l'escalade, après un redémarrage aussi. Il ne rend
+  pas l'alarme « prise en charge » : l'alerte d'une sirène muette reste bruyante (voir
+  « Sirène muette pendant une alarme »). Un « Vu » d'un inconnu, ou pour un incident
+  dont l'escalade est finie, ne change rien.
+
+La centrale ne republie pas le « Vu » : le cloud le tient de l'application, le garde dans
+le fil de l'incident et le montre aux autres contacts.
+
+## Une centrale sans ligne SMS
+
+Décidé par Kevin le 25 octobre 2026 (maquette SMSAbsent) : une centrale peut n'avoir
+**aucune ligne SMS, par choix** (pas de modem, pas de SIM). L'installateur l'écrit dans
+`hub.json` (`"without_gsm": true`, voir `operations.md`) ; elle n'a pas de `gsm.json` et
+ne lance pas la passerelle GSM. Alors :
+
+- l'escalade ne demande **jamais** de SMS ni d'appel, quels que soient les canaux d'un
+  contact : aucune étape « SMS » n'est créée, donc aucune ne reste sans réponse ni ne
+  finit en échec. Le relais GSM d'internet, le doublon et les SMS immédiats du feu et de
+  la panique n'existent pas ; sans internet, les messages attendent son retour ;
+- un contact qui n'accepte que SMS et appel n'est jamais prévenu : une vague qui ne
+  compte que lui est sautée, `safehome-hub check` le signale, et `system.contacts` le
+  montre sans canal ni `told_after_s` ;
+- la surveillance ne suit aucune passerelle et ne lève jamais `gsm_degraded` ; le lien
+  `gsm` de `system.health` vaut `none`. L'application montre une tuile grise « Sans
+  SMS », au lieu de la tuile rouge d'une ligne installée mais en panne (`down`,
+  `silent`).
+
+Choix du 25 octobre 2026 : ne pas créer les étapes plutôt que les créer en échec
+(« pas de SMS sur ce site ») : plus simple, et cohérent avec « une vague sans personne à
+prévenir est sautée ». Par défaut, sans la clé, la ligne SMS est attendue : une
+passerelle muette reste une panne.
+
 ## Plans par type d'alerte
 
 | Type | Déclencheur | Plan |
@@ -447,6 +507,8 @@ Ajouts à reporter dans `contract.md` :
   dire que le cloud a pris le message, `delivered` qu'il est arrivé sur le
   téléphone.
 - `alert.ack` : `incident`, `contact`, `via` (`sms`, `app`).
+- `alert.seen` : `incident`, `contact`, `at`. Le « Vu » de l'application, qui n'arrête
+  rien (voir « Vu »).
 - Configuration des contacts : par `config.set` (voir `contract.md`). La liste du
   cloud remplace celle du fichier de la centrale ; un propriétaire au moins. Les
   numéros ne vont jamais dans `hub.json` ni dans un journal ; la centrale les garde

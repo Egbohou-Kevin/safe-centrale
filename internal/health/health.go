@@ -150,7 +150,7 @@ func (m *Monitor) Status() Status {
 		HubBattery:      m.s.HubBattery,
 		Offline:         slices.Sorted(maps.Keys(m.s.Offline)),
 		LowBattery:      slices.Sorted(maps.Keys(m.s.LowBattery)),
-		GSM:             m.s.GSM.state(),
+		GSM:             m.gsmState(),
 		Zigbee:          m.s.Zigbee.state(),
 		Internet:        m.s.Internet.state(),
 	}
@@ -175,7 +175,9 @@ func (m *Monitor) Handle(in Input) []Action {
 	case Forget:
 		m.forget(v.DeviceID)
 	case GSM:
-		m.s.GSM.report(v.Now, v.Seen, v.Usable)
+		if !m.cfg.WithoutGSM { // a gateway run against the configuration says nothing
+			m.s.GSM.report(v.Now, v.Seen, v.Usable)
+		}
 	case Zigbee:
 		m.s.Zigbee.report(v.Now, v.Seen, v.Usable)
 	case Internet:
@@ -194,15 +196,29 @@ type watched struct {
 	rule  watchRule
 }
 
-// watches lists the supervised components, in a fixed order.
+// watches lists the supervised components, in a fixed order. A site without a GSM
+// line watches no gateway, even one it heard before its configuration changed.
 func (m *Monitor) watches() []watched {
-	return []watched{
-		{&m.s.GSM, watchRule{silentAfter: m.cfg.GSMSilentAfter, alertAfter: m.cfg.GSMDegradedAfter, kind: AlertGSMDegraded}},
+	out := []watched{
 		{&m.s.Zigbee, watchRule{silentAfter: m.cfg.ZigbeeSilentAfter, alertAfter: m.cfg.ZigbeeDownAfter, kind: AlertZigbeeDown}},
 		// No alert: the contacts cannot act on it, and the cloud sees a silent site by
 		// itself. The escalation uses the state to skip the internet.
 		{&m.s.Internet, watchRule{silentAfter: m.cfg.InternetSilentAfter}},
 	}
+	if m.cfg.WithoutGSM {
+		return out
+	}
+	gsm := watched{&m.s.GSM, watchRule{silentAfter: m.cfg.GSMSilentAfter, alertAfter: m.cfg.GSMDegradedAfter, kind: AlertGSMDegraded}}
+	return append([]watched{gsm}, out...)
+}
+
+// gsmState is the gsm link: none on a site without a GSM line, else what the
+// gateway's watch knows.
+func (m *Monitor) gsmState() LinkState {
+	if m.cfg.WithoutGSM {
+		return LinkNone
+	}
+	return m.s.GSM.state()
 }
 
 // --- daily summary ---------------------------------------------------------

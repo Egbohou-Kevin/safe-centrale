@@ -111,6 +111,19 @@ type Config struct {
 	// MaxPerHour is the most messages one contact gets per hour, to limit cost and
 	// noise. Fire, panic and a silent siren are exempt.
 	MaxPerHour int
+	// WithoutGSM: the site has no SMS line, by choice. The contacts' SMS and call
+	// channels are left aside: nothing is ever asked of a GSM gateway that is not
+	// there, and the people who see the contacts see only the channels that work.
+	WithoutGSM bool
+}
+
+// usable keeps the channels this site can use: all of them, or the internet ones
+// on a site without a GSM line.
+func (c Config) usable(chs []Channel) []Channel {
+	if !c.WithoutGSM {
+		return chs
+	}
+	return slices.DeleteFunc(slices.Clone(chs), func(ch Channel) bool { return ch.gsm() })
 }
 
 // MaxContacts is the most contacts a site has.
@@ -323,7 +336,9 @@ func (c Config) Told(kind AlertKind) []Told {
 	out := make([]Told, 0, len(c.Contacts))
 	for _, ct := range c.Contacts {
 		at, ok := first[ct.ID]
-		out = append(out, Told{Contact: ct, After: at, Never: !ok})
+		ct.Channels = c.usable(ct.Channels)
+		// Without a channel this site can use, nobody tells them anything.
+		out = append(out, Told{Contact: ct, After: at, Never: !ok || len(ct.Channels) == 0})
 	}
 	slices.SortStableFunc(out, func(a, b Told) int {
 		switch {

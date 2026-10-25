@@ -104,6 +104,7 @@ var downRoutes = map[string]downRoute{
 	"video/cmd":    {types: []string{contract.TypeVideoRequest, contract.TypeVideoStop}},
 	"alert/result": {types: []string{contract.TypeAlertResult}},
 	"alert/ack":    {types: []string{contract.TypeAlertAck}},
+	"alert/seen":   {types: []string{contract.TypeAlertSeen}}, // the cloud's own: the hub never says it
 	"config/set":   {types: []string{contract.TypeConfigSet}},
 	"photo/cmd":    {types: []string{contract.TypePhotoUpload}}, // for the agent itself
 	"maint/cmd":    {types: []string{contract.TypeMaintOpen, contract.TypeMaintClose}},

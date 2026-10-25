@@ -10,6 +10,8 @@ const (
 	LinkOK      LinkState = "ok"     // it works
 	LinkDown    LinkState = "down"   // it says it does not work
 	LinkSilent  LinkState = "silent" // it stopped giving news
+	// LinkNone: the site has none, by choice (Config.WithoutGSM, for the GSM line).
+	LinkNone LinkState = "none"
 )
 
 // Watch follows a component that repeats its state (the GSM gateway, the Zigbee

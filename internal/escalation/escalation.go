@@ -98,6 +98,8 @@ func (e *Escalation) Handle(in Input) []Action {
 		out = append(out, e.result(v)...)
 	case Ack:
 		out = append(out, e.ack(v)...)
+	case Seen:
+		out = append(out, e.seen(v)...)
 	case Uplink:
 		out = append(out, e.uplink(v)...)
 	case Close:

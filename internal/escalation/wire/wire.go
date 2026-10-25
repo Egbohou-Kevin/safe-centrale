@@ -120,6 +120,11 @@ func Ack(d contract.AlertAckData, now time.Time) escalation.Ack {
 	return escalation.Ack{Now: now, Incident: d.Incident, Contact: d.Contact}
 }
 
+// Seen turns an alert.seen into an escalation input.
+func Seen(d contract.AlertSeenData, now time.Time) escalation.Seen {
+	return escalation.Seen{Now: now, Incident: d.Incident, Contact: d.Contact}
+}
+
 // Contacts turns who an intrusion tells and when into system.contacts: the contacts
 // in the plan's order, with their role and channels as the contract names them.
 func Contacts(told []escalation.Told) contract.ContactsData {

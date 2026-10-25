@@ -128,6 +128,16 @@ type Ack struct {
 	Contact  string
 }
 
+// Seen is a contact saying "I have seen it" from the app ("Vu"), without taking the
+// incident in hand: their phone stops ringing, nothing else stops. The escalation
+// goes on for the others; this contact is told nothing more of the incident, by no
+// channel (see docs/escalation.md, "Vu").
+type Seen struct {
+	Now      time.Time
+	Incident string
+	Contact  string
+}
+
 // Uplink says whether the hub can reach the cloud, where the internet channels
 // live.
 type Uplink struct {
@@ -147,6 +157,7 @@ func (t Tick) at() time.Time   { return t.Now }
 func (r Raise) at() time.Time  { return r.Now }
 func (r Result) at() time.Time { return r.Now }
 func (a Ack) at() time.Time    { return a.Now }
+func (s Seen) at() time.Time   { return s.Now }
 func (u Uplink) at() time.Time { return u.Now }
 func (c Close) at() time.Time  { return c.Now }
 
@@ -196,6 +207,13 @@ type Withheld struct {
 	Channel  Channel
 }
 
+// Noted reports a contact who said they have seen an incident in progress (Seen):
+// the escalation goes on without them.
+type Noted struct {
+	Incident string
+	Contact  string
+}
+
 // Outcome says how the escalation of an incident ended.
 type Outcome string
 
@@ -220,3 +238,4 @@ func (Send) isAction()      {}
 func (Throttled) isAction() {}
 func (Withheld) isAction()  {}
 func (Concluded) isAction() {}
+func (Noted) isAction()     {}

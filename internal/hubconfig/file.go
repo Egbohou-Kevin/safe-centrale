@@ -10,11 +10,13 @@ import (
 // left out keeps its documented default.
 type file struct {
 	configfile.ProgramFile
-	SiteName       string              `json:"site_name"`
-	Contacts       []contactFile       `json:"contacts"`
-	Escalation     *escalationFile     `json:"escalation"`
-	Timezone       string              `json:"timezone"`
-	HubDeviceID    string              `json:"hub_device_id"`
+	SiteName    string          `json:"site_name"`
+	Contacts    []contactFile   `json:"contacts"`
+	Escalation  *escalationFile `json:"escalation"`
+	Timezone    string          `json:"timezone"`
+	HubDeviceID string          `json:"hub_device_id"`
+	// WithoutGSM: the site has no SMS line, by choice (no gsm.json, no gateway).
+	WithoutGSM     bool                `json:"without_gsm"`
 	SirenIDs       []string            `json:"siren_ids"`
 	SirenNames     map[string]string   `json:"siren_names"`
 	Zones          map[string]zoneFile `json:"zones"`

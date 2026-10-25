@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 
 	"safehome/internal/adapter/mqtt"
@@ -14,6 +15,7 @@ import (
 	"safehome/internal/configapp"
 	"safehome/internal/contract"
 	"safehome/internal/driver"
+	"safehome/internal/escalation"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
 	"safehome/internal/inbox"
@@ -85,7 +87,23 @@ func check(cfg hubconfig.Result, stdout, stderr io.Writer) int {
 	if len(cfg.Hub.Escalation.Contacts) == 0 {
 		fmt.Fprintln(stdout, "warning: no contact is configured, nobody would be told of an alarm")
 	}
+	if cfg.Hub.Escalation.WithoutGSM {
+		withoutGSM(cfg.Hub.Escalation.Contacts, stdout)
+	}
 	return 0
+}
+
+// withoutGSM says what a site without a GSM line means, and names the contacts it
+// leaves without a channel: those who accept only SMS and calls are never told.
+func withoutGSM(contacts []escalation.Contact, stdout io.Writer) {
+	fmt.Fprintln(stdout, "no GSM line (without_gsm): no SMS nor call is ever sent, the alerts go by the app and WhatsApp only")
+	for _, c := range contacts {
+		if !slices.ContainsFunc(c.Channels, func(ch escalation.Channel) bool {
+			return ch == escalation.ChannelApp || ch == escalation.ChannelWhatsApp
+		}) {
+			fmt.Fprintf(stdout, "warning: contact %s accepts only SMS and calls: on a site without a GSM line, nobody would tell them anything\n", c.ID)
+		}
+	}
 }
 
 func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr io.Writer) int {

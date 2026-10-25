@@ -196,6 +196,21 @@ func TestDefaults(t *testing.T) {
 	}
 }
 
+// A site without a GSM line says so in one key; by default, the GSM line is expected.
+func TestWithoutGSM(t *testing.T) {
+	r, err := parse([]byte(minimal))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Hub.Health.WithoutGSM || r.Hub.Escalation.WithoutGSM {
+		t.Fatal("a GSM line is expected unless the file says otherwise")
+	}
+	r = with(t, `"without_gsm": true`)
+	if !r.Hub.Health.WithoutGSM || !r.Hub.Escalation.WithoutGSM {
+		t.Fatalf("health %v, escalation %v", r.Hub.Health.WithoutGSM, r.Hub.Escalation.WithoutGSM)
+	}
+}
+
 func TestOverrides(t *testing.T) {
 	r := with(t, `"alarm": {"exit_delay": "90s", "entry_delay": "1m", "siren_cycles": 2, "panic_siren": true, "postpone_max": 0},
 		"health": {"hub_battery_warn": 50, "summary_at": "07:30", "gsm_degraded_after": "15m", "gsm_silent_after": "5m",

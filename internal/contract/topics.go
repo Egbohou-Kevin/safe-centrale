@@ -50,6 +50,7 @@ func AlarmAckTopic(site string) string   { return Topic(site, "alarm", "ack") }
 func AlertRequestTopic(site string) string { return Topic(site, "alert", "request") }
 func AlertResultTopic(site string) string  { return Topic(site, "alert", "result") }
 func AlertAckTopic(site string) string     { return Topic(site, "alert", "ack") }
+func AlertSeenTopic(site string) string    { return Topic(site, "alert", "seen") }
 
 func HeartbeatTopic(site string) string { return Topic(site, "system", "heartbeat") }
 func HealthTopic(site string) string    { return Topic(site, "system", "health") }

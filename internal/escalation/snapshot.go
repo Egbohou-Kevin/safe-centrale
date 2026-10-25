@@ -53,6 +53,9 @@ type IncidentSnap struct {
 	WaveContacts []string            `json:"wave_contacts"` // who the last step told
 	Rounds       map[string]Round    `json:"rounds"`        // contact -> latest round of messages
 	Deliveries   map[uint64]Delivery `json:"deliveries"`
+	// Seen: the contacts who said they have seen it ("Vu"), and when. They are told
+	// nothing more of it; the others are (see Seen).
+	Seen map[string]time.Time `json:"seen,omitempty"`
 }
 
 // Round is the messages of one step to one contact, and the timers that go with
@@ -116,6 +119,7 @@ func (in IncidentSnap) clone() IncidentSnap {
 		rounds[c] = r
 	}
 	in.Rounds = rounds
+	in.Seen = maps.Clone(in.Seen)
 	in.Deliveries = maps.Clone(in.Deliveries)
 	if in.Deliveries == nil {
 		in.Deliveries = map[uint64]Delivery{}

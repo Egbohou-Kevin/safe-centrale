@@ -129,6 +129,8 @@ func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []esc
 			// A contact who only accepts calls gets nothing of such an alert: the trace.
 			h.log.Info("a call was not placed: the alarm is already handled",
 				"incident", v.Incident, "alarm", v.Alarm, "contact", v.Contact, "channel", v.Channel)
+		case escalation.Noted:
+			h.log.Info("a contact has seen the alert; the escalation goes on for the others", "incident", v.Incident, "contact", v.Contact)
 		case escalation.Concluded:
 			h.log.Info("escalation over", "incident", v.Incident, "kind", v.Kind, "outcome", v.Outcome, "by", v.By)
 		}
@@ -160,6 +162,17 @@ func (h *Hub) alertAckMessage(m inbox.Message) {
 		return
 	}
 	err := h.escal.loop.Submit(h.life, func(now time.Time) escalation.Input { return escwire.Ack(d, now) })
+	h.submitFailed(err)
+}
+
+// alertSeenMessage handles a contact who saw an alert in the app ("Vu"): the
+// escalation goes on for the others, and tells that contact nothing more.
+func (h *Hub) alertSeenMessage(m inbox.Message) {
+	_, d, ok := decode[contract.AlertSeenData](h, m, contract.TypeAlertSeen, "alert seen")
+	if !ok {
+		return
+	}
+	err := h.escal.loop.Submit(h.life, func(now time.Time) escalation.Input { return escwire.Seen(d, now) })
 	h.submitFailed(err)
 }
 

@@ -42,6 +42,28 @@ func TestTheOwnerIsToldWhenTheGSMBackupStaysDown(t *testing.T) {
 	one(t, h.advance(5*time.Minute))
 }
 
+// A site without a GSM line says so, whatever a gateway run against its configuration
+// reports, and nobody is told its SMS backup is down: it has none.
+func TestASiteWithoutGSMSaysSoAndIsNeverToldTheBackupIsDown(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.WithoutGSM = true })
+	if got := h.m.Status().GSM; got != LinkNone {
+		t.Fatalf("status %q, want none from the start", got)
+	}
+	none(t, h.gsm(false))
+	none(t, h.advance(time.Hour))
+	if got := h.m.Status().GSM; got != LinkNone {
+		t.Fatalf("status %q after a gateway's report", got)
+	}
+	// A gateway heard before the configuration changed is not watched any more.
+	saved := newHarness(t)
+	none(t, saved.gsm(false))
+	h.m.Restore(saved.m.Snapshot())
+	none(t, h.advance(time.Hour))
+	if got := h.m.Status().GSM; got != LinkNone {
+		t.Fatalf("status %q after a restore", got)
+	}
+}
+
 // keepReporting has the gateway repeat a status every minute for d.
 func (h *harness) keepReporting(usable bool, d time.Duration) []Action {
 	var out []Action

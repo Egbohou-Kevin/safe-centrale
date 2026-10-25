@@ -15,6 +15,7 @@ import (
 
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/driver/drivertest"
+	"safehome/internal/escalation"
 	"safehome/internal/hubconfig"
 )
 
@@ -79,6 +80,24 @@ func TestCheck(t *testing.T) {
 	}
 	if code, _, _ := cli(t, "", "check", "-config", filepath.Join(t.TempDir(), "missing.json")); code != 1 {
 		t.Fatalf("a missing file: exit %d", code)
+	}
+}
+
+// A site without a GSM line says so at the check, and names a contact nobody would
+// tell anything.
+func TestTheCheckSaysASiteHasNoGSMLine(t *testing.T) {
+	path := writeConfig(t, "mqtt://127.0.0.1:1883", t.TempDir(), `, "without_gsm": true`)
+	code, out, errb := cli(t, "", "check", "-config", path)
+	if code != 0 || !strings.Contains(out, "no GSM line") || strings.Contains(out, "accepts only SMS") {
+		t.Fatalf("%d %q %q", code, out, errb)
+	}
+	var b bytes.Buffer
+	withoutGSM([]escalation.Contact{
+		{ID: "u_owner", Channels: []escalation.Channel{escalation.ChannelApp, escalation.ChannelSMS}},
+		{ID: "u_guard", Channels: []escalation.Channel{escalation.ChannelSMS, escalation.ChannelCall}},
+	}, &b)
+	if !strings.Contains(b.String(), "contact u_guard accepts only SMS and calls") || strings.Contains(b.String(), "u_owner") {
+		t.Fatalf("%q", b.String())
 	}
 }
 

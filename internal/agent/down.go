@@ -67,7 +67,9 @@ func (r *Relay) cloud(c Cloud) []Action {
 // passed is a write of the agent's state to the SD card and a message on the hub, and a
 // cloud gone wrong that sends them by the thousand, each with a fresh id, must not
 // make that a flood.
-var replies = map[string]bool{contract.TypeAlertResult: true, contract.TypeAlertAck: true, contract.TypePhotoUpload: true}
+var replies = map[string]bool{
+	contract.TypeAlertResult: true, contract.TypeAlertAck: true, contract.TypeAlertSeen: true, contract.TypePhotoUpload: true,
+}
 
 // replyAllowance is how many times the orders' allowance the replies have.
 const replyAllowance = 5
@@ -108,6 +110,8 @@ func (r *Relay) check(now time.Time, env contract.Envelope) string {
 		return r.alertResult(env)
 	case contract.TypeAlertAck:
 		return r.alertAck(env)
+	case contract.TypeAlertSeen:
+		return r.alertSeen(env)
 	}
 	return ""
 }
@@ -231,6 +235,19 @@ func (r *Relay) alertAck(env contract.Envelope) string {
 		return "an acknowledgement from the cloud comes from the app, not " + d.Via
 	case d.Incident == "" || r.s.Incidents[d.Incident].IsZero():
 		return "acknowledgement of an incident the cloud was not told about"
+	}
+	return ""
+}
+
+// alertSeen checks a "Vu" from the app: only for an incident the cloud was told
+// about.
+func (r *Relay) alertSeen(env contract.Envelope) string {
+	d, err := contract.ValidData[contract.AlertSeenData](env)
+	switch {
+	case err != nil:
+		return err.Error()
+	case r.s.Incidents[d.Incident].IsZero():
+		return "seen of an incident the cloud was not told about"
 	}
 	return ""
 }

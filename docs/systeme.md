@@ -472,7 +472,8 @@ avec la configuration du site déjà écrite. Le script se relance tel quel à c
 Préparer un dossier avec la configuration du site :
 
 - toujours : `hub.json`, `gsm.json`, `zigbee.json`, `agent.json` et `cloud.secret`
-  (partir de `config/*.example.json`) ;
+  (partir de `config/*.example.json`) ; sans `gsm.json` pour une centrale sans ligne SMS
+  par choix, qui le dit dans `hub.json` (`"without_gsm": true`, voir `operations.md`) ;
 - si le site les utilise : `video.json`, `maint.json`, `maint_known_hosts`,
   `console.json`, `power.json` (module batterie : son `device_id` doit être le
   `hub_device_id` de `hub.json`).
