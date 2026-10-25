@@ -295,6 +295,15 @@ step_maint() {
 	else
 		check_failed "the hub's key cannot listen on another site's port (exit $rc: $said)"
 	fi
+	# Nor connect from the bastion to a site's port: "port-forwarding" on its key line
+	# allows both ways, the tunnel account's "AllowTcpForwarding remote" forbids it.
+	rc=0
+	said="$(timeout 10 sudo -u safehome ssh "${key[@]}" -W localhost:22001 tunnel@127.0.0.1 </dev/null 2>&1)" || rc=$?
+	if [ "$rc" = 255 ] && echo "$said" | grep -qi "prohibited"; then
+		check_passed "the hub's key cannot reach a site's port from the bastion"
+	else
+		check_failed "the hub's key cannot reach a site's port from the bastion (exit $rc: $said)"
+	fi
 	mark
 	cloud_send maint/cmd maint.close '{"session":"m1"}'
 	expect bus '"type":"maint.session".*"status":"closed"' 15 "the tunnel closes"
