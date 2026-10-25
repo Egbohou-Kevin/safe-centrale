@@ -492,6 +492,7 @@ func TestTheStateSaysTheSirenOnlyWhileTriggered(t *testing.T) {
 		"a siren without its incident":  strings.Replace(ok, `"incident":"i",`, "", 1),
 		"an incident without its siren": strings.Replace(ok, `"siren":"on",`, "", 1),
 		"a siren without its end":       strings.Replace(ok, `"ends_at":"2026-10-25T16:20:00.000Z",`, "", 1),
+		"an end without its siren":      strings.Replace(ok, `"incident":"i","siren":"on",`, "", 1),
 		"an empty incident":             strings.Replace(ok, `"incident":"i"`, `"incident":""`, 1),
 		"a siren off":                   strings.Replace(ok, `"siren":"on"`, `"siren":"off"`, 1),
 		"a siren while armed":           strings.Replace(ok, `"triggered"`, `"armed"`, 1),

@@ -23,12 +23,12 @@
     "ends_at": {
       "type": "string",
       "format": "date-time",
-      "description": "UTC, à la milliseconde. Fin du délai (arming, entry_delay) ; triggered : fin du cycle de sirène si siren est on, fin de la pause si paused"
+      "description": "UTC, à la milliseconde. Fin du délai (arming, entry_delay) ; triggered : fin du cycle de sirène si siren est on, fin de la pause si paused. Déjà passé : la centrale n'a rien publié depuis"
     },
     "incident": {
       "type": "string",
       "minLength": 1,
-      "description": "triggered : l'incident qui sonne, celui d'alarm.triggered et d'alert.request"
+      "description": "triggered : l'incident qui sonne, celui d'alarm.triggered et des alert.request de cette alarme, et l'alarm_incident d'une siren_failed levée pendant elle. Un feu ou une panique levé pendant l'alarme a son propre incident : l'état garde celui de l'alarme qui sonne"
     },
     "siren": {
       "type": "string",

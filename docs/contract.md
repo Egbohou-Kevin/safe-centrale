@@ -383,17 +383,31 @@ de partir.
 verrouillé), `next_scheduled` (prochain armement automatique).
 
 En `triggered`, l'état dit où en est l'alarme qui sonne : `incident` (l'incident qui
-sonne, celui d'`alarm.triggered` et d'`alert.request`), `siren` (`on` pendant un cycle
-de sirène, `paused` pendant la pause entre deux cycles) et `ends_at` (la fin du cycle
-en cours si `siren` est `on`, la fin de la pause si `paused`). Les trois vont ensemble,
-et seulement en `triggered` (`allOf` dans le schéma) ; une centrale antérieure au
-25 octobre 2026 n'en envoie aucun. Chaque étape du programme (fin d'un cycle, fin
-d'une pause) republie `alarm.state` : l'application dit « La sirène sonne (2/3) » ou
-« En pause, reprend à 16:20 » sans autre événement. `siren` est le programme du
-moteur, pas la sirène elle-même : une sirène muette se dit par `alarm.siren_failed`,
-et `siren` reste `on`. Les heures sont celles du programme : un redémarrage de la
-centrale en pleine alarme ne les décale pas (l'échéance est sauvegardée avec l'état du
-moteur, voir `engine.md`).
+sonne), `siren` (`on` pendant un cycle de sirène, `paused` pendant la pause entre deux
+cycles) et `ends_at` (la fin du cycle en cours si `siren` est `on`, la fin de la pause
+si `paused`). `incident` est celui d'`alarm.triggered`, celui des `alert.request` de
+cette alarme, et l'`alarm_incident` d'une `siren_failed` levée pendant elle (qui a son
+propre `incident`). Un feu ou une panique levé pendant l'alarme a aussi son propre
+incident, sans programme de sirène à lui : l'état garde celui de l'alarme qui sonne.
+
+`incident` et `siren` ne viennent qu'en `triggered`. `ends_at` vient aussi en
+`arming` et `entry_delay` (la fin du délai). En `triggered`, les trois vont ensemble
+ou aucun ne vient (`allOf` dans le schéma) ; une centrale antérieure au 25 octobre
+2026 n'en envoie aucun. Chaque étape du programme (fin d'un cycle, fin d'une pause)
+republie `alarm.state` : l'application dit « La sirène sonne (2/3) » ou « En pause,
+reprend à 16:20 » sans autre événement. `siren` est le programme du moteur, pas la
+sirène elle-même : une sirène muette se dit par `alarm.siren_failed`, et `siren` reste
+`on`. Les heures sont celles du programme : un redémarrage de la centrale en pleine
+alarme ne les décale pas (l'échéance est sauvegardée avec l'état du moteur, voir
+`engine.md`).
+
+Un `ends_at` déjà passé, quel que soit l'état, veut dire que la centrale n'a rien
+publié depuis. L'état retenu est alors le dernier qu'elle a dit avant de se taire
+(coupure de courant, liaison perdue). Il peut aussi venir de sa fenêtre de démarrage
+(2 s) : un événement d'appareil y republie l'état sauvegardé avant que le moteur
+rejoue les étapes manquées pendant l'arrêt. Un lecteur ne le montre pas comme un
+compte à rebours en cours (« reprend à 16:20 » à 16:40) : il dit que la centrale ne
+donne plus de nouvelles, d'après sa présence en ligne, et attend l'état suivant.
 
 ### Alertes (`alert.*`)
 
@@ -779,13 +793,16 @@ Changements depuis la v1 validée, sans changement de `v` :
 - **25 octobre 2026, la sirène dans l'état** : `alarm.state` en `triggered` porte
   trois champs facultatifs, tous ou aucun : `incident` (l'incident qui sonne), `siren`
   (`on` pendant un cycle, `paused` pendant la pause) et `ends_at` (la fin du cycle ou
-  de la pause en cours), jamais dans un autre état (`allOf` dans le schéma, voir
-  « Événements d'alarme »). Pour la carte d'alarme de l'application : « La sirène
-  sonne (2/3) », « En pause, reprend à 16:20 ». Aucun nouvel événement : chaque étape
-  du programme de la sirène republiait déjà `alarm.state`. Un cloud qui ne connaît
-  pas encore ces champs les accepte (un champ inconnu est permis), et un cloud à jour
-  accepte l'état d'une centrale antérieure, qui n'en porte aucun : l'ordre de mise à
-  jour est libre.
+  de la pause en cours). `incident` et `siren` ne viennent jamais dans un autre état ;
+  `ends_at` reste aussi la fin du délai en `arming` et `entry_delay`, comme avant
+  (`allOf` dans le schéma, voir « Événements d'alarme »). Pour la carte d'alarme de
+  l'application : « La sirène sonne (2/3) », « En pause, reprend à 16:20 ». Aucun
+  nouvel événement : chaque étape du programme de la sirène republiait déjà
+  `alarm.state`. Un `ends_at` déjà passé veut dire que la centrale s'est tue. Un cloud
+  qui ne connaît pas encore ces champs les accepte (un champ inconnu est permis), et un
+  cloud à jour accepte l'état d'une centrale antérieure, qui n'en porte aucun : l'ordre
+  de mise à jour est libre, à condition que le cloud recopie `alarm-state.json` à
+  l'octet et ne rende aucun de ces champs obligatoire.
 - **24 octobre 2026, la sirène muette** : `alert.request` porte deux champs
   facultatifs, `alarm_incident` (l'alarme en cours dont l'alerte fait partie) et
   `alarm_handled` (cette alarme est déjà prise en charge : l'alerte se dit sans faire
