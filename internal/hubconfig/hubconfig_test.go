@@ -171,7 +171,7 @@ func TestContactsAndEscalation(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 	if e.InternetConfirm != 20*time.Second || e.GSMDelay != 2*time.Minute || e.MaxPerHour != 5 ||
-		e.Location == nil || e.DeviceNames["dev_door"] != "Entree" {
+		e.Location == nil || e.DeviceNames["dev_door"] != "Entree" || e.ZoneNames["dev_door"] != "Entree" {
 		t.Fatalf("%+v", e)
 	}
 	// Without a site name, the texts use the site identifier.
@@ -287,6 +287,10 @@ func TestSirenNames(t *testing.T) {
 	want := map[string]string{"s1": "Sir\u00e8ne 1", "s2": "Reserve", "s3": "Cuisine"}
 	if got := r.Hub.Escalation.DeviceNames; !maps.Equal(got, want) {
 		t.Fatalf("names %v, want %v", got, want)
+	}
+	// Only a device in a zone has a zone's name for the alerts: a siren's own name is not one.
+	if got, want := r.Hub.Escalation.ZoneNames, map[string]string{"s3": "Cuisine"}; !maps.Equal(got, want) {
+		t.Fatalf("zone names %v, want %v", got, want)
 	}
 	if got := with(t, `"timezone":"Africa/Lome"`).Hub.Escalation.DeviceNames["dev_siren1"]; got != "Sir\u00e8ne" {
 		t.Fatalf("the only siren, unnamed: %q", got)

@@ -173,6 +173,9 @@ type Send struct {
 	// person stopped it with a code. The alert is told without ringing: never by
 	// call, at urgency low, without a way to answer.
 	AlarmHandled bool
+	// ZoneName is the name of the zone of the alert's cause ("Entree" as configured, accents kept), for an
+	// intrusion, a fire, a panic or a tamper with one device in a zone; "" otherwise.
+	ZoneName string
 }
 
 // Throttled reports a message that was not sent because the contact already got the

@@ -96,7 +96,11 @@ type Config struct {
 
 	// DeviceNames turns device identifiers into names for the texts.
 	DeviceNames map[string]string
-	Location    *time.Location // for the hour in the texts, nil means UTC (Lome)
+	// ZoneNames gives the devices in a zone the zone's name, as configured (accents
+	// kept): an alert names the zone of its cause (Send.ZoneName). Sirens and keypads
+	// have none.
+	ZoneNames map[string]string
+	Location  *time.Location // for the hour in the texts, nil means UTC (Lome)
 
 	// InternetConfirm is how long the cloud has to confirm an internet message
 	// before the GSM channels take over.

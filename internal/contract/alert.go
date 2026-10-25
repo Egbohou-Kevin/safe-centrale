@@ -25,6 +25,10 @@ type AlertRequestData struct {
 	// iPhone. Its urgency is then low, which says so but decides nothing. Only with
 	// AlarmIncident (the schema's dependentRequired).
 	AlarmHandled bool `json:"alarm_handled,omitempty"`
+	// ZoneName is the configured name of the zone of the alert's cause ("Entree" as configured, accents kept),
+	// cut like a device name (DeviceName): absent when the alert has no such zone.
+	// Not to be confused with Zone, the time zone.
+	ZoneName string `json:"zone_name,omitempty"`
 }
 
 // AlertResultData: alert.result.

@@ -475,6 +475,15 @@ lecteur ne le montre pas comme un compte à rebours en cours (« reprend à 16:2
   quand elle n'en donne pas. Avec les deux, un téléphone dans un autre fuseau peut dire
   l'heure de l'incident à l'heure du site. `wave` vaut 1 pour la première vague, puis
   croît (vagues suivantes, puis relances).
+  `zone_name` (facultatif) est le nom de la zone de la cause tel que la configuration
+  du site le donne (« Entrée », accents gardés), coupé à 32 caractères comme
+  `device_name` : un téléphone ouvert depuis la notification dit la zone, même
+  verrouillé. Il vient avec une intrusion, un incendie, une panique ou un sabotage
+  levés par un seul appareil d'une zone ; il est absent sinon (plusieurs appareils, un
+  appareil hors zone comme une sirène ou un clavier, une panne de la centrale, du GSM
+  ou des piles). À ne pas confondre avec `zone`, le fuseau. Sans lui, l'alerte se dit
+  comme avant. Le schéma ne le borne pas : un nom vide ou trop long ne doit jamais
+  faire refuser l'alerte, celui qui le lit le coupe ou l'ignore.
 - `alert.result` : le canal répond. Champs : `ref` (l'`id` du `alert.request`),
   `status` (`queued`, `sent`, `delivered`, `failed`) et `reason` en cas d'échec
   (`no_network`, `no_credit`, `modem_error`, `timeout`, `busy`, `unreachable`,
@@ -916,6 +925,10 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **25 octobre 2026, la zone dans l'alerte** : `alert.request` porte `zone_name`
+  (facultatif), le nom de la zone de la cause (« Entrée »), pour que l'écran de
+  l'alarme le dise même ouvert depuis la notification (voir « Alertes »). `zone` reste
+  le fuseau. Un cloud qui ne le connaît pas encore l'ignore.
 - **25 octobre 2026, la fiche Capteurs** : nouveau message `system.devices`, publié
   par la centrale (`src` `health`) et retenu sur `system/devices` : la santé de chaque
   appareil du registre (nom et type de sa zone, type d'appareil, en ligne ou non, pile

@@ -150,3 +150,33 @@ func TestARequestNamesItsAlarmAndSaysWhenItIsHandled(t *testing.T) {
 		}
 	}
 }
+
+// The zone of the cause goes into the request as zone_name, accents kept and cut like
+// a device name; without one the field is absent, and the time zone stays in zone.
+func TestARequestNamesTheZoneOfItsCause(t *testing.T) {
+	base := escalation.Send{Incident: "x", RaisedAt: now, Kind: escalation.KindIntrusion, Urgency: escalation.UrgencyCritical,
+		Wave: 1, Contact: "owner", Channel: escalation.ChannelApp, Text: "intrusion"}
+	long := strings.Repeat("\u00e9", contract.MaxDeviceName+5)
+	for name, c := range map[string]struct{ zone, want string }{
+		"named":   {"Entr\u00e9e", "\"zone_name\":\"Entr\u00e9e\""},
+		"cut":     {long, `"zone_name":"` + long[:2*contract.MaxDeviceName] + `"`},
+		"without": {"", ""},
+	} {
+		s := base
+		s.ZoneName = c.zone
+		d, err := Request(s, time.UTC)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(d)
+		if err := schematest.Check("alert-request.json", raw); err != nil {
+			t.Errorf("%s: %v\n%s", name, err, raw)
+		}
+		if got := strings.Contains(string(raw), "zone_name"); got != (c.want != "") || !strings.Contains(string(raw), c.want) {
+			t.Errorf("%s: %s, want %s", name, raw, c.want)
+		}
+		if d.Zone != "UTC" {
+			t.Errorf("%s: time zone %q", name, d.Zone)
+		}
+	}
+}

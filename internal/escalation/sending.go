@@ -119,8 +119,20 @@ func (e *Escalation) send(in *IncidentSnap, ct Contact, ch Channel, round *Round
 	return []Action{Send{
 		Key: key, Incident: in.ID, RaisedAt: in.RaisedAt, Kind: in.Kind, Urgency: urgency, Wave: round.Step + 1,
 		Contact: ct.ID, Channel: ch, Devices: slices.Clone(in.Devices), Percent: in.Percent,
-		Text: e.text(*in, ch), Alarm: in.Alarm, AlarmHandled: in.Quiet,
+		Text: e.text(*in, ch), Alarm: in.Alarm, AlarmHandled: in.Quiet, ZoneName: e.zoneName(*in),
 	}}
+}
+
+// zoneName names the zone of an alert's cause: one device, in a zone, for the kinds
+// a device in a zone raises. Several devices, or a fault of the hub, name none.
+func (e *Escalation) zoneName(in IncidentSnap) string {
+	switch in.Kind {
+	case KindIntrusion, KindFire, KindPanic, KindTamper:
+		if len(in.Devices) == 1 {
+			return e.cfg.ZoneNames[in.Devices[0]]
+		}
+	}
+	return ""
 }
 
 // allow applies the hourly limit of one contact and counts the message when it

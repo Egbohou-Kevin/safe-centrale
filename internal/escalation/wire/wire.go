@@ -92,7 +92,7 @@ func Request(s escalation.Send, loc *time.Location) (contract.AlertRequestData, 
 	return contract.AlertRequestData{
 		Incident: s.Incident, IncidentAt: contract.TS(s.RaisedAt), Zone: Zone(loc), Kind: kind, Urgency: urgency, Percent: s.Percent, Devices: s.Devices,
 		Wave: s.Wave, Contact: s.Contact, Channel: channel, Text: s.Text,
-		AlarmIncident: s.Alarm, AlarmHandled: s.AlarmHandled && s.Alarm != "",
+		AlarmIncident: s.Alarm, AlarmHandled: s.AlarmHandled && s.Alarm != "", ZoneName: contract.DeviceName(s.ZoneName),
 	}, nil
 }
 
