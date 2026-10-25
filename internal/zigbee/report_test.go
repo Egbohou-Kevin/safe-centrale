@@ -192,6 +192,32 @@ func TestAnOfflineDeviceSaysWhenItWasLastHeard(t *testing.T) {
 	}
 }
 
+// A message the broker kept while the adapter was down is no news from its arrival:
+// the last news is when Zigbee2MQTT heard the device, or the owner would be told its
+// door was watched longer than it was. Its silence still counts from the arrival, and
+// an older message delivered after never takes the last news back.
+func TestTheLastNewsIsWhenZigbee2MQTTHeardTheDevice(t *testing.T) {
+	h := newHarness(t)
+	h.add("dev_door", ieeeDoor, "MCCGQ11LM")
+	h.now = t0.Add(time.Hour + 40*time.Minute) // after 40 min with the adapter down
+	h.do(Report{Now: h.now, Name: "dev_door", Fields: map[string]any{"contact": true}, Heard: t0.Add(time.Hour + 20*time.Second)})
+	h.do(Report{Now: h.now, Name: "dev_door", Fields: map[string]any{"contact": true}, Heard: t0.Add(30 * time.Minute)})
+	if out := h.advance(4*time.Hour - time.Second); len(all[Presence](out)) != 0 {
+		t.Fatalf("its silence counts from the arrival: %+v", out)
+	}
+	out := h.advance(time.Second)
+	if p := all[Presence](out); len(p) != 1 || p[0] != (Presence{DeviceID: "dev_door", Since: h.now, Heard: t0.Add(time.Hour)}) {
+		t.Fatalf("%+v", out)
+	}
+
+	// Back online, a last_seen later than the arrival counts as the arrival.
+	h.do(Report{Now: h.now, Name: "dev_door", Fields: map[string]any{"contact": true}, Heard: h.now.Add(3 * time.Minute)})
+	out = h.advance(4 * time.Hour)
+	if p := all[Presence](out); len(p) != 1 || !p[0].Heard.Equal(h.now.Add(-4*time.Hour).Truncate(time.Minute)) {
+		t.Fatalf("%+v", out)
+	}
+}
+
 // After a restart, a device that said nothing since goes offline with no last news:
 // the restart is no news from it. One that spoke since has its own.
 func TestAfterARestartADeviceSilentSinceHasNoLastNews(t *testing.T) {

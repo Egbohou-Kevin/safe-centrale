@@ -215,9 +215,10 @@ est enregistré chez nous » (voir `architecture.md`).
   message pendant la durée `offline_after` du profil (4 heures par défaut, voir
   `engine.md`), il émet `availability` = `offline`. Le premier message suivant
   émet `online`. L'état retenu d'un appareil hors ligne porte aussi `heard`, l'heure
-  de son dernier message à la minute (son appairage compte), absente s'il n'a rien dit
-  depuis le redémarrage de l'adaptateur ; jamais pour un appareil en ligne, dont le
-  dernier message bouge avec chaque porte et chaque passage. La centrale en tire
+  de son dernier message à la minute, telle que Zigbee2MQTT l'a entendu (`last_seen`,
+  voir « QoS » plus bas ; son appairage compte), absente s'il n'a rien dit depuis le
+  redémarrage de l'adaptateur ; jamais pour un appareil en ligne, dont le dernier
+  message bouge avec chaque porte et chaque passage. La centrale en tire
   `system.devices` (voir `contract.md`).
 
 ## Commandes vers les appareils
@@ -366,7 +367,12 @@ Choix faits au codage :
   chaque message et userait la carte SD). Après un redémarrage, le silence de chaque
   appareil compte à partir de ce moment, et un appareil qui n'a rien dit depuis passe
   hors ligne sans `heard` : le redémarrage n'est pas une nouvelle de lui. Un appareil
-  déjà hors ligne le reste, et son état retenu garde son `heard`.
+  déjà hors ligne le reste, et son état retenu garde son `heard`. Un message gardé par
+  le broker pendant un arrêt de l'adaptateur arrive en retard : le silence de
+  l'appareil compte depuis son arrivée, mais `heard` est l'heure où Zigbee2MQTT l'a
+  entendu (`last_seen`, jamais plus tard que l'arrivée ; l'arrivée sans `last_seen`), et
+  ne recule jamais. Daté de l'arrivée, `heard` dirait au propriétaire que sa porte était
+  surveillée plus longtemps qu'elle ne l'a été, de toute la durée de l'arrêt.
 - **Commandes** : une à la fois par appareil ; une nouvelle remplace celle qui attend
   (réponse `failed`, raison `superseded`). Sans confirmation au bout de 3 s, elle est
   renvoyée, 3 fois en tout, puis `failed` (`no_confirmation`). Une commande périmée
