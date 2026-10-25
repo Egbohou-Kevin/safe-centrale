@@ -269,6 +269,7 @@ func TestTheUsageSurvivesARestartButNotTheSessions(t *testing.T) {
 	h := newHarness(t, mobile)
 	h.request("s1", "cam_caisse", 0)
 	h.progress("s1", 123_456)
+	h.v.Handle(Stop{Now: h.now, Session: "s1"})
 	h.v.Handle(Probe{Now: h.now, Camera: "cam_caisse", Reachable: true})
 	saved := h.v.Snapshot()
 

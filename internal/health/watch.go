@@ -58,13 +58,19 @@ type watchRule struct {
 // report records a state. A state from the future (a clock set back) counts as
 // written now. A state older than the last one (a retained copy delivered late)
 // is ignored, unless the last one is itself in the future (the clock was set back
-// since, and refusing every new state would make the component look silent) or
-// was only assumed at a restart (a retained state is better news).
+// since, and refusing every new state would make the component look silent). One
+// older than a restart, while the last one was only assumed there, says what holds,
+// but not since when: after a power cut, the component stopped with the hub and
+// comes back with it, and dating its silence from before the restart would raise an
+// urgent alert at every boot. Its silence counts from the restart, like the others.
 func (w *Watch) report(now, seen time.Time, usable bool) {
 	if seen.IsZero() || seen.After(now) {
 		seen = now
 	}
-	if seen.Before(w.Seen) && !w.Seen.After(now) && !w.assumed {
+	if seen.Before(w.Seen) && !w.Seen.After(now) {
+		if w.assumed {
+			w.Usable, w.Known = usable, true
+		}
 		return
 	}
 	w.Seen, w.Usable, w.Known, w.assumed = seen, usable, true, false

@@ -363,14 +363,40 @@ func TestAComponentThatNeverSpeaksAfterARestartTurnsSilent(t *testing.T) {
 	}
 }
 
-func TestAnOldRetainedStatusAfterARestartIsSilentAtOnce(t *testing.T) {
+// The whole hub was off two hours (a power cut): the retained statuses date from
+// before, and the components come back with the hub. No alert at boot: their silence
+// counts from the restart. One that does not come back is told in its own time.
+func TestAnOldRetainedStatusAfterARestartCountsFromTheRestart(t *testing.T) {
 	h := newHarness(t)
 	none(t, h.gsm(true))
-	h.restart(2 * time.Hour) // the gateway died with the hub, two hours ago
-	// The first tick may come before the retained status.
-	als := alerts(t, append(h.advance(0), h.m.Handle(GSM{Now: h.now, Seen: t0, Usable: true})...))
-	if len(als) != 1 || als[0].Kind != AlertGSMDegraded || h.m.Status().GSM != LinkSilent {
-		t.Fatalf("status %q, %+v", h.m.Status().GSM, als)
+	none(t, h.zigbee(true))
+	h.restart(2 * time.Hour)
+	// The first tick may come before the retained statuses.
+	none(t, append(h.advance(0), append(h.m.Handle(GSM{Now: h.now, Seen: t0, Usable: true}),
+		h.m.Handle(Zigbee{Now: h.now, Seen: t0, Usable: true})...)...))
+	if st := h.m.Status(); st.GSM != LinkOK || st.Zigbee != LinkOK {
+		t.Fatalf("what they said holds: %+v", st)
+	}
+	// The adapter is back and speaks every minute; the gateway never comes back.
+	start := h.now
+	var got []Action
+	for range 13 {
+		got = append(got, h.advance(time.Minute)...)
+		got = append(got, h.zigbee(true)...)
+		if h.now.Equal(start.Add(3*time.Minute)) && h.m.Status().GSM != LinkSilent {
+			t.Fatalf("status %q: silent three minutes after the restart", h.m.Status().GSM)
+		}
+	}
+	if al := alerts(t, got); len(al) != 1 || al[0].Kind != AlertGSMDegraded || h.m.Status().Zigbee != LinkOK {
+		t.Fatalf("%+v", al)
+	}
+	// A retained status that says the component was down holds too, from the restart.
+	h = newHarness(t)
+	none(t, h.gsm(true))
+	h.restart(2 * time.Hour)
+	none(t, append(h.advance(0), h.m.Handle(GSM{Now: h.now, Seen: t0, Usable: false})...))
+	if h.m.Status().GSM != LinkDown {
+		t.Fatalf("status %q", h.m.Status().GSM)
 	}
 }
 

@@ -312,9 +312,11 @@ alerter à chaque fois épuiserait les contacts.
 - **Coupure du secteur** : enregistrée et visible dans l'application, sans alerte.
 - **Batterie à 40 %** : une alerte au propriétaire (premier contact).
 - **Batterie à 10 %** : une deuxième alerte, urgente.
-- Ces deux seuils sont réglables, et chaque seuil n'envoie qu'une alerte par
-  coupure. Ils se réarment quand la batterie remonte (par exemple au-dessus de
-  60 %).
+- Ces deux seuils sont réglables. La première alerte ne part qu'une fois, jusqu'à ce
+  que la batterie remonte (par exemple au-dessus de 60 %). L'urgente part une fois
+  par coupure, même si la batterie n'a pas remonté depuis la précédente : la
+  centrale peut s'éteindre pendant celle-ci, et le retour du courant est alors
+  annoncé de nouveau.
 - **Retour du courant** : un message court, seulement si une alerte de batterie
   est partie, par **internet de préférence**. Il n'est pas urgent : le GSM n'est
   utilisé que si internet reste indisponible longtemps (la box met du temps à

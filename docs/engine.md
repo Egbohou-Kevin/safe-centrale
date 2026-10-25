@@ -501,14 +501,19 @@ Codé et testé dans `internal/health` (supervision, domaine séparé du moteur,
 règles : pur, sans horloge) :
 
 - Coupure de secteur sans alerte, alertes de batterie de la centrale à 40 % puis à
-  10 % (une par seuil et par coupure, réarmées au-dessus de 60 %), message de retour
+  10 % (la première une fois par recharge, réarmée au-dessus de 60 % ; l'urgente à
+  chaque coupure, la centrale pouvant s'éteindre pendant celle-ci), message de retour
   du courant seulement si une alerte de batterie est partie.
 - Piles faibles des capteurs (15 %, réarmées au-dessus de 30 %) et appareils muets,
   regroupés dans un résumé quotidien à 9 h.
 - Services suivis par leur état répété (GSM, Zigbee, agent) : l'heure du dernier état
   de chaque service n'est pas sauvegardée (elle change chaque minute et userait la
-  carte SD). Après un redémarrage, le silence compte depuis le redémarrage, sauf si
-  un état retenu plus ancien arrive : il fait foi. Un service déjà muet le reste.
+  carte SD). Après un redémarrage, le silence compte depuis le redémarrage, même si
+  un état retenu plus ancien arrive : ce qu'il dit vaut, pas son âge. Après une
+  coupure, les services se sont arrêtés avec la centrale et reviennent avec elle :
+  dater leur silence d'avant le redémarrage lèverait une alerte urgente à chaque
+  démarrage. Un service qui ne revient pas est dit muet trois minutes après le
+  redémarrage, puis signalé dans les délais habituels. Un service déjà muet le reste.
 - La liste des appareils (`Monitor.Devices`, d'où la centrale tire `system.devices`,
   voir `contract.md`) : les appareils du registre (entrée `Registry`) avec leur zone
   (`Config.Zones`, reprises de `hub.json`), en ligne ou non, et pour un appareil hors

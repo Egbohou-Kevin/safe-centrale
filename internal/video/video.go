@@ -150,7 +150,15 @@ type Service struct {
 	cfg      Config
 	s        Snapshot
 	sessions map[string]*session
+	// unsaved are the bytes of the sessions under way not yet in s.Used: the state
+	// is saved after every change, and counting each progress there would rewrite
+	// the file on the SD card every 2 s of viewing. They join it every usedStep, and
+	// when a session ends; a crash loses less than usedStep of the count.
+	unsaved int64
 }
+
+// usedStep is how many bytes of a session under way join the saved usage at once.
+const usedStep = 10 << 20
 
 // New builds the core.
 func New(cfg Config) (*Service, error) {
@@ -176,7 +184,7 @@ func (v *Service) Restore(s Snapshot) {
 	if s.Reachable == nil {
 		s.Reachable = map[string]bool{}
 	}
-	v.s = s
+	v.s, v.unsaved = s, 0
 }
 
 // asap is a wake-up time already past: check the cameras at once.
@@ -212,18 +220,20 @@ func (v *Service) deadlines(s *session) []time.Time {
 
 // State returns what video.status says.
 func (v *Service) State() State {
-	st := State{Active: len(v.sessions), Mobile: v.cfg.Mobile, Used: v.s.Used, Quota: v.cfg.Quota, MaxLength: v.cfg.MaxLength}
+	st := State{Active: len(v.sessions), Mobile: v.cfg.Mobile, Used: v.used(), Quota: v.cfg.Quota, MaxLength: v.cfg.MaxLength}
 	for _, c := range v.cfg.Cameras {
 		st.Cameras = append(st.Cameras, CameraState{ID: c.ID, Name: c.Name, Reachable: v.s.Reachable[c.ID]})
 	}
 	return st
 }
 
-// Handle processes one input.
+// Handle processes one input. The usage starts again from zero in a later month
+// only: a clock set back (a dead clock module at boot, corrected later by the
+// network) must not wipe the usage the client already paid for this month, twice.
 func (v *Service) Handle(in Input) []Action {
 	now := in.at()
-	if month := now.UTC().Format("2006-01"); month != v.s.Month {
-		v.s.Month, v.s.Used = month, 0
+	if month := now.UTC().Format("2006-01"); month > v.s.Month {
+		v.s.Month, v.s.Used, v.unsaved = month, 0, 0
 	}
 	switch in := in.(type) {
 	case Request:
@@ -302,6 +312,11 @@ func (v *Service) alarm(a Alarm) []Action {
 	if over := len(v.s.Photographed) - photoMemory; over > 0 {
 		v.s.Photographed = slices.Delete(v.s.Photographed, 0, over)
 	}
+	for i, t := range v.s.PhotosAt {
+		if t.After(a.Now) {
+			v.s.PhotosAt[i] = a.Now // saved while the clock was ahead: not an hour of refusals more
+		}
+	}
 	v.s.PhotosAt = slices.DeleteFunc(v.s.PhotosAt, func(t time.Time) bool { return !a.Now.Before(t.Add(time.Hour)) })
 	if len(v.s.PhotosAt) >= p.PerHour {
 		return []Action{NoPhotos{Incident: a.Incident, Why: fmt.Sprintf("already %d alarms photographed this hour", p.PerHour)}}
@@ -314,14 +329,23 @@ func (v *Service) alarm(a Alarm) []Action {
 	return []Action{TakePhotos{Incident: a.Incident, Cameras: cams, Count: p.Count, Every: p.Every, Width: p.Width}}
 }
 
-func (v *Service) overQuota() bool { return v.cfg.Quota > 0 && v.s.Used >= v.cfg.Quota }
+func (v *Service) overQuota() bool { return v.cfg.Quota > 0 && v.used() >= v.cfg.Quota }
+
+// used is the month's usage, sessions under way included.
+func (v *Service) used() int64 { return v.s.Used + v.unsaved }
+
+// keepUsed puts the bytes counted since the last save into the saved usage.
+func (v *Service) keepUsed() { v.s.Used, v.unsaved = v.used(), 0 }
 
 func (v *Service) progress(p Progress) []Action {
 	s, ok := v.sessions[p.Session]
 	if !ok || p.Bytes <= s.bytes {
 		return nil
 	}
-	v.s.Used += p.Bytes - s.bytes
+	v.unsaved += p.Bytes - s.bytes
+	if v.unsaved >= usedStep {
+		v.keepUsed()
+	}
 	s.bytes, s.grewAt = p.Bytes, p.Now
 	var acts []Action
 	if s.liveAt.IsZero() {
@@ -360,6 +384,7 @@ func (v *Service) tick(now time.Time) []Action {
 func (v *Service) end(id string, now time.Time, why Reason) []Action {
 	s := v.sessions[id]
 	delete(v.sessions, id)
+	v.keepUsed()
 	r := Report{Session: id, Camera: s.camera, Status: Failed, Reason: why, Bytes: s.bytes}
 	if why == Stopped {
 		r.Status = Ended
