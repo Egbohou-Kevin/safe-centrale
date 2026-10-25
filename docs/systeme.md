@@ -612,15 +612,19 @@ README) ; sans lui, chaque alerte pour l'application échoue avec `no_app`.
 `recurse=0`) : `kill -9` de la centrale, relancée en 3 s ; centrale gelée (`kill -STOP`), relancée par le
 chien de garde 25 s après le gel ; Mosquitto arrêté 60 s, tous les programmes reprennent seuls ;
 fichier de `/data` conservé après redémarrage, fichier de `/etc` perdu ; `systemctl --failed`
-vide ; horloge synchronisée au retour. Trois coupures brutales du courant (câble débranché), dont une
-trente secondes après un armement par l'application : à chaque retour, les cinq fichiers d'état (codes,
-appareils, configuration du cloud, réseau Zigbee) ont la même empreinte qu'avant, 0 erreur
+vide ; horloge synchronisée au retour. Quatre coupures brutales du courant (câble débranché, dont une par accident),
+dont une trente secondes après un armement par l'application : à chaque retour, les cinq fichiers
+d'état (codes, appareils, configuration du cloud, réseau Zigbee) ont la même empreinte qu'avant, 0 erreur
 ext4, 6 services actifs, rien en échec, et la centrale est revenue armée, avec son heure
 d'armement d'origine ; juste après le démarrage, l'heure repart de la dernière valeur connue
-jusqu'à la synchronisation par internet (quelques secondes). **Pas encore faits** : sept coupures de
-plus (la recette en demande 10), la clé Zigbee débranchée, le modem, le module batterie, les essais de maintenance
-et de console locale. Le `sudo` sans mot de passe de l'utilisateur d'administration (étape 1) est
-resté en place pour la période d'essai : à retirer avant une vraie installation chez un client.
+jusqu'à la synchronisation par internet (quelques secondes). **Décision de Kevin, 25 octobre
+2026 : on s'arrête à quatre coupures**, au lieu des dix de la recette (une panne rare de la carte se
+mesure sur des mois d'usage, pas sur dix essais). La clé Zigbee débranchée : alerte `zigbee_down`
+au téléphone en 3 minutes, reprise seule au rebranchement. **Pas encore faits** : le modem, le
+module batterie, les essais de maintenance et de console locale (celle-ci demande le câble
+Ethernet, car `wlan0` est l'unique liaison du Pi, et un clavier). Le `sudo` sans mot de passe de
+l'utilisateur d'administration (étape 1) est resté en place pour la période d'essai : à retirer avant
+une vraie installation chez un client.
 
 ## Recette sur le kit d'essai
 
@@ -638,7 +642,7 @@ resté en place pour la période d'essai : à retirer avant une vraie installati
 | `sudo kill -9` du processus `safehome-video` pendant une session | le go2rtc de la session s'arrête aussi |
 | Alarme d'essai avec la caméra branchée | `photos of the alarm taken` dans le journal de `safehome-video`, puis `photo sent to the cloud` dans celui de `safehome-agent` ; `/var/lib/safehome/photos` vide ensuite |
 | Débrancher la caméra | `reachable` à `false` dans `video.status` en 5 min au plus ; une demande répond `camera_unreachable` |
-| Couper le courant brutalement, 10 fois de suite, dont juste après un armement | redémarre à chaque fois, état conservé |
+| Couper le courant brutalement, 10 fois de suite, dont juste après un armement | redémarre à chaque fois, état conservé (fait 4 fois sur le vrai Pi le 25/10/2026, voir plus haut) |
 | Couper internet puis le courant, rallumer | la date est juste (module RTC) |
 | `echo c \| sudo tee /proc/sysrq-trigger` (blocage du noyau) | la carte redémarre seule (chien de garde) |
 | `sudo kill -STOP` du processus `safehome-hub` (programme figé) | tué et redémarré par systemd en 30 s environ (`journalctl -u safehome-hub` : « Watchdog timeout ») ; même état |
