@@ -612,8 +612,13 @@ README) ; sans lui, chaque alerte pour l'application échoue avec `no_app`.
 `recurse=0`) : `kill -9` de la centrale, relancée en 3 s ; centrale gelée (`kill -STOP`), relancée par le
 chien de garde 25 s après le gel ; Mosquitto arrêté 60 s, tous les programmes reprennent seuls ;
 fichier de `/data` conservé après redémarrage, fichier de `/etc` perdu ; `systemctl --failed`
-vide ; horloge synchronisée au retour. **Pas encore faits** : la coupure brutale du courant (à
-répéter 10 fois), la clé Zigbee débranchée, le modem, le module batterie, les essais de maintenance
+vide ; horloge synchronisée au retour. Trois coupures brutales du courant (câble débranché), dont une
+trente secondes après un armement par l'application : à chaque retour, les cinq fichiers d'état (codes,
+appareils, configuration du cloud, réseau Zigbee) ont la même empreinte qu'avant, 0 erreur
+ext4, 6 services actifs, rien en échec, et la centrale est revenue armée, avec son heure
+d'armement d'origine ; juste après le démarrage, l'heure repart de la dernière valeur connue
+jusqu'à la synchronisation par internet (quelques secondes). **Pas encore faits** : sept coupures de
+plus (la recette en demande 10), la clé Zigbee débranchée, le modem, le module batterie, les essais de maintenance
 et de console locale. Le `sudo` sans mot de passe de l'utilisateur d'administration (étape 1) est
 resté en place pour la période d'essai : à retirer avant une vraie installation chez un client.
 
