@@ -18,7 +18,9 @@ import (
 // that still does not take it is reported to the contacts (siren_failed): the shop is
 // silent during an alarm. The alert names that alarm, and the history says it too
 // (alarm.siren_failed). Until the siren takes an order to sound again, or that alarm
-// ends, it is known silent: a fire raised meanwhile says so (silentSirens).
+// ends, it is known silent: a fire raised meanwhile says so (silentSirens). An order
+// done is all the hub knows: the siren reported the state asked for when its profile
+// has a confirm, and without one (the shipped siren) the order only left the adapter.
 
 // sirenRetries is how many times one siren is sent the same order again.
 const sirenRetries = 3
@@ -33,7 +35,7 @@ type sirenOrder struct {
 }
 
 // sirenReport is a siren reported silent: the alarm it was reported for, and whether
-// it took an order to sound since, in that alarm.
+// an order to sound was done since, in that alarm.
 type sirenReport struct {
 	alarm string
 	back  bool
@@ -77,8 +79,7 @@ func (h *Hub) sendSiren(now time.Time, sirenID string, a engine.Action) {
 	}
 }
 
-// sirenAckMessage handles a siren's answer to a command: a failure, or a siren that
-// carried out the order (done).
+// sirenAckMessage handles a siren's answer to a command: a failure, or an order done.
 func (h *Hub) sirenAckMessage(sirenID string, m inbox.Message) {
 	if !slices.Contains(h.cfg.SirenIDs, sirenID) {
 		return
@@ -89,7 +90,7 @@ func (h *Hub) sirenAckMessage(sirenID string, m inbox.Message) {
 	}
 	err := h.alarm.loop.Post(h.life, func(now time.Time) []engine.Action {
 		if d.Status == contract.CmdDone {
-			h.sirenSounds(sirenID, d)
+			h.sirenOrderDone(sirenID, d)
 		} else {
 			h.retrySiren(now, sirenID, d)
 		}
@@ -98,17 +99,17 @@ func (h *Hub) sirenAckMessage(sirenID string, m inbox.Message) {
 	h.submitFailed(err)
 }
 
-// sirenSounds records a siren that carried out an order to sound of the current
-// order: one reported silent in this alarm is no longer known silent. It runs on the
-// engine's loop.
-func (h *Hub) sirenSounds(sirenID string, ack contract.CommandAckData) {
+// sirenOrderDone records a siren whose order to sound, of the current order, is done:
+// one reported silent in this alarm is no longer known silent. Done is not proof that
+// it sounds (see above). It runs on the engine's loop.
+func (h *Hub) sirenOrderDone(sirenID string, ack contract.CommandAckData) {
 	if h.alarm.siren.sent[ack.Ref] != sirenID {
 		return // an older order, a siren.off, or not one of ours
 	}
 	if r, ok := h.alarm.sirenFailed[sirenID]; ok && !r.back && r.alarm == h.ringingAlarm() {
 		r.back = true
 		h.alarm.sirenFailed[sirenID] = r
-		h.log.Info("the siren reported silent sounds again", "siren", sirenID, "alarm", r.alarm)
+		h.log.Info("the siren reported silent took an order to sound", "siren", sirenID, "alarm", r.alarm)
 	}
 }
 
@@ -122,10 +123,10 @@ func (h *Hub) ringingAlarm() string {
 }
 
 // silentSirens lists the sirens known not to sound in the alarm under way: reported
-// silent in it, and not heard carrying out an order to sound since. Once that alarm
-// is over, nothing is known: the next alarm tells each siren again. The guard is in
-// memory: after a restart, a siren is known silent again once it fails again. It
-// runs on the engine's loop.
+// silent in it, and no order to sound of theirs done since. Once that alarm is over,
+// nothing is known: the next alarm tells each siren again. The guard is in memory:
+// after a restart, a siren is known silent again once it fails again. It runs on the
+// engine's loop.
 func (h *Hub) silentSirens() []string {
 	alarm := h.ringingAlarm()
 	var out []string
@@ -165,7 +166,7 @@ func (h *Hub) retrySiren(now time.Time, sirenID string, ack contract.CommandAckD
 
 // reportSilentSiren tells the contacts that a siren does not sound, once per siren
 // and per alarm: failing again in the next cycles tells them nothing new, but a siren
-// that sounded since is known silent again. It runs on the engine's loop.
+// that took an order since is known silent again. It runs on the engine's loop.
 //
 // The alert is an incident of its own, like a tamper, not a part of the alarm's: an
 // acknowledgement of the alarm must not end it, the GSM gateway drops the messages

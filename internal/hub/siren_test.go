@@ -382,17 +382,38 @@ func nextCycle(r *rig) {
 	})
 }
 
-// soundsAgain lets the next cycle start, and its order be carried out.
+// soundsAgain lets the next cycle start, and its order be done.
 func soundsAgain(r *rig) {
 	nextCycle(r)
 	sirenAnswers(r, sirenOrders(r)[len(sirenOrders(r))-1], contract.CmdDone, "")
 	r.settle()
 }
 
+// doneToTheSirenOff lets the cycle end, and the siren.off of the pause be done.
+func doneToTheSirenOff(r *rig) {
+	r.t.Helper()
+	r.clock.Advance(5 * time.Minute)
+	drivertest.WaitFor(r.t, "the pause", func() bool { r.settle(); return lastSirenCommand(r) == contract.CmdSirenOff })
+	sirenAnswers(r, sirenOrders(r)[len(sirenOrders(r))-1], contract.CmdDone, "")
+	r.settle()
+}
+
+// doneToOthers lets the next cycle start, then answers done to an order of the cycle
+// before and to a command that is not one of ours, but not to the order of this cycle.
+func doneToOthers(r *rig) {
+	r.t.Helper()
+	older := sirenOrders(r)[0]
+	nextCycle(r)
+	sirenAnswers(r, older, contract.CmdDone, "")
+	r.send(contract.DeviceAckTopic(site, devSiren), contract.TypeCommandAck,
+		contract.CommandAckData{Ref: r.ids.New(), Status: contract.CmdDone})
+	r.settle()
+}
+
 // A fire raised during an alarm whose siren is known silent says so: the people on
-// the site are not warned by it. A siren that sounded again since is no longer known
-// silent, until it refuses again, and neither is one whose alarm is over: a fire then
-// says nothing of it.
+// the site are not warned by it. A siren whose order to sound of a later cycle is done
+// is no longer known silent, until it refuses again; a done to anything else does not
+// bring it back. Neither is one whose alarm is over: a fire then says nothing of it.
 func TestAFireSaysTheSirenKnownSilent(t *testing.T) {
 	const said = " La sirene (dev_siren) ne repond pas."
 	for _, c := range []struct {
@@ -403,6 +424,8 @@ func TestAFireSaysTheSirenKnownSilent(t *testing.T) {
 		{"during the alarm", func(*rig) {}, true},
 		{"in the pause", func(r *rig) { r.clock.Advance(5 * time.Minute) }, true},
 		{"after the siren sounded again", soundsAgain, false},
+		{"after a done to the siren.off", doneToTheSirenOff, true},
+		{"after a done to an older order or to another command", doneToOthers, true},
 		{"after the siren sounded, then refused again", func(r *rig) {
 			soundsAgain(r)
 			nextCycle(r)
