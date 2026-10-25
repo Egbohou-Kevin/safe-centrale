@@ -134,6 +134,8 @@ func Check(site Site, devices []contract.RegistryDevice) []Finding {
 	}
 	if len(site.SirenIDs) == 0 {
 		f.add(Warning, "", "no siren: an alarm will only send messages")
+	} else if !slices.ContainsFunc(site.SirenIDs, func(id string) bool { _, ok := byID[id]; return ok }) {
+		f.add(Problem, "", "no siren can sound: none of the sirens is paired (removed meanwhile?)")
 	}
 	return f
 }

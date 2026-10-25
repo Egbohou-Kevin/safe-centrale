@@ -204,7 +204,9 @@ s'appelle `safehome-tg-lom-0001` et la page est à l'adresse `http://10.42.0.1/`
   ordre vers `10.42.0.1` (retrait, fin, code) : la page refuse tout envoi d'une autre
   origine (réponse 403).
 - **Le réseau ne survit pas au mode.** Il est créé à l'ouverture, jamais démarré au
-  boot, et supprimé à la fin. Il est aussi supprimé quand le service s'arrête.
+  boot, et supprimé à la fin. Il est aussi supprimé quand le service s'arrête, et
+  quand son démarrage a échoué (coupé par son délai, NetworkManager a pu le lever
+  quand même) : la fin du mode le retire alors aussi.
 - NetworkManager crée le réseau (`nmcli`). Le service tourne sans droits
   d'administration. Une règle polkit lui permet seulement de gérer les réseaux, et
   une capacité systemd seulement d'écouter sur le port 80.
@@ -216,7 +218,9 @@ alors la box : l'agent garde ses messages et le GSM reste là. Le câble est con
 ### Ce que fait la page
 
 - **Appairer** : elle ouvre le réseau Zigbee 2 minutes. Les appareils ajoutés ou
-  refusés s'affichent au fur et à mesure.
+  refusés s'affichent au fur et à mesure. La page continue pendant ce temps : un
+  appareil ajouté reçoit sa zone tout de suite, et un capteur déclenché aussitôt
+  apparaît dans les tests.
 - **Zones** : un nom (32 caractères au plus, sans caractère de contrôle ni caractère
   invisible comme un saut de ligne ou une marque de sens d'écriture) et un type. La
   page ne propose que les types que l'appareil peut servir. La centrale applique la
@@ -226,7 +230,10 @@ alors la box : l'agent garde ses messages et le GSM reste là. Le câble est con
   alertes (même règle qu'un nom de zone ; sans nom, « Sirène », ou « Sirène 2 » parmi
   plusieurs, ce que la page signale). La dernière ne peut pas partir.
 - **Retirer un appareil** du réseau Zigbee. Un retrait que la centrale refuserait
-  (la dernière sirène) est refusé avant que rien ne parte.
+  (la dernière sirène) est refusé avant que rien ne parte. Pendant le retrait,
+  l'appareil est tenu pour parti : un autre onglet ne peut pas retirer l'autre sirène
+  entre-temps. Un ordre parti sans réponse de l'adaptateur peut encore s'exécuter :
+  l'appareil quitte la configuration quand même, et la page le dit.
 - **Vérifier** : la page montre ce qui manque, comme `safehome-install check`. Par
   exemple un appareil sans usage, ou une zone qui ne pourra jamais se déclencher.
 - **Tests** : les événements des appareils depuis l'ouverture du mode, avec le nom de
@@ -236,7 +243,10 @@ alors la box : l'agent garde ses messages et le GSM reste là. Le câble est con
   l'adresse, ni dans les journaux. Il est refusé s'il est trop facile, déjà pris, ou
   si c'est le code installateur. La centrale le prend aussitôt (`SIGHUP`, comme après
   `safehome-hub codes set`). La page ne retire que les codes d'anciens contacts
-  (« Codes d'anciens contacts ») ; retirer le code d'un contact reste en SSH.
+  (« Codes d'anciens contacts ») ; retirer le code d'un contact reste en SSH. Le code
+  installateur lui-même ne se règle ni ne se retire depuis la page, même par un ordre
+  forgé : celui qui atteindrait la page s'ouvrirait sinon le mode installation. Il se
+  règle sur la centrale seulement (`codes set installer`).
 - **Terminer** : elle demande à la centrale de fermer le mode (`install.close`).
 
 **Sabotage.** Pendant le mode, la centrale ne déclenche pas d'alarme de sabotage :

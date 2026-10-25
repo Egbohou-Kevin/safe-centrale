@@ -49,8 +49,14 @@ func (c codes) People() (contacts []consoleapp.Person, leftovers []string, err e
 }
 
 // Set saves the code, unless it is the installer's (one code opens one thing), then
-// tells a running hub to read the codes again. The code is never in an error.
+// tells a running hub to read the codes again. The code is never in an error. Only a
+// contact's code: the hub's codes also hold the installer's, which the console must
+// never replace (whoever reaches the page during a mode would take the installation
+// mode for himself), and which is set on the hub only (codes set installer).
 func (c codes) Set(user, code string) error {
+	if user == hub.InstallerUser {
+		return fmt.Errorf("%w: %s", consoleapp.ErrNotAContact, user)
+	}
 	site, dir, err := c.open()
 	if err != nil {
 		return err
@@ -75,7 +81,11 @@ func (c codes) Set(user, code string) error {
 }
 
 // Remove removes the code of user, then tells a running hub to read the codes again.
+// Never the installer's, which is not the console's (see Set).
 func (c codes) Remove(user string) error {
+	if user == hub.InstallerUser {
+		return consoleapp.ErrNoSuchCode
+	}
 	site, dir, err := c.open()
 	if err != nil {
 		return err

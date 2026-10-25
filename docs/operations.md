@@ -478,7 +478,16 @@ Ce que l'outil vérifie avant de toucher à quoi que ce soit :
   démarrage de la centrale avant d'être écrite. Par exemple, la dernière sirène ne peut
   pas être retirée (la centrale refuse un site sans sirène) : il faut d'abord ajouter
   la nouvelle. Pour `remove`, cette vérification a lieu **avant** le retrait du réseau,
-  qui ne se défait pas.
+  qui ne se défait pas. Pendant le retrait, l'appareil est tenu pour parti : aucun
+  autre changement du même programme ne peut laisser un site qui ne marcherait pas sans
+  lui (retirer l'autre sirène, par exemple). Cette garde ne vaut qu'à l'intérieur d'un
+  programme : la console et l'outil ont chacun la leur, et `check` dit après coup qu'un
+  site n'a plus aucune sirène appairée.
+- **Un retrait parti sans réponse** : l'ordre est envoyé mais l'adaptateur ne répond
+  pas à temps. Il peut encore l'exécuter un instant plus tard : l'appareil quitte donc
+  la configuration quand même, et `remove` le dit (`the removal was sent but not
+  confirmed`) puis s'arrête en erreur. `devices` montre ensuite s'il est encore
+  appairé.
 - **L'adaptateur répond** : `pair` attend que l'adaptateur Zigbee confirme l'ouverture
   du réseau (15 s), sinon il dit que `safehome-zigbee` ne tourne pas, au lieu d'attendre
   deux minutes pour rien. L'adaptateur ne la confirme qu'une fois que Zigbee2MQTT l'a
@@ -491,7 +500,8 @@ Ce que l'outil vérifie avant de toucher à quoi que ce soit :
 
 - comme **problèmes** (code de sortie 1) : une zone qui ne pourra jamais se déclencher,
   un type de zone inconnu, une zone sans nom, une sirène qui ne sait pas sonner, un nom
-  de sirène fautif ou donné à une sirène qui a une zone ;
+  de sirène fautif ou donné à une sirène qui a une zone, des sirènes dont aucune n'est
+  appairée (rien ne peut sonner) ;
 - comme **avertissements** : un appareil appairé qui ne sert à rien, une zone ou une
   sirène dont l'appareil n'est pas appairé, un site sans zone ou sans sirène, une
   sirène sans nom ni zone sur un site qui en a plusieurs ainsi (les textes ne la

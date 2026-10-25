@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -66,13 +67,20 @@ func (c *command) remove(ctx context.Context, s *install.Session) error {
 	if _, err := editor.CheckRemoval(id); err != nil {
 		return err
 	}
-	if err := s.Remove(ctx, id); err != nil {
-		return err
+	sent := s.Remove(ctx, id)
+	switch {
+	case sent == nil:
+		fmt.Fprintf(c.stdout, "%s removed from the network for good\n", id)
+	case errors.Is(sent, install.ErrUnconfirmed):
+		// The adapter may still carry it out: the configuration must not keep a
+		// device the network lost.
+		fmt.Fprintf(c.stdout, "%s: the removal was sent but not confirmed; it leaves the configuration all the same\n", id)
+	default:
+		return sent
 	}
-	fmt.Fprintf(c.stdout, "%s removed from the network for good\n", id)
 	u, err := editor.FinishRemoval(id)
 	if err != nil || !u.Used() {
-		return err
+		return errors.Join(sent, err)
 	}
 	if u.Zone != nil {
 		fmt.Fprintf(c.stdout, "zone %q removed from the configuration\n", u.Zone.Name)
@@ -81,5 +89,5 @@ func (c *command) remove(ctx context.Context, s *install.Session) error {
 		fmt.Fprintln(c.stdout, "siren removed from the configuration")
 	}
 	fmt.Fprintln(c.stdout, restartHint)
-	return nil
+	return sent
 }

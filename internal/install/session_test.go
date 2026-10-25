@@ -295,7 +295,8 @@ func TestFollowKeepsTheViewAndTheEvents(t *testing.T) {
 	defer cancel()
 	var views []View
 	var events []contract.DeviceEventData
-	if err := s.Follow(ctx, func(v View) { views = append(views, v) }, func(_ time.Time, e contract.DeviceEventData) { events = append(events, e) }); err != nil {
+	s.Observe(func(v View) { views = append(views, v) }, func(_ time.Time, e contract.DeviceEventData) { events = append(events, e) })
+	if err := s.Follow(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if len(events) != 2 || events[1].Code != "" {

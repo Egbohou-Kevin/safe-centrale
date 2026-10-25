@@ -156,6 +156,18 @@ func TestCheckOfASirenWithAZone(t *testing.T) {
 	}
 }
 
+// The sirens listed are all gone from the network (removed from a tool while the other
+// edited the site): nothing can sound, which is a problem, not a warning per siren.
+func TestCheckOfSirensNoneOfWhichIsPaired(t *testing.T) {
+	site := Site{Zones: map[string]Zone{"dev_door": {"Entree", "entry"}}, SirenIDs: []string{"dev_lost"}}
+	f := Check(site, []contract.RegistryDevice{dev("dev_door", "contact")})
+	if !slices.ContainsFunc(f, func(x Finding) bool {
+		return x.Level == Problem && x.DeviceID == "" && strings.Contains(x.Text, "no siren can sound")
+	}) {
+		t.Fatalf("%v", f)
+	}
+}
+
 func TestCheckOfAnEmptySite(t *testing.T) {
 	f := Check(Site{}, nil)
 	if len(f) != 2 || f[0].DeviceID != "" || HasProblem(f) {

@@ -67,7 +67,6 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer running()
 	os.WriteFile(filepath.Join(cfg.StateDir, hubconfig.PidFile), []byte(strconv.Itoa(stand.Process.Pid)+"\n"), 0o600)
 	if err := c.Set("u_owner", "2580"); err != nil {
 		t.Fatal(err)
@@ -83,6 +82,7 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the hub was not told")
 	}
+	running() // the stand-in hub is gone
 
 	people, _, _ = c.People()
 	if !people[0].HasCode {
@@ -112,6 +112,17 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	}
 	if err := c.Set("u_stranger", "2468"); !errors.Is(err, consoleapp.ErrNotAContact) {
 		t.Fatalf("a code for someone not a contact: %v", err)
+	}
+	// The installer's code is not the console's: a form posted by hand with
+	// id=installer neither replaces nor removes it.
+	if err := c.Set(hub.InstallerUser, "1593"); !errors.Is(err, consoleapp.ErrNotAContact) {
+		t.Fatalf("the installer's code replaced from the console: %v", err)
+	}
+	if err := c.Remove(hub.InstallerUser); !errors.Is(err, consoleapp.ErrNoSuchCode) {
+		t.Fatalf("the installer's code removed from the console: %v", err)
+	}
+	if err := c.Set("u_owner", "3691"); !errors.Is(err, consoleapp.ErrCodeTaken) {
+		t.Fatalf("the installer's code must still be 3691: %v", err)
 	}
 	if strings.Contains(logs.String(), "2580") {
 		t.Fatal("the code shows in the logs")

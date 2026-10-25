@@ -129,3 +129,24 @@ func TestDownKeepsTheCallersDeadline(t *testing.T) {
 		t.Fatalf("Down took %v past its deadline", took)
 	}
 }
+
+// A start cut short by its deadline: NetworkManager may still bring the network up
+// after nmcli is killed, so it is deleted all the same, on a time of its own (the
+// caller's is over).
+func TestAStartPastItsDeadlineIsCleanedUp(t *testing.T) {
+	dir := t.TempDir()
+	log, path := filepath.Join(dir, "log"), filepath.Join(dir, "nmcli")
+	script := "#!/bin/sh\necho \"$*\" >> " + log + "\ncase \"$1 $2\" in \"connection up\") exec sleep 5;; esac\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h, _ := New(good(path))
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if err := h.Up(ctx); err == nil {
+		t.Fatal("a start past its deadline was taken for a success")
+	}
+	if got := calls(t, log); len(got) != 4 || got[3] != "connection delete safehome-console" {
+		t.Fatalf("the network may come up and stay: %q", got)
+	}
+}

@@ -82,7 +82,9 @@ func (h *Hotspot) Up(ctx context.Context) error {
 		return err
 	}
 	if err := h.run(ctx, "connection", "up", c.Connection); err != nil {
-		cleanCtx, cancel := detached(ctx)
+		// On a time of its own: the start may have failed by running out of ctx's,
+		// and NetworkManager may still bring the network up after nmcli is killed.
+		cleanCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupWait)
 		defer cancel()
 		h.run(cleanCtx, "connection", "delete", c.Connection)
 		return err
