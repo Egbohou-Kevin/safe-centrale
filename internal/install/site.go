@@ -39,18 +39,46 @@ func (s Site) Without(id string) Site {
 // defaultSirenName is what the texts call a siren without a name ("Sirene").
 const defaultSirenName = "Sir\u00e8ne"
 
-// SirenName is what the alerts call the siren id: the name it was given, or by
-// default "Sirene" when it is the site's only siren, and "Sirene 1", "Sirene 2"...
-// (in the order the sirens were added) when there are several.
+// SirenName is what the alerts call the siren id. A device with a zone keeps its
+// zone's name. Another has the name it was given, or by default "Sirene" when it is
+// the site's only siren without a zone, and "Sirene 1", "Sirene 2"... (in the order
+// they were added) when there are several: a siren with a zone is not counted, so no
+// "Sirene 2" goes without a "Sirene 1".
 func (s Site) SirenName(id string) string {
+	if z, zoned := s.Zones[id]; zoned {
+		return z.Name
+	}
 	if n := s.SirenNames[id]; n != "" {
 		return n
 	}
-	rank := slices.Index(s.SirenIDs, id)
-	if len(s.SirenIDs) < 2 || rank < 0 {
+	plain := s.plainSirens()
+	rank := slices.Index(plain, id)
+	if len(plain) < 2 || rank < 0 {
 		return defaultSirenName
 	}
 	return fmt.Sprintf("%s %d", defaultSirenName, rank+1)
+}
+
+// plainSirens lists the sirens without a zone, in the order they were added: the
+// ones a name, or a default name, is for.
+func (s Site) plainSirens() []string {
+	return slices.DeleteFunc(slices.Clone(s.SirenIDs), func(id string) bool {
+		_, zoned := s.Zones[id]
+		return zoned
+	})
+}
+
+// CheckSirenName checks a name for the siren id before it is given: the zones' rule
+// (ValidSirenName), and no zone, since the alerts call a device with a zone by its
+// zone's name (ErrHasZone).
+func (s Site) CheckSirenName(id, name string) error {
+	if err := ValidSirenName(name); err != nil {
+		return err
+	}
+	if _, zoned := s.Zones[id]; zoned {
+		return fmt.Errorf("%s %w", id, ErrHasZone)
+	}
+	return nil
 }
 
 // unnamed returns a copy of names without the siren id.
@@ -72,6 +100,7 @@ type Sites interface {
 var (
 	ErrNoZone      = errors.New("has no zone")
 	ErrNoSiren     = errors.New("is not a siren")
+	ErrHasZone     = errors.New("has a zone: the alerts call it by its zone's name")
 	ErrCannotSound = errors.New("cannot sound")
 	// ErrLastSiren: the hub refuses a site without a siren. The editor says so before
 	// asking the hub, for a tool to explain it.
@@ -120,7 +149,8 @@ func ValidZone(z Zone) error {
 
 // SetZone gives the device id the zone z, and returns the zone it had, if any. d is
 // the device as the Zigbee registry knows it; nil accepts a device the registry does
-// not know (one of another adapter) unchecked.
+// not know (one of another adapter) unchecked. A siren's name gives way to the zone's:
+// the alerts call a device with a zone by its zone's name (SirenName).
 func (e *Editor) SetZone(id string, z Zone, d *contract.RegistryDevice) (old *Zone, err error) {
 	if err := ValidZone(z); err != nil {
 		return nil, err
@@ -135,6 +165,7 @@ func (e *Editor) SetZone(id string, z Zone, d *contract.RegistryDevice) (old *Zo
 			old = &had
 		}
 		s.Zones[id] = z
+		s.SirenNames = unnamed(s.SirenNames, id)
 		return true, nil
 	})
 	return old, err
@@ -173,7 +204,8 @@ func (e *Editor) AddSiren(id string, d *contract.RegistryDevice) (added bool, er
 
 // NameSiren gives the siren id its name for people, and returns the name it had
 // ("" for none, the default of SirenName). The name follows the zones' rule
-// (ValidSirenName): it goes into the same texts.
+// (ValidSirenName): it goes into the same texts. A siren with a zone has its zone's
+// name (CheckSirenName).
 func (e *Editor) NameSiren(id, name string) (old string, err error) {
 	if err := ValidSirenName(name); err != nil {
 		return "", err
@@ -181,6 +213,9 @@ func (e *Editor) NameSiren(id, name string) (old string, err error) {
 	err = e.edit(func(s *Site) (bool, error) {
 		if !slices.Contains(s.SirenIDs, id) {
 			return false, fmt.Errorf("%s %w", id, ErrNoSiren)
+		}
+		if err := s.CheckSirenName(id, name); err != nil {
+			return false, err
 		}
 		if old = s.SirenNames[id]; old == name {
 			return false, nil

@@ -30,13 +30,16 @@ func zones(in map[string]zoneFile) (map[string]engine.Zone, error) {
 	return out, nil
 }
 
-// sirenNames checks the sirens' names: each names a siren of the list, by the
-// installer's rule (install.ValidSirenName), since it goes into the same texts as a
-// zone's name.
-func sirenNames(ids []string, names map[string]string) error {
+// sirenNames checks the sirens' names: each names a siren of the list without a zone
+// (a device with a zone has its zone's name), by the installer's rule
+// (install.ValidSirenName), since it goes into the same texts as a zone's name.
+func sirenNames(ids []string, zones map[string]zoneFile, names map[string]string) error {
 	for _, id := range slices.Sorted(maps.Keys(names)) { // the same error first, whatever the map order
 		if !slices.Contains(ids, id) {
 			return fmt.Errorf("siren_names: %q is not in siren_ids", id)
+		}
+		if _, zoned := zones[id]; zoned {
+			return fmt.Errorf("siren_names: %q has a zone, the alerts call it by its zone's name", id)
 		}
 		if err := install.ValidSirenName(names[id]); err != nil {
 			return fmt.Errorf("siren_names of %q: %w", id, err)
@@ -173,7 +176,8 @@ func applyHealth(c *health.Config, h *healthFile) error {
 
 // applyEscalation reads who is told (the contacts) and how. The site name is for
 // the texts; the zones' names tell the contacts which door opened, and the sirens'
-// names which siren stays silent (a device with a zone keeps its zone's name).
+// names which siren stays silent (install.Site.SirenName: a device with a zone keeps
+// its zone's name).
 func applyEscalation(cfg *hub.Config, f file) error {
 	e := &cfg.Escalation
 	e.SiteName = f.SiteName
@@ -185,11 +189,9 @@ func applyEscalation(cfg *hub.Config, f file) error {
 	for id, z := range cfg.Engine.Zones {
 		e.DeviceNames[id] = z.Name
 	}
-	sirens := install.Site{SirenIDs: f.SirenIDs, SirenNames: f.SirenNames}
+	sirens := siteOf(f.Zones, f.SirenIDs, f.SirenNames)
 	for _, id := range f.SirenIDs {
-		if _, zoned := e.DeviceNames[id]; !zoned {
-			e.DeviceNames[id] = sirens.SirenName(id)
-		}
+		e.DeviceNames[id] = sirens.SirenName(id)
 	}
 	for _, c := range f.Contacts {
 		contact := escalation.Contact{ID: c.ID, Name: c.Name, Role: escalation.Role(c.Role)}

@@ -389,6 +389,11 @@ func TestAnInstallation(t *testing.T) {
 		!strings.Contains(errb, "siren name is empty") || slices.Contains(readSite(t, path).SirenIDs, "dev_siren3") {
 		t.Fatalf("a bad name is refused before the siren is added: %d %q", code, errb)
 	}
+	if code, _, errb := cli(ctx, "siren", "-config", path, "-force", "add", "-name", "Four", "dev_smoke"); code != 1 ||
+		!strings.Contains(errb, "dev_smoke has a zone: the alerts call it by its zone's name") ||
+		slices.Contains(readSite(t, path).SirenIDs, "dev_smoke") {
+		t.Fatalf("a device with a zone takes no siren name, refused before the siren is added: %d %q", code, errb)
+	}
 	code, out, errb = cli(ctx, "remove", "-config", path, "dev_siren1")
 	if code != 0 || !strings.Contains(out, "siren removed from the configuration") {
 		t.Fatalf("remove a siren: %d %q %q", code, out, errb)

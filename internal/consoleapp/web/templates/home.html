@@ -32,7 +32,7 @@
     {{if .Capabilities}}<div class="muted">{{join .Capabilities}}</div>{{end}}
     <div>
       {{with .Zone}}Zone « {{.Name}} » — {{template "kind" .Kind}}{{end}}
-      {{if .Siren}}Sirène « {{.SirenName}} »{{if not .SirenNamed}} <span class="muted">(nom par défaut)</span>{{end}}{{end}}
+      {{if .Siren}}Sirène{{if .Zone}} <span class="muted">(nommée comme sa zone dans les alertes)</span>{{else}} « {{.SirenName}} »{{if not .SirenNamed}} <span class="muted">(nom par défaut)</span>{{end}}{{end}}{{end}}
       {{if .Keypad}}Clavier{{end}}
       {{if and (not .Zone) (not .Siren) (not .Keypad)}}<span class="warn">Sans usage</span>{{end}}
     </div>
@@ -42,7 +42,7 @@
       <select name="kind">{{$zone := .Zone}}{{range $k := .Kinds}}<option value="{{$k}}"{{with $zone}}{{if eq .Kind $k}} selected{{end}}{{end}}>{{template "kind" $k}}</option>{{end}}</select>
       <button>{{if .Zone}}Changer la zone{{else}}Donner une zone{{end}}</button>
     </form>{{end}}
-    {{if .Siren}}<form method="post" action="/siren-name">
+    {{if and .Siren (not .Zone)}}<form method="post" action="/siren-name">
       <input type="hidden" name="id" value="{{.ID}}">
       <input type="text" name="name" maxlength="32" placeholder="Nom de la sirène dans les alertes (ex. Réserve)" value="{{if .SirenNamed}}{{.SirenName}}{{end}}">
       <button>{{if .SirenNamed}}Renommer la sirène{{else}}Nommer la sirène{{end}}</button>

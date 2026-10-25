@@ -38,8 +38,8 @@ type Device struct {
 	Offline      bool
 	Zone         *install.Zone
 	Siren        bool
-	// SirenName is what the alerts call it, while a siren: the name it was given
-	// (SirenNamed), or the default.
+	// SirenName is what the alerts call it, while a siren: its zone's name when it
+	// has a zone, or else the name it was given (SirenNamed), or the default.
 	SirenName  string
 	SirenNamed bool
 	CanSound   bool

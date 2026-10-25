@@ -146,6 +146,14 @@ func TestZonesAndSirensFromThePage(t *testing.T) {
 	if d := sirenOf(); d.SirenName != "Reserve" || !d.SirenNamed {
 		t.Fatalf("a named siren: %+v", d)
 	}
+	// A siren with a zone has its zone's name, and takes no other.
+	r.sites.Write(install.Site{Zones: map[string]install.Zone{"dev_siren": {Name: "Cuisine", Kind: "24h_fire"}}, SirenIDs: []string{"dev_siren"}})
+	if d := sirenOf(); d.SirenName != "Cuisine" || d.SirenNamed {
+		t.Fatalf("a siren with a zone: %+v", d)
+	}
+	if err := r.app.NameSiren("dev_siren", "Reserve"); !errors.Is(err, ErrHasZone) {
+		t.Fatalf("a siren with a zone named: %v", err)
+	}
 	// The zoned device that is not paired shows, as a mistake to undo.
 	r.sites.Write(install.Site{Zones: map[string]install.Zone{"dev_ghost": {Name: "G", Kind: "entry"}}, SirenIDs: []string{"dev_siren"}})
 	o := r.app.Overview()

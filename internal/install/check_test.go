@@ -141,6 +141,21 @@ func TestCheckFindsWhatIsWrong(t *testing.T) {
 	}
 }
 
+// A siren with a zone has its zone's name: unnamed, it is no warning, nor is the only
+// other siren, which the alerts call "Sirene"; a name of its own is a problem.
+func TestCheckOfASirenWithAZone(t *testing.T) {
+	site := Site{Zones: map[string]Zone{"dev_smoke": {"Cuisine", "24h_fire"}}, SirenIDs: []string{"dev_smoke", "dev_siren"}}
+	devices := []contract.RegistryDevice{dev("dev_smoke", "smoke", "siren"), dev("dev_siren", "siren")}
+	if f := Check(site, devices); len(f) != 0 {
+		t.Fatalf("%v", f)
+	}
+	site.SirenNames = map[string]string{"dev_smoke": "Reserve"}
+	if f := Check(site, devices); len(f) != 1 || f[0].Level != Problem || f[0].DeviceID != "dev_smoke" ||
+		!strings.Contains(f[0].Text, `the alerts call it "Cuisine"`) {
+		t.Fatalf("%v", f)
+	}
+}
+
 func TestCheckOfAnEmptySite(t *testing.T) {
 	f := Check(Site{}, nil)
 	if len(f) != 2 || f[0].DeviceID != "" || HasProblem(f) {

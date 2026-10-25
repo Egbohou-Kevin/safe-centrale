@@ -189,6 +189,7 @@ var refusals = []struct {
 	{consoleapp.ErrNotASiren, "not_siren"},
 	{consoleapp.ErrNoZone, "no_zone"},
 	{consoleapp.ErrNoSiren, "no_siren"},
+	{consoleapp.ErrHasZone, "siren_zoned"},
 	{consoleapp.ErrNoRegistry, "no_registry"},
 	{consoleapp.ErrLastSiren, "last_siren"},
 	{consoleapp.ErrEmptyName, "empty_name"},

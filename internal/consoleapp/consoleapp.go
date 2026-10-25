@@ -110,6 +110,7 @@ var (
 	ErrNotASiren   = install.ErrCannotSound
 	ErrNoZone      = install.ErrNoZone
 	ErrNoSiren     = install.ErrNoSiren
+	ErrHasZone     = install.ErrHasZone
 	ErrLastSiren   = install.ErrLastSiren
 	ErrEmptyName   = install.ErrEmptyName
 	ErrNameTooLong = install.ErrNameTooLong

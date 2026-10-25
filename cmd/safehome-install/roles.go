@@ -65,11 +65,16 @@ func (c *command) unzone() error {
 	return nil
 }
 
-// sirenAdd makes a device a siren, and names it when -name says so.
+// sirenAdd makes a device a siren, and names it when -name says so. A device with a
+// zone takes no siren name: the alerts call it by its zone's name.
 func (c *command) sirenAdd(ctx context.Context, s *install.Session) error {
 	id := c.args[1]
 	if c.zoneName != "" {
-		if err := install.ValidSirenName(c.zoneName); err != nil {
+		site, err := c.editor().Read()
+		if err != nil {
+			return err
+		}
+		if err := site.CheckSirenName(id, c.zoneName); err != nil {
 			return err // before anything is written
 		}
 	}

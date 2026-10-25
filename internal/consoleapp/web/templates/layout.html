@@ -67,6 +67,7 @@
   {{else if eq .Code "cannot_serve"}}{{.ID}} ne peut pas servir à ce type de zone.
   {{else if eq .Code "no_zone"}}{{.ID}} n'a pas de zone.
   {{else if eq .Code "no_siren"}}{{.ID}} ne sert pas de sirène.
+  {{else if eq .Code "siren_zoned"}}{{.ID}} a une zone : les alertes l'appellent par le nom de sa zone.
   {{else if eq .Code "no_answer"}}L'adaptateur Zigbee n'a pas répondu : tourne-t-il ?
   {{else if eq .Code "not_contact"}}{{.ID}} n'est pas un contact du site.
   {{else if eq .Code "code_mismatch"}}Les deux codes tapés diffèrent : recommencez.

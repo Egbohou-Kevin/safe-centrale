@@ -162,6 +162,39 @@ func TestSirenNames(t *testing.T) {
 	}
 }
 
+// A siren that also has a zone (a smoke detector that sounds) has its zone's name: it
+// takes no name of its own, a zone given to a named siren replaces its name, and the
+// default names count only the sirens without a zone.
+func TestASirenWithAZoneHasItsZonesName(t *testing.T) {
+	sites := newSites()
+	e := NewEditor(sites)
+	smoke := registered("dev_smoke", "smoke", "siren")
+	if _, err := e.AddSiren("dev_smoke", smoke); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.NameSiren("dev_smoke", "Cuisine haute"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.SetZone("dev_smoke", Zone{Name: "Cuisine", Kind: "24h_fire"}, smoke); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := sites.Read()
+	if len(s.SirenNames) != 0 || s.SirenName("dev_smoke") != "Cuisine" || s.SirenName("dev_siren") != "Sir\u00e8ne" {
+		t.Fatalf("%+v: %q, %q", s, s.SirenName("dev_smoke"), s.SirenName("dev_siren"))
+	}
+	if _, err := e.NameSiren("dev_smoke", "Reserve"); !errors.Is(err, ErrHasZone) ||
+		err.Error() != "dev_smoke has a zone: the alerts call it by its zone's name" {
+		t.Fatalf("a siren with a zone named: %v", err)
+	}
+	// Without its zone, it counts again.
+	if _, err := e.Unzone("dev_smoke"); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := sites.Read(); s.SirenName("dev_siren") != "Sir\u00e8ne 1" || s.SirenName("dev_smoke") != "Sir\u00e8ne 2" {
+		t.Fatalf("%q, %q", s.SirenName("dev_siren"), s.SirenName("dev_smoke"))
+	}
+}
+
 func TestARemovalIsCheckedThenFinished(t *testing.T) {
 	sites := newSites()
 	e := NewEditor(sites)

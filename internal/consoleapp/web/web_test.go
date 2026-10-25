@@ -132,6 +132,19 @@ func TestThePageShowsTheDevicesInFrench(t *testing.T) {
 	}
 }
 
+// A siren with a zone (a smoke detector that sounds) has its zone's name in the
+// alerts: the page says so, and offers no name of its own.
+func TestASirenWithAZoneShowsNoSirenName(t *testing.T) {
+	o := overview()
+	o.Devices = []consoleapp.Device{{ID: "dev_smoke", Model: "smoke.siren", Capabilities: []string{"smoke", "siren"}, Paired: true,
+		Zone: &install.Zone{Name: "Cuisine", Kind: "24h_fire"}, Siren: true, CanSound: true, SirenName: "Cuisine", Kinds: []string{"24h_fire"}}}
+	body := get(newHandler(t, &fakeConsole{o: o}), "/").Body.String()
+	if !strings.Contains(body, "Sir\u00e8ne <span class=\"muted\">(nomm\u00e9e comme sa zone dans les alertes)</span>") ||
+		strings.Contains(body, `action="/siren-name"`) || strings.Contains(body, "nom par d\u00e9faut") {
+		t.Fatalf("%s", body)
+	}
+}
+
 func TestThePageRefreshesWhilePairing(t *testing.T) {
 	o := overview()
 	o.Pairing = &consoleapp.Pairing{Active: true, Until: until,
@@ -197,6 +210,7 @@ func TestOrdersAndTheirOutcome(t *testing.T) {
 		fmt.Errorf("x: %w", consoleapp.ErrUnknown):       "dev_door n'est pas appair\u00e9",
 		fmt.Errorf("%w: dev_door", consoleapp.ErrNoZone): "dev_door n'a pas de zone",
 		fmt.Errorf("dev_door %w", consoleapp.ErrNoSiren): "dev_door ne sert pas de sir\u00e8ne",
+		fmt.Errorf("dev_door %w", consoleapp.ErrHasZone): "dev_door a une zone : les alertes l'appellent par le nom de sa zone.",
 	} {
 		c.err = err
 		loc := post(h, "/zone", url.Values{"id": {"dev_door"}, "name": {"X"}, "kind": {"entry"}}).Header().Get("Location")

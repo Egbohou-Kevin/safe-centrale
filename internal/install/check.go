@@ -167,8 +167,10 @@ func (f *findings) zones(site Site, byID map[string]contract.RegistryDevice) {
 }
 
 // sirens checks that each siren is paired and can sound, and how the alerts name it:
-// among several sirens, one without a name is only known by its rank.
+// among several sirens without a zone, one without a name is only known by its rank.
+// A siren with a zone has its zone's name.
 func (f *findings) sirens(site Site, byID map[string]contract.RegistryDevice) {
+	plain := site.plainSirens()
 	for _, id := range site.SirenIDs {
 		d, paired := byID[id]
 		switch {
@@ -182,8 +184,10 @@ func (f *findings) sirens(site Site, byID map[string]contract.RegistryDevice) {
 		case named:
 			if err := ValidSirenName(name); err != nil {
 				f.add(Problem, id, "%v", err)
+			} else if _, zoned := site.Zones[id]; zoned {
+				f.add(Problem, id, "siren named %q, but it has a zone: the alerts call it %q, by its zone's name", name, site.SirenName(id))
 			}
-		case len(site.SirenIDs) > 1:
+		case len(plain) > 1 && slices.Contains(plain, id):
 			f.add(Warning, id, "siren without a name: the alerts call it %q, give it one", site.SirenName(id))
 		}
 	}
