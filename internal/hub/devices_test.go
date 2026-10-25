@@ -224,3 +224,26 @@ func TestTheSchemaKnowsTheZoneKinds(t *testing.T) {
 		t.Fatalf("schema %v, engine %v", got, kinds)
 	}
 }
+
+// The people the app shows: once the hub is up, who an intrusion tells and when, by
+// the plan the hub follows, retained; never a phone number.
+func TestTheHubSaysWhoAnIntrusionTellsAndWhen(t *testing.T) {
+	r := newRig(t, nil)
+	r.start()
+	r.settle()
+	got := r.broker.On(contract.ContactsTopic(site))
+	if len(got) != 1 || !got[0].Retain || got[0].Env.Src != srcEscalation || got[0].Env.Type != contract.TypeContacts {
+		t.Fatalf("system.contacts: %+v", got)
+	}
+	var d contract.ContactsData
+	if err := json.Unmarshal(got[0].Env.Data, &d); err != nil || len(d.Contacts) == 0 {
+		t.Fatalf("%s: %v", got[0].Env.Data, err)
+	}
+	first := d.Contacts[0]
+	if first.ID != "u_owner" || first.ToldAfterS == nil || *first.ToldAfterS != 0 || first.Role != "owner" {
+		t.Fatalf("the owner first, at once: %+v", first)
+	}
+	if strings.Contains(string(got[0].Env.Data), "+228") || strings.Contains(string(got[0].Env.Data), "phone") {
+		t.Fatalf("a number in %s", got[0].Env.Data)
+	}
+}

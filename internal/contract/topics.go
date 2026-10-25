@@ -57,6 +57,9 @@ func HealthTopic(site string) string    { return Topic(site, "system", "health")
 // DevicesTopic carries the health of each device (system.devices), retained.
 func DevicesTopic(site string) string { return Topic(site, "system", "devices") }
 
+// ContactsTopic carries who an intrusion tells and when (system.contacts), retained.
+func ContactsTopic(site string) string { return Topic(site, "system", "contacts") }
+
 // GSMStatusTopic carries the GSM gateway's lines, retained.
 func GSMStatusTopic(site string) string { return Topic(site, "gsm", "status") }
 

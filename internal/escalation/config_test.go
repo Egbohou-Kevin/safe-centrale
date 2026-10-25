@@ -1,6 +1,7 @@
 package escalation
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -88,5 +89,28 @@ func TestTheHourlyLimitIsExactlyTheConfiguredMaximum(t *testing.T) {
 	}
 	if !throttled {
 		t.Fatal("the held back message must be reported")
+	}
+}
+
+// Who an intrusion tells and when, by the default plan: the deputy and the guard at
+// once, the owner two minutes later, the manager and the others at five; a role a
+// plan never names comes last, never told. A plan changed in the site's files is the
+// one said: the hub's own, not a copy.
+func TestToldSaysWhoIsToldFirstAndWhen(t *testing.T) {
+	e := newEsc(t)
+	var got []string
+	for _, w := range e.Told(KindIntrusion) {
+		got = append(got, fmt.Sprintf("%s@%s", w.Contact.ID, w.After))
+	}
+	want := []string{"deputy@0s", "guard@0s", "owner@2m0s", "manager@5m0s", "other@5m0s"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	only := newEsc(t, func(c *Config) {
+		c.Plans = map[AlertKind]Plan{KindIntrusion: {Waves: []Wave{{To: []Audience{AudienceOwner}}}}}
+	})
+	told := only.Told(KindIntrusion)
+	if told[0].Contact.ID != "owner" || told[0].Never || !told[len(told)-1].Never {
+		t.Fatalf("the site's own plan: %+v", told)
 	}
 }

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/system-contacts.json",
+  "title": "system.contacts",
+  "description": "Publié en retenu sur system/contacts par la centrale (src escalation), à son démarrage. Les contacts du site dans l'ordre où le plan d'escalade d'une intrusion les prévient, le plan que la centrale suit vraiment : jamais un numéro de téléphone.",
+  "type": "object",
+  "properties": {
+    "contacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "L'identifiant du contact, celui de config.set et de alert.request"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Le nom du contact, absent quand la configuration n'en donne pas"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["owner", "deputy", "guard", "manager", "other"]
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["app", "whatsapp", "sms", "call"]
+            },
+            "description": "Les canaux par lesquels il est prévenu"
+          },
+          "told_after_s": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Secondes après le déclenchement d'une intrusion où il est prévenu pour la première fois ; absent quand une intrusion ne le prévient jamais"
+          }
+        },
+        "required": ["id", "role", "channels"]
+      }
+    }
+  },
+  "required": ["contacts"]
+}

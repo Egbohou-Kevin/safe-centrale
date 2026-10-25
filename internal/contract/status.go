@@ -96,3 +96,20 @@ type DeviceHealth struct {
 	Battery    *int `json:"battery,omitempty"`
 	BatteryLow bool `json:"battery_low,omitempty"`
 }
+
+// ContactsData is the payload of system.contacts: the site's contacts, in the order
+// the escalation plan of an intrusion tells them (the plan the hub really follows),
+// for the people the app shows. Never a phone number.
+type ContactsData struct {
+	Contacts []ContactTold `json:"contacts"`
+}
+
+// ContactTold is one contact of system.contacts. ToldAfterS is how long after the
+// alarm an intrusion first tells them, in seconds; nil when it never does.
+type ContactTold struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name,omitempty"`
+	Role       string   `json:"role"`
+	Channels   []string `json:"channels"`
+	ToldAfterS *int     `json:"told_after_s,omitempty"`
+}

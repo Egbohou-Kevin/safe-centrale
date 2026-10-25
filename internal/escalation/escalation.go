@@ -36,6 +36,10 @@ func New(cfg Config) (*Escalation, error) {
 	return &Escalation{cfg: cfg, s: Snapshot{}.clone()}, nil
 }
 
+// Told is who an alert of kind tells and when, by the plan this escalation follows
+// (see Config.Told).
+func (e *Escalation) Told(kind AlertKind) []Told { return e.cfg.Told(kind) }
+
 // Snapshot returns a copy of the current state.
 func (e *Escalation) Snapshot() Snapshot { return e.s.clone() }
 

@@ -162,3 +162,13 @@ func (h *Hub) alertAckMessage(m inbox.Message) {
 	err := h.escal.loop.Submit(h.life, func(now time.Time) escalation.Input { return escwire.Ack(d, now) })
 	h.submitFailed(err)
 }
+
+// publishContacts publishes the retained system.contacts once the hub is up: who an
+// intrusion tells and when, by the plan the escalation follows. The contacts and the
+// plans change only with the site's configuration, which restarts the hub; the link
+// agent says it again to the cloud at each connection.
+// It reads only the escalation's configuration, which never changes once it runs.
+func (h *Hub) publishContacts(now time.Time) {
+	data := escwire.Contacts(h.escal.esc.Told(escalation.KindIntrusion))
+	h.out.Send(srcEscalation, contract.ContactsTopic(h.cfg.Site), contract.TypeContacts, data, true, now)
+}
