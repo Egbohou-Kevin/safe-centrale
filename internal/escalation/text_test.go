@@ -235,7 +235,7 @@ func fireWith(t *testing.T, e *Escalation, silent ...string) (app, sms string) {
 
 // A fire raised while a siren is known silent says so: the people on the site are not
 // warned by it. The sentence comes before the way to answer, and stays whole when the
-// text is cut; names too long to fit are left out.
+// text is cut; names too long, or that would cut the message, are left out.
 func TestAFireSaysTheSirensKnownSilent(t *testing.T) {
 	names := func(c *Config) {
 		c.DeviceNames["dev_siren1"], c.DeviceNames["dev_siren2"] = "Sir\u00e8ne 1", "R\u00e9serve"
@@ -258,8 +258,30 @@ func TestAFireSaysTheSirensKnownSilent(t *testing.T) {
 		}
 	}
 	long := func(c *Config) { names(c); c.SiteName = strings.Repeat("Grande Boutique ", 8) }
-	if _, sms := fireWith(t, newEsc(t, long), "dev_siren2"); !strings.HasSuffix(sms, "... La sirene (Reserve) ne repond pas."+ackHint) {
+	if _, sms := fireWith(t, newEsc(t, long), "dev_siren2"); !strings.HasSuffix(sms, "... La sirene ne repond pas."+ackHint) {
 		t.Errorf("cut: %q", sms)
+	}
+}
+
+// The sirens' names give way to the message: with the name of a real shop and of one
+// of its zones, naming two silent sirens would cut where and when the fire started,
+// though the message fits whole with the short sentence.
+func TestAFiresPlaceAndHourComeBeforeTheSilentSirensNames(t *testing.T) {
+	shop := func(c *Config) {
+		c.SiteName = "Quincaillerie Esp\u00e9rance B\u00e8-Kpota"
+		c.DeviceNames["dev_back"] = "Arri\u00e8re-boutique c\u00f4t\u00e9 cour"
+		c.DeviceNames["dev_siren1"], c.DeviceNames["dev_siren2"] = "Sir\u00e8ne", "Sir\u00e8ne 2"
+	}
+	const fire = "ALARME INCENDIE Quincaillerie Esperance Be-Kpota: fumee detectee (Arriere-boutique cote cour) a 21:04."
+	app, sms := fireWith(t, newEsc(t, shop), "dev_siren1", "dev_siren2")
+	if app != fire+" Les sirenes (Sirene, Sirene 2) ne repondent pas." {
+		t.Errorf("the application, where the names fit: %q", app)
+	}
+	if sms != fire+" Les sirenes ne repondent pas."+ackHint {
+		t.Errorf("the SMS must keep the zone and the hour: %q", sms)
+	}
+	if _, sms := fireWith(t, newEsc(t, shop), "dev_siren2"); sms != fire+" La sirene 2 ne repond pas."+ackHint {
+		t.Errorf("one siren, whose name fits: %q", sms)
 	}
 }
 

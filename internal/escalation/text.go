@@ -23,16 +23,16 @@ const (
 // sentences are kept whole when the text is cut.
 func (e *Escalation) text(in IncidentSnap, ch Channel) string {
 	msg, answer := e.message(in)
-	silent := e.silentSirens(in.Silent)
+	var end string
 	switch {
 	case in.Quiet && e.s.Handled[in.Alarm].Closed:
-		return fit(msg, silent+" L'alarme a ete arretee.")
+		end = " L'alarme a ete arretee."
 	case in.Quiet:
-		return fit(msg, silent+" L'alarme est deja prise en charge.")
+		end = " L'alarme est deja prise en charge."
 	case answer && ch == ChannelSMS:
-		return fit(msg, silent+ackHint)
+		end = ackHint
 	}
-	return fit(msg, silent)
+	return fit(msg, e.silentSirens(in.Silent, maxText-len(msg)-len(end))+end)
 }
 
 // message builds what an alert says, and whether it asks to be answered.
@@ -123,8 +123,10 @@ func saysSiren(name string) bool {
 
 // silentSirens is the sentence an alert raised while sirens are known silent ends
 // with (Raise.Silent): the people on the site are not warned by them. Their names
-// are left out when they would take too much of the text.
-func (e *Escalation) silentSirens(ids []string) string {
+// are left out when they would take too much of the text, or more than the room the
+// message leaves: the sentence is never cut, so it would cut the message, and where
+// and when a fire started matter more than which siren is silent.
+func (e *Escalation) silentSirens(ids []string, room int) string {
 	var s, short string
 	switch len(ids) {
 	case 0:
@@ -134,7 +136,7 @@ func (e *Escalation) silentSirens(ids []string) string {
 	default:
 		s, short = " Les sirenes ("+e.deviceList(ids)+") ne repondent pas.", " Les sirenes ne repondent pas."
 	}
-	if len(s) > maxSilent {
+	if len(s) > maxSilent || len(s) > room {
 		return short
 	}
 	return s
