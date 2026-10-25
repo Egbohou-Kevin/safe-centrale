@@ -15,6 +15,7 @@ import (
 
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/driver/drivertest"
+	"safehome/internal/hubconfig"
 )
 
 const site = "tg-lom-0001"
@@ -78,6 +79,21 @@ func TestCheck(t *testing.T) {
 	}
 	if code, _, _ := cli(t, "", "check", "-config", filepath.Join(t.TempDir(), "missing.json")); code != 1 {
 		t.Fatalf("a missing file: exit %d", code)
+	}
+}
+
+// Zones set by the installer's tools that the hub would leave aside stop the
+// installation script: the hub would watch the configuration file's older ones.
+func TestTheCheckFailsWhenTheDevicesFileIsLeftAside(t *testing.T) {
+	state := t.TempDir()
+	path := writeConfig(t, "mqtt://127.0.0.1:1883", state, "")
+	devices := `{"zones": {"dev_door": {"name": "Entrance", "kind": "entry"}}, "siren_ids": []}`
+	if err := os.WriteFile(filepath.Join(state, hubconfig.DevicesFile), []byte(devices), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errb := cli(t, "", "check", "-config", path)
+	if code != 1 || !strings.Contains(errb, "configuration error") || !strings.Contains(errb, hubconfig.DevicesFile) {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errb)
 	}
 }
 

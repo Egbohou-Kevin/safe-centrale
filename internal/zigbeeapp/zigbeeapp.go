@@ -81,6 +81,10 @@ type Deps struct {
 	Logger      *slog.Logger
 }
 
+// StateKey names the adapter's saved state in its state folder: the paired devices,
+// which the program's check reads.
+const StateKey = keyZigbee
+
 const (
 	src        = contract.AdapterZigbee
 	keyZigbee  = "zigbee"
@@ -145,6 +149,10 @@ func New(cfg Config, deps Deps) (*App, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, d := range zigbee.WithoutProfile(a.core.Snapshot(), cfg.Zigbee.Profiles) {
+		log.Error("a paired device has no profile: its messages are dropped; put its profile back (site/profiles)",
+			"device", d.ID, "profile", d.Profile)
 	}
 	return a, nil
 }

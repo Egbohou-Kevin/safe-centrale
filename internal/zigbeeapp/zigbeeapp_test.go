@@ -557,3 +557,14 @@ func TestADoorIsHeardAfterTheClockIsSetBack(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 }
+
+// A paired device whose profile is gone: its messages are dropped, which the
+// adapter says as an error at its start, not only in the debug lines.
+func TestADeviceWithoutProfileIsSaidAtTheStart(t *testing.T) {
+	store := drivertest.NewMemStore()
+	store.Save(keyZigbee, []byte(`{"devices": {"dev_pir": {"id": "dev_pir", "ieee": "0x02", "model": "XYZ", "profile": "site.motion.xyz"}}}`))
+	r := newRig(t, store)
+	if l := r.logs.String(); !strings.Contains(l, "level=ERROR") || !strings.Contains(l, "device=dev_pir profile=site.motion.xyz") {
+		t.Fatalf("logs:\n%s", l)
+	}
+}

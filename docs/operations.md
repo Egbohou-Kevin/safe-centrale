@@ -54,8 +54,14 @@ read -s CODE; echo "$CODE" | sudo -u safehome safehome-hub codes -config /etc/sa
 Les **zones et les sirènes** réglées par l'installateur (console locale ou outil en
 ligne de commande) sont gardées dans le dossier d'état, `site-devices.json`. Elles
 remplacent alors celles de `hub.json`, qui ne servent plus qu'au départ. `check` dit
-d'où elles viennent. Un fichier abîmé est laissé de côté : la centrale démarre avec
-les zones de `hub.json` et l'écrit dans son journal.
+d'où elles viennent. Un fichier abîmé, ou que la centrale refuse (modifié à la main,
+règle rendue plus stricte par une mise à jour), est laissé de côté : la centrale
+démarre quand même, avec les zones de `hub.json`, et l'écrit dans son journal. Ce
+n'est qu'un secours : `check` échoue alors (le script d'installation s'arrête avant de
+redémarrer quoi que ce soit), et la console comme `safehome-install devices` et
+`check` refusent de montrer ou de vérifier ces zones que la centrale ne surveille pas,
+avec la raison. Corriger le fichier (ou le retirer pour repartir de `hub.json`). Rien
+ne part au cloud : seul le journal de la centrale en garde la trace.
 
 ## Configuration
 

@@ -49,7 +49,10 @@ func (s SiteFiles) Check(site install.Site) error { return CheckSite(s.Path, sit
 func (s SiteFiles) Write(site install.Site) error { return WriteSite(s.Path, site) }
 
 // ReadSite returns the zones and the sirens the hub at path runs with: those of the
-// state folder once a tool wrote them, those of the configuration file before.
+// state folder once a tool wrote them, those of the configuration file before. A file
+// of the state folder the hub would refuse (edited by hand, or a rule made stricter
+// by an update) is an error: the hub leaves it aside and runs on the configuration
+// file's zones, and a tool must not show, nor check, zones the hub does not watch.
 func ReadSite(path string) (install.Site, error) {
 	f, err := readFile(path)
 	if err != nil {
@@ -59,10 +62,13 @@ func ReadSite(path string) (install.Site, error) {
 	switch {
 	case err != nil:
 		return install.Site{}, err
-	case found:
-		return siteOf(d.Zones, d.SirenIDs, d.SirenNames), nil
+	case !found:
+		return siteOf(f.Zones, f.SirenIDs, f.SirenNames), nil
 	}
-	return siteOf(f.Zones, f.SirenIDs, f.SirenNames), nil
+	if _, _, err := withStateDevices(f); err != nil {
+		return install.Site{}, fmt.Errorf("%w (the hub runs on the zones and sirens of %s meanwhile: fix or remove the file)", err, path)
+	}
+	return siteOf(d.Zones, d.SirenIDs, d.SirenNames), nil
 }
 
 func siteOf(zones map[string]zoneFile, sirenIDs []string, sirenNames map[string]string) install.Site {

@@ -230,3 +230,20 @@ func (p Profile) validateCommand(name string, cmd ProfileCommand) error {
 	}
 	return nil
 }
+
+// WithoutProfile lists the registered devices of s whose profile is not among
+// profiles, sorted by id: every message of theirs would be dropped (see report). A
+// profile left out of an update, or removed by hand, does that silently.
+func WithoutProfile(s Snapshot, profiles []Profile) []Device {
+	known := map[string]bool{}
+	for _, p := range profiles {
+		known[p.Name] = true
+	}
+	var out []Device
+	for _, id := range slices.Sorted(maps.Keys(s.Devices)) {
+		if d := s.Devices[id]; !known[d.Profile] {
+			out = append(out, d)
+		}
+	}
+	return out
+}

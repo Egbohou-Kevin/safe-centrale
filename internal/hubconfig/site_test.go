@@ -189,6 +189,10 @@ func TestADamagedDevicesFileNeverStopsTheHub(t *testing.T) {
 			if r.DevicesErr == nil || r.DevicesSum != "" || len(r.Hub.Engine.Zones) != 7 {
 				t.Fatalf("err %v, sum %q, zones %d: want the file's own zones and the reason", r.DevicesErr, r.DevicesSum, len(r.Hub.Engine.Zones))
 			}
+			// The installer's tools must not show, nor check, zones the hub left aside.
+			if site, err := ReadSite(path); err == nil {
+				t.Fatalf("ReadSite gave %d zone(s) the hub does not watch", len(site.Zones))
+			}
 		})
 	}
 }

@@ -464,7 +464,9 @@ Ensuite, dans l'ordre :
    appareils. Il crée `maint.key` s'il n'existe pas encore et que la maintenance est
    configurée.
 4. Il vérifie chaque configuration avec les **nouveaux** programmes (`check`). Si l'une
-   est mauvaise, il remet les fichiers d'avant et s'arrête. Aucun de nos programmes
+   est mauvaise, il remet les fichiers d'avant et s'arrête. La vérification de
+   l'adaptateur Zigbee échoue aussi quand un appareil appairé n'a plus son profil :
+   tous ses messages seraient écartés sans un mot. Aucun de nos programmes
    n'a été remplacé ; seul go2rtc a pu l'être, la vérification de la vidéo en a
    besoin. Aucun service n'a redémarré.
 5. Il pose les programmes, les services, les journaux, le chien de garde et Mosquitto.
@@ -478,7 +480,12 @@ Ensuite, dans l'ordre :
 
 Ce que le script ne touche pas à la relance :
 
-- une configuration absente du dossier du site reste celle de la centrale ;
+- une configuration absente du dossier du site reste celle de la centrale. Pas les
+  profils des appareils : ils sont remplacés à chaque relance par ceux du paquet et du
+  dossier du site (`site/profiles`). Un profil posé à la main sur la centrale
+  disparaît donc ; s'il sert à un appareil appairé, la vérification échoue et la
+  relance s'arrête sur la configuration d'avant. Le profil propre au site va dans
+  `site/profiles` ;
 - `maint.key` n'est jamais refaite : le bastion connaît déjà l'ancienne ;
 - le fichier de Zigbee2MQTT n'est posé que la première fois. Ensuite il contient la
   clé du réseau Zigbee.
