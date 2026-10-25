@@ -130,9 +130,15 @@ func TestDownKeepsTheCallersDeadline(t *testing.T) {
 	}
 }
 
+// overdue is a context whose deadline is over, ended by its cancel: a start cut short
+// by its deadline, without waiting for one.
+type overdue struct{ context.Context }
+
+func (overdue) Deadline() (time.Time, bool) { return time.Now().Add(-time.Second), true }
+
 // A start cut short by its deadline: NetworkManager may still bring the network up
 // after nmcli is killed, so it is deleted all the same, on a time of its own (the
-// caller's is over).
+// caller's is over). The caller's context ends while "connection up" hangs.
 func TestAStartPastItsDeadlineIsCleanedUp(t *testing.T) {
 	dir := t.TempDir()
 	log, path := filepath.Join(dir, "log"), filepath.Join(dir, "nmcli")
@@ -141,9 +147,15 @@ func TestAStartPastItsDeadlineIsCleanedUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	h, _ := New(good(path))
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := h.Up(ctx); err == nil {
+	go func() {
+		for ctx.Err() == nil && !strings.Contains(strings.Join(calls(t, log), "\n"), "connection up") {
+			time.Sleep(10 * time.Millisecond)
+		}
+		cancel()
+	}()
+	if err := h.Up(overdue{ctx}); err == nil {
 		t.Fatal("a start past its deadline was taken for a success")
 	}
 	if got := calls(t, log); len(got) != 4 || got[3] != "connection delete safehome-console" {
