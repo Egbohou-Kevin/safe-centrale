@@ -219,12 +219,14 @@ ne doit pas effacer l'état de la porte. Un état ne porte jamais de code. Quand
 appareil est retiré, l'adaptateur efface ses états retenus (message vide).
 
 L'état `availability` d'un appareil hors ligne porte aussi `heard` : l'heure de son
-dernier message, à la minute, absente s'il n'a rien dit depuis le redémarrage de
-l'adaptateur (son appairage compte comme un message). Jamais pour un appareil en ligne,
-ni pour une autre capacité (le schéma le refuse, la centrale ignore un tel état) :
-l'heure du dernier message d'un appareil qui répond bouge avec chaque porte et chaque
-passage. Figée tant que l'appareil est hors ligne, elle dit depuis quand sa porte n'est
-plus surveillée. La centrale s'en sert pour `system.devices`.
+dernier message, à la minute, telle que Zigbee2MQTT l'a entendu (`last_seen`, jamais
+plus tard que l'arrivée du message : un message gardé par le broker pendant un arrêt
+de l'adaptateur n'est pas une nouvelle plus récente), absente s'il n'a rien dit depuis
+le redémarrage de l'adaptateur (son appairage compte comme un message). Jamais pour un
+appareil en ligne, ni pour une autre capacité (le schéma le refuse, la centrale ignore
+un tel état) : l'heure du dernier message d'un appareil qui répond bouge avec chaque
+porte et chaque passage. Figée tant que l'appareil est hors ligne, elle dit depuis
+quand sa porte n'est plus surveillée. La centrale s'en sert pour `system.devices`.
 
 ```json
 {
@@ -779,14 +781,31 @@ chaque appareil du registre, pour la fiche Capteurs de l'application.
   `offline_after`, 4 h par défaut et 2 h pour la sirène, ou un appareil sorti du
   réseau). Seulement quand il est faux : `since`, quand il est devenu injoignable, et
   `heard`, sa dernière nouvelle, absente s'il n'a rien dit depuis le redémarrage de
-  l'adaptateur. Les deux à la minute : `since` à la seconde redonnerait l'heure exacte
-  de la dernière nouvelle, l'appareil passant hors ligne un silence fixe après elle. Les deux viennent de l'état `availability` retenu (voir
-  « `device.state` ») et restent figés tant que l'appareil est injoignable : ils ne
-  disent rien de l'activité de la boutique. Aucune heure ne se déduit de l'autre : après
-  un redémarrage de l'adaptateur, le silence compte depuis le redémarrage.
+  l'adaptateur. Les deux viennent de l'état `availability` retenu (voir
+  « `device.state` ») et restent figés tant que l'appareil est injoignable. Ils partent
+  à la minute parce que l'application n'en montre pas plus (« aucune nouvelle depuis
+  14:47 ») : ce n'est pas une protection, voir plus bas ce que dit le `ts`.
+- Pour l'application, aucune heure ne se déduit de l'autre : elle montre `heard`, ou
+  `since` quand `heard` manque, et ne calcule jamais l'une à partir de l'autre et
+  d'`offline_after`. Après un redémarrage de l'adaptateur, le silence compte depuis le
+  redémarrage, et `heard` est l'heure de Zigbee2MQTT, pas celle de l'arrivée.
 - Jamais d'heure pour un appareil en ligne (le schéma refuse `since` et `heard` avec
   `online` à `true`) : l'heure de son dernier message bouge avec chaque porte et chaque
   passage, et les Aqara ne se signalent d'elles-mêmes qu'environ toutes les 50 minutes.
+- Ce que la liste dit de l'activité de la boutique : aucune heure pour un appareil qui
+  répond, et aucun envoi pour une porte ou un passage en soi, donc rien qui suive
+  l'activité au jour le jour. Mais le `ts` de l'enveloppe date à la milliseconde
+  chaque liste partie sur un changement, et l'agent le garde quand il la redit. Celle
+  qui annonce un appareil resté muet part `offline_after` après l'arrivée de son
+  dernier message (ou le redémarrage de l'adaptateur) : son `ts` redonne cette heure à
+  la seconde près, là où `heard` la dit à la minute. Celle qui annonce son retour part
+  à son premier message, souvent une porte ; celle d'une pile qui change de dizaine
+  part avec un message de l'appareil, qui peut en être une aussi. Quelques moments par
+  appareil et par an, pas le fil de l'activité. Choix fait le 25 octobre 2026 : la
+  liste part tout de suite, pour que l'application montre sans attendre un appareil
+  revenu. La retenir ne cacherait rien : un événement `battery` ou `tamper` porté par
+  le même message part au cloud tout de suite, et `alarm.armed` et `alarm.disarmed`
+  disent déjà quand la boutique ferme et ouvre.
 - `battery` : la dernière lecture en %, arrondie à la dizaine la plus proche (comme le
   signal GSM), absente sans pile suivie ou jamais lue. `battery_low` : présent, à
   `true`, seulement quand la pile est faible, avec la règle de la supervision (faible à
@@ -871,7 +890,11 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 ## Évolution du contrat
 
-- Ajouter un champ ou un type de message : pas de changement de version.
+- Ajouter un champ ou un type de message : pas de changement de version. Un nouveau
+  type sur le chemin du cloud demande pourtant le cloud à jour avant la centrale : un
+  cloud qui ne le connaît pas refuse chaque copie, et chaque copie refusée laisse en
+  plus un trou dans les `seq` (voir « Fiabilité ») : il redemande ce numéro quelques
+  fois, en vain, puis le compte perdu, à chaque copie.
 - Changer le sens ou supprimer un champ : nouvelle valeur de `v`. Pendant une
   migration, le cloud accepte les deux versions.
 - Un composant qui reçoit un `v` plus grand que le sien l'ignore et le signale
@@ -888,7 +911,8 @@ Changements depuis la v1 validée, sans changement de `v` :
   appareil en ligne. L'état `availability` retenu d'un appareil hors ligne porte
   `heard`, l'heure de son dernier message à la minute (voir « `device.state` ») ; un
   `heard` sur un autre état est refusé. Un cloud qui ne connaît pas encore
-  `system.devices` le refuse : il est mis à jour avant la centrale.
+  `system.devices` refuse chaque copie et y voit un trou dans les numéros (voir
+  plus haut) : il est mis à jour avant la centrale.
 - **25 octobre 2026, la sirène dans l'état** : `alarm.state` en `triggered` porte
   trois champs facultatifs, tous ou aucun : `incident` (l'incident qui sonne), `siren`
   (`on` pendant un cycle, `paused` pendant la pause) et `ends_at` (la fin du cycle ou

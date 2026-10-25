@@ -40,8 +40,9 @@ func Registry(d contract.RegistrySnapshotData) health.Registry {
 // Devices builds system.devices from the monitor's list. A device none of whose
 // capabilities decides a type (no profile today) is left out: it is neither a
 // sensor, a keypad nor a siren. Since and heard go only with a device offline, both to
-// the minute: the owner needs no more, and since to the second would give the exact
-// last news back, the device going offline a fixed silence after it.
+// the minute, which is all the app shows. The minute hides nothing: the envelope's ts
+// of the list sent when a device goes offline gives its last news to the second
+// (docs/contract.md, system.devices).
 func Devices(devices []health.Device) contract.DevicesData {
 	out := contract.DevicesData{Devices: []contract.DeviceHealth{}}
 	for _, d := range devices {

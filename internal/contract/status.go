@@ -67,9 +67,10 @@ type HealthData struct {
 }
 
 // DevicesData is the payload of system.devices: the health of each registered device,
-// for the owner's list of sensors. Published retained at every change, it never says
-// anything that moves with the shop's activity: no door or motion state, and no time
-// for a device that answers.
+// for the owner's list of sensors. Published retained at every real change, never for
+// a door or a passer-by as such: no door or motion state, and no time for a device
+// that answers. Its envelope's ts still dates each change it went for, such as a
+// device going offline or its first message back (see docs/contract.md).
 type DevicesData struct {
 	Devices []DeviceHealth `json:"devices"`
 }

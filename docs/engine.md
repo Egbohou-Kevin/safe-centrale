@@ -446,11 +446,13 @@ règles : pur, sans horloge) :
   (`Config.Zones`, reprises de `hub.json`), en ligne ou non, et pour un appareil hors
   ligne depuis quand et sa dernière nouvelle (données par l'adaptateur dans
   `Availability`), la pile arrondie à la dizaine et la pile faible (même règle que le
-  résumé). Rien qui bouge avec l'activité de la boutique : la supervision ne reçoit ni
-  porte ni mouvement. La liste fait partie de l'état sauvegardé : après un redémarrage,
-  elle est entière avant le retour des états retenus. La pile y est gardée arrondie,
-  pour ne pas réécrire l'état à chaque point perdu. Un état sauvegardé avant la liste
-  se relit : elle se remplit avec les messages retenus.
+  résumé). Rien dans la liste ne bouge avec l'activité de la boutique : la supervision
+  ne reçoit ni porte ni mouvement, et un appareil qui répond n'y a pas d'heure (ce que
+  dit encore le `ts` d'une liste envoyée : voir `contract.md`, « `system.devices` »).
+  La liste fait partie de l'état sauvegardé : après un redémarrage, elle est entière
+  avant le retour des états retenus. La pile y est gardée arrondie, pour ne pas
+  réécrire l'état à chaque point perdu. Un état sauvegardé avant la liste se relit :
+  elle se remplit avec les messages retenus.
 
 Codé et testé côté pilote (`internal/driver`, `internal/adapter/filestore`) :
 
@@ -496,10 +498,18 @@ Choix faits, à connaître :
   change, comparée octet par octet à la dernière publiée, comme `system.health`. Une
   liste part donc à chaque démarrage de la centrale, et l'agent la redit au cloud à
   chaque connexion. Pas de renvoi périodique.
+- Une liste due à un changement part tout de suite, même celle d'un appareil revenu,
+  dont le `ts` est l'heure de son premier message, souvent une porte : l'application
+  le montre revenu sans attendre. La retenir ne cacherait rien (un événement `battery`
+  ou `tamper` du même message part au cloud tout de suite). Le `ts` de celle d'un
+  appareil passé hors ligne redonne aussi sa dernière nouvelle à la seconde près.
+  Quelques moments par appareil et par an, jamais le fil de l'activité (voir
+  `contract.md`, « `system.devices` »).
 - La pile est arrondie à la dizaine la plus proche, comme le signal GSM : 15 % se lit
-  20 %, avec `battery_low`. `since` et `heard` partent à la minute. Un appareil dont
-  aucune capacité ne donne un type n'est pas dans la liste (aucun profil aujourd'hui) :
-  le schéma exige un type que l'application sait dire.
+  20 %, avec `battery_low`. `since` et `heard` partent à la minute, ce que montre
+  l'application ; la minute ne cache rien, vu le `ts`. Un appareil dont aucune
+  capacité ne donne un type n'est pas dans la liste (aucun profil aujourd'hui) : le
+  schéma exige un type que l'application sait dire.
 
 Pas encore codé :
 

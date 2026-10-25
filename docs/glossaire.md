@@ -21,8 +21,8 @@ relie les deux : c'est le langage commun du projet.
 | heure limite | `AutoArmLimit` | Au-delà, on ne peut plus repousser |
 | supervision | `health` (`Monitor`) | Surveille la centrale et les appareils, hors alarme |
 | résumé quotidien | `SummaryAt` | Une alerte par jour qui liste appareils muets et piles faibles |
-| liste des appareils, fiche Capteurs | `Devices`, `system.devices` | La santé de chaque appareil (en ligne, pile), sans rien de l'activité de la boutique |
-| dernière nouvelle | `heard` | L'heure du dernier message d'un appareil hors ligne, à la minute |
+| liste des appareils, fiche Capteurs | `Devices`, `system.devices` | La santé de chaque appareil (en ligne, pile), sans porte ni mouvement, sans heure pour un appareil qui répond |
+| dernière nouvelle | `heard` | L'heure du dernier message d'un appareil hors ligne, entendu par Zigbee2MQTT, à la minute |
 | seuil de batterie | `HubBatteryWarn`, `HubBatteryCritical` | 40 % puis 10 % |
 | réarmement d'un seuil | `HubBatteryRearm` | Au-dessus de 60 %, le seuil peut alerter de nouveau |
 | pilote | `driver` (`Loop`) | Fait tourner un domaine en temps réel |
