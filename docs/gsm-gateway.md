@@ -151,13 +151,24 @@ file. Un modem qui se bloque souvent est signalé dans `system.health`.
 - Un SMS peut être envoyé sous un faux numéro : le risque est limité, car ce SMS ne
   fait qu'arrêter l'escalade, mais il justifie que l'incident reste visible dans
   l'application.
-- Le texte d'un SMS lu sur la SIM (`AT+CMGR`, `AT+CMGL`) n'est que du texte : de son
-  en-tête au `OK` final, aucune de ses lignes n'est prise pour une ligne du modem.
+- Le texte d'un SMS lu sur la SIM n'est que du texte : la passerelle lit les SMS
+  gardés en mode PDU (`AT+CMGF=0`, puis `AT+CMGR` ou `AT+CMGL=4`, puis `AT+CMGF=1` pour
+  revenir au mode texte des envois). Chaque SMS y est une seule ligne de chiffres
+  hexadécimaux, que rien de ce qu'on écrit dans un SMS ne peut couper ; la passerelle
+  en tire le numéro et le texte (alphabet GSM 7 bits, UCS-2 ou 8 bits ; l'en-tête d'un
+  morceau de SMS long est sauté). Un SMS illisible est effacé, avec une ligne au
+  journal : laissé, il serait relu à chaque vérification. Si le retour au mode texte
+  échoue, le prochain envoi le refait d'abord. Un SMS livré sans être gardé (`+CMT`)
+  n'est pas pris : le modem est réglé pour tous les garder (`AT+CNMI=2,1`), et le texte
+  brut qui suivrait une telle ligne pourrait porter des lignes à lui.
   Avant le 25 octobre 2026, un SMS ordinaire dont le texte était `+CMT: "<numéro d'un
   contact>",,""` puis `1` passait pour le « 1 » de ce contact, sans service de faux
   numéro : un téléphone et le numéro de la SIM suffisaient. Une ligne `ERROR` dans un
   texte empêchait aussi sa lecture, et une ligne `NO CARRIER` lue pendant un appel le
-  finissait.
+  finissait. Une première correction lisait le texte jusqu'au `OK` final ; une ligne
+  du texte qui disait exactement `OK` finissait encore la lecture, et les lignes
+  d'après repassaient pour des lignes du modem : la même fausse réponse « 1 » restait
+  possible (corrigé le même jour après une revue, par le mode PDU).
 - Un SMS reçu pendant que la passerelle est arrêtée, pendant un redémarrage du modem,
   dont l'annonce (`+CMTI`) s'est perdue ou dont la lecture a échoué reste sur la SIM :
   la passerelle liste les SMS gardés (`AT+CMGL="ALL"`) à chaque ouverture du port et à
@@ -300,9 +311,8 @@ Là où le document laissait un doute :
   Un `ATD` sans réponse ou en échec est raccroché (`ATH`) : le numéro sonne peut-être
   quand même.
 - Le port à utiliser pour les commandes (souvent `/dev/ttyUSB2` sur un modem USB).
-- Un SMS reçu dont une ligne est exactement « OK » finit sa lecture à cette ligne : en
-  mode texte, rien d'autre ne marque la fin d'un SMS. Le reste du texte est perdu, le
-  SMS est effacé. Cas rare, noté.
+- La lecture des SMS gardés en mode PDU (`AT+CMGF=0`, `AT+CMGR`, `AT+CMGL=4`) et le
+  retour au mode texte, puis un SMS reçu en UCS-2 (accents) et en 7 bits.
 - Que le modem accepte une commande précédée du `ESC` qui quitte l'invite d'un SMS
   resté sans réponse (la plupart attendent `AT` et ignorent ce qui précède).
 

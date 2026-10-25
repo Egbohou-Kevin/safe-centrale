@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -247,6 +248,39 @@ func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 	r.cancel = nil
 	if strings.Contains(r.logs.String(), "failed") {
 		t.Fatalf("an error was logged for a message given up at shutdown:\n%s", r.logs.String())
+	}
+}
+
+// An alarm the engine raises while the hub stops (a message it had already taken)
+// is saved as raised: its alert must still reach the escalation, and leave, or nobody
+// is ever told of it, not even after the restart.
+func TestAnAlarmRaisedWhileTheHubStopsIsStillAlerted(t *testing.T) {
+	r := newRig(t, nil)
+	r.start()
+	r.armedNow()
+	held, hold := make(chan struct{}), make(chan struct{})
+	release := sync.OnceFunc(func() { close(hold) })
+	t.Cleanup(release) // runs before the rig's own, which waits for the hub
+	r.hub.alarm.loop.Post(context.Background(), func(time.Time) []engine.Action {
+		close(held)
+		<-hold
+		return nil
+	})
+	<-held
+	r.device(devBack, contract.CapContact, "open") // taken, behind the held task
+	r.cancel()
+	// The escalation must outlive the engine while the engine has work left.
+	for end := time.Now().Add(100 * time.Millisecond); time.Now().Before(end); {
+		if err := r.hub.escal.loop.Alive(context.Background()); err != nil {
+			t.Fatalf("the escalation stopped before the engine: %v", err)
+		}
+	}
+	release()
+	<-r.done
+	r.cancel = nil
+	if len(eventsOf(r, contract.TypeAlarmTriggered)) != 1 || len(eventsOf(r, contract.TypeAlertRequest)) == 0 {
+		t.Fatalf("triggered %d, alert requests %d: the alarm must be alerted",
+			len(eventsOf(r, contract.TypeAlarmTriggered)), len(eventsOf(r, contract.TypeAlertRequest)))
 	}
 }
 

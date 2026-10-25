@@ -110,6 +110,9 @@ type healthSide struct {
 type escalationSide struct {
 	esc  *escalation.Escalation
 	loop *driver.Loop[escalation.Input, escalation.Action, escalation.Snapshot]
+	// life is the escalation loop's own: it ends after the engine and the monitor (Run).
+	life context.Context
+	stop context.CancelFunc
 }
 
 // bootState is the boot window (see boot): the retained device states collected
@@ -146,6 +149,7 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 		auth:    make(chan order, cfg.AuthQueue),
 	}
 	h.life, h.stop = context.WithCancel(context.Background())
+	h.escal.life, h.escal.stop = context.WithCancel(context.Background())
 	h.mode.Store(string(engine.ModeDisarmed))
 
 	if err := h.openSaved(); err != nil {
@@ -292,25 +296,30 @@ func (h *Hub) Run(ctx context.Context) error {
 	// Everything runs on h.life, which ends with ctx: a loop only stops once h.life
 	// is over, so a message handed to it meanwhile is known to be given up.
 	defer h.stop()
+	defer h.escal.stop()
 	defer context.AfterFunc(ctx, h.stop)()
 
-	var wg sync.WaitGroup
+	var domains, rest sync.WaitGroup
+	domains.Go(func() { h.alarm.loop.Run(h.life) })
+	domains.Go(func() { h.monitor.loop.Run(h.life) })
+	rest.Go(func() { h.escal.loop.Run(h.escal.life) })
 	for _, run := range []func(context.Context){
-		func(c context.Context) { h.alarm.loop.Run(c) },
-		func(c context.Context) { h.monitor.loop.Run(c) },
-		func(c context.Context) { h.escal.loop.Run(c) },
 		h.out.Run,
 		h.authWorker,
 		func(c context.Context) { driver.Every(c, h.deps.Clock, h.cfg.HeartbeatEvery, h.publishHeartbeat) },
 	} {
-		wg.Go(func() { run(h.life) })
+		rest.Go(func() { run(h.life) })
 	}
 
 	if err := h.boot(h.life); err == nil {
 		<-h.life.Done()
 	}
 	h.stop()
-	wg.Wait()
+	// The escalation stops last: an alarm the engine raises or ends while it stops (a
+	// task it took, a deadline due then) is saved as done, and must reach it too.
+	domains.Wait()
+	h.escal.stop()
+	rest.Wait()
 	h.out.Flush()
 	return nil
 }

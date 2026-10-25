@@ -196,7 +196,13 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   Un message qui arrive pendant ce temps est abandonné sans erreur au journal ;
   l'adaptateur Zigbee et l'agent ne l'acquittent pas, et le broker le leur redonne au
   démarrage suivant. Les autres programmes l'acquittent encore, et il est perdu (un
-  état retenu revient à la connexion suivante, un événement non).
+  état retenu revient à la connexion suivante, un événement non). Dans la centrale, la
+  boucle de l'escalade a son propre contexte et s'arrête après celles du moteur et de
+  la supervision : ce qu'elles font encore pendant l'arrêt (une tâche déjà prise, une
+  échéance qui tombe à ce moment) est sauvegardé comme fait, et l'alerte d'une alarme
+  levée alors, ou la fin d'une escalade, doit encore arriver à l'escalade. Avant le
+  25 octobre 2026, elle pouvait être perdue sans trace : la sirène reprenait au
+  redémarrage, mais personne n'était jamais prévenu.
 - **Les lectures de configuration** (`internal/hubconfig`, `internal/gsmconfig`, etc.)
   partagent `internal/configfile` : JSON strict, niveau de journal, durées, secrets,
   écriture atomique. L'en-tête commun des fichiers (`site`, `broker_url`, `client_id`,

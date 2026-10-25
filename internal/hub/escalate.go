@@ -46,10 +46,13 @@ var healthUrgencies = map[health.Urgency]escalation.Urgency{
 	health.UrgencyLow:      escalation.UrgencyLow,
 }
 
-// escalate hands an input to the escalation loop.
+// escalate hands an alert of the engine or the monitor, or the end of one, to the
+// escalation loop. It runs on their loops, which stop before the escalation's (see
+// Run): it never gives up, and a failure is always worth a line in the journal.
 func (h *Hub) escalate(in escalation.Input) {
-	err := h.escal.loop.Submit(h.life, func(time.Time) escalation.Input { return in })
-	h.submitFailed(err)
+	if err := h.escal.loop.Submit(h.escal.life, func(time.Time) escalation.Input { return in }); err != nil {
+		h.log.Error("handing an alert to the escalation failed", "err", err)
+	}
 }
 
 // escalateEngine feeds the engine's alerts to the escalation, and ends the

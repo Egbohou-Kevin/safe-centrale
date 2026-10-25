@@ -264,7 +264,10 @@ donner au moteur, qui ne les tient donc pas pour signalés. Le feu et la panique
 jamais coupés. Dès la fermeture du mode, le sabotage alerte de nouveau, et un sabotage
 noté pendant le mode et toujours actif (un couvercle laissé ouvert) est signalé à la
 fermeture. Avant le 25 octobre 2026, le moteur le tenait pour signalé : il ne l'était
-jamais, même après un redémarrage.
+jamais, même après un redémarrage. Un appareil retiré pendant le mode n'a plus de
+sabotage noté : remplacer un capteur ouvert, le retirer à la console, puis armer le soir
+ne fait pas sonner la sirène pour un appareil qui n'existe plus (corrigé le 25 octobre
+2026 après une revue).
 
 ### Après le mode
 

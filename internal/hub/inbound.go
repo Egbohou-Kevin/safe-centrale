@@ -177,8 +177,10 @@ func (h *Hub) feedHealth(d contract.DeviceEventData) {
 }
 
 // registryMessage takes a device removed from the site: the engine and the monitor
-// forget it, so that it holds no door open and stays in no fault list. The other
-// events of the registry (a device added or refused) are the installer's business.
+// forget it, so that it holds no door open and stays in no fault list, and the
+// installation mode no longer holds its tamper, to be reported when the mode closes.
+// The other events of the registry (a device added or refused) are the installer's
+// business.
 func (h *Hub) registryMessage(m inbox.Message) {
 	if _, err := inbox.Envelope(m, h.cfg.Site, contract.TypeRegistryDeviceRemoved); errors.Is(err, inbox.ErrWrongType) {
 		return
@@ -191,7 +193,10 @@ func (h *Hub) registryMessage(m inbox.Message) {
 		h.log.Warn("ignoring a device removal without a device")
 		return
 	}
-	err := h.alarm.loop.Submit(h.life, func(now time.Time) engine.Input { return engwire.Forget(d, now) })
+	err := h.alarm.loop.Submit(h.life, func(now time.Time) engine.Input {
+		delete(h.alarm.inst.quieted, d.DeviceID)
+		return engwire.Forget(d, now)
+	})
 	h.submitFailed(err)
 	err = h.monitor.loop.Submit(h.life, func(now time.Time) health.Input { return health.Forget{Now: now, DeviceID: d.DeviceID} })
 	h.submitFailed(err)

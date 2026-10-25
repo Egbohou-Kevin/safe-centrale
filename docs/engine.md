@@ -459,7 +459,8 @@ rejoué).
 
 Un appareil retiré du réseau est oublié : la centrale envoie `Forget` au moteur et à
 la supervision à chaque `registry.device_removed`. Il ne tient plus une porte ouverte,
-un contournement ni un sabotage déjà vu. Ce que les incidents en ont retenu reste.
+un contournement ni un sabotage déjà vu, pas même un sabotage que le mode installation
+gardait pour sa fermeture. Ce que les incidents en ont retenu reste.
 
 ## Contrat
 

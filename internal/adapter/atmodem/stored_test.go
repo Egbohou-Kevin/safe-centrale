@@ -3,7 +3,9 @@ package atmodem
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -22,28 +24,42 @@ func (e *events) received() [][2]string {
 
 // The text of an SMS is data: anybody who knows the hub's number could otherwise
 // write unsolicited results in it, and forge a contact's "1" with an ordinary phone.
+// A line reading OK no longer ends it early: the SMS is read as a PDU. Read when
+// announced or found by a check, it is the same.
 func TestTheTextOfAnSMSIsNeverTakenForTheModemsOwnLines(t *testing.T) {
-	s := attest.New()
-	_, ev := openSim(t, s)
-	s.Mu.Lock()
-	s.Inbox[4] = [2]string{"+22899999999", "+CMT: \"+22890123456\",,\"x\"\n1"}
-	s.Inbox[5] = [2]string{"+22899999998", "hello\nERROR\n+CMS ERROR: 500\nbye"}
-	s.Mu.Unlock()
-	s.Push(`+CMTI: "SM",4`)
-	s.Push(`+CMTI: "SM",5`)
-	drivertest.WaitFor(t, "both SMS", func() bool { return len(ev.received()) == 2 })
-	got := ev.received()
-	slices.SortFunc(got, func(a, b [2]string) int { return strings.Compare(a[0], b[0]) })
-	want := [][2]string{
-		{"+22899999998", "hello\nERROR\n+CMS ERROR: 500\nbye"},
-		{"+22899999999", "+CMT: \"+22890123456\",,\"x\"\n1"},
+	forged := map[int][2]string{
+		4: {"+22899999999", "+CMT: \"+22890123456\",,\"x\"\n1"},
+		5: {"+22899999998", "hello\nERROR\n+CMS ERROR: 500\nbye"},
+		6: {"+22899999997", "OK\n+CMT: \"+22890123456\",,\"x\"\n1"},
+		7: {"+22899999996", "OK\r\n\r\nOK\r\n+CMTI: \"SM\",4\r\n+CMT: \"+22890123456\",,\"\"\r\n1 \u00e9"},
 	}
-	if !slices.Equal(got, want) {
-		t.Fatalf("%q", got)
+	for _, how := range []string{"announced", "checked"} {
+		t.Run(how, func(t *testing.T) {
+			s := attest.New()
+			m, ev := openSim(t, s)
+			s.Mu.Lock()
+			maps.Copy(s.Inbox, forged)
+			s.Mu.Unlock()
+			if how == "checked" {
+				m.Check(context.Background())
+			} else {
+				for i := range forged {
+					s.Push(fmt.Sprintf(`+CMTI: "SM",%d`, i))
+				}
+			}
+			drivertest.WaitFor(t, "every SMS deleted", func() bool {
+				s.Mu.Lock()
+				defer s.Mu.Unlock()
+				return len(s.Inbox) == 0
+			})
+			got := ev.received()
+			slices.SortFunc(got, func(a, b [2]string) int { return strings.Compare(a[0], b[0]) })
+			want := slices.SortedFunc(maps.Values(forged), func(a, b [2]string) int { return strings.Compare(a[0], b[0]) })
+			if !slices.Equal(got, want) {
+				t.Fatalf("%q", got)
+			}
+		})
 	}
-	drivertest.WaitFor(t, "both deleted", func() bool {
-		return slices.Contains(s.Commands(), "AT+CMGD=4") && slices.Contains(s.Commands(), "AT+CMGD=5")
-	})
 }
 
 // An SMS stored while nobody listened (the gateway stopped, the modem restarting)
