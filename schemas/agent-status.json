@@ -31,7 +31,7 @@
     "dropped": {
       "type": "integer",
       "minimum": 0,
-      "description": "Messages supprimés depuis le démarrage, file pleine"
+      "description": "Messages abandonnés (file pleine, trop vieux, refusés par le broker du cloud), comptés à travers les redémarrages"
     },
     "economy": {
       "type": "boolean",

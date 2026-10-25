@@ -110,3 +110,32 @@ func TestAFloodOverTheLimitWritesNothing(t *testing.T) {
 		t.Fatalf("a refused message changed the snapshot:\n%s\n%s", before, after)
 	}
 }
+
+// A large alarm: the cloud's answers to the alerts and the app's acknowledgements
+// come by the dozen. They are not orders, the limit does not drop them.
+func TestRepliesDoNotCountAgainstTheLimit(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.DownBurst = 2; c.DownPerMinute = 6 })
+	h.linkUp()
+	h.local(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered) // incident inc1 goes up
+	id, _ := h.local(topic("alert", "request"), contract.TypeAlertRequest, appAlert("inc1"))
+	it, _ := h.next()
+	h.handle(Sent{Now: h.now, ID: it.ID})
+	for _, status := range []string{contract.ResultQueued, contract.ResultSent, contract.ResultDelivered} {
+		_, _, acts := h.cloud(topic("alert", "result"), contract.TypeAlertResult, contract.AlertResultData{Ref: id, Status: status})
+		if len(of[PublishLocal](acts)) != 1 {
+			t.Fatalf("%s: %+v", status, acts)
+		}
+	}
+	_, _, acts := h.cloud(topic("alert", "ack"), contract.TypeAlertAck, contract.AlertAckData{Incident: "inc1", Contact: "u_owner", Via: contract.ChannelApp})
+	if len(of[PublishLocal](acts)) != 1 {
+		t.Fatalf("the app's ack: %+v", acts)
+	}
+	// The orders still have their allowance, and only that.
+	order := contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp, User: "u_owner"}
+	for i := range 3 {
+		_, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order)
+		if limited := len(of[AnswerOrder](acts)) == 1; limited != (i == 2) {
+			t.Fatalf("order %d: %+v", i, acts)
+		}
+	}
+}
