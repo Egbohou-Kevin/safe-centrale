@@ -49,6 +49,10 @@ func (m *Modem) read(port io.Reader) {
 func (m *Modem) route(line string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.textLine(line) {
+		m.hand(line)
+		return
+	}
 	switch {
 	case m.cmtFrom != "":
 		from := m.cmtFrom
@@ -78,6 +82,11 @@ func (m *Modem) route(line string) {
 			return
 		}
 	}
+	m.hand(line)
+}
+
+// hand gives a line to the command in progress, if any. m.mu is held.
+func (m *Modem) hand(line string) {
 	if m.pending != nil {
 		select {
 		case m.pending <- line:
@@ -85,6 +94,26 @@ func (m *Modem) route(line string) {
 			m.log.Error("modem answer lost: the command reads too slowly")
 		}
 	}
+}
+
+// textLine tells whether line belongs to the text of a stored SMS being read
+// (AT+CMGR, AT+CMGL): from the first header of the answer to its final OK, every line
+// is data, never an unsolicited result. Otherwise anybody could write one in an SMS:
+// a text reading `+CMT: "<a contact>",,""` then `1` forged that contact's "1", and a
+// line "NO CARRIER" ended a call under way. A text line reading exactly OK still ends
+// the answer early: the format has no other end (docs/gsm-gateway.md). m.mu is held.
+func (m *Modem) textLine(line string) bool {
+	switch {
+	case !m.listing:
+		return false
+	case m.inText:
+		m.inText = line != "OK"
+		return true
+	case storedHeader(line):
+		m.inText = true
+		return true
+	}
+	return false
 }
 
 func isCallResult(line string) bool {
@@ -96,16 +125,48 @@ func isCallResult(line string) bool {
 }
 
 // announce queues the SMS stored at the index a "+CMTI:" line gives, to be read.
+// m.mu is held.
 func (m *Modem) announce(line string) {
-	i, err := strconv.Atoi(field(line, 1))
-	if err != nil {
+	if i, err := strconv.Atoi(field(line, 1)); err == nil {
+		m.queue(i)
+	}
+}
+
+// queue queues the SMS stored at index i to be read, once. One that does not fit is
+// found again by the next sweep. m.mu is held.
+func (m *Modem) queue(i int) {
+	if m.queued[i] {
 		return
 	}
 	select {
 	case m.inbox <- i:
+		m.queued[i] = true
 	default:
 		m.log.Error("too many incoming SMS waiting to be read")
 	}
+}
+
+// sweep queues the received SMS still stored on the modem, to be read: one that came
+// while the gateway was stopped or the modem restarting, whose announcement was lost,
+// or whose reading failed. Left there, a contact's "1" would be lost without a trace,
+// and the stored SMS would fill the SIM until the network delivers no more. It runs
+// after each opening of the port and at each check.
+func (m *Modem) sweep(ctx context.Context) error {
+	lines, err := m.command(ctx, `AT+CMGL="ALL"`)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, l := range lines {
+		if !strings.HasPrefix(l, "+CMGL:") || !strings.HasPrefix(unquote(field(l, 1)), "REC") {
+			continue // the text of an SMS, or one we did not receive
+		}
+		if i, err := strconv.Atoi(field(l, 0)); err == nil {
+			m.queue(i)
+		}
+	}
+	return nil
 }
 
 // deliveryReport reads "+CDS: <fo>,<mr>,<ra>,<tora>,<scts>,<dt>,<st>".
@@ -136,8 +197,11 @@ func (m *Modem) readInbox() {
 			return
 		case i := <-m.inbox:
 			if err := m.takeStored(i); err != nil {
-				m.log.Warn("reading an incoming SMS failed", "index", i, "err", err)
+				m.log.Warn("reading an incoming SMS failed, it is read again at the next check", "index", i, "err", err)
 			}
+			m.mu.Lock()
+			delete(m.queued, i)
+			m.mu.Unlock()
 		}
 	}
 }
@@ -151,8 +215,9 @@ func (m *Modem) takeStored(i int) error {
 		return err
 	}
 	for k, l := range lines {
-		if strings.HasPrefix(l, "+CMGR:") && k+1 < len(lines) {
-			m.notifySMS(unquote(field(l, 1)), lines[k+1])
+		if strings.HasPrefix(l, "+CMGR:") {
+			m.notifySMS(unquote(field(l, 1)), strings.Join(lines[k+1:], "\n"))
+			break
 		}
 	}
 	_, err = m.command(ctx, fmt.Sprintf("AT+CMGD=%d", i))

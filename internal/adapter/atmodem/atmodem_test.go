@@ -47,7 +47,7 @@ func openSim(t *testing.T, s *attest.Sim) (*Modem, *events) {
 	ev := &events{}
 	m, err := Open(context.Background(), Options{
 		Open: s.Open, OnSMS: ev.onSMS, OnDeliveryReport: ev.onReport,
-		CommandTimeout: 500 * time.Millisecond, RestartWait: 10 * time.Millisecond,
+		CommandTimeout: 500 * time.Millisecond, SMSTimeout: time.Second, RestartWait: 10 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func openSim(t *testing.T, s *attest.Sim) (*Modem, *events) {
 func TestOpenSetsTheModemUp(t *testing.T) {
 	s := attest.New()
 	openSim(t, s)
-	want := []string{"ATE0", "AT+CMEE=1", "AT+CMGF=1", "AT+CSMP=49,167,0,0", "AT+CNMI=2,1,0,1,0"}
+	want := []string{"ATE0", "AT+CMEE=1", "AT+CMGF=1", "AT+CSMP=49,167,0,0", "AT+CNMI=2,1,0,1,0", `AT+CMGL="ALL"`}
 	if got := s.Commands(); !slices.Equal(got, want) {
 		t.Fatalf("%v", got)
 	}

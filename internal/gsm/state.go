@@ -37,13 +37,14 @@ type Job struct {
 	Channel   Channel   `json:"channel"`
 	Priority  Priority  `json:"priority"`
 	Text      string    `json:"text"`
-	Received  time.Time `json:"received"`   // when it was asked, at most when it arrived
-	Attempts  int       `json:"attempts"`   // full rounds over the lines that failed
-	NotBefore time.Time `json:"not_before"` // waiting before the next round
-	Tried     []string  `json:"tried"`      // lines tried in the current round
-	Line      string    `json:"-"`          // the line sending it now, if any
-	Deadline  time.Time `json:"-"`          // when that line is given up
-	Reported  bool      `json:"reported"`   // a failure was already reported
+	Received  time.Time `json:"received"`          // when it was asked, at most when it arrived
+	Attempts  int       `json:"attempts"`          // full rounds over the lines that failed
+	NotBefore time.Time `json:"not_before"`        // waiting before the next round
+	Tried     []string  `json:"tried"`             // lines tried in the current round
+	Failure   Reason    `json:"failure,omitempty"` // why the last line tried failed
+	Line      string    `json:"-"`                 // the line sending it now, if any
+	Deadline  time.Time `json:"-"`                 // when that line is given up
+	Reported  bool      `json:"reported"`          // a failure was already reported
 	Test      bool      `json:"test"`
 }
 

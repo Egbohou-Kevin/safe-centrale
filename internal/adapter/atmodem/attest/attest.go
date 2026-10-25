@@ -7,7 +7,9 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"maps"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -28,14 +30,17 @@ type Sim struct {
 	// earlier command would be.
 	BeforePrompt string
 	Dial         string // final line of ATD, "OK" by default
-	AfterDial    string // call progress sent after ATD's OK, empty for none
-	AfterWait    time.Duration
-	Inbox        map[int][2]string // index -> from, text
-	commands     []string
-	Sent         [][2]string // number, text
-	ref          int
-	Opens        int
-	Hangups      int // connections closed by the other end
+	// SendWait is how long the network takes to take an SMS once its text is in:
+	// the answer to AT+CMGS comes after it, and nothing else is read meanwhile.
+	SendWait  time.Duration
+	AfterDial string // call progress sent after ATD's OK, empty for none
+	AfterWait time.Duration
+	Inbox     map[int][2]string // index -> from, text
+	commands  []string
+	Sent      [][2]string // number, text
+	ref       int
+	Opens     int
+	Hangups   int // connections closed by the other end
 }
 
 // New returns a modem registered on the network, with a good signal.
@@ -87,8 +92,36 @@ func (s *Sim) Commands() []string {
 	return append([]string(nil), s.commands...)
 }
 
+// buffered reads c into memory as fast as it is written, as a serial port's buffer
+// does: a write to the modem returns at once even while the modem is busy. (A bare
+// pipe would hold the writer until the modem reads.)
+func buffered(c net.Conn) io.Reader {
+	pr, pw := io.Pipe()
+	data := make(chan []byte, 256)
+	go func() {
+		defer close(data)
+		for {
+			b := make([]byte, 512)
+			n, err := c.Read(b)
+			if n > 0 {
+				data <- b[:n]
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	go func() {
+		for b := range data {
+			pw.Write(b)
+		}
+		pw.CloseWithError(io.EOF)
+	}()
+	return pr
+}
+
 func (s *Sim) serve(c net.Conn) {
-	r := bufio.NewReader(c)
+	r := bufio.NewReader(buffered(c))
 	for {
 		cmd, err := r.ReadString('\r')
 		if err != nil {
@@ -97,7 +130,7 @@ func (s *Sim) serve(c net.Conn) {
 			s.Mu.Unlock()
 			return
 		}
-		cmd = strings.TrimSpace(cmd)
+		cmd = strings.TrimLeft(strings.TrimSpace(cmd), "\x1b") // an ESC that left a prompt
 		s.Mu.Lock()
 		s.commands = append(s.commands, cmd)
 		silent, echo := s.Silent, s.echo
@@ -142,6 +175,14 @@ func (s *Sim) answer(c net.Conn, r *bufio.Reader, cmd string) {
 			return
 		}
 		s.write(c, fmt.Sprintf(`+CMGR: "REC UNREAD","%s",,"26/10/17,21:05:00+00"`, m[0]), m[1], "OK")
+	case strings.HasPrefix(cmd, "AT+CMGL="):
+		for _, i := range slices.Sorted(maps.Keys(s.Inbox)) {
+			m := s.Inbox[i]
+			s.write(c, fmt.Sprintf(`+CMGL: %d,"REC UNREAD","%s",,"26/10/17,21:05:00+00"`, i, m[0]), m[1])
+		}
+		s.write(c, "OK")
+	case cmd == "AT+CMEE?":
+		s.write(c, "+CMEE: 1", "OK")
 	case strings.HasPrefix(cmd, "AT+CMGD="):
 		var i int
 		fmt.Sscanf(cmd, "AT+CMGD=%d", &i)
@@ -170,6 +211,11 @@ func (s *Sim) takeSMS(c net.Conn, r *bufio.Reader, cmd string) {
 		return
 	}
 	text = strings.TrimSuffix(text, "\x1a")
+	if wait := s.SendWait; wait > 0 {
+		s.Mu.Unlock()
+		time.Sleep(wait)
+		s.Mu.Lock()
+	}
 	if s.CMGS != "" {
 		s.write(c, s.CMGS)
 		return

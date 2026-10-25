@@ -14,6 +14,7 @@ type exchange struct {
 	text     string // written after the "> " prompt, when withText
 	withText bool
 	prompted bool // the text was written
+	reading  bool // the answer reached the text of a stored SMS: data up to OK
 	lines    []string
 }
 
@@ -32,14 +33,23 @@ func (m *Modem) commandWithText(ctx context.Context, cmd, text string) ([]string
 func (m *Modem) run(ctx context.Context, x *exchange) ([]string, error) {
 	m.cmdMu.Lock()
 	defer m.cmdMu.Unlock()
-	ctx, cancel := context.WithTimeout(ctx, m.o.CommandTimeout)
+	timeout := m.o.CommandTimeout
+	if x.withText {
+		timeout = m.o.SMSTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	port, answers, err := m.begin(x.cmd)
+	port, answers, unsynced, err := m.begin(x.cmd)
 	if err != nil {
 		return nil, err
 	}
 	defer m.end()
+	if unsynced {
+		if err := m.resync(ctx, port, answers); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := io.WriteString(port, x.cmd+"\r"); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrClosed, err)
 	}
@@ -49,6 +59,9 @@ func (m *Modem) run(ctx context.Context, x *exchange) ([]string, error) {
 			if x.withText {
 				io.WriteString(port, "\x1b") // leave the prompt
 			}
+			m.mu.Lock()
+			m.unsynced = true
+			m.mu.Unlock()
 			return nil, ErrTimeout
 		case l := <-answers:
 			done, err := x.take(port, l)
@@ -62,27 +75,75 @@ func (m *Modem) run(ctx context.Context, x *exchange) ([]string, error) {
 	}
 }
 
-// begin makes the reader hand the answer lines to the command about to be sent.
-func (m *Modem) begin(cmd string) (io.Writer, <-chan string, error) {
+// begin makes the reader hand the answer lines to the command about to be sent, and
+// tells whether a late answer must be waited for first.
+func (m *Modem) begin(cmd string) (io.Writer, <-chan string, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed || m.port == nil {
-		return nil, nil, ErrClosed
+		return nil, nil, false, ErrClosed
 	}
 	answers := make(chan string, 64)
 	m.pending, m.dialing = answers, strings.HasPrefix(cmd, "ATD")
-	return m.port, answers, nil
+	m.listing, m.inText = readsStored(cmd), false
+	return m.port, answers, m.unsynced, nil
 }
 
 func (m *Modem) end() {
 	m.mu.Lock()
-	m.pending, m.dialing = nil, false
+	m.pending, m.dialing, m.listing, m.inText = nil, false, false, false
 	m.mu.Unlock()
+}
+
+// readsStored tells whether a command reads stored SMS, whose text comes in its answer.
+func readsStored(cmd string) bool {
+	return strings.HasPrefix(cmd, "AT+CMGR=") || strings.HasPrefix(cmd, "AT+CMGL=")
+}
+
+// storedHeader tells whether line heads a stored SMS in such an answer: what follows
+// it is the SMS's text.
+func storedHeader(line string) bool {
+	return strings.HasPrefix(line, "+CMGR:") || strings.HasPrefix(line, "+CMGL:")
+}
+
+// resync waits for the late answer of a command that timed out before the next one is
+// sent: it asks for an answer that only it gets (+CMEE:), and drops every line up to
+// the end of it. Otherwise the late OK of an SMS would end the next command early, and
+// that command's own answer the one after: a check would read the registration as
+// missing, and a reading of an SMS find no text before deleting it.
+func (m *Modem) resync(ctx context.Context, port io.Writer, answers <-chan string) error {
+	ctx, cancel := context.WithTimeout(ctx, m.o.CommandTimeout)
+	defer cancel()
+	if _, err := io.WriteString(port, "AT+CMEE?\r"); err != nil {
+		return fmt.Errorf("%w: %v", ErrClosed, err)
+	}
+	marked := false
+	for {
+		select {
+		case <-ctx.Done():
+			return ErrTimeout
+		case l := <-answers:
+			switch {
+			case strings.HasPrefix(l, "+CMEE:"):
+				marked = true
+			case marked && (l == "OK" || l == "ERROR"):
+				m.mu.Lock()
+				m.unsynced = false
+				m.mu.Unlock()
+				return nil
+			}
+		}
+	}
 }
 
 // take handles one answer line, and reports whether the command is over.
 func (x *exchange) take(port io.Writer, l string) (done bool, err error) {
 	switch {
+	case x.reading && l != "OK":
+		x.lines = append(x.lines, l) // the text of an SMS, whatever it says
+	case readsStored(x.cmd) && storedHeader(l):
+		x.reading = true
+		x.lines = append(x.lines, l)
 	case l == ">" && x.withText && !x.prompted:
 		x.prompted = true
 		if _, err := io.WriteString(port, x.text+"\x1a"); err != nil {

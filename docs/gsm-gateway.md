@@ -92,9 +92,15 @@ client.
 ## Accès au modem
 
 Un seul traitement parle au modem à la fois, par ligne. Les commandes (AT) sont
-envoyées l'une après l'autre, chacune avec un délai maximum. Les événements
-spontanés du modem (SMS reçu, appel entrant, perte de réseau) sont lus par le même
-traitement et distribués ensuite.
+envoyées l'une après l'autre, chacune avec un délai maximum : 10 s, et 120 s pour
+l'envoi d'un SMS (`AT+CMGS`), dont le réseau décide la durée (les manuels des modems
+donnent 120 s au plus). Coupé à 10 s, un SMS parti quand même était dit en échec et
+renvoyé, jusqu'à 9 fois pendant une alarme (corrigé le 25 octobre 2026 après une
+revue). Après une commande restée sans réponse, la suivante attend d'abord la fin de
+la réponse tardive (`AT+CMEE?`, dont la réponse ne peut venir que d'elle) : sinon le
+`OK` tardif d'un SMS finissait la commande suivante, et une vérification lisait la
+ligne hors réseau. Les événements spontanés du modem (SMS reçu, appel entrant, perte
+de réseau) sont lus par le même traitement et distribués ensuite.
 
 ## Surveillance de la ligne
 
@@ -145,6 +151,19 @@ file. Un modem qui se bloque souvent est signalé dans `system.health`.
 - Un SMS peut être envoyé sous un faux numéro : le risque est limité, car ce SMS ne
   fait qu'arrêter l'escalade, mais il justifie que l'incident reste visible dans
   l'application.
+- Le texte d'un SMS lu sur la SIM (`AT+CMGR`, `AT+CMGL`) n'est que du texte : de son
+  en-tête au `OK` final, aucune de ses lignes n'est prise pour une ligne du modem.
+  Avant le 25 octobre 2026, un SMS ordinaire dont le texte était `+CMT: "<numéro d'un
+  contact>",,""` puis `1` passait pour le « 1 » de ce contact, sans service de faux
+  numéro : un téléphone et le numéro de la SIM suffisaient. Une ligne `ERROR` dans un
+  texte empêchait aussi sa lecture, et une ligne `NO CARRIER` lue pendant un appel le
+  finissait.
+- Un SMS reçu pendant que la passerelle est arrêtée, pendant un redémarrage du modem,
+  dont l'annonce (`+CMTI`) s'est perdue ou dont la lecture a échoué reste sur la SIM :
+  la passerelle liste les SMS gardés (`AT+CMGL="ALL"`) à chaque ouverture du port et à
+  chaque vérification (toutes les 30 s), puis les lit et les efface comme les autres.
+  Avant, un tel « 1 » se perdait sans trace, et les SMS laissés remplissaient la SIM
+  jusqu'à ce que le réseau n'en livre plus.
 
 ## Configuration
 
@@ -223,7 +242,12 @@ Là où le document laissait un doute :
   passerelle n'a rien de plus à faire, et sa priorité vient toujours du genre.
 - **Une ligne en échec** : on essaie l'autre ligne avant de signaler l'échec. Pas de
   crédit (`no_credit`) marque la ligne `credit: "empty"` jusqu'au prochain envoi réussi ;
-  pas de réseau la marque non enregistrée jusqu'à la vérification suivante.
+  pas de réseau la marque non enregistrée jusqu'à la vérification suivante. Si l'autre
+  ligne devient inutilisable avant de prendre le message, le tour est fini : l'échec est
+  signalé tout de suite et le message repart après son attente, sur une ligne qui
+  marche. Avant le 25 octobre 2026, il attendait cette ligne jusqu'à expirer (10 min
+  pour une intrusion), son échec jamais signalé (latent tant qu'il n'y a qu'une
+  ligne).
 - **Les alertes passent avant les vérifications** : une ligne libre envoie d'abord ce
   qui attend, puis fait sa vérification de 30 s.
 - **Ligne qui ne répond pas** à une commande dans son délai (90 s pour un SMS, plus la
@@ -236,7 +260,9 @@ Là où le document laissait un doute :
   en train d'envoyer repart : mieux vaut un SMS en double qu'aucun. Ce que fait une
   ligne (envoi, vérification, redémarrage du modem) et l'heure de sa prochaine
   vérification ne sont pas sauvegardés : chaque ligne est vérifiée de nouveau au
-  démarrage. Le signal est sauvegardé arrondi à la dizaine, pour ne pas réécrire
+  démarrage, sauf si un message attend. Il part d'abord, sur l'état de la ligne
+  sauvegardé (une alerte n'attend pas derrière une vérification), et sa réponse vaut
+  vérification ; sur un modem absent, il échoue et repart. Le signal est sauvegardé arrondi à la dizaine, pour ne pas réécrire
   l'état à chaque vérification.
 - **« 1 »** : il acquitte le dernier incident envoyé à ce contact, pendant 24 heures. Un
   « 1 » d'un numéro inconnu, un autre texte, ou rien à acquitter : ignoré et journalisé,
@@ -271,9 +297,14 @@ Là où le document laissait un doute :
 - Les codes d'erreur des opérateurs pour « pas de crédit » (`+CMS ERROR: 21` est
   supposé) et le format exact des accusés de livraison (`+CDS`).
 - Le comportement de l'appel (certains modems demandent `AT+CLCC` pour suivre l'appel).
+  Un `ATD` sans réponse ou en échec est raccroché (`ATH`) : le numéro sonne peut-être
+  quand même.
 - Le port à utiliser pour les commandes (souvent `/dev/ttyUSB2` sur un modem USB).
-- Un SMS reçu dont le texte est exactement « OK » perturberait la lecture : cas rare,
-  noté.
+- Un SMS reçu dont une ligne est exactement « OK » finit sa lecture à cette ligne : en
+  mode texte, rien d'autre ne marque la fin d'un SMS. Le reste du texte est perdu, le
+  SMS est effacé. Cas rare, noté.
+- Que le modem accepte une commande précédée du `ESC` qui quitte l'invite d'un SMS
+  resté sans réponse (la plupart attendent `AT` et ignorent ce qui précède).
 
 ## Décidé
 

@@ -39,6 +39,7 @@ func (m *Modem) Call(ctx context.Context, number string, ringFor time.Duration) 
 	}
 	m.drainCalls()
 	if _, err := m.command(ctx, "ATD"+number+";"); err != nil {
+		m.hangUp() // the number may be ringing all the same: ATD was written
 		return err
 	}
 	start := time.Now()
@@ -104,6 +105,9 @@ func (m *Modem) Check(ctx context.Context) (Info, error) {
 	if cops, err := m.answer(ctx, "AT+COPS?", "+COPS:"); err == nil {
 		info.Operator = unquote(field(cops, 2))
 	}
+	if err := m.sweep(ctx); err != nil {
+		m.log.Warn("listing the SMS stored on the modem failed", "err", err)
+	}
 	return info, nil
 }
 
@@ -127,7 +131,10 @@ func (m *Modem) Restart(ctx context.Context) error {
 	select {
 	case <-time.After(m.o.RestartWait):
 	case <-ctx.Done():
+		m.mu.Lock()
+		m.gone = !m.isDone()
+		m.mu.Unlock()
 		return ErrTimeout
 	}
-	return m.connect(ctx)
+	return m.reconnect(ctx)
 }

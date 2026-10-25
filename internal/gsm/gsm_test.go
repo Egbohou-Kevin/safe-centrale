@@ -176,6 +176,33 @@ func TestAFailureTriesTheOtherLineFirst(t *testing.T) {
 	}
 }
 
+// A job that failed on line1 waits for line2; line2 then becomes unusable before it
+// takes the job. The round is over: the failure is reported at once, and the job goes
+// back to line1 after its wait, not left until it expires.
+func TestAJobWaitingForALineThatBecameUnusableIsNotStuck(t *testing.T) {
+	g := newGW(t, 2)
+	up(t, g, t0)
+	r1 := of[Execute](g.Handle(req("r1", "owner", ChannelSMS, PriorityIntrusion, t0)))[0]
+	r2 := of[Execute](g.Handle(req("r2", "guard", ChannelSMS, PriorityIntrusion, t0)))[0]
+	if r1.Line != "line1" || r2.Line != "line2" {
+		t.Fatalf("%+v %+v", r1, r2)
+	}
+	now := t0.Add(time.Second)
+	if out := g.Handle(Outcome{Now: now, Job: r1.Job, Line: "line1", Reason: ReasonTimeout}); len(of[Report](out)) != 0 {
+		t.Fatalf("line2 is left for r1: %+v", out)
+	}
+	out := g.Handle(Outcome{Now: now, Job: r2.Job, Line: "line2", Reason: ReasonNoNetwork})
+	onlyReport(t, out, "r1", StatusFailed, ReasonTimeout)
+	if ex := of[Execute](out); len(ex) != 1 || ex[0].Job != r2.Job || ex[0].Line != "line1" {
+		t.Fatalf("r2 goes to line1: %+v", out)
+	}
+	g.Handle(Outcome{Now: now.Add(time.Second), Job: r2.Job, Line: "line1", OK: true})
+	again := of[Execute](g.Handle(Tick{Now: now.Add(g.cfg.RetryMin)}))
+	if len(again) != 1 || again[0].Job != r1.Job || again[0].Line != "line1" {
+		t.Fatalf("r1 goes again on line1 after its wait: %+v", again)
+	}
+}
+
 func TestWithOneLineAFailureIsReportedOnceThenRetried(t *testing.T) {
 	g := newGW(t, 1)
 	up(t, g, t0)
@@ -298,15 +325,15 @@ func TestARestartKeepsTheQueue(t *testing.T) {
 	if b.Queued() != 2 {
 		t.Fatal("both requests survive")
 	}
-	// The SMS that was being sent goes again, after the line is checked.
-	up(t, b, t0.Add(time.Minute))
-	again := of[Execute](b.Handle(Tick{Now: t0.Add(time.Minute)}))
-	if len(again) != 0 {
-		t.Fatalf("%+v", again)
+	// The SMS that was being sent goes again at once, on the line as it was saved: an
+	// alert does not wait behind a check. The line is checked once it is free.
+	first := b.Handle(Tick{Now: t0.Add(time.Minute)})
+	if ex2 := of[Execute](first); len(ex2) != 1 || ex2[0].Job != ex.Job || ex2[0].Line != "line1" || len(of[CheckLine](first)) != 0 {
+		t.Fatalf("%+v", first)
 	}
-	jobs := b.Snapshot().Jobs
-	if jobs[0].ID != ex.Job || jobs[0].Line != "line1" {
-		t.Fatalf("%+v", jobs[0])
+	done := b.Handle(Outcome{Now: t0.Add(time.Minute + time.Second), Job: ex.Job, Line: "line1", OK: true})
+	if ex3 := of[Execute](done); len(ex3) != 1 {
+		t.Fatalf("r2 next: %+v", done)
 	}
 	// A request seen before the restart is still a duplicate.
 	if out := b.Handle(req("r1", "owner", ChannelSMS, PriorityIntrusion, t0.Add(time.Minute))); len(out) != 0 {
