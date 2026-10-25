@@ -288,6 +288,7 @@ func (r *rig) validateAll() {
 		contract.TypeAlertRequest: "alert-request.json", contract.TypeCommand: "device-command.json",
 		contract.TypeHeartbeat: "system-heartbeat.json", contract.TypeHealth: "system-health.json",
 		contract.TypeDevices:     "system-devices.json",
+		contract.TypeContacts:    "system-contacts.json",
 		contract.TypeInstallMode: "install-mode.json", contract.TypeAlarmSirenFailed: "alarm-siren-failed.json",
 	}
 	for _, m := range r.broker.All() {

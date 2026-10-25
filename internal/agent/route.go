@@ -46,6 +46,7 @@ var upRoutes = map[string]upRoute{
 	"alert/ack":        {types: []string{contract.TypeAlertAck}, prio: PriorityAlarm},
 	"system/health":    {types: []string{contract.TypeHealth}, prio: PriorityState, retain: true, restate: true},
 	"system/devices":   {types: []string{contract.TypeDevices}, prio: PriorityState, retain: true, restate: true},
+	"system/contacts":  {types: []string{contract.TypeContacts}, prio: PriorityState, retain: true, restate: true},
 	"system/heartbeat": {types: []string{contract.TypeHeartbeat}, prio: PriorityState},
 	"agent/status":     {types: []string{contract.TypeAgentStatus}, prio: PriorityState, retain: true, own: true},
 	"device/+/event":   {types: []string{contract.TypeDeviceEvent}, prio: PriorityNormal, device: true},

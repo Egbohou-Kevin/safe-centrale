@@ -297,3 +297,47 @@ func (c Config) withRole(r Role) []Contact {
 	}
 	return out
 }
+
+// Told is when a contact is first told of an alert, as a plan says it.
+type Told struct {
+	Contact Contact
+	After   time.Duration // from the moment of the alert
+	Never   bool          // the plan never tells this contact
+}
+
+// Told lists every contact with when the plan of kind first tells them, the first
+// told first, in configuration order among equals; those it never tells come last.
+// The people who see the site's contacts read who is told, and in which order, of the
+// plan the hub really follows, whatever the files of the site changed.
+func (c Config) Told(kind AlertKind) []Told {
+	first := map[string]time.Duration{}
+	for _, w := range c.Plans[kind].Waves {
+		for _, a := range w.To {
+			for _, ct := range c.audience(a) {
+				if at, ok := first[ct.ID]; !ok || w.After < at {
+					first[ct.ID] = w.After
+				}
+			}
+		}
+	}
+	out := make([]Told, 0, len(c.Contacts))
+	for _, ct := range c.Contacts {
+		at, ok := first[ct.ID]
+		out = append(out, Told{Contact: ct, After: at, Never: !ok})
+	}
+	slices.SortStableFunc(out, func(a, b Told) int {
+		switch {
+		case a.Never != b.Never:
+			if a.Never {
+				return 1
+			}
+			return -1
+		case a.After < b.After:
+			return -1
+		case a.After > b.After:
+			return 1
+		}
+		return 0
+	})
+	return out
+}

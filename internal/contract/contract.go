@@ -43,6 +43,7 @@ const (
 	TypeHeartbeat = "system.heartbeat"
 	TypeHealth    = "system.health"
 	TypeDevices   = "system.devices"
+	TypeContacts  = "system.contacts"
 
 	TypeGSMStatus    = "gsm.status"
 	TypeZigbeeStatus = "zigbee.status"

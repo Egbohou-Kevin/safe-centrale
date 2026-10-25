@@ -66,6 +66,7 @@
         "system.heartbeat",
         "system.health",
         "system.devices",
+        "system.contacts",
         "gsm.status",
         "zigbee.status",
         "agent.status",

@@ -349,6 +349,7 @@ func (h *Hub) boot(ctx context.Context) error {
 		h.publishHealth(now)
 		h.monitor.booted = true
 		h.publishDevices(now)
+		h.publishContacts(now)
 		return nil
 	})
 }

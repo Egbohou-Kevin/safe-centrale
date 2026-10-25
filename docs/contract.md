@@ -88,6 +88,7 @@ Tous les topics commencent par `safehome/{site}/`.
 | `.../system/heartbeat` | Signe de vie périodique | non |
 | `.../system/health` | Santé de la centrale (secteur, batterie, liaisons) | oui |
 | `.../system/devices` | Santé de chaque appareil (en ligne, pile), pour la fiche Capteurs | oui |
+| `.../system/contacts` | Qui une intrusion prévient, et quand, pour la liste des personnes prévenues | oui |
 | `.../gsm/status` | Lignes de la passerelle GSM (modem, réseau, crédit, test) | oui |
 | `.../zigbee/status` | État du réseau Zigbee (Zigbee2MQTT, appareils muets, appairage) | oui |
 | `.../agent/status` | Liaison avec le cloud, publiée par l'agent de liaison | oui |
@@ -766,6 +767,36 @@ plus de nouvelles depuis `internet_silent_after`, 3 minutes par défaut). Person
 prévenu d'une coupure d'internet : l'escalade passe simplement aux canaux GSM sans
 attendre le cloud.
 
+### `system.contacts`
+
+Publié par la centrale (`src` : `escalation`), retenu sur `system/contacts`, à son démarrage :
+les contacts du site dans l'ordre où le plan d'escalade d'une intrusion les prévient, le plan
+que la centrale suit vraiment (celui de `hub.json`, ou par défaut), pour la liste des
+personnes prévenues de l'application. Jamais un numéro de téléphone.
+
+```json
+{
+  "type": "system.contacts",
+  "data": {
+    "contacts": [
+      { "id": "u_ama", "name": "Ama", "role": "deputy", "channels": ["app", "sms"], "told_after_s": 0 },
+      { "id": "u_kofi", "name": "Kofi", "role": "guard", "channels": ["sms", "call"], "told_after_s": 0 },
+      { "id": "u_kevin", "name": "Kevin", "role": "owner", "channels": ["app"], "told_after_s": 120 },
+      { "id": "u_yao", "role": "manager", "channels": ["whatsapp"], "told_after_s": 300 }
+    ]
+  }
+}
+```
+
+- `told_after_s` : les secondes après le déclenchement où une intrusion le prévient pour la
+  première fois (une vague suivante qui le prévient encore est une relance) ; absent quand une
+  intrusion ne le prévient jamais : il vient alors en dernier. À égalité, l'ordre de la
+  configuration.
+- `name` : absent quand la configuration n'en donne pas. `role` et `channels` : les mots de
+  `config.set`.
+- Les contacts et les plans ne changent qu'avec la configuration du site, qui redémarre la
+  centrale ; l'agent de liaison le redit au cloud à chaque connexion.
+
 ### `system.devices`
 
 Publié par la centrale (`src` : `health`), retenu sur `system/devices` : la santé de
@@ -926,6 +957,10 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **25 octobre 2026, les personnes prévenues** : nouveau message `system.contacts`, retenu sur
+  `system/contacts` : qui une intrusion prévient, et quand, du plan que la centrale suit (voir
+  « `system.contacts` »). Un cloud qui ne le connaît pas encore refuse chaque copie : il est mis
+  à jour avant la centrale.
 - **25 octobre 2026, « Terminer l'alarme »** : nouvel ordre `alarm.end` (avec `code`). Il termine
   l'alarme sans désarmer : celle qui sonne, comme `alarm.silence`, et celles de l'armement dont la
   sirène s'est arrêtée seule, que seul un désarmement terminait (voir « Ordres »). Chacune est dite

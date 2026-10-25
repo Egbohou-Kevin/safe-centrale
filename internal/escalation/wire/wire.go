@@ -119,3 +119,23 @@ func ResultByRef(d contract.AlertResultData, now time.Time) (escalation.Result, 
 func Ack(d contract.AlertAckData, now time.Time) escalation.Ack {
 	return escalation.Ack{Now: now, Incident: d.Incident, Contact: d.Contact}
 }
+
+// Contacts turns who an intrusion tells and when into system.contacts: the contacts
+// in the plan's order, with their role and channels as the contract names them.
+func Contacts(told []escalation.Told) contract.ContactsData {
+	out := contract.ContactsData{Contacts: make([]contract.ContactTold, 0, len(told))}
+	for _, t := range told {
+		c := contract.ContactTold{ID: t.Contact.ID, Name: t.Contact.Name, Role: string(t.Contact.Role), Channels: []string{}}
+		for _, ch := range t.Contact.Channels {
+			if name, ok := channels[ch]; ok {
+				c.Channels = append(c.Channels, name)
+			}
+		}
+		if !t.Never {
+			after := int(t.After / time.Second)
+			c.ToldAfterS = &after
+		}
+		out.Contacts = append(out.Contacts, c)
+	}
+	return out
+}
