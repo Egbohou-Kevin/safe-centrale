@@ -434,8 +434,30 @@ sudo -u safehome touch /var/lib/safehome/essai && sudo reboot
 ls /var/lib/safehome/essai              # doit encore exister
 ```
 
-**À valider** : si `/data` est lui aussi passé en mémoire, ajouter `:recurse=0` à
-l'option `overlayroot=tmpfs` dans `/boot/firmware/cmdline.txt`.
+**Validé sur le Pi le 25 octobre 2026 : `recurse=0` est obligatoire.** Sans lui, `/data` et les trois
+dossiers attachés passent eux aussi dans l'overlay en mémoire : les services démarrent avec un état
+vide (constaté : Zigbee2MQTT ne pouvait plus écrire, la centrale repartait sans ses codes), alors
+que la vraie partition reste intacte. Dans `/boot/firmware/cmdline.txt`, après
+`enable_overlayfs` et avant de redémarrer, écrire `overlayroot=tmpfs:recurse=0` (la partition de
+démarrage reste inscriptible, donc on peut corriger à distance).
+
+Avec `recurse=0`, vérifié : `/` en overlay, `/data` et les trois dossiers en ext4
+lecture-écriture sur la partition 3, un fichier écrit dans `/data` survit au redémarrage, un
+fichier écrit dans `/etc` disparaît.
+
+`systemd-remount-fs` échoue alors (il remonte `/` avec les options de `fstab`, qu'un overlay
+refuse) et `systemctl --failed` n'est plus vide. Le masquer **avant** d'activer l'overlay :
+`sudo systemctl mask systemd-remount-fs.service`. Après coup, sans quitter la lecture seule :
+
+```bash
+sudo mount -o remount,rw /media/root-ro
+sudo ln -sf /dev/null /media/root-ro/etc/systemd/system/systemd-remount-fs.service
+sudo mount -o remount,ro /media/root-ro
+```
+
+Même méthode pour un petit changement de configuration (un réglage de `/etc/safehome`) sans le
+mode maintenance complet : remonter `/media/root-ro` en écriture, modifier le fichier dans
+`/media/root-ro/etc/...`, le remonter en lecture seule, redémarrer.
 
 ## Installer par le script
 
@@ -586,9 +608,14 @@ le joint par un tunnel SSH inverse lancé depuis le Mac (`safeHome-cloud/README.
 centrale sur ce cloud »). Pour que le téléphone sonne, le cloud doit avoir Firebase allumé (même
 README) ; sans lui, chaque alerte pour l'application échoue avec `no_app`.
 
-**À faire avant la lecture seule** : retirer le `sudo` sans mot de passe de l'utilisateur
-d'administration (`/etc/sudoers.d/90-cloud-init-users`, posé pour l'installation) ; la lecture
-seule (étape 12) et la recette ci-dessous n'ont pas encore été faites sur ce Pi.
+**Lecture seule et recette partielle faites le 25 octobre 2026** (étape 12 ci-dessus, avec
+`recurse=0`) : `kill -9` de la centrale, relancée en 3 s ; centrale gelée (`kill -STOP`), relancée par le
+chien de garde 25 s après le gel ; Mosquitto arrêté 60 s, tous les programmes reprennent seuls ;
+fichier de `/data` conservé après redémarrage, fichier de `/etc` perdu ; `systemctl --failed`
+vide ; horloge synchronisée au retour. **Pas encore faits** : la coupure brutale du courant (à
+répéter 10 fois), la clé Zigbee débranchée, le modem, le module batterie, les essais de maintenance
+et de console locale. Le `sudo` sans mot de passe de l'utilisateur d'administration (étape 1) est
+resté en place pour la période d'essai : à retirer avant une vraie installation chez un client.
 
 ## Recette sur le kit d'essai
 
