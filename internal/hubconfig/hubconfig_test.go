@@ -273,6 +273,43 @@ func TestAZoneNameFollowsTheInstallersRule(t *testing.T) {
 	}
 }
 
+// A siren's name goes into the alerts' texts: it names a siren of the list, by the
+// zones' rule, and the error names the siren. Unnamed, the texts call it "Sirene", or
+// by its rank among several; a device with a zone keeps its zone's name, takes no
+// other, and is not counted in the ranks.
+func TestSirenNames(t *testing.T) {
+	const sirens = `{"site":"tg-lom-0001","state_dir":"/x","hub_device_id":"h","siren_ids":["s1","s2","s3"],` +
+		`"zones":{"s3":{"name":"Cuisine","kind":"24h_fire"}},"siren_names":{"s2":"Reserve"`
+	r, err := parse([]byte(sirens + `}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"s1": "Sir\u00e8ne 1", "s2": "Reserve", "s3": "Cuisine"}
+	if got := r.Hub.Escalation.DeviceNames; !maps.Equal(got, want) {
+		t.Fatalf("names %v, want %v", got, want)
+	}
+	if got := with(t, `"timezone":"Africa/Lome"`).Hub.Escalation.DeviceNames["dev_siren1"]; got != "Sir\u00e8ne" {
+		t.Fatalf("the only siren, unnamed: %q", got)
+	}
+	r, err = parse([]byte(`{"site":"tg-lom-0001","state_dir":"/x","hub_device_id":"h","siren_ids":["s3","s2"],` +
+		`"zones":{"s3":{"name":"Cuisine","kind":"24h_fire"}}}`))
+	if want := map[string]string{"s2": "Sir\u00e8ne", "s3": "Cuisine"}; err != nil || !maps.Equal(r.Hub.Escalation.DeviceNames, want) {
+		t.Fatalf("the only siren without a zone: %v %v", r.Hub.Escalation.DeviceNames, err)
+	}
+	for name, extra := range map[string]string{
+		"not a siren":         `,"dev_door":"Porte"`,
+		"a siren with a zone": `,"s3":"Four"`,
+		"a tab":               `,"s1":"Rue\tdu marche"`,
+		"empty":               `,"s1":" "`,
+		"too long":            `,"s1":"` + strings.Repeat("a", install.MaxNameLength+1) + `"`,
+		"invisible":           `,"s1":"Rue\u200bdu marche"`,
+	} {
+		if _, err := parse([]byte(sirens + extra + `}}`)); err == nil || !strings.Contains(err.Error(), "siren_names") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
 func TestMistakesAreRefused(t *testing.T) {
 	bad := map[string]string{
 		"not json":                   `site: tg`,

@@ -222,7 +222,9 @@ alors la box : l'agent garde ses messages et le GSM reste là. Le câble est con
   page ne propose que les types que l'appareil peut servir. La centrale applique la
   même règle aux noms d'un `hub.json` modifié à la main : elle refuse de démarrer
   avec un nom fautif, et l'erreur nomme la zone.
-- **Sirènes** : ajouter ou retirer une sirène. La dernière ne peut pas partir.
+- **Sirènes** : ajouter ou retirer une sirène, et lui donner son nom dans les textes des
+  alertes (même règle qu'un nom de zone ; sans nom, « Sirène », ou « Sirène 2 » parmi
+  plusieurs, ce que la page signale). La dernière ne peut pas partir.
 - **Retirer un appareil** du réseau Zigbee. Un retrait que la centrale refuserait
   (la dernière sirène) est refusé avant que rien ne parte.
 - **Vérifier** : la page montre ce qui manque, comme `safehome-install check`. Par

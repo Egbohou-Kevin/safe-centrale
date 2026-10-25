@@ -16,6 +16,7 @@ type file struct {
 	Timezone       string              `json:"timezone"`
 	HubDeviceID    string              `json:"hub_device_id"`
 	SirenIDs       []string            `json:"siren_ids"`
+	SirenNames     map[string]string   `json:"siren_names"`
 	Zones          map[string]zoneFile `json:"zones"`
 	Closing        map[string]string   `json:"closing"`
 	Alarm          *alarmFile          `json:"alarm"`

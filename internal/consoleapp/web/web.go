@@ -26,6 +26,7 @@ type Console interface {
 	SetZone(id, name, kind string) error
 	Unzone(id string) error
 	Siren(id string, on bool) error
+	NameSiren(id, name string) error
 	Remove(ctx context.Context, id string) error
 	SetCode(user, code, again string) error
 	RemoveCode(user string) error
@@ -72,6 +73,9 @@ func New(c Console, host string, loc *time.Location) (*Handler, error) {
 	h.mux.HandleFunc("POST /unzone", h.act("unzone", func(r *http.Request, id string) error { return h.c.Unzone(id) }))
 	h.mux.HandleFunc("POST /siren", h.act("siren", func(r *http.Request, id string) error {
 		return h.c.Siren(id, r.PostFormValue("on") == "1")
+	}))
+	h.mux.HandleFunc("POST /siren-name", h.act("siren_name", func(r *http.Request, id string) error {
+		return h.c.NameSiren(id, strings.TrimSpace(r.PostFormValue("name")))
 	}))
 	h.mux.HandleFunc("POST /remove", h.act("remove", func(r *http.Request, id string) error { return h.c.Remove(r.Context(), id) }))
 	// The code goes no further than the console: never in the answer, nor the address.
@@ -184,6 +188,8 @@ var refusals = []struct {
 	{consoleapp.ErrUnknown, "unknown"},
 	{consoleapp.ErrNotASiren, "not_siren"},
 	{consoleapp.ErrNoZone, "no_zone"},
+	{consoleapp.ErrNoSiren, "no_siren"},
+	{consoleapp.ErrHasZone, "siren_zoned"},
 	{consoleapp.ErrNoRegistry, "no_registry"},
 	{consoleapp.ErrLastSiren, "last_siren"},
 	{consoleapp.ErrEmptyName, "empty_name"},

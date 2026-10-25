@@ -47,6 +47,7 @@
 
   "hub_device_id": "dev_hubpower",
   "siren_ids": ["dev_siren1"],
+  "siren_names": { "dev_siren1": "Reserve" },
 
   "zones": {
     "dev_door":   { "name": "Entree",        "kind": "entry" },

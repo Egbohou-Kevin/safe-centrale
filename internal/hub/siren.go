@@ -17,7 +17,10 @@ import (
 // it again for what is left of the sounding, a few times at most per order. A siren
 // that still does not take it is reported to the contacts (siren_failed): the shop is
 // silent during an alarm. The alert names that alarm, and the history says it too
-// (alarm.siren_failed).
+// (alarm.siren_failed). Until the siren takes an order to sound again, or that alarm
+// ends, it is known silent: a fire raised meanwhile says so (silentSirens). An order
+// done is all the hub knows: the siren reported the state asked for when its profile
+// has a confirm, and without one (the shipped siren) the order only left the adapter.
 
 // sirenRetries is how many times one siren is sent the same order again.
 const sirenRetries = 3
@@ -29,6 +32,13 @@ type sirenOrder struct {
 	until   time.Time         // end of the sounding, when on
 	sent    map[string]string // command id -> siren, for the commands of this order
 	retries map[string]int    // siren -> commands sent again for this order
+}
+
+// sirenReport is a siren reported silent: the alarm it was reported for, and whether
+// an order to sound was done since, in that alarm.
+type sirenReport struct {
+	alarm string
+	back  bool
 }
 
 // orderSirens sends the engine's siren orders to every siren. A siren.on that ends
@@ -69,20 +79,64 @@ func (h *Hub) sendSiren(now time.Time, sirenID string, a engine.Action) {
 	}
 }
 
-// sirenAckMessage handles a siren's answer to a command. Only a failure matters.
+// sirenAckMessage handles a siren's answer to a command: a failure, or an order done.
 func (h *Hub) sirenAckMessage(sirenID string, m inbox.Message) {
 	if !slices.Contains(h.cfg.SirenIDs, sirenID) {
 		return
 	}
 	_, d, ok := decode[contract.CommandAckData](h, m, contract.TypeCommandAck, "command acknowledgement")
-	if !ok || (d.Status != contract.CmdFailed && d.Status != contract.CmdExpired) {
+	if !ok || (d.Status != contract.CmdFailed && d.Status != contract.CmdExpired && d.Status != contract.CmdDone) {
 		return
 	}
 	err := h.alarm.loop.Post(h.life, func(now time.Time) []engine.Action {
-		h.retrySiren(now, sirenID, d)
+		if d.Status == contract.CmdDone {
+			h.sirenOrderDone(sirenID, d)
+		} else {
+			h.retrySiren(now, sirenID, d)
+		}
 		return nil
 	})
 	h.submitFailed(err)
+}
+
+// sirenOrderDone records a siren whose order to sound, of the current order, is done:
+// one reported silent in this alarm is no longer known silent. Done is not proof that
+// it sounds (see above). It runs on the engine's loop.
+func (h *Hub) sirenOrderDone(sirenID string, ack contract.CommandAckData) {
+	if h.alarm.siren.sent[ack.Ref] != sirenID {
+		return // an older order, a siren.off, or not one of ours
+	}
+	if r, ok := h.alarm.sirenFailed[sirenID]; ok && !r.back && r.alarm == h.ringingAlarm() {
+		r.back = true
+		h.alarm.sirenFailed[sirenID] = r
+		h.log.Info("the siren reported silent took an order to sound", "siren", sirenID, "alarm", r.alarm)
+	}
+}
+
+// ringingAlarm is the incident the engine rings for, "" when none. It runs on the
+// engine's loop.
+func (h *Hub) ringingAlarm() string {
+	if inc := h.alarm.eng.Snapshot().Incident; inc != nil {
+		return inc.ID
+	}
+	return ""
+}
+
+// silentSirens lists the sirens known not to sound in the alarm under way: reported
+// silent in it, and no order to sound of theirs done since. Once that alarm is over,
+// nothing is known: the next alarm tells each siren again. The guard is in memory:
+// after a restart, a siren is known silent again once it fails again. It runs on the
+// engine's loop.
+func (h *Hub) silentSirens() []string {
+	alarm := h.ringingAlarm()
+	var out []string
+	for id, r := range h.alarm.sirenFailed {
+		if alarm != "" && r.alarm == alarm && !r.back {
+			out = append(out, id)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // retrySiren sends again a siren.on of the current order that did not take, for what
@@ -111,8 +165,8 @@ func (h *Hub) retrySiren(now time.Time, sirenID string, ack contract.CommandAckD
 }
 
 // reportSilentSiren tells the contacts that a siren does not sound, once per siren
-// and per alarm: failing again in the next cycles tells them nothing new. It runs on
-// the engine's loop.
+// and per alarm: failing again in the next cycles tells them nothing new, but a siren
+// that took an order since is known silent again. It runs on the engine's loop.
 //
 // The alert is an incident of its own, like a tamper, not a part of the alarm's: an
 // acknowledgement of the alarm must not end it, the GSM gateway drops the messages
@@ -125,17 +179,15 @@ func (h *Hub) retrySiren(now time.Time, sirenID string, ack contract.CommandAckD
 // The guard here is in memory: after a restart, the history's event may leave once
 // more, but the alert does not (the escalation keeps its own guard, saved).
 func (h *Hub) reportSilentSiren(now time.Time, sirenID string) {
-	alarm := ""
-	if inc := h.alarm.eng.Snapshot().Incident; inc != nil {
-		alarm = inc.ID
+	alarm := h.ringingAlarm()
+	reported, ok := h.alarm.sirenFailed[sirenID]
+	if h.alarm.sirenFailed == nil {
+		h.alarm.sirenFailed = map[string]sirenReport{}
 	}
-	if reported, ok := h.alarm.sirenFailed[sirenID]; ok && reported == alarm {
+	h.alarm.sirenFailed[sirenID] = sirenReport{alarm: alarm}
+	if ok && reported.alarm == alarm {
 		return
 	}
-	if h.alarm.sirenFailed == nil {
-		h.alarm.sirenFailed = map[string]string{}
-	}
-	h.alarm.sirenFailed[sirenID] = alarm
 	if alarm != "" {
 		h.out.Send(srcEngine, contract.AlarmEventTopic(h.cfg.Site), contract.TypeAlarmSirenFailed,
 			contract.SirenFailedData{Incident: alarm, DeviceID: sirenID}, false, now)

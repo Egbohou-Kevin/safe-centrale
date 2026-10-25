@@ -170,7 +170,7 @@ garde 24 heures les alarmes prises en charge, même une fois leur escalade finie
 |---|---|---|
 | Qui | Le premier contact et le gardien | Les mêmes |
 | Urgence | `high` | `low`, et `alarm_handled` |
-| Texte | `ALERTE Boutique Lome: la sirene (dev_siren1) ne repond pas a 21:04, l'alarme est silencieuse.`, et la manière de répondre par SMS | `Boutique Lome: la sirene (dev_siren1) n'a pas sonne a 21:04. L'alarme est deja prise en charge.` (`L'alarme a ete arretee.` après un code), sans manière de répondre |
+| Texte | `ALERTE Boutique Lome: la sirene (Reserve) ne repond pas a 21:04, l'alarme est silencieuse.`, et la manière de répondre par SMS | `Boutique Lome: la sirene (Reserve) n'a pas sonne a 21:04. L'alarme est deja prise en charge.` (`L'alarme a ete arretee.` après un code), sans manière de répondre |
 | Internet | D'abord | D'abord |
 | SMS | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ou en cas d'échec ; en doublon à +1 min | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ou en cas d'échec ; à +1 min si le téléphone du contact n'a pas dit l'avoir reçue (`delivered`, pas seulement `sent`) |
 | Appel | Tout de suite sans internet ou liaison coupée ; si le cloud ne confirme pas en 10 s ou en cas d'échec ; en doublon à +1 min | Jamais. L'appel refusé est journalisé |
@@ -200,7 +200,8 @@ discrète quand il est pris en charge à son tour.
 sirène ne fait plus appeler le gardien, elle passe par l'application ou par SMS
 (décidé le 24 octobre 2026). Un feu levé pendant une intrusion ne change pas l'alarme
 de la sirène : c'est l'intrusion. Il garde l'alerte bruyante tant qu'il n'est pas pris
-en charge, et son escalade n'est jamais touchée.
+en charge, et son escalade n'est jamais touchée. Si une sirène est connue muette, son
+texte le dit (voir « Un feu dit la sirène muette » plus bas).
 
 **Sabotage.** Son escalade (le premier contact, une vague) finit d'habitude « sans
 réponse » : personne ne l'a pris en charge, l'alerte de la sirène reste bruyante.
@@ -220,9 +221,81 @@ La centrale publie aussi `alarm.siren_failed` (l'alarme et la sirène) pour l'hi
 une fois par sirène et par alarme. Après un redémarrage en pleine alarme, cet événement
 peut repartir une fois, mais pas l'alerte (voir `contract.md`).
 
-Pas fait, décidé le 24 octobre 2026 : un nom par sirène dans la configuration
-d'installation (le texte dit son identifiant, par exemple `dev_siren1`), et une phrase
-dans le texte d'un feu levé après qu'une panne a été dite discrètement.
+### Le nom d'une sirène
+
+Décidé le 24 octobre 2026, fait le 25 octobre : les textes nomment une sirène par le nom
+que l'installateur lui donne (`siren_names` dans la configuration d'installation, voir
+`operations.md`), plus par son identifiant (`dev_siren1`). Les choix par défaut, pris
+le 25 octobre 2026 :
+
+- Sans nom, une sirène s'appelle « Sirène » si c'est la seule du site sans zone, et
+  « Sirène 1 », « Sirène 2 »… (dans l'ordre où elles ont été ajoutées) s'il y en a
+  plusieurs. `safehome-install check` et la console le signalent quand il y en a
+  plusieurs : personne ne sait laquelle est la « 2 ».
+- Un nom qui dit déjà « sirène » (les noms par défaut, ou « Sirène extérieure ») sert
+  de sujet : `la sirene ne repond pas`, `la sirene 2 ne repond pas`,
+  `la sirene exterieure ne repond pas`. Un autre nom, celui d'un lieu, va entre
+  parenthèses : `la sirene (Reserve) ne repond pas`.
+- Un appareil qui a aussi une zone (un détecteur de fumée qui sonne) garde le nom de sa
+  zone, et n'en prend pas d'autre : la centrale refuse un `siren_names` pour lui,
+  l'outil et la console refusent de le nommer, et lui donner une zone remplace son nom
+  de sirène. Il ne compte pas dans les rangs des noms par défaut : avec une seule autre
+  sirène, celle-ci s'appelle « Sirène », jamais « Sirène 2 » sans « Sirène 1 ». La
+  console, `safehome-install devices` et `check` le nomment comme les alertes. Choix du
+  25 octobre 2026, après une revue : ces outils ne regardaient pas la zone, montraient
+  un nom que les alertes ne disaient pas et acceptaient un nom de sirène sans effet.
+- Le nom suit la règle d'un nom de zone : 32 caractères au plus, sans caractère de
+  contrôle ni caractère invisible. Les accents sont retirés dans les textes, comme pour
+  les zones.
+
+Les mêmes noms servent aux autres alertes qui listent des appareils : au résumé
+quotidien, une sirène hors ligne ou à pile faible se lit « Sirène » et plus
+`dev_siren1`. Les événements d'alarme (`alarm.siren_failed`) ne portent toujours que
+l'identifiant de la sirène.
+
+### Un feu dit la sirène muette
+
+Décidé le 24 octobre 2026, fait le 25 octobre : un feu levé pendant une alarme dont une
+sirène est connue muette le dit à la fin de son texte, avant la manière de répondre :
+`ALARME INCENDIE Boutique Lome: fumee detectee (Cuisine) a 21:09. La sirene ne repond
+pas. Repondre 1 si vous gerez.` Les personnes sur place ne sont pas prévenues par
+cette sirène. La phrase n'est jamais coupée. Elle nomme les sirènes muettes
+(`La sirene (Reserve) ne repond pas.`, `Les sirenes (Sirene 1, Reserve) ne repondent
+pas.`), sauf si leurs noms prennent trop de place : plus de 64 caractères, ou assez pour
+que le message ne tienne plus en entier. Elle dit alors seulement `La sirene ne repond
+pas.` ou `Les sirenes ne repondent pas.` Choix du 25 octobre 2026, après une revue :
+l'endroit et l'heure d'un feu passent avant le nom des sirènes. Avec le nom d'une vraie
+boutique (`Quincaillerie Esperance Be-Kpota`) et d'une de ses zones
+(`Arriere-boutique cote cour`), nommer deux sirènes faisait couper la zone et l'heure du
+SMS, qui tient en entier avec la phrase courte. Si même la phrase courte ne laisse pas
+la place, c'est le message qui est coupé, comme pour un nom de site trop long : la
+phrase sur la sirène et la manière de répondre restent entières.
+
+Une sirène est connue muette, choix du 25 octobre 2026 :
+
+- quand elle a été signalée muette pendant l'alarme qui sonne encore ;
+- et qu'aucun `siren.on` d'un cycle suivant ne lui a été répondu `done` depuis. Un
+  `done` à un `siren.off`, à un ordre plus ancien ou à une autre commande ne compte pas.
+  Elle redevient muette si elle refuse de nouveau, sans nouvelle alerte.
+
+C'est l'alarme qui compte, pas l'incident `siren_failed` : acquitter cette alerte la
+termine mais laisse la sirène connue muette, et une sirène revenue n'est plus connue
+muette même si sa `siren_failed` continue son escalade. Un `done` ne prouve pas que la
+sirène sonne : avec un profil qui a un `confirm`, l'appareil a rapporté l'état demandé ;
+sans, l'ordre est seulement parti vers Zigbee2MQTT. C'est le cas de la seule sirène
+livrée, la Heiman HS2WD, qui ne rapporte rien quand elle sonne : une sirène signalée
+muette parce que l'adaptateur était bloqué (`expired`) revient au premier ordre envoyé
+après sa reprise (voir `adapter-zigbee.md`).
+
+Une fois cette alarme finie (désarmement, sirène coupée, fin des cycles), rien n'est
+dit : l'alarme suivante redonne l'ordre à chaque sirène, et une sirène qui refuse encore
+lève sa propre `siren_failed`, rattachée à cette alarme. Un feu levé désarmé est sa
+propre alarme : si la sirène refuse, c'est cette `siren_failed`, bruyante tant que le feu
+attend une réponse, qui le dit. Le savoir est en mémoire : après un redémarrage de la
+centrale, une sirène redevient connue muette à son prochain refus (au cycle suivant).
+La phrase est gardée avec l'incident du feu, donc dans ses relances, après un
+redémarrage aussi. Une panique ne la porte pas : elle ne fait pas sonner la sirène par
+défaut.
 
 ## Coupures de courant
 

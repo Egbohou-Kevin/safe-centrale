@@ -207,6 +207,7 @@ func TestSchemaEnumsMatchConstants(t *testing.T) {
 	check("alarm-ack.json", "reason", []string{ReasonZoneOpen, ReasonBadCode, ReasonLockedOut,
 		ReasonWrongState, ReasonPostponeLimit, ReasonUnknownCommand, ReasonRateLimited})
 	check("alarm-state.json", "state", []string{StateDisarmed, StateArming, StateArmed, StateEntryDelay, StateTriggered})
+	check("alarm-state.json", "siren", []string{SirenOn, SirenPaused})
 	check("alarm-cleared.json", "origin", []string{OriginUser, OriginTimeout})
 	check("device-command.json", "command", deviceCommands)
 	check("device-command-ack.json", "status", []string{CmdAccepted, CmdDone, CmdFailed, CmdExpired})
@@ -466,6 +467,41 @@ func TestAnAlertSaysItsAlarmIsHandledOnlyWithThatAlarm(t *testing.T) {
 	} {
 		if err := schematest.Check("alarm-siren-failed.json", []byte(raw)); err == nil {
 			t.Errorf("a silent siren %s: accepted", name)
+		}
+	}
+}
+
+// While triggered, the state names the incident that is ringing and where its siren
+// schedule stands (siren, ends_at): the three come together, or not at all from a hub
+// older than them. No other state says them.
+func TestTheStateSaysTheSirenOnlyWhileTriggered(t *testing.T) {
+	ends := TSPtr(time.Date(2026, 10, 25, 16, 20, 0, 0, time.UTC))
+	ringing := AlarmStateData{State: StateTriggered, Since: TS(ends.Add(-5 * time.Minute)), EndsAt: ends,
+		Incident: "i", Siren: SirenOn, Cycle: 2, Of: 3}
+	paused := ringing
+	paused.Siren = SirenPaused
+	older := AlarmStateData{State: StateTriggered, Since: ringing.Since, Cycle: 2, Of: 3}
+	for _, d := range []AlarmStateData{ringing, paused, older} {
+		schematest.Validate(t, "alarm-state.json", d)
+	}
+
+	const ok = `{"state":"triggered","since":"2026-10-25T16:15:00.000Z","ends_at":"2026-10-25T16:20:00.000Z","incident":"i","siren":"on","cycle":2,"of":3}`
+	if err := schematest.Check("alarm-state.json", []byte(ok)); err != nil {
+		t.Fatalf("the reference state must be valid: %v", err)
+	}
+	for name, raw := range map[string]string{
+		"a siren without its incident":  strings.Replace(ok, `"incident":"i",`, "", 1),
+		"an incident without its siren": strings.Replace(ok, `"siren":"on",`, "", 1),
+		"a siren without its end":       strings.Replace(ok, `"ends_at":"2026-10-25T16:20:00.000Z",`, "", 1),
+		"an end without its siren":      strings.Replace(ok, `"incident":"i","siren":"on",`, "", 1),
+		"an empty incident":             strings.Replace(ok, `"incident":"i"`, `"incident":""`, 1),
+		"a siren off":                   strings.Replace(ok, `"siren":"on"`, `"siren":"off"`, 1),
+		"a siren while armed":           strings.Replace(ok, `"triggered"`, `"armed"`, 1),
+		"a siren while arming":          strings.Replace(ok, `"triggered"`, `"arming"`, 1),
+		"an incident while disarmed":    `{"state":"disarmed","since":"2026-10-25T16:15:00.000Z","incident":"i"}`,
+	} {
+		if err := schematest.Check("alarm-state.json", []byte(raw)); err == nil {
+			t.Errorf("%s: accepted %s", name, raw)
 		}
 	}
 }

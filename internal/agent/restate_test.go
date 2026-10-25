@@ -30,13 +30,19 @@ func (h *harness) restated(acts []Action) []string {
 
 // The cloud may have lost the hub's state (its database reset, or it did not keep
 // states yet): at each new connection, it gets the current one again, as a new message.
+// That of a ringing alarm goes whole, the first time and said again: its incident,
+// where its siren stands and until when, as the hub said them.
 func TestTheCurrentStateIsSaidAgainAtEachConnection(t *testing.T) {
 	h := newHarness(t)
-	state, stateID := h.msg(contract.TypeAlarmState, contract.AlarmStateData{State: contract.StateArmed})
+	state, stateID := h.msg(contract.TypeAlarmState, contract.AlarmStateData{State: contract.StateTriggered,
+		Since: contract.TS(h.now), EndsAt: contract.TSPtr(h.now.Add(2 * time.Minute)),
+		Incident: "inc1", Siren: contract.SirenPaused, Cycle: 1, Of: 3})
 	h.handle(Local{Now: h.now, Topic: topic("alarm", "state"), Payload: state})
 	healthID, _ := h.local(topic("system", "health"), contract.TypeHealth, health)
 	h.linkUp()
-	h.send()
+	if first := h.send(); len(first) != 2 || first[0].ID != stateID || !bytes.Equal(mustData(t, first[0].Payload), mustData(t, state)) {
+		t.Fatalf("the hub's state must go up as it is: %+v", first)
+	}
 
 	h.handle(Link{Now: h.now, Up: false})
 	acts := h.handle(Link{Now: h.now, Up: true, Transport: "wss"})

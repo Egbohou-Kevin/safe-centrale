@@ -50,6 +50,18 @@ func (a *App) Unzone(id string) error {
 	return nil
 }
 
+// NameSiren gives a siren its name for the alerts' texts.
+func (a *App) NameSiren(id, name string) error {
+	if _, err := a.sessionCtx(); err != nil {
+		return err
+	}
+	if _, err := a.site.NameSiren(id, name); err != nil {
+		return err
+	}
+	a.log.Info("siren named from the console", "device", id)
+	return nil
+}
+
 // Siren makes a device a siren, or stops. Only a paired device that can sound becomes
 // one; any can stop. Asking for what already is does nothing: a form sent twice is no
 // mistake.

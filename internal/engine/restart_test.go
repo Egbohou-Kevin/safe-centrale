@@ -123,6 +123,48 @@ func TestRestartDuringSirenPauseDoesNotResumeSiren(t *testing.T) {
 	}
 }
 
+// The state published after a restart in the middle of an alarm keeps to the siren's
+// schedule, which the snapshot holds: the end of the cycle or of the pause under way
+// stays where it was, and the steps missed while the hub was off are counted at
+// their own time, not from the restart.
+func TestRestartKeepsTheSirenScheduleInTheState(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		saved, back time.Duration // since the alarm: the last snapshot, and the restart
+		want        sirenAt
+	}{
+		{"in a cycle", 2 * time.Minute, 3 * time.Minute, sirenAt{1, true, 5 * time.Minute}},
+		{"in the pause", 6 * time.Minute, 6*time.Minute + 30*time.Second, sirenAt{1, false, 7 * time.Minute}},
+		{"off at the end of a cycle", 4 * time.Minute, 6 * time.Minute, sirenAt{1, false, 7 * time.Minute}},
+		{"off across a cycle start", time.Minute, 8 * time.Minute, sirenAt{2, true, 12 * time.Minute}},
+		{"off into the last cycle", 6 * time.Minute, 16 * time.Minute, sirenAt{3, true, 19 * time.Minute}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.armed()
+			start := h.now
+			inc := onlyEvent[Triggered](t, h.breakWindow()).Incident
+			h.now = start.Add(c.saved)
+			h.e.Handle(Tick{Now: h.now})
+			h.e = restart(t, h)
+			h.now = start.Add(c.back)
+			h.e.Boot(h.now, nil)
+			h.mustRing(inc, start, c.want)
+		})
+	}
+
+	// The cycles ran out while the hub was off: armed again, nothing left to say.
+	h := newHarness(t)
+	h.armed()
+	h.breakWindow()
+	h.e = restart(t, h)
+	h.now = h.now.Add(20 * time.Minute)
+	h.e.Boot(h.now, nil)
+	if s := h.e.State(h.now); s.Mode != ModeArmed || s.Incident != "" || s.SirenOn || !s.EndsAt.IsZero() {
+		t.Fatalf("after the cycles ran out: %+v", s)
+	}
+}
+
 func TestBootTriggersOnZonesAlreadyInAlarm(t *testing.T) {
 	h := newHarness(t)
 	h.armed()

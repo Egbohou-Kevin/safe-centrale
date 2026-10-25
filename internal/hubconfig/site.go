@@ -25,11 +25,13 @@ const DevicesFile = "site-devices.json"
 const PidFile = "hub.pid"
 
 // devicesFile is the form of DevicesFile: what the installer's tools change, the zones
-// and the sirens (install.Site). Everything else (contacts, delays...) is written by
-// hand or sent by the cloud.
+// and the sirens with their names (install.Site). Everything else (contacts,
+// delays...) is written by hand or sent by the cloud. A file without siren names is
+// written as before them.
 type devicesFile struct {
-	Zones    map[string]zoneFile `json:"zones"`
-	SirenIDs []string            `json:"siren_ids"`
+	Zones      map[string]zoneFile `json:"zones"`
+	SirenIDs   []string            `json:"siren_ids"`
+	SirenNames map[string]string   `json:"siren_names,omitempty"`
 }
 
 // SiteFiles gives the installer's tools (install.Sites) the zones and the sirens of
@@ -52,13 +54,13 @@ func ReadSite(path string) (install.Site, error) {
 	case err != nil:
 		return install.Site{}, err
 	case found:
-		return siteOf(d.Zones, d.SirenIDs), nil
+		return siteOf(d.Zones, d.SirenIDs, d.SirenNames), nil
 	}
-	return siteOf(f.Zones, f.SirenIDs), nil
+	return siteOf(f.Zones, f.SirenIDs, f.SirenNames), nil
 }
 
-func siteOf(zones map[string]zoneFile, sirenIDs []string) install.Site {
-	s := install.Site{Zones: make(map[string]install.Zone, len(zones)), SirenIDs: sirenIDs}
+func siteOf(zones map[string]zoneFile, sirenIDs []string, sirenNames map[string]string) install.Site {
+	s := install.Site{Zones: make(map[string]install.Zone, len(zones)), SirenIDs: sirenIDs, SirenNames: sirenNames}
 	for id, z := range zones {
 		s.Zones[id] = install.Zone(z)
 	}
@@ -126,7 +128,7 @@ func readFile(path string) (file, error) {
 
 // checkSite returns the devices file for s, once the configuration builds with it.
 func checkSite(f file, s install.Site) ([]byte, error) {
-	d := devicesFile{Zones: make(map[string]zoneFile, len(s.Zones)), SirenIDs: s.SirenIDs}
+	d := devicesFile{Zones: make(map[string]zoneFile, len(s.Zones)), SirenIDs: s.SirenIDs, SirenNames: s.SirenNames}
 	for id, z := range s.Zones {
 		d.Zones[id] = zoneFile(z)
 	}
@@ -144,9 +146,10 @@ func checkSite(f file, s install.Site) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
-// withDevices lays the devices file d over f.
+// withDevices lays the devices file d over f: its sirens come with their own names,
+// or none.
 func withDevices(f *file, d devicesFile) {
-	f.Zones, f.SirenIDs = d.Zones, d.SirenIDs
+	f.Zones, f.SirenIDs, f.SirenNames = d.Zones, d.SirenIDs, d.SirenNames
 }
 
 // readDevices reads the devices file of a state folder, strictly.

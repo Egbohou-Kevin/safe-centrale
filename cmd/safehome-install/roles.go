@@ -65,8 +65,19 @@ func (c *command) unzone() error {
 	return nil
 }
 
+// sirenAdd makes a device a siren, and names it when -name says so. A device with a
+// zone takes no siren name: the alerts call it by its zone's name.
 func (c *command) sirenAdd(ctx context.Context, s *install.Session) error {
 	id := c.args[1]
+	if c.zoneName != "" {
+		site, err := c.editor().Read()
+		if err != nil {
+			return err
+		}
+		if err := site.CheckSirenName(id, c.zoneName); err != nil {
+			return err // before anything is written
+		}
+	}
 	d, err := c.registered(ctx, s, id)
 	if err != nil {
 		return err
@@ -78,8 +89,33 @@ func (c *command) sirenAdd(ctx context.Context, s *install.Session) error {
 	case !added:
 		fmt.Fprintf(c.stdout, "%s is already a siren\n", id)
 	default:
-		fmt.Fprintf(c.stdout, "%s is now a siren\n%s\n", id, restartHint)
+		fmt.Fprintf(c.stdout, "%s is now a siren\n", id)
 	}
+	if c.zoneName != "" {
+		return c.sirenName()
+	}
+	if added {
+		fmt.Fprintln(c.stdout, restartHint)
+	}
+	return nil
+}
+
+// sirenName gives a siren its name for the alerts' texts.
+func (c *command) sirenName() error {
+	id := c.args[1]
+	old, err := c.editor().NameSiren(id, c.zoneName)
+	switch {
+	case err != nil:
+		return err
+	case old == c.zoneName:
+		fmt.Fprintf(c.stdout, "%s: siren already named %q\n", id, old)
+		return nil
+	case old != "":
+		fmt.Fprintf(c.stdout, "%s: siren %q is now %q\n", id, old, c.zoneName)
+	default:
+		fmt.Fprintf(c.stdout, "%s: siren named %q\n", id, c.zoneName)
+	}
+	fmt.Fprintln(c.stdout, restartHint)
 	return nil
 }
 
