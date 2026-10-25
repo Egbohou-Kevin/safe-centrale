@@ -292,12 +292,20 @@ doit aussi connaître le code.
 - Une horloge qui a avancé puis reculé (module d'horloge défaillant, heure fausse au
   démarrage corrigée ensuite par internet) ne prolonge rien : un code faux daté du
   futur compte comme entré maintenant, et un verrouillage finit au plus tard 10 minutes
-  (`lockout_duration`) après maintenant. De même pour les délais et la sirène sauvegardés
-  avant un redémarrage : un délai de sortie ou d'entrée, un cycle de sirène ou une pause
-  finit au plus tard sa propre durée après maintenant (sinon, un délai de sortie d'une
-  heure où une vraie intrusion ne sonne pas, ou une sirène qui sonne une heure).
-  L'armement automatique est recalculé au redémarrage (voir « Armement automatique et
-  report »).
+  (`lockout_duration`) après maintenant. De même pour les délais et la sirène : un délai
+  de sortie ou d'entrée, un cycle de sirène ou une pause finit au plus tard sa propre
+  durée après maintenant (sinon, un délai d'entrée d'une heure où une vraie intrusion
+  ne sonne pas, ou une sirène qui sonne une heure). L'armement automatique est
+  recalculé : un plan fait sur une horloge en avance a pu sauter la fermeture du jour
+  (voir « Armement automatique et report »). Cela vaut après un redémarrage comme
+  pendant que la centrale tourne : la boucle du moteur lui donne l'heure telle qu'elle
+  est, en arrière aussi (`driver.Options.FollowsClock`), et le moteur ramène ce qu'il
+  avait daté dans le futur à chaque entrée. Le cas courant est d'ailleurs le second :
+  la centrale démarre avant la synchronisation par internet, qui recule l'horloge
+  pendant qu'elle tourne. Un ordre de l'application garde le temps qu'il lui reste à
+  l'horloge de la centrale, qui l'a vérifié. Corrigé le 25 octobre 2026 après une
+  revue : pendant une exécution, le temps du moteur s'arrêtait jusqu'à ce que
+  l'horloge le rattrape, et tout ce qu'il posait durait le recul de plus.
 - La vérification d'un code est lente exprès (environ une seconde par code enregistré
   sur la centrale). Un bon code tapé dans la dernière seconde du délai d'entrée
   arriverait au moteur après sa fin : la sirène et la première vague d'alertes
@@ -551,7 +559,8 @@ règles : pur, sans horloge) :
 Codé et testé côté pilote (`internal/driver`, `internal/adapter/filestore`) :
 
 - Boucle d'horloge générique : échéance du domaine devenue un tic à la bonne heure,
-  entrées traitées dans l'ordre, temps qui ne recule jamais.
+  entrées traitées dans l'ordre, temps qui ne recule jamais (sauf pour un domaine qui
+  suit l'horloge, comme le moteur).
 - Sauvegarde de l'état après chaque changement, sans réécrire un état identique
   (la carte SD s'use), avec écriture atomique, copie de la version précédente et
   reprise sur cette copie si le fichier est abîmé. Un état abîmé des deux côtés

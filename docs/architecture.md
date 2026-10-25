@@ -104,7 +104,16 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   l'adaptateur MQTT, utilisée par l'adaptateur Zigbee et l'agent). Le temps ne recule jamais pour le
   domaine, même si l'horloge système est corrigée en arrière : la boucle lui donne
   l'heure murale, sans la lecture monotone que Go ajoute à `time.Now` (deux heures qui
-  en portent une se comparent par elle seule, ce qui cacherait le recul). `driver.Every` répète un
+  en portent une se comparent par elle seule, ce qui cacherait le recul). Ce garde a un
+  prix : après un recul de X, le temps du domaine s'arrête jusqu'à ce que l'horloge le
+  rattrape, et chaque échéance posée ou tenue pendant ce temps arrive X plus tard (une
+  relance Zigbee, la fin d'une fenêtre d'appairage, une étape d'escalade). Le moteur
+  d'alarme y échappe : sa boucle suit l'horloge telle qu'elle est, en arrière aussi
+  (option `FollowsClock`), et le moteur ramène lui-même ce qu'une horloge en avance a
+  daté dans le futur (voir `engine.md`, « une horloge qui a avancé puis reculé »).
+  Les autres domaines gardent le garde : il leur faudrait chacun la même reprise. Le
+  garde ne vaut que pendant une exécution : un nouveau processus part de l'horloge
+  telle qu'elle est. `driver.Every` répète un
   travail (un statut, le battement de cœur) sur la même horloge. La fausse horloge des
   tests (`drivertest`) fait comme la vraie : ses minuteries suivent une horloge
   monotone, que `Set` ne bouge pas.

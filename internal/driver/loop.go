@@ -70,7 +70,14 @@ type Options[In, Act, Snap any] struct {
 	// Dispatch: it must not block for long. It is where the retained state is
 	// published, for instance. It never runs at construction.
 	OnChange func(ctx context.Context, now time.Time)
-	Logger   *slog.Logger
+	// FollowsClock hands the core the wall clock as it is, corrected backwards too.
+	// It is for a core that pulls back what it stamped ahead of an earlier time (see
+	// Engine.pullBack), so that a clock that ran ahead prolongs none of its deadlines.
+	// Otherwise the core's time never goes back: after a backward step of the clock it
+	// stands still until the wall clock catches up, and every deadline it sets or
+	// holds meanwhile comes that much late.
+	FollowsClock bool
+	Logger       *slog.Logger
 }
 
 // task is one unit of work for the loop's goroutine.
@@ -87,7 +94,7 @@ type Loop[In, Act, Snap any] struct {
 	closing chan struct{} // closed when Run starts to stop: no task is taken any more
 	sending atomic.Int32  // enqueue calls between their look at closing and their send
 	stopped chan struct{}
-	last    time.Time // latest time handed to the core: time never goes back
+	last    time.Time // latest time handed to the core: unless FollowsClock, time never goes back
 	saved   []byte    // last state written, to skip identical writes
 	seen    []byte    // last state observed, to tell OnChange something moved
 }
@@ -140,15 +147,17 @@ func New[In, Act, Snap any](o Options[In, Act, Snap]) (*Loop[In, Act, Snap], err
 	return l, nil
 }
 
-// now reads the clock, never going back: if the system clock steps backward (a
-// clock correction, a dying RTC battery), the core keeps seeing time that moves
-// forward. The monotonic reading of the real clock is dropped first: Go compares two
-// times that both carry one by that reading alone, which would hide the step back
-// from the guard, and the core works on wall time (deadlines read back from a saved
-// state carry none).
+// now reads the clock. Unless the core follows the clock (FollowsClock), it never
+// goes back: if the system clock steps backward (an RTC running fast, a wrong time at
+// boot that NTP corrects), the core's time stands still at the latest time it saw
+// until the wall clock catches up. The guard only works within a run: a new process
+// starts from the clock as it is. The monotonic reading of the real clock is dropped
+// first: Go compares two times that both carry one by that reading alone, which would
+// hide the step back from the guard, and the core works on wall time (deadlines read
+// back from a saved state carry none).
 func (l *Loop[In, Act, Snap]) now() time.Time {
 	t := l.o.Clock.Now().Round(0)
-	if t.Before(l.last) {
+	if t.Before(l.last) && !l.o.FollowsClock {
 		t = l.last
 	}
 	l.last = t

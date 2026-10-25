@@ -320,7 +320,8 @@ le planning arme dans le moteur.
   gardée par le broker pendant une coupure répond `expired`. Un ordre périmé n'est pas
   vérifié : son code ne compte pas comme faux.
 - L'âge d'un ordre se mesure à l'horloge de la centrale, celle qui date les messages
-  du site : après un recul de l'horloge, un ordre récent reste valable. L'heure d'une
+  du site : après un recul de l'horloge, un ordre récent reste valable, qu'il porte son
+  `exp` (l'application) ou non (le clavier). L'heure d'une
   touche du clavier (le `ts` de son `device.event`) est celle où Zigbee2MQTT l'a entendue (`last_seen`) : une touche
   gardée par le broker pendant une coupure de l'adaptateur expire aussi.
 

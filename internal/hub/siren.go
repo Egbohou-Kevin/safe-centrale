@@ -157,7 +157,9 @@ func (h *Hub) retrySiren(now time.Time, sirenID string, ack contract.CommandAckD
 		h.retrySirenOff(now, sirenID, ack)
 		return
 	}
-	left := h.alarm.siren.until.Sub(now)
+	// The engine's time follows the clock, corrected backwards too: a sounding is never
+	// longer than a cycle.
+	left := min(h.alarm.siren.until.Sub(now), h.cfg.Engine.SirenCycle)
 	if left < time.Second {
 		return // the sounding is over anyway
 	}

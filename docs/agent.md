@@ -315,7 +315,8 @@ un module DS3231 (voir `kit.md`). L'heure est alors juste dès le démarrage, ma
 `clock_ok` reste à `false` jusqu'au retour d'internet, le noyau ne connaissant que la
 synchronisation par NTP. À valider avec le module choisi. Si l'horloge se trompe
 malgré tout puis recule, le moteur ne prolonge ni un verrouillage ni le compte des
-codes faux (voir `engine.md`).
+codes faux, ni ses délais, après un redémarrage comme pendant que la centrale tourne
+(voir `engine.md`).
 
 ## Authentification
 

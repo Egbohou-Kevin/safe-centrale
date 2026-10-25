@@ -79,6 +79,39 @@ func TestAFreshOrderAfterTheClockSteppedBackIsCarriedOut(t *testing.T) {
 	}
 }
 
+// A clock that ran ahead and was then corrected backwards stretches nothing: an entry
+// delay lasts its 45 seconds, a lockout its 10 minutes, and an order from the app,
+// which carries its own expiry, is carried out.
+func TestAClockSteppedBackStretchesNothing(t *testing.T) {
+	r := newRig(t, nil)
+	r.start()
+	r.setCode("u_owner", "2580")
+	r.armedNow()
+	r.clock.Advance(time.Minute)
+	r.settle() // the engine's loop has seen the later time
+	r.clock.Set(r.clock.Now().Add(-time.Hour))
+	exp := contract.TSPtr(r.clock.Now().Add(time.Minute))
+	r.send(contract.AlarmCmdTopic(site), contract.TypeAlarmCommand, contract.AlarmCommandData{
+		Command: contract.CmdArmNow, Origin: contract.OriginApp, User: "u_owner", Exp: exp})
+	r.waitAcks(3)
+	if a := lastAck(t, r); a.Status != contract.AckDone {
+		t.Fatalf("%+v: an order from the app sent just now must count", a)
+	}
+
+	r.device(devDoor, contract.CapContact, "open")
+	r.clock.PassTimer(t, r.hub.cfg.Engine.EntryDelay)
+	r.mustBe(engine.ModeTriggered)
+
+	for range r.hub.cfg.Engine.LockoutAttempts {
+		r.keypad(contract.ValDisarm, "0000")
+	}
+	r.waitAcks(3 + r.hub.cfg.Engine.LockoutAttempts)
+	r.clock.Advance(r.hub.cfg.Engine.LockoutDuration)
+	r.keypad(contract.ValDisarm, "2580")
+	r.waitAcks(4 + r.hub.cfg.Engine.LockoutAttempts)
+	r.mustBe(engine.ModeDisarmed)
+}
+
 // The cloud checks an order against the contract's schema before it sends it: the
 // schema's form of a code (alarm-command.json, args.code) is the hub's own. A code
 // the schema let through but the hub cannot recognise would be counted as a wrong

@@ -183,6 +183,9 @@ func (h *Hub) buildEngine(now time.Time) (err error) {
 	}
 	h.alarm.loop, err = driver.New(driver.Options[engine.Input, engine.Action, engine.Snapshot]{
 		Name: keyEngine, Clock: h.deps.Clock, Store: h.deps.Store, Logger: h.log,
+		// The engine pulls back what a clock running ahead stamped: a clock corrected
+		// backwards must not stretch an entry delay or a lockout by its step.
+		FollowsClock: true,
 		Core: driver.Core[engine.Input, engine.Action, engine.Snapshot]{
 			Handle: h.alarm.eng.Handle, NextWake: h.alarm.eng.NextWake, Snapshot: h.alarm.eng.Snapshot, Restore: h.alarm.eng.Restore,
 			Tick: func(t time.Time) engine.Input { return engine.Tick{Now: t} },

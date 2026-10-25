@@ -30,6 +30,9 @@ type Engine struct {
 	// was off are replayed by Boot, once it knows the devices' current states, and the
 	// siren resumes once.
 	awaitingBoot bool
+	// seen is the latest time the engine was handed: a time before it means the clock
+	// was corrected backwards (see pullBack).
+	seen time.Time
 }
 
 // New creates a disarmed engine. newID produces incident identifiers (for example
@@ -173,13 +176,24 @@ func (e *Engine) Boot(now time.Time, current []Signal) []Action {
 // the clock is pulled back (an RTC glitch, a bad time at boot corrected by NTP), they
 // would hold until it caught up with them: a lockout an hour too long, two forgotten
 // mistakes and one real slip locking the site, an exit delay an hour long during
-// which a real intrusion does not ring, or a siren told to sound for an hour. Within
-// a run the driver never hands an earlier time; a snapshot saved before a restart may
-// still hold one. The automatic arming is planned again at Boot instead (checkPlan).
+// which a real intrusion does not ring, or a siren told to sound for an hour. The
+// time may go back within a run (the hub's loop hands the engine the clock as it is,
+// see driver.Options.FollowsClock) or across a restart. The automatic arming is
+// planned again instead (checkPlan), at Boot or as soon as the time goes back: a plan
+// made on a clock that ran ahead may have skipped today's closing.
 func (e *Engine) pullBack(now time.Time) {
+	if now.Before(e.seen) && e.s.Mode == ModeDisarmed && !e.awaitingBoot {
+		e.checkPlan(now)
+	}
+	e.seen = later(e.seen, now)
 	for i, at := range e.s.Failures {
 		if at.After(now) {
 			e.s.Failures[i] = now
+		}
+	}
+	for ref, at := range e.s.Checking {
+		if at.After(now) {
+			e.s.Checking[ref] = now
 		}
 	}
 	if latest := now.Add(e.cfg.LockoutDuration); e.s.LockedUntil.After(latest) {
@@ -319,4 +333,11 @@ func (e *Engine) disarm(at time.Time) {
 	e.s.EntryEnds = time.Time{}
 	e.s.Bypassed = map[string]bool{}
 	e.setMode(ModeDisarmed, at)
+}
+
+func later(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
 }
