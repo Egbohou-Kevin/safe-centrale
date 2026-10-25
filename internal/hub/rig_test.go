@@ -119,6 +119,9 @@ func (r *rig) start() {
 		r.clock.PassTimer(r.t, w)
 	}
 	drivertest.WaitFor(r.t, "boot", func() bool { return len(r.broker.On(contract.AlarmStateTopic(site))) >= 1 })
+	// The boot ends with the people told (after the health and the device list): counting the messages before
+	// them would count those of the boot too, on a slow run (-race).
+	drivertest.WaitFor(r.t, "the end of the boot", func() bool { return len(r.broker.On(contract.ContactsTopic(site))) >= 1 })
 }
 
 func (r *rig) startWithoutWaiting() {
