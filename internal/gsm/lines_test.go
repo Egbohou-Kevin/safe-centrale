@@ -1,6 +1,7 @@
 package gsm
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -51,6 +52,35 @@ func TestAModemThatStopsAnsweringIsRestarted(t *testing.T) {
 	}
 }
 
+// A modem that hangs during an alarm fails every job: the queued alerts keep its
+// line busy, and no check comes. Its failed jobs count as misses: it is restarted
+// after three of them, not once the queue has drained.
+func TestAModemThatHangsWhileJobsKeepItBusyIsRestarted(t *testing.T) {
+	g := newGW(t, 1)
+	up(t, g, t0)
+	now := t0
+	var ex []Execute
+	for i := range 6 {
+		ex = append(ex, of[Execute](g.Handle(req(fmt.Sprintf("r%d", i), "owner", ChannelSMS, PriorityIntrusion, now)))...)
+	}
+	var restarts []RestartModem
+	for range 3 {
+		if len(ex) != 1 {
+			t.Fatalf("one job on the line: %+v", ex)
+		}
+		now = now.Add(10 * time.Second)
+		out := g.Handle(Outcome{Now: now, Job: ex[0].Job, Line: "line1", Reason: ReasonTimeout})
+		restarts = append(restarts, of[RestartModem](out)...)
+		ex = of[Execute](out) // the next job takes the line at once: no check comes
+	}
+	if len(restarts) != 1 {
+		t.Fatalf("restart after three jobs timed out, got %d", len(restarts))
+	}
+	if l := g.Lines()[0]; l.Responding || l.Restarts != 1 {
+		t.Fatalf("a modem being restarted does not respond: %+v", l)
+	}
+}
+
 func TestACheckWithoutAnswerCountsAsSilent(t *testing.T) {
 	g := newGW(t, 1, func(c *Config) { c.MissesToRestart = 1 })
 	g.Handle(Tick{Now: t0})
@@ -88,6 +118,53 @@ func TestAContactAnswering1AcknowledgesTheLastAlert(t *testing.T) {
 	// Too late: a day later, "1" acknowledges nothing.
 	if out := g.Handle(Incoming{Now: t0.Add(25 * time.Hour), Line: "line1", From: "90123456", Text: "1"}); len(of[Acknowledge](out)) != 0 {
 		t.Fatalf("%+v", out)
+	}
+}
+
+// A tamper, then the intrusion two minutes later: nothing in the texts says which a
+// "1" answers. It ends the less urgent one, the tamper: ending the intrusion for
+// everyone because of a reply meant for the tamper would stop its waves. A second "1"
+// ends the intrusion. Alerts told far apart leave the last one to the "1".
+func TestAnAmbiguous1EndsTheLessUrgentAlert(t *testing.T) {
+	g := newGW(t, 1)
+	up(t, g, t0)
+	sms := func(id string, p Priority, at time.Time) {
+		up(t, g, at)
+		ex := of[Execute](g.Handle(req(id, "owner", ChannelSMS, p, at)))[0]
+		g.Handle(Outcome{Now: at, Job: ex.Job, Line: "line1", OK: true})
+	}
+	one := func(at time.Time) string {
+		out := g.Handle(Incoming{Now: at, Line: "line1", From: "90123456", Text: "1"})
+		for _, c := range of[CheckLine](out) {
+			g.Handle(Probe{Now: at, Line: c.Line, Responding: true, Registered: true})
+		}
+		acks := of[Acknowledge](out)
+		if len(acks) != 1 {
+			t.Fatalf("one acknowledgement, got %+v", acks)
+		}
+		return acks[0].Incident
+	}
+	sms("tamper", PriorityOther, t0)
+	sms("intrusion", PriorityIntrusion, t0.Add(2*time.Minute))
+	if got := one(t0.Add(2*time.Minute + 10*time.Second)); got != "inc-tamper" {
+		t.Fatalf("the 1 ended %s, want the tamper", got)
+	}
+	if got := one(t0.Add(3 * time.Minute)); got != "inc-intrusion" {
+		t.Fatalf("the second 1 ended %s, want the intrusion", got)
+	}
+
+	// An intrusion, then a fire: the intrusion first.
+	sms("intrusion2", PriorityIntrusion, t0.Add(time.Hour))
+	sms("fire", PriorityLifeSafety, t0.Add(time.Hour+time.Minute))
+	if got := one(t0.Add(time.Hour + 2*time.Minute)); got != "inc-intrusion2" {
+		t.Fatalf("the 1 ended %s, want the intrusion", got)
+	}
+
+	// An alert of this morning does not make tonight's intrusion ambiguous.
+	sms("auth", PriorityOther, t0.Add(5*time.Hour))
+	sms("intrusion3", PriorityIntrusion, t0.Add(12*time.Hour))
+	if got := one(t0.Add(12*time.Hour + time.Minute)); got != "inc-intrusion3" {
+		t.Fatalf("the 1 ended %s, want the intrusion told last", got)
 	}
 }
 

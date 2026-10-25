@@ -46,13 +46,17 @@ type Options struct {
 	OnDeliveryReport func(ref string, ok bool)
 
 	CommandTimeout time.Duration // per command, 10 s by default
-	// SMSTimeout bounds sending one SMS (AT+CMGS), 120 s by default: the network
-	// decides how long it takes, up to the 120 s the modems' manuals give. Cut off
-	// earlier, an SMS that left anyway would be reported failed and sent again.
+	// SMSTimeout bounds sending one SMS (AT+CMGS), DefaultSMSTimeout by default.
 	SMSTimeout  time.Duration
 	RestartWait time.Duration // after a restart, before reopening: 20 s by default
 	Logger      *slog.Logger  // nil discards
 }
+
+// DefaultSMSTimeout bounds sending one SMS (AT+CMGS), counted once the modem is free
+// for it: the network decides how long it takes, up to the 120 s the modems' manuals
+// give. Cut off earlier, an SMS that left anyway would be reported failed and sent
+// again. Whoever gives SendSMS a deadline must leave it that, and the waits before.
+const DefaultSMSTimeout = 120 * time.Second
 
 // Info is what the modem says about the network.
 type Info struct {
@@ -108,7 +112,7 @@ func Open(ctx context.Context, o Options) (*Modem, error) {
 		o.CommandTimeout = 10 * time.Second
 	}
 	if o.SMSTimeout <= 0 {
-		o.SMSTimeout = 120 * time.Second
+		o.SMSTimeout = DefaultSMSTimeout
 	}
 	if o.RestartWait <= 0 {
 		o.RestartWait = 20 * time.Second

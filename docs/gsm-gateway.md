@@ -135,10 +135,17 @@ la SIM).
 
 ## Modem bloqué
 
-Si le modem ne répond plus à trois vérifications de suite, la passerelle le
-redémarre : commande logicielle d'abord, puis coupure d'alimentation du port USB
-ou de la carte si le matériel le permet. Les demandes en attente restent dans la
-file. Un modem qui se bloque souvent est signalé dans `system.health`.
+Si le modem ne répond plus trois fois de suite, la passerelle le redémarre :
+commande logicielle d'abord, puis coupure d'alimentation du port USB ou de la carte
+si le matériel le permet. Une vérification sans réponse compte, et un envoi (SMS ou
+appel) qui finit sur un délai dépassé ou une erreur du modem aussi ; toute autre
+réponse du modem (envoi réussi, pas de crédit, pas de réseau, occupé) remet le compte
+à zéro. Pendant le redémarrage, la ligne est dite muette dans `gsm.status`. Les
+demandes en attente restent dans la file. Un modem qui se bloque souvent est signalé
+dans `system.health`. Avant le 25 octobre 2026, seules les vérifications comptaient :
+pendant une alarme, les demandes en file occupaient la ligne et aucune vérification
+ne venait, si bien qu'un modem bloqué n'était redémarré qu'une fois la file vidée,
+avec une ligne dite en état de marche pendant que chaque envoi échouait.
 
 ## SMS entrants
 
@@ -261,10 +268,15 @@ Là où le document laissait un doute :
   ligne).
 - **Les alertes passent avant les vérifications** : une ligne libre envoie d'abord ce
   qui attend, puis fait sa vérification de 30 s.
-- **Ligne qui ne répond pas** à une commande dans son délai (90 s pour un SMS, plus la
-  sonnerie pour un appel) : comptée en échec. Une réponse tardive d'une ligne n'envoie
+- **Ligne qui ne répond pas** à une commande dans son délai (3 minutes pour un SMS, plus
+  la sonnerie pour un appel) : comptée en échec. Ce délai couvre les 120 s que le modem
+  laisse à `AT+CMGS`, comptées une fois le modem libre, et les attentes d'avant (une
+  autre commande sur le modem, une resynchronisation, le retour au mode texte). Avant le
+  25 octobre 2026, il était de 90 s, attentes comprises : la borne de 120 s du modem ne
+  servait jamais, et un SMS que le réseau acceptait en plus de 90 s était dit en échec
+  et renvoyé. Une réponse tardive d'une ligne n'envoie
   pas le message une deuxième fois ailleurs.
-- **Modem bloqué** : trois vérifications sans réponse → redémarrage (`AT+CFUN=1,1`),
+- **Modem bloqué** : trois vérifications ou envois sans réponse de suite → redémarrage (`AT+CFUN=1,1`),
   puis réouverture du port (un modem USB revient comme un nouveau périphérique). La
   coupure d'alimentation du port USB n'est pas faite.
 - **Redémarrage de la passerelle** : la file est sur disque. Un message qu'une ligne était
@@ -277,7 +289,17 @@ Là où le document laissait un doute :
   l'état à chaque vérification.
 - **« 1 »** : il acquitte le dernier incident envoyé à ce contact, pendant 24 heures. Un
   « 1 » d'un numéro inconnu, un autre texte, ou rien à acquitter : ignoré et journalisé,
-  sans le numéro ni le texte.
+  sans le numéro ni le texte. Tous les textes finissent de la même façon (« Repondre 1
+  si vous gerez ») : rien ne dit à quelle alerte un « 1 » répond. Si d'autres incidents
+  encore ouverts ont été envoyés au contact dans les 10 minutes avant le dernier, le
+  « 1 » acquitte le moins urgent d'entre eux (le plus ancien à urgence égale ; un feu
+  ou une panique avant une intrusion, une intrusion avant le reste) ; un deuxième
+  « 1 » acquitte le suivant. Exemple : un sabotage à 21 h 00, l'intrusion à 21 h 02, un
+  « 1 » à 21 h 02 répondu au sabotage acquitte le sabotage, et l'escalade de
+  l'intrusion continue. Se tromper dans ce sens n'ajoute que des messages ; dans
+  l'autre, un « 1 » destiné au sabotage arrêtait pour tout le monde les vagues et les
+  rappels de l'intrusion, et les demandes en file de la passerelle (corrigé le 25
+  octobre 2026 après une revue).
 - **SMS de test** : envoyé chaque semaine au numéro de contrôle, il ne publie rien vers
   l'escalade ; son résultat va dans l'état de la ligne (`last_test`, `last_test_ok`). Il
   n'est pas réessayé : son rôle est de dire.

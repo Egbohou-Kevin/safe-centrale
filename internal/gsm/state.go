@@ -25,6 +25,9 @@ type Snapshot struct {
 	Open     map[string]OpenItem `json:"open"`   // contact -> the incident last sent to them
 	Closed   []string            `json:"closed"` // the latest incidents over (Cancel), oldest first
 	NextTest time.Time           `json:"next_test"`
+	// Told is, for each contact, the incidents sent to them within ackAmbiguity, once
+	// each, oldest first: the ones a "1" may be meant for (see ackTarget).
+	Told map[string][]OpenItem `json:"told,omitempty"`
 }
 
 // Job is a request in the queue, or a test SMS.
@@ -76,10 +79,12 @@ func (l *LineState) free() { l.Busy, l.BusyUntil = "", time.Time{} }
 // usable reports whether the line can be given a job.
 func (l LineState) usable() bool { return l.Responding && l.Registered }
 
-// OpenItem is the incident a contact was last told about.
+// OpenItem is an incident a contact was told about, when (first, in Told) and how
+// urgent.
 type OpenItem struct {
 	Incident string    `json:"incident"`
 	At       time.Time `json:"at"`
+	Priority Priority  `json:"priority"`
 }
 
 const (
@@ -110,6 +115,10 @@ func (s Snapshot) clone() Snapshot {
 	out.Open = maps.Clone(s.Open)
 	if out.Open == nil {
 		out.Open = map[string]OpenItem{}
+	}
+	out.Told = make(map[string][]OpenItem, len(s.Told))
+	for c, items := range s.Told {
+		out.Told[c] = slices.Clone(items)
 	}
 	return out
 }

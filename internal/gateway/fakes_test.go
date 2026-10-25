@@ -36,11 +36,15 @@ type fakeModem struct {
 	checkErr error
 	info     LineInfo
 	ref      int
+	given    []time.Duration // the time each SMS was given
 }
 
-func (m *fakeModem) SendSMS(_ context.Context, number, text string) (string, error) {
+func (m *fakeModem) SendSMS(ctx context.Context, number, text string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if d, ok := ctx.Deadline(); ok {
+		m.given = append(m.given, time.Until(d))
+	}
 	if m.sendErr != nil {
 		return "", m.sendErr
 	}

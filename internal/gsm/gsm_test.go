@@ -93,6 +93,9 @@ func TestAFailedDeliveryIsReported(t *testing.T) {
 	onlyReport(t, g.Handle(DeliveryReport{Now: t0, Line: "line1", MsgRef: "7"}), "r1", StatusFailed, ReasonUnreachable)
 }
 
+// smsTimeout is how long a line has to send an SMS by default.
+var smsTimeout = DefaultConfig(nil, nil).SMSTimeout
+
 func TestACallRingsForTheConfiguredTime(t *testing.T) {
 	g := newGW(t, 1)
 	up(t, g, t0)
@@ -101,7 +104,7 @@ func TestACallRingsForTheConfiguredTime(t *testing.T) {
 		t.Fatalf("%+v", ex)
 	}
 	// The line has its ringing time on top of the usual time to answer.
-	if got := g.NextWake(); !got.Equal(t0.Add(110 * time.Second)) {
+	if got := g.NextWake(); !got.Equal(t0.Add(smsTimeout + 20*time.Second)) {
 		t.Fatalf("next wake %v", got)
 	}
 }
@@ -282,7 +285,7 @@ func TestALineThatDoesNotAnswerFails(t *testing.T) {
 	g := newGW(t, 1)
 	up(t, g, t0)
 	g.Handle(req("r1", "owner", ChannelSMS, PriorityIntrusion, t0))
-	out := g.Handle(Tick{Now: t0.Add(90 * time.Second)})
+	out := g.Handle(Tick{Now: t0.Add(smsTimeout)})
 	onlyReport(t, out, "r1", StatusFailed, ReasonTimeout)
 }
 
@@ -291,13 +294,13 @@ func TestALateAnswerDoesNotDisturbTheLineNowSending(t *testing.T) {
 	up(t, g, t0)
 	ex := of[Execute](g.Handle(req("r1", "owner", ChannelSMS, PriorityIntrusion, t0)))[0]
 	// line1 is too slow: the job goes to line2.
-	out := g.Handle(Tick{Now: t0.Add(90 * time.Second)})
+	out := g.Handle(Tick{Now: t0.Add(smsTimeout)})
 	moved := of[Execute](out)
 	if len(moved) != 1 || moved[0].Line != "line2" {
 		t.Fatalf("%+v", out)
 	}
 	// line1 finally says it failed: line2 goes on.
-	if out := g.Handle(Outcome{Now: t0.Add(91 * time.Second), Job: ex.Job, Line: "line1", Reason: ReasonModemError}); len(of[Execute](out)) != 0 {
+	if out := g.Handle(Outcome{Now: t0.Add(smsTimeout + time.Second), Job: ex.Job, Line: "line1", Reason: ReasonModemError}); len(of[Execute](out)) != 0 {
 		t.Fatalf("%+v", out)
 	}
 	onlyReport(t, g.Handle(Outcome{Now: t0.Add(92 * time.Second), Job: ex.Job, Line: "line2", OK: true}), "r1", StatusSent, "")
@@ -360,16 +363,16 @@ func TestALateFailureDoesNotSendTheJobAThirdTime(t *testing.T) {
 	g := newGW(t, 3)
 	up(t, g, t0)
 	ex := of[Execute](g.Handle(req("r1", "owner", ChannelSMS, PriorityIntrusion, t0)))[0]
-	tick := g.Handle(Tick{Now: t0.Add(90 * time.Second)}) // line1 too slow
+	tick := g.Handle(Tick{Now: t0.Add(smsTimeout)}) // line1 too slow
 	moved := of[Execute](tick)
 	if len(moved) != 1 || moved[0].Line == ex.Line {
 		t.Fatalf("%+v", moved)
 	}
 	for _, c := range of[CheckLine](tick) { // the idle lines are checked meanwhile, and work
-		g.Handle(Probe{Now: t0.Add(90 * time.Second), Line: c.Line, Responding: true, Registered: true, Signal: 50})
+		g.Handle(Probe{Now: t0.Add(smsTimeout), Line: c.Line, Responding: true, Registered: true, Signal: 50})
 	}
 	// line1 answers late that it failed: line2 is still sending, nobody else must.
-	out := g.Handle(Outcome{Now: t0.Add(91 * time.Second), Job: ex.Job, Line: ex.Line, Reason: ReasonModemError})
+	out := g.Handle(Outcome{Now: t0.Add(smsTimeout + time.Second), Job: ex.Job, Line: ex.Line, Reason: ReasonModemError})
 	if got := of[Execute](out); len(got) != 0 {
 		t.Fatalf("the SMS would go out twice at once: %+v", got)
 	}
@@ -391,7 +394,7 @@ func TestALateAnswerDoesNotFreeALineBusyWithAnotherJob(t *testing.T) {
 	g := newGW(t, 2)
 	up(t, g, t0)
 	a := of[Execute](g.Handle(req("a", "owner", ChannelSMS, PriorityIntrusion, t0)))[0]
-	now := t0.Add(90 * time.Second) // line1 too slow: a goes to line2, line1 is checked
+	now := t0.Add(smsTimeout) // line1 too slow: a goes to line2, line1 is checked
 	for _, c := range of[CheckLine](g.Handle(Tick{Now: now})) {
 		g.Handle(Probe{Now: now, Line: c.Line, Responding: true, Registered: true, Signal: 50})
 	}
@@ -410,9 +413,9 @@ func TestALateFailureForAWaitingJobDoesNotLengthenItsWait(t *testing.T) {
 	g := newGW(t, 1)
 	up(t, g, t0)
 	ex := of[Execute](g.Handle(req("r1", "owner", ChannelSMS, PriorityIntrusion, t0)))[0]
-	onlyReport(t, g.Handle(Tick{Now: t0.Add(90 * time.Second)}), "r1", StatusFailed, ReasonTimeout)
-	g.Handle(Outcome{Now: t0.Add(91 * time.Second), Job: ex.Job, Line: "line1", Reason: ReasonModemError})
-	if got := g.NextWake(); !got.Equal(t0.Add(95 * time.Second)) {
+	onlyReport(t, g.Handle(Tick{Now: t0.Add(smsTimeout)}), "r1", StatusFailed, ReasonTimeout)
+	g.Handle(Outcome{Now: t0.Add(smsTimeout + time.Second), Job: ex.Job, Line: "line1", Reason: ReasonModemError})
+	if got := g.NextWake(); !got.Equal(t0.Add(smsTimeout + 5*time.Second)) {
 		t.Fatalf("retry at %v, want 5 s after the timeout", got)
 	}
 }

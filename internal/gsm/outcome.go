@@ -41,13 +41,14 @@ func (g *Gateway) sent(o Outcome) []Action {
 		if l.Credit == CreditEmpty {
 			l.Credit = CreditOK
 		}
+		l.Misses = 0 // the modem answers
 		g.s.Lines[o.Line] = l
 	}
 	if j.Test {
 		g.recordTest(o.Line, true, o.Now)
 		return nil
 	}
-	g.s.Open[j.Contact] = OpenItem{Incident: j.Incident, At: o.Now}
+	g.told(j.Contact, OpenItem{Incident: j.Incident, At: o.Now, Priority: j.Priority})
 	if j.Channel == ChannelSMS && o.MsgRef != "" {
 		g.remember(o.Line+"/"+o.MsgRef, j.Ref)
 	}
@@ -117,17 +118,22 @@ func (g *Gateway) closeRounds(now time.Time) []Action {
 	return out
 }
 
-// noteFailure keeps what a failure says about the line.
+// noteFailure keeps what a failure says about the line. A job that timed out or met
+// a modem error is a miss, as a check without answer is (see restartStuck); any other
+// failure is an answer from the modem.
 func (g *Gateway) noteFailure(line string, reason Reason) {
 	l, ok := g.s.Lines[line]
 	if !ok {
 		return
 	}
+	l.Misses = 0
 	switch reason {
 	case ReasonNoCredit:
 		l.Credit = CreditEmpty
 	case ReasonNoNetwork:
 		l.Registered = false
+	case ReasonTimeout, ReasonModemError:
+		l.Misses = g.s.Lines[line].Misses + 1
 	}
 	g.s.Lines[line] = l
 }

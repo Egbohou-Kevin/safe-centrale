@@ -70,6 +70,21 @@ func TestAnSMSRequestIsSentAndReported(t *testing.T) {
 	r.validateAll()
 }
 
+// An SMS is given the domain's whole time to leave, which leaves the modem its own
+// 120 s for AT+CMGS and the waits before it: cut at 90 s, an SMS the network took
+// longer to accept was reported failed and sent again while it left.
+func TestAnSMSIsGivenTheTimeTheModemNeeds(t *testing.T) {
+	r := newRig(t, nil)
+	ref := r.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
+	drivertest.WaitFor(t, "sent", func() bool { return len(r.results(ref)) == 2 })
+	r.modem.mu.Lock()
+	given := r.modem.given
+	r.modem.mu.Unlock()
+	if want := r.gw.cfg.GSM.SMSTimeout; len(given) != 1 || given[0] < want-10*time.Second || want < 150*time.Second {
+		t.Fatalf("the SMS was given %v of a domain bound %v: the modem needs 120 s and its waits", given, want)
+	}
+}
+
 func TestACallRequestRingsTheContact(t *testing.T) {
 	r := newRig(t, nil)
 	ref := r.request(contract.ChannelCall, "u_owner", contract.AlertFire)
