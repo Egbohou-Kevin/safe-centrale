@@ -47,6 +47,35 @@ func TestASirenOrderThatDidNotTakeIsSentAgainForWhatIsLeft(t *testing.T) {
 	r.validateAll()
 }
 
+// A siren.off that did not take (the adapter restarting when the disarm went out)
+// is sent again, a few times, and logged: the siren would otherwise sound for the
+// rest of its cycle while the alarm says disarmed.
+func TestASirenOffThatDidNotTakeIsSentAgain(t *testing.T) {
+	r := newRig(t, nil)
+	r.start()
+	r.setCode("u_owner", "482915")
+	trigger(r)
+	r.keypad(contract.ValDisarm, "482915")
+	r.mustBe(engine.ModeDisarmed)
+	drivertest.WaitFor(t, "the siren.off", func() bool { r.settle(); return lastSirenCommand(r) == contract.CmdSirenOff })
+	n := len(sirenOrders(r))
+	sirenAnswers(r, sirenOrders(r)[n-1], contract.CmdExpired, "")
+	drivertest.WaitFor(t, "the siren.off again", func() bool { r.settle(); return len(sirenOrders(r)) == n+1 })
+	if lastSirenCommand(r) != contract.CmdSirenOff || !strings.Contains(r.logs.String(), "order to stop") {
+		t.Fatalf("a siren.off again, and said: %s", lastSirenCommand(r))
+	}
+	failEveryOrder(r)
+	if got := len(sirenOrders(r)); got != n+sirenRetries {
+		t.Fatalf("siren orders: %d, want %d", got, n+sirenRetries)
+	}
+	if !strings.Contains(r.logs.String(), "does not take the order to stop") {
+		t.Fatal("the siren that does not stop is logged as an error")
+	}
+	if len(sirenAlerts(r)) != 0 {
+		t.Fatal("no siren_failed for a siren.off")
+	}
+}
+
 // sirenAlerts lists the siren_failed alert requests published so far.
 func sirenAlerts(r *rig) []contract.AlertRequestData {
 	var out []contract.AlertRequestData

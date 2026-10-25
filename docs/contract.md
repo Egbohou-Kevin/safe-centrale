@@ -414,7 +414,10 @@ cycles) et `ends_at` (la fin du cycle en cours si `siren` est `on`, la fin de la
 si `paused`). `incident` est celui d'`alarm.triggered`, celui des `alert.request` de
 cette alarme, et l'`alarm_incident` d'une `siren_failed` levée pendant elle (qui a son
 propre `incident`). Un feu ou une panique levé pendant l'alarme a aussi son propre
-incident, sans programme de sirène à lui : l'état garde celui de l'alarme qui sonne.
+incident, sans programme de sirène à lui tant qu'elle sonne : l'état garde celui de
+l'alarme qui sonne. Quand elle finit, le feu sonne à son tour, sous son incident
+(`alarm.triggered`, puis son état), si son détecteur n'est pas revenu au repos (voir
+`engine.md`, « Une alarme pendant une autre »).
 
 `incident` et `siren` ne viennent qu'en `triggered`. `ends_at` vient aussi en
 `arming` et `entry_delay` (la fin du délai). En `triggered`, les trois vont ensemble

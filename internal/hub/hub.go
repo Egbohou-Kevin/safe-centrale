@@ -74,6 +74,9 @@ type Hub struct {
 	faults atomic.Pointer[health.Status]
 
 	auth chan order
+	// checking counts the orders handed to the auth worker and not yet queued for the
+	// engine: while there are some, the orders without a code queue behind them.
+	checking atomic.Int32
 
 	// life ends with Run: the loops run on it, and work handed to them after it ended
 	// is given up quietly.

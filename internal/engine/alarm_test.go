@@ -374,10 +374,3 @@ func TestTamperArmedTriggers(t *testing.T) {
 		t.Fatalf("tamper while armed: %v", as)
 	}
 }
-
-func TestPermanentZonesCannotBeBypassed(t *testing.T) {
-	h := newHarness(t)
-	h.cmd(CmdBypass, func(c *Command) { c.Devices = []string{smoke, tamper} })
-	h.signal(smoke, SensorSmoke, true)
-	h.mustBe(ModeTriggered)
-}

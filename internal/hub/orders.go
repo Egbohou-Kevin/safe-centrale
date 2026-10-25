@@ -28,6 +28,7 @@ type order struct {
 	ref     string // id of the message, echoed in the acknowledgement
 	cmd     contract.AlarmCommandData
 	written time.Time // the message's ts: the order's age counts when cmd has no Exp
+	check   bool      // its code is to be checked first, by the auth worker
 }
 
 // age is how long ago the order was written, on the hub's clock, which also stamps
@@ -77,22 +78,37 @@ func (h *Hub) alarmMessage(m inbox.Message) {
 }
 
 // command routes an order to the engine. An order that needs a code has it checked
-// first, on a worker of its own: the check is deliberately slow and must not hold
-// up the siren's schedule or the broker's goroutine. An expired order goes straight
-// to the engine, which answers so: its code is not checked, nor counted.
+// first, on a worker of its own: the check is deliberately slow and must not hold up
+// the siren's schedule or the broker's goroutine. The engine is told at once that a
+// code is being checked (engine.CodeEntered): the end of an entry delay waits for it,
+// so that a right code typed in time does not set the alarm off because its check
+// ended late. While orders wait for the worker, the others queue behind them: the
+// engine gets the orders in the order they came, and an "arm" pressed right after a
+// "disarm" with its code is not carried out first. An expired order goes straight to
+// the engine, which answers so: its code is not checked, nor counted.
 func (h *Hub) command(o order) {
-	if h.expired(o) || !contract.NeedsCode(o.cmd.Command) {
+	needs, expired := contract.NeedsCode(o.cmd.Command), h.expired(o)
+	if expired || !needs {
 		o.cmd.Args.Code = ""
-		h.submitCommand(o, engine.Auth{})
+	}
+	o.check = needs && o.cmd.Args.Code != ""
+	if expired || (!o.check && h.checking.Load() == 0) {
+		h.submitCommand(o, engine.Auth{}) // no code checked: the engine counts a wrong one if it needed one
 		return
 	}
-	if o.cmd.Args.Code == "" {
-		h.submitCommand(o, engine.Auth{}) // no code checked: the engine counts a wrong one
-		return
+	if o.check {
+		err := h.alarm.loop.Submit(h.life, func(now time.Time) engine.Input { return engine.CodeEntered{Now: now, Ref: o.ref} })
+		h.submitFailed(err)
 	}
+	h.checking.Add(1)
 	select {
 	case h.auth <- o:
 	default:
+		h.checking.Add(-1)
+		if !o.check {
+			h.submitCommand(o, engine.Auth{})
+			return
+		}
 		// A flood of code checks: refuse without spending the CPU, and count it as
 		// what it is, a wrong code.
 		h.log.Warn("too many code checks waiting, refusing this order")
@@ -107,15 +123,26 @@ func (h *Hub) authWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case o := <-h.auth:
-			user, ok := h.codes.Verify(o.cmd.Args.Code)
-			if !ok && h.installerCode(o.cmd) {
-				h.openInstall(o)
-				continue
-			}
-			o.cmd.Args.Code = "" // the code has done its work
-			h.submitCommand(o, engine.Auth{Checked: true, OK: ok, User: user})
+			h.checkOrder(o)
+			h.checking.Add(-1) // once the order is queued for the engine: what follows keeps its place
 		}
 	}
+}
+
+// checkOrder checks the code of an order and hands it to the engine with the result;
+// an order queued only to keep its place goes as it is.
+func (h *Hub) checkOrder(o order) {
+	if !o.check {
+		h.submitCommand(o, engine.Auth{})
+		return
+	}
+	user, ok := h.codes.Verify(o.cmd.Args.Code)
+	if !ok && h.installerCode(o.cmd) {
+		h.openInstall(o)
+		return
+	}
+	o.cmd.Args.Code = "" // the code has done its work
+	h.submitCommand(o, engine.Auth{Checked: true, OK: ok, User: user})
 }
 
 func (h *Hub) submitCommand(o order, auth engine.Auth) {

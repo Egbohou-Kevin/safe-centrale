@@ -252,6 +252,13 @@ cycle suivant renvoie l'ordre, avec ses propres tentatives. Les textes nomment l
 sirène par son nom d'installation (`siren_names`), ou par défaut « Sirène »,
 « Sirène 2 » (voir `escalation.md`, « Le nom d'une sirène »).
 
+Un `siren.off` répondu `expired` ou `failed` est renvoyé lui aussi, 3 fois au plus par
+sirène et par ordre, puis journalisé en erreur, sans alerte. Sans cela, l'arrêt d'un
+désarmement parti pendant que l'adaptateur redémarrait laissait la sirène sonner le
+reste de son cycle (5 minutes au plus), sans trace, alors que l'alarme disait désarmé et
+que plus rien ne pouvait la faire taire (corrigé le 25 octobre 2026 après une revue). Le
+`expired` arrive justement quand l'adaptateur répond de nouveau.
+
 Une sirène signalée muette le reste, pour la centrale, jusqu'à la fin de l'alarme ou
 jusqu'à ce qu'un `siren.on` d'un cycle suivant lui soit répondu `done`. Pendant ce
 temps, un feu levé dit dans son texte que la sirène ne répond pas (voir

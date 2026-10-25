@@ -21,6 +21,11 @@ import (
 // ends, it is known silent: a fire raised meanwhile says so (silentSirens). An order
 // done is all the hub knows: the siren reported the state asked for when its profile
 // has a confirm, and without one (the shipped siren) the order only left the adapter.
+//
+// A siren.off that did not take (the adapter restarting when a disarm went out) would
+// leave the siren sounding for the rest of its siren.on, up to a cycle, while the
+// alarm says disarmed and nobody can silence it any more: it is sent again too, a few
+// times, and a siren that still does not take it is logged as an error.
 
 // sirenRetries is how many times one siren is sent the same order again.
 const sirenRetries = 3
@@ -54,7 +59,7 @@ func (h *Hub) orderSirens(now time.Time, actions []engine.Action) {
 			}
 			h.alarm.siren = sirenOrder{on: true, until: until, sent: map[string]string{}, retries: map[string]int{}}
 		case engine.SirenOff:
-			h.alarm.siren = sirenOrder{}
+			h.alarm.siren = sirenOrder{sent: map[string]string{}, retries: map[string]int{}}
 		default:
 			continue
 		}
@@ -64,8 +69,8 @@ func (h *Hub) orderSirens(now time.Time, actions []engine.Action) {
 	}
 }
 
-// sendSiren sends one siren action to one siren, and remembers the command while
-// the siren must sound.
+// sendSiren sends one siren action to one siren, and remembers the command of the
+// current order, to send it again if it does not take.
 func (h *Hub) sendSiren(now time.Time, sirenID string, a engine.Action) {
 	out, err := engwire.Translate([]engine.Action{a})
 	if err != nil || len(out.Siren) != 1 {
@@ -74,7 +79,7 @@ func (h *Hub) sendSiren(now time.Time, sirenID string, a engine.Action) {
 	}
 	data := out.Siren[0].Data(sirenID, now.Add(h.cfg.SirenCommandTTL))
 	ref := h.out.Send(srcEngine, contract.DeviceCmdTopic(h.cfg.Site, sirenID), contract.TypeCommand, data, false, now)
-	if ref != "" && h.alarm.siren.on {
+	if ref != "" && h.alarm.siren.sent != nil {
 		h.alarm.siren.sent[ref] = sirenID
 	}
 }
@@ -103,7 +108,7 @@ func (h *Hub) sirenAckMessage(sirenID string, m inbox.Message) {
 // one reported silent in this alarm is no longer known silent. Done is not proof that
 // it sounds (see above). It runs on the engine's loop.
 func (h *Hub) sirenOrderDone(sirenID string, ack contract.CommandAckData) {
-	if h.alarm.siren.sent[ack.Ref] != sirenID {
+	if !h.alarm.siren.on || h.alarm.siren.sent[ack.Ref] != sirenID {
 		return // an older order, a siren.off, or not one of ours
 	}
 	if r, ok := h.alarm.sirenFailed[sirenID]; ok && !r.back && r.alarm == h.ringingAlarm() {
@@ -139,15 +144,19 @@ func (h *Hub) silentSirens() []string {
 	return out
 }
 
-// retrySiren sends again a siren.on of the current order that did not take, for what
-// is left of the sounding. It runs on the engine's loop. A failure at the very end of
-// the sounding is not retried and does not count: the next cycle tells the siren
-// again, with its own retries.
+// retrySiren sends again a siren order of the current order that did not take: a
+// siren.on for what is left of the sounding, a siren.off as it was. It runs on the
+// engine's loop. A siren.on failing at the very end of the sounding is not retried and
+// does not count: the next cycle tells the siren again, with its own retries.
 func (h *Hub) retrySiren(now time.Time, sirenID string, ack contract.CommandAckData) {
 	if h.alarm.siren.sent[ack.Ref] != sirenID {
 		return // an older order, or not one of ours
 	}
 	delete(h.alarm.siren.sent, ack.Ref)
+	if !h.alarm.siren.on {
+		h.retrySirenOff(now, sirenID, ack)
+		return
+	}
 	left := h.alarm.siren.until.Sub(now)
 	if left < time.Second {
 		return // the sounding is over anyway
@@ -162,6 +171,20 @@ func (h *Hub) retrySiren(now time.Time, sirenID string, ack contract.CommandAckD
 	h.log.Warn("the siren did not take the order to sound, sending it again", "siren", sirenID,
 		"status", ack.Status, "reason", ack.Reason, "left", left.Round(time.Second))
 	h.sendSiren(now, sirenID, engine.SirenOn{Duration: left})
+}
+
+// retrySirenOff sends again a siren.off that did not take, a few times. It runs on
+// the engine's loop.
+func (h *Hub) retrySirenOff(now time.Time, sirenID string, ack contract.CommandAckData) {
+	if h.alarm.siren.retries[sirenID] >= sirenRetries {
+		h.log.Error("the siren does not take the order to stop: it sounds until its own end", "siren", sirenID,
+			"status", ack.Status, "reason", ack.Reason, "attempts", 1+sirenRetries)
+		return
+	}
+	h.alarm.siren.retries[sirenID]++
+	h.log.Warn("the siren did not take the order to stop, sending it again", "siren", sirenID,
+		"status", ack.Status, "reason", ack.Reason)
+	h.sendSiren(now, sirenID, engine.SirenOff{})
 }
 
 // reportSilentSiren tells the contacts that a siren does not sound, once per siren

@@ -33,9 +33,7 @@ func TestBootLearnsTheDevicesFromRetainedStates(t *testing.T) {
 	r.start()
 	r.settle()
 
-	var open map[string]bool
-	r.hub.alarm.loop.Do(context.Background(), func(time.Time) []engine.Action { open = r.hub.alarm.eng.Snapshot().Open; return nil })
-	if !open[devBack] || open[devDoor] {
+	if open := r.engineSnapshot().Open; !open[devBack] || open[devDoor] {
 		t.Fatalf("open doors after boot: %v", open)
 	}
 	// The engine now refuses to arm with the back door open.
@@ -66,6 +64,9 @@ func TestBootWaitsForTheLinkBeforeItsWindowStarts(t *testing.T) {
 	r.hub.LinkUp() // harmless twice
 	r.clock.PassTimer(t, 20*time.Millisecond)
 	drivertest.WaitFor(t, "the first state", func() bool { return len(r.broker.On(contract.AlarmStateTopic(site))) > 0 })
+	if !r.engineSnapshot().Open[devBack] {
+		t.Fatal("the state that arrived with the link was not learned")
+	}
 }
 
 func TestBootGivesUpWaitingForTheLink(t *testing.T) {
@@ -84,9 +85,7 @@ func TestStatesAfterBootAreIgnored(t *testing.T) {
 	r.start()
 	r.send(contract.DeviceStateTopic(site, devBack, contract.CapContact), contract.TypeDeviceState, event(devBack, contract.CapContact, "open"))
 	r.settle()
-	var open map[string]bool
-	r.hub.alarm.loop.Do(context.Background(), func(time.Time) []engine.Action { open = r.hub.alarm.eng.Snapshot().Open; return nil })
-	if open[devBack] {
+	if r.engineSnapshot().Open[devBack] {
 		t.Fatal("after boot only events carry changes")
 	}
 }

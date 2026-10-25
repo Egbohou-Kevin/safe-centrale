@@ -13,6 +13,9 @@ func (e *Engine) signal(sig Signal) []Action {
 			delete(e.s.Tampered, sig.DeviceID)
 			return nil
 		}
+		if e.s.Tampered[sig.DeviceID] {
+			return nil // already reported, and not over since
+		}
 		e.s.Tampered[sig.DeviceID] = true
 		return e.tamper(sig.Now, Cause{DeviceID: sig.DeviceID, Sensor: sig.Sensor, Zone: zone.Name})
 	}
@@ -21,6 +24,7 @@ func (e *Engine) signal(sig Signal) []Action {
 	}
 	e.trackContact(sig)
 	if !sig.Active {
+		e.calm(sig)
 		return nil
 	}
 	cause := Cause{DeviceID: sig.DeviceID, Sensor: sig.Sensor, Zone: zone.Name}
@@ -67,12 +71,13 @@ func (e *Engine) tamper(at time.Time, cause Cause) []Action {
 	return e.trigger(at, cause, AlertTamper)
 }
 
-// forget drops a device removed from the site: it no longer holds a door open or a
-// bypass. What the incidents remember of it stays.
+// forget drops a device removed from the site: it no longer holds a door open, a
+// bypass, or an alarm waiting for the siren. What the incidents remember of it stays.
 func (e *Engine) forget(id string) {
 	delete(e.s.Open, id)
 	delete(e.s.Bypassed, id)
 	delete(e.s.Tampered, id)
+	e.dropWaiting(func(c Cause) bool { return c.DeviceID == id })
 }
 
 // armedZone applies the rules of the zones that only watch while the system is
@@ -88,45 +93,52 @@ func (e *Engine) armedZone(at time.Time, kind ZoneKind, cause Cause) []Action {
 		}
 		return e.trigger(at, cause, AlertIntrusion)
 
-	case ModeEntryDelay:
-		if kind == ZoneInstant { // a window during the entry delay: no grace
+	case ModeEntryDelay, ModeTriggered:
+		// A window during the entry delay gets no grace; nor does one during another
+		// alarm while the site is armed under it (see during).
+		if kind == ZoneInstant && (e.s.Mode == ModeEntryDelay || e.armedUnder()) {
 			return e.trigger(at, cause, AlertIntrusion)
 		}
 		// Motion from the person coming in is expected, and a second opening of the
-		// entry door does not restart the delay.
+		// entry door does not restart the delay. The same goes during an alarm: whoever
+		// comes in is most often answering it.
 	}
-	return nil // disarmed, exit delay, or already triggered
+	return nil // disarmed, exit delay, or already ringing for an intrusion
 }
 
-// trigger sets the alarm off. If it is already ringing there is nothing to redo,
-// except for a fire or a panic, which must alert even during another alarm.
+// armedUnder tells whether the site is armed under the alarm that rings: it goes back
+// to armed once that alarm ends.
+func (e *Engine) armedUnder() bool {
+	return e.s.Mode == ModeTriggered && e.s.Incident != nil && e.s.Incident.ReturnTo == ModeArmed
+}
+
+// trigger sets the alarm off. If an alarm is already ringing, see during.
 func (e *Engine) trigger(at time.Time, cause Cause, kind AlertKind) []Action {
 	if e.s.Mode == ModeTriggered {
-		if inc := e.s.Incident; inc != nil && kind != inc.Kind && (kind == AlertFire || kind == AlertPanic) {
-			return []Action{e.alert(kind, &cause)}
-		}
-		return nil
+		return e.during(at, cause, kind)
 	}
-	returnTo := ModeArmed
-	if e.s.Mode == ModeDisarmed {
-		returnTo = ModeDisarmed
-	}
-	e.setMode(ModeTriggered, at)
-	e.s.EntryCause = nil
-	inc := &Incident{
-		ID: e.newID(), Kind: kind, Cause: cause, StartedAt: at,
-		Cycle: 1, SirenOn: true, ReturnTo: returnTo,
-	}
-	e.s.Incident = inc
-	e.s.Deadline = at.Add(e.cfg.SirenCycle)
-	last := cause
-	e.s.LastTrigger, e.s.LastTriggerAt = &last, at
+	inc := Incident{ID: e.newID(), Kind: kind, Cause: cause, StartedAt: at}
+	return append(e.ring(at, inc), Alert{Incident: inc.ID, Kind: kind, Urgency: urgency(kind), Cause: &cause})
+}
 
+// ring starts the siren program of an alarm: it rings from at, for its cycles, and
+// the system goes back to the mode it was in once they are over.
+func (e *Engine) ring(at time.Time, inc Incident) []Action {
+	inc.ReturnTo = ModeArmed
+	if e.s.Mode == ModeDisarmed {
+		inc.ReturnTo = ModeDisarmed
+	}
+	inc.Cycle, inc.SirenOn = 1, true
+	e.setMode(ModeTriggered, at)
+	e.s.EntryCause, e.s.Raised = nil, nil
+	e.s.Incident = &inc
+	e.s.Deadline = at.Add(e.cfg.SirenCycle)
+	last := inc.Cause
+	e.s.LastTrigger, e.s.LastTriggerAt = &last, at
 	return []Action{
-		Emit{Triggered{Incident: inc.ID, Cause: cause}},
+		Emit{Triggered{Incident: inc.ID, Cause: inc.Cause}},
 		Emit{SirenCycleStarted{Incident: inc.ID, Cycle: 1, Of: e.cfg.SirenCycles}},
 		SirenOn{Duration: e.cfg.SirenCycle},
-		Alert{Incident: inc.ID, Kind: kind, Urgency: urgency(kind), Cause: &cause},
 	}
 }
 
@@ -146,7 +158,7 @@ func (e *Engine) sirenStep(ref time.Time) []Action {
 				e.s.TimedOut = append(e.s.TimedOut, inc.ID)
 			}
 			e.endIncident(ref)
-			return out
+			return append(out, e.wake(ref)...)
 		}
 		inc.SirenOn = false
 		e.s.Deadline = ref.Add(e.cfg.SirenPause)
@@ -177,7 +189,7 @@ func (e *Engine) endIncident(at time.Time) {
 		e.disarm(at)
 		return
 	}
-	e.s.Incident = nil
+	e.s.Incident, e.s.Raised = nil, nil
 	e.s.Deadline = time.Time{}
 	e.setMode(ModeArmed, at)
 }

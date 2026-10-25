@@ -11,8 +11,44 @@ func (e *Engine) planSchedule(from time.Time) {
 	if !ok {
 		return
 	}
-	e.s.Schedule = &Schedule{At: at, Limit: at.Add(e.cfg.AutoArmLimit)}
+	e.s.Schedule = &Schedule{Closing: at, At: at, Limit: at.Add(e.cfg.AutoArmLimit)}
 	e.scheduleDeadline(from)
+}
+
+// missedBy is how late a deadline of the automatic arming must come for it to count
+// as missed: the hub was off (or stuck) at its time, not merely a little late, as the
+// driver's ticks always are.
+const missedBy = time.Minute
+
+// checkPlan checks the automatic arming saved before a restart against the
+// configuration, which may have changed: a configuration from the cloud is applied by
+// a restart. A plan for a closing time the configuration no longer has (moved, or no
+// closing that day any more) is made again from now, the first closing after the
+// restart; a plan whose closing still stands keeps its postponements, under the
+// configuration's limit and notice. A missing plan is made.
+func (e *Engine) checkPlan(now time.Time) {
+	sch := e.s.Schedule
+	if sch == nil {
+		e.planSchedule(now)
+		return
+	}
+	closing := sch.Closing
+	if closing.IsZero() { // saved before the plan named its closing
+		closing = sch.Limit.Add(-e.cfg.AutoArmLimit)
+	}
+	from := now
+	if !now.Before(closing) {
+		from = closing.Add(-time.Nanosecond)
+	}
+	if at, ok := e.cfg.nextClosing(from); !ok || !at.Equal(closing) || now.After(closing.Add(e.cfg.AutoArmLimit)) {
+		e.planSchedule(now) // a closing changed, or missed past its limit (see scheduleStep)
+		return
+	}
+	sch.Closing, sch.Limit = closing, closing.Add(e.cfg.AutoArmLimit)
+	if sch.At.After(sch.Limit) {
+		sch.At = sch.Limit
+	}
+	e.scheduleDeadline(now)
 }
 
 // scheduleDeadline points the deadline at the advance notice, or at the arming once
@@ -31,17 +67,31 @@ func (e *Engine) scheduleDeadline(from time.Time) {
 }
 
 // scheduleStep handles a deadline while disarmed: first the advance notice, then
-// the arming.
-func (e *Engine) scheduleStep(ref time.Time) []Action {
+// the arming. Both are replayed at their own time when a little late. One missed
+// because the hub was off (now is the time of the tick) is not: an arming missed past
+// the plan's limit is dropped and the next closing planned, so that a hub back at 8 in
+// the morning does not arm a shop that opened again; one missed within the limit
+// starts its exit delay now, so that the people inside still get the whole delay to
+// postpone it or to leave.
+func (e *Engine) scheduleStep(ref, now time.Time) []Action {
 	sch := e.s.Schedule
 	if sch == nil { // should not happen: avoid looping
 		e.s.Deadline = time.Time{}
+		return nil
+	}
+	missed := now.Sub(ref) > missedBy
+	if missed && now.After(sch.Limit) {
+		e.planSchedule(now)
 		return nil
 	}
 	if !sch.Announced {
 		sch.Announced = true
 		e.s.Deadline = sch.At
 		return []Action{Emit{ArmingScheduled{ScheduledFor: sch.At}}}
+	}
+	if missed {
+		sch.At = now // what a postponement starts from
+		return e.autoArm(now)
 	}
 	return e.autoArm(ref)
 }

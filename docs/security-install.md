@@ -240,9 +240,12 @@ alors la box : l'agent garde ses messages et le GSM reste là. Le câble est con
 - **Terminer** : elle demande à la centrale de fermer le mode (`install.close`).
 
 **Sabotage.** Pendant le mode, la centrale ne déclenche pas d'alarme de sabotage :
-l'installateur ouvre les capteurs (pile, fixation). Elle voit toujours les signaux. Le
-feu et la panique ne sont jamais coupés. Dès la fermeture du mode, le sabotage alerte
-de nouveau.
+l'installateur ouvre les capteurs (pile, fixation). Elle note ces sabotages sans les
+donner au moteur, qui ne les tient donc pas pour signalés. Le feu et la panique ne sont
+jamais coupés. Dès la fermeture du mode, le sabotage alerte de nouveau, et un sabotage
+noté pendant le mode et toujours actif (un couvercle laissé ouvert) est signalé à la
+fermeture. Avant le 25 octobre 2026, le moteur le tenait pour signalé : il ne l'était
+jamais, même après un redémarrage.
 
 ### Après le mode
 

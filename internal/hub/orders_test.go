@@ -101,3 +101,60 @@ func TestTheOrderSchemaTakesTheCodesTheHubRecognises(t *testing.T) {
 		}
 	}
 }
+
+// slowCode sets the owner's code with a hash as slow as on the hub's board, where a
+// check takes about a second: long enough to see what happens meanwhile.
+func (r *rig) slowCode(code string) {
+	r.t.Helper()
+	slow := testConfig().Access
+	slow.Iterations = 1_000_000
+	reg, err := openCodes(slow, r.store)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	if err := reg.Set("u_owner", code); err != nil {
+		r.t.Fatal(err)
+	}
+	if err := r.hub.ReloadCodes(); err != nil {
+		r.t.Fatal(err)
+	}
+}
+
+func (r *rig) armedNow() {
+	r.t.Helper()
+	r.keypad(contract.ValArm, "")
+	r.keypad(contract.ValArmNow, "")
+	r.mustBe(engine.ModeArmed)
+}
+
+// The right code typed in the last moment of the entry delay is checked after its
+// end: the alarm must not go off meanwhile, nor alert anyone.
+func TestARightCodeTypedAtTheEndOfTheEntryDelayIsNotTooLate(t *testing.T) {
+	r := newRig(t, nil)
+	r.start()
+	r.slowCode("482915")
+	r.armedNow()
+	r.device(devDoor, contract.CapContact, "open")
+	r.mustBe(engine.ModeEntryDelay)
+	r.clock.Advance(44500 * time.Millisecond)
+	r.keypad(contract.ValDisarm, "482915")
+	r.settle()                   // the engine knows a code is being checked
+	r.clock.Advance(time.Second) // the end of the delay passes during the check
+	r.mustBe(engine.ModeDisarmed)
+	if n := len(eventsOf(r, contract.TypeAlarmTriggered)) + len(eventsOf(r, contract.TypeAlertRequest)); n != 0 {
+		t.Fatalf("%d alarm message(s) for a code typed in time", n)
+	}
+}
+
+// An order without a code pressed right after one being checked waits for it: the
+// engine takes them in the order they came.
+func TestAnOrderWithoutACodeWaitsForTheOneBeingChecked(t *testing.T) {
+	r := newRig(t, nil)
+	r.start()
+	r.slowCode("482915")
+	r.armedNow()
+	r.keypad(contract.ValDisarm, "482915")
+	r.keypad(contract.ValArm, "")
+	r.waitAcks(4)
+	r.mustBe(engine.ModeArming) // disarmed, then armed again
+}

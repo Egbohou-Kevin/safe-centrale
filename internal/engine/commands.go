@@ -166,17 +166,20 @@ func (e *Engine) disarmOrSilence(c Command) []Action {
 		out = append(out, Ended{Incidents: slices.Clone(e.s.TimedOut)})
 	}
 	e.disarm(c.Now)
-	return append(out, Emit{Disarmed{Origin: c.Origin, User: user, Incidents: ended}}, reply(c, StatusDone, ""))
+	out = append(out, Emit{Disarmed{Origin: c.Origin, User: user, Incidents: ended}}, reply(c, StatusDone, ""))
+	return append(out, e.wake(c.Now)...)
 }
 
-// silence stops the siren: the incident ends and the alarm stays armed.
+// silence stops the siren: the incident ends and the alarm stays armed. A fire that
+// waited behind it rings in turn (see wake).
 func (e *Engine) silence(c Command, user string) []Action {
 	if e.s.Mode != ModeTriggered {
 		return refused(c, ReasonWrongState)
 	}
 	out := e.clearIncident(c.Now, user)
 	e.endIncident(c.Now)
-	return append(out, reply(c, StatusDone, ""))
+	out = append(out, reply(c, StatusDone, ""))
+	return append(out, e.wake(c.Now)...)
 }
 
 // authorize checks the right to disarm or to silence the siren and tells who it
