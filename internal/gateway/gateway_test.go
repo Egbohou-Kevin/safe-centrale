@@ -67,6 +67,40 @@ func TestAnSMSRequestIsSentAndReported(t *testing.T) {
 	if got := r.results(ref); got[2] != "delivered/" {
 		t.Fatalf("%v", got)
 	}
+	// Each step leaves a line in the logs, with the request's id.
+	for _, want := range []string{"a message is queued", "a line sends a message", "a line sent", "a message was sent", "a message was delivered"} {
+		drivertest.WaitFor(t, want, func() bool { return strings.Contains(r.logs.String(), `msg="`+want+`" ref=`+ref) })
+	}
+	r.validateAll()
+}
+
+// The trial on a hub without a modem (25 October 2026): the logs held nothing but the
+// line checks, and the end of the alarm said each message "not sent, the alarm was
+// over". The logs say the message waits for a line, then why it never left, and so
+// does its result.
+func TestAMessageThatNoModemSendsIsLoggedAndSaysWhy(t *testing.T) {
+	r := newRig(t, nil)
+	r.modem.mu.Lock()
+	r.modem.checkErr = errors.New("no modem on the port")
+	r.modem.mu.Unlock()
+	r.clock.Advance(30 * time.Second)
+	drivertest.WaitFor(t, "the line down", func() bool { return !r.status().Lines[0].Responding })
+	ref := r.request(contract.ChannelSMS, "u_owner", contract.AlertIntrusion)
+	drivertest.WaitFor(t, "queued", func() bool { return len(r.results(ref)) == 1 })
+	r.publish(contract.AlarmEventTopic(site), r.ids.New(), t0, contract.TypeAlarmDisarmed,
+		contract.DisarmedData{Origin: contract.OriginApp, User: "u_owner", Incidents: []string{"inc1"}})
+	drivertest.WaitFor(t, "the failure", func() bool { return len(r.results(ref)) == 2 })
+	if got := r.results(ref); got[1] != "failed/modem_error" {
+		t.Fatalf("%v: the line was down all along, not just the alarm over", got)
+	}
+	for _, want := range []string{
+		`level=WARN msg="a message is queued, no line can send it" ref=` + ref,
+		`level=WARN msg="a message was not sent" ref=` + ref + ` reason=modem_error`,
+	} {
+		if !strings.Contains(r.logs.String(), want) {
+			t.Fatalf("the logs miss %q:\n%s", want, r.logs.String())
+		}
+	}
 	r.validateAll()
 }
 

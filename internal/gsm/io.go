@@ -142,6 +142,7 @@ type Action interface{ isAction() }
 // Outcome for Job.
 type Execute struct {
 	Job     uint64
+	Ref     string // the request's id, empty for a test: for the logs
 	Line    string
 	Channel Channel
 	Number  string

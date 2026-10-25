@@ -67,8 +67,14 @@ func (g *Gateway) failed(id uint64, line string, reason Reason, now time.Time) [
 	j := &g.s.Jobs[i]
 	j.Line, j.Deadline = "", time.Time{}
 	if g.isClosed(j.Incident) {
-		g.remove(i) // its incident ended while the line was sending it
-		return nil
+		// Its incident ended while the line was sending it: not retried, but its
+		// failure is said, unless it was already.
+		var out []Action
+		if !j.Test && !j.Reported {
+			out = []Action{Report{Ref: j.Ref, Status: StatusFailed, Reason: reason}}
+		}
+		g.remove(i)
+		return out
 	}
 	if !slices.Contains(j.Tried, line) {
 		j.Tried = append(j.Tried, line)

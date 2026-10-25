@@ -69,8 +69,9 @@ func TestNothingGoesOutAfterTheAlarmIsDisarmed(t *testing.T) {
 	if d := of[Dropped](out); len(d) != 1 || d[0].Incident != "inc" || d[0].Jobs != 2 {
 		t.Fatalf("%+v", out)
 	}
-	// Each said not sent, its incident over: who reads the escalation never takes it for sent.
-	want := []Report{{Ref: "r1", Status: StatusFailed, Reason: ReasonDropped}, {Ref: "r2", Status: StatusFailed, Reason: ReasonDropped}}
+	// Each said not sent, by what kept it: the line had no network all along. Who reads
+	// the escalation never takes it for sent.
+	want := []Report{{Ref: "r1", Status: StatusFailed, Reason: ReasonNoNetwork}, {Ref: "r2", Status: StatusFailed, Reason: ReasonNoNetwork}}
 	if got := of[Report](out); !slices.Equal(got, want) {
 		t.Fatalf("reports %+v, want %+v", got, want)
 	}
@@ -101,9 +102,10 @@ func TestAMessageBeingSentWhenTheIncidentEndsIsNotRetried(t *testing.T) {
 		t.Fatalf("the line still sends it: %+v", out)
 	}
 	out := g.Handle(Outcome{Now: t0.Add(2 * time.Second), Job: ex.Job, Line: "line1", Reason: ReasonNoNetwork})
-	if len(of[Report](out)) != 0 || g.Queued() != 0 {
+	if g.Queued() != 0 {
 		t.Fatalf("a failed message of an ended incident is dropped, not retried: %+v", out)
 	}
+	onlyReport(t, out, "r1", StatusFailed, ReasonNoNetwork) // said, or its step would stay queued
 
 	// One that goes anyway is reported as usual.
 	network(g, t0.Add(time.Minute))
@@ -143,4 +145,42 @@ func TestASilentSirensSMSOutlivesItsAlarm(t *testing.T) {
 	if len(ex) != 1 || !strings.Contains(ex[0].Text, "sirene") {
 		t.Fatalf("the siren's SMS still goes: %+v", ex)
 	}
+}
+
+// The trial on a hub without a modem (25 October 2026): the line never answered, the
+// messages waited for it, and the end of the alarm said each "not sent, the alarm was
+// over". What kept them is said instead: the modem.
+func TestAMessageDroppedWhileNoModemAnswersSaysSo(t *testing.T) {
+	g := newGW(t, 1)
+	g.Handle(Tick{Now: t0})
+	g.Handle(Probe{Now: t0, Line: "line1"}) // no answer: no modem
+	g.Handle(req("r1", "owner", ChannelSMS, PriorityIntrusion, t0))
+	out := g.Handle(Cancel{Now: t0.Add(time.Minute), Incident: "inc-r1"})
+	onlyReport(t, out, "r1", StatusFailed, ReasonModemError)
+}
+
+// A message that only waited its turn behind others, with a line in service, is
+// dropped as before.
+func TestAMessageDroppedWhileTheLineWorksIsDropped(t *testing.T) {
+	g := newGW(t, 1)
+	up(t, g, t0)
+	g.Handle(req("r1", "owner", ChannelSMS, PriorityIntrusion, t0)) // the line sends it
+	g.Handle(Request{Now: t0, ID: "r2", Incident: "inc-r1", Contact: "guard", Channel: ChannelCall, Priority: PriorityIntrusion})
+	out := g.Handle(Cancel{Now: t0.Add(time.Second), Incident: "inc-r1"})
+	onlyReport(t, out, "r2", StatusFailed, ReasonDropped)
+}
+
+// A message one line failed, waiting for the other line, says that failure.
+func TestAMessageDroppedAfterAFailureSaysTheFailure(t *testing.T) {
+	g := newGW(t, 2)
+	up(t, g, t0)
+	ex := of[Execute](g.Handle(req("r1", "owner", ChannelSMS, PriorityIntrusion, t0)))
+	g.Handle(Request{Now: t0, ID: "r2", Incident: "other", Contact: "guard", Channel: ChannelCall, Priority: PriorityLifeSafety})
+	if len(ex) != 1 {
+		t.Fatalf("%+v", ex)
+	}
+	// The other line is busy with the call: r1 waits for it after its failure.
+	g.Handle(Outcome{Now: t0.Add(time.Second), Job: ex[0].Job, Line: ex[0].Line, Reason: ReasonNoCredit})
+	out := g.Handle(Cancel{Now: t0.Add(2 * time.Second), Incident: "inc-r1"})
+	onlyReport(t, out, "r1", StatusFailed, ReasonNoCredit)
 }

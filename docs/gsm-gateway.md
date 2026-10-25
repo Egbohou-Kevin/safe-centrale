@@ -239,9 +239,20 @@ Là où le document laissait un doute :
 - **Âge maximum** : 10 minutes pour fire, panic et intrusion, une heure pour le reste
   (réglable). Une demande abandonnée publie `failed` avec la raison `timeout`, sauf
   si un `failed` est déjà parti pour elle : jamais deux. Une demande dont l'incident a pris fin avant son
-  départ publie `failed` avec la raison `dropped`, sous la même règle. Sans aucune ligne utilisable
+  départ publie `failed` avec la raison `dropped`, sous la même règle, sauf si une cause
+  connue l'a retenue : l'échec d'une ligne qui l'a essayée (`no_credit`, `no_network`…), ou
+  aucune ligne utilisable à la fin de l'incident (`no_network` si un modem répond sans
+  réseau, `modem_error` si aucun ne répond). `dropped` ne reste que pour un message qui
+  attendait son tour, une ligne en service. Sans aucune ligne utilisable
   (pas de réseau, modem muet), une demande reste dans la file sans être essayée, puis
-  part en échec `timeout` à son âge maximum.
+  part en échec `timeout` à son âge maximum. Constaté le 25 octobre 2026 sur une centrale
+  sans modem : chaque message disait « pas envoyé, l'alarme était finie », alors que la
+  ligne était en panne depuis le début.
+- **Journal** : chaque demande y laisse une ligne à chaque étape, avec son `id` (`ref`),
+  jamais son numéro ni son texte : mise en file (en avertissement si aucune ligne ne peut
+  l'envoyer), envoi confié à une ligne, envoyé, livré, ou pas envoyé avec sa raison. Avant
+  le 25 octobre 2026, une centrale sans modem ne journalisait que ses vérifications de
+  ligne.
   L'âge d'une demande compte depuis son `ts` (l'heure où l'escalade l'a écrite), pas
   depuis sa réception : une demande gardée par le broker pendant que la passerelle
   était arrêtée part en échec `timeout` dès son arrivée si elle est trop vieille, sans
@@ -254,8 +265,9 @@ Là où le document laissait un doute :
   Constaté à l'essai du 24 octobre 2026 : déclenchement, sirène arrêtée au bout de ses
   cycles, désarmement depuis l'application ; l'escalade s'arrêtait, mais les SMS déjà
   dans la file de la passerelle partaient encore.
-  Les messages de l'incident encore en attente sont abandonnés sans résultat publié
-  (l'escalade ne les attend plus), un message en cours au modem n'est pas réessayé,
+  Les messages de l'incident encore en attente sont abandonnés, chacun dit en échec
+  (voir plus haut pour la raison), un message en cours au modem n'est pas réessayé (son
+  échec est publié, s'il ne l'était pas déjà),
   et une demande de cet incident arrivée plus tard est ignorée. Un `alert.ack` ne
   compte que s'il vient d'un contact du site, comme pour l'escalade : tous ceux de la
   configuration venue du cloud, même sans numéro ; à défaut, ceux qui ont un numéro.

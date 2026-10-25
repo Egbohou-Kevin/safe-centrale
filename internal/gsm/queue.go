@@ -183,7 +183,7 @@ func (g *Gateway) byUrgency() []int {
 
 // start hands a job to a line, which has until its deadline to answer.
 func (g *Gateway) start(j *Job, line string, now time.Time) Execute {
-	ex := Execute{Job: j.ID, Line: line, Channel: j.Channel, Number: j.Number, Text: j.Text}
+	ex := Execute{Job: j.ID, Ref: j.Ref, Line: line, Channel: j.Channel, Number: j.Number, Text: j.Text}
 	timeout := g.cfg.SMSTimeout
 	if j.Channel == ChannelCall {
 		ex.RingFor = g.cfg.RingFor

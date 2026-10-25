@@ -213,6 +213,7 @@ func (g *Gateway) dispatch(_ context.Context, now time.Time, actions []gsm.Actio
 	for _, a := range actions {
 		switch v := a.(type) {
 		case gsm.Execute:
+			g.log.Info("a line sends a message", "ref", v.Ref, "line", v.Line, "channel", v.Channel, "test", v.Ref == "")
 			g.toLine(v.Line, func(ctx context.Context) { g.execute(ctx, v) })
 		case gsm.CheckLine:
 			g.toLine(v.Line, func(ctx context.Context) { g.check(ctx, v.Line) })
@@ -220,6 +221,7 @@ func (g *Gateway) dispatch(_ context.Context, now time.Time, actions []gsm.Actio
 			g.log.Warn("the modem does not answer, restarting it", "line", v.Line)
 			g.toLine(v.Line, func(ctx context.Context) { g.restart(ctx, v.Line) })
 		case gsm.Report:
+			g.logReport(v)
 			g.out.Send(src, contract.AlertResultTopic(g.cfg.Site), contract.TypeAlertResult, gsmwire.Result(v), false, now)
 		case gsm.Acknowledge:
 			g.log.Info("a contact acknowledged by SMS", "incident", v.Incident, "contact", v.Contact)
@@ -233,6 +235,35 @@ func (g *Gateway) dispatch(_ context.Context, now time.Time, actions []gsm.Actio
 		}
 	}
 	return nil
+}
+
+// logReport writes what became of a request: each one leaves a line in the logs,
+// with its id and never its number or text. A failure says why; one queued while no
+// line can send says so, since it waits for one (the trial on a hub without a modem,
+// 25 October 2026, left nothing in the logs but the line checks).
+func (g *Gateway) logReport(r gsm.Report) {
+	switch r.Status {
+	case gsm.StatusFailed:
+		g.log.Warn("a message was not sent", "ref", r.Ref, "reason", r.Reason)
+	case gsm.StatusQueued:
+		if g.usable() {
+			g.log.Info("a message is queued", "ref", r.Ref)
+		} else {
+			g.log.Warn("a message is queued, no line can send it", "ref", r.Ref)
+		}
+	default:
+		g.log.Info("a message was "+string(r.Status), "ref", r.Ref)
+	}
+}
+
+// usable reports whether a line can send now. It runs on the loop's goroutine.
+func (g *Gateway) usable() bool {
+	for _, l := range g.core.Lines() {
+		if l.Responding && l.Registered {
+			return true
+		}
+	}
+	return false
 }
 
 // publishStatus publishes the lines and the queue, retained, when they changed (or

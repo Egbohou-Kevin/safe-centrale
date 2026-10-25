@@ -81,7 +81,9 @@ func (g *Gateway) execute(ctx context.Context, ex gsm.Execute) {
 	o := gsm.Outcome{Job: ex.Job, Line: ex.Line, OK: err == nil, MsgRef: ref}
 	if err != nil {
 		o.Reason = reason(err)
-		g.log.Warn("a line could not send", "line", ex.Line, "channel", ex.Channel, "reason", o.Reason, "err", err)
+		g.log.Warn("a line could not send", "ref", ex.Ref, "line", ex.Line, "channel", ex.Channel, "reason", o.Reason, "err", err)
+	} else {
+		g.log.Info("a line sent", "ref", ex.Ref, "line", ex.Line, "channel", ex.Channel)
 	}
 	g.submit(func(now time.Time) gsm.Input { o.Now = now; return o })
 }
