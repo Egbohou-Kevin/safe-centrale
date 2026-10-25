@@ -49,6 +49,7 @@ var commands = map[string]engine.CommandName{
 	contract.CmdArmNow:   engine.CmdArmNow,
 	contract.CmdDisarm:   engine.CmdDisarm,
 	contract.CmdSilence:  engine.CmdSilence,
+	contract.CmdEnd:      engine.CmdEnd,
 	contract.CmdBypass:   engine.CmdBypass,
 	contract.CmdPostpone: engine.CmdPostpone,
 }
@@ -191,7 +192,7 @@ func translateEvent(e engine.Event) (Event, error) {
 			return Event{}, fmt.Errorf("wire: unknown ClearedBy %q", v.By)
 		}
 		return Event{contract.TypeAlarmCleared, contract.ClearedData{
-			Incident: v.Incident, Origin: origin, User: v.User, DurationS: int(v.Duration / time.Second),
+			Incident: v.Incident, Origin: origin, User: v.User, DurationS: int(v.Duration / time.Second), Ended: v.Ended,
 		}}, nil
 	case engine.AuthFailed:
 		return Event{contract.TypeAlarmAuthFailed, contract.AuthFailedData{
