@@ -449,15 +449,23 @@ func TestAFailedActionDoesNotHoldBackTheOthers(t *testing.T) {
 
 // A message that arrives while the adapter stops (here during its last flush, which
 // the broker holds) is given up without an error.
+// A message that reaches the adapter once it is stopping is not taken: the broker
+// keeps it for the next start (the adapter acknowledges only what it took), and a door
+// opened during a restart is not lost.
 func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 	r := newRig(t, nil)
 	r.settle()
+	if !r.app.HandleMessage(inbox.Message{Topic: "zigbee2mqtt/bridge/state", Payload: []byte(`{"state":"online"}`)}) {
+		t.Fatal("a message is taken while the adapter runs")
+	}
 	release := r.broker.Hold()
 	r.app.repeatStatus(context.Background()) // something left for the last flush
 	r.cancel()
 	drivertest.WaitFor(t, "the loop to stop", func() bool { return r.app.Alive(context.Background()) != nil })
 	r.order(contract.RegistryCmdTopic(site), contract.TypeRegistryPair, contract.RegistryPairData{DurationS: 120})
-	r.z2m("bridge/state", `{"state":"online"}`, false)
+	if r.app.HandleMessage(inbox.Message{Topic: "zigbee2mqtt/dev_door", Payload: []byte(`{"contact":false}`)}) {
+		t.Fatal("taken by a stopping adapter")
+	}
 	release()
 	<-r.done
 	if strings.Contains(r.logs.String(), "level=ERROR") {

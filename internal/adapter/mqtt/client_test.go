@@ -32,6 +32,7 @@ func TestOptionsValidation(t *testing.T) {
 		"wrong scheme":       func(o *Options) { o.BrokerURL = "http://127.0.0.1:1883" },
 		"no client id":       func(o *Options) { o.ClientID = "" },
 		"no handler":         func(o *Options) { o.OnMessage = nil },
+		"two handlers":       func(o *Options) { o.Take = func(Message) bool { return true } },
 		"empty filter":       func(o *Options) { o.Subscriptions = []Subscription{{Filter: "", QoS: 1}} },
 		"QoS above 2":        func(o *Options) { o.Subscriptions = []Subscription{{Filter: "a", QoS: 3}} },
 		"unparsable URL":     func(o *Options) { o.BrokerURL = "mqtt://[::1" },
@@ -51,6 +52,24 @@ func TestOptionsValidation(t *testing.T) {
 		}
 		if _, err := Dial(context.Background(), o); err == nil {
 			t.Errorf("%s: Dial must refuse", name)
+		}
+	}
+
+	// Take instead of OnMessage.
+	take := good
+	take.OnMessage, take.Take = nil, func(Message) bool { return true }
+	if _, err := take.validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	// A URL without a port gets its scheme's usual one: the dial needs one.
+	for raw, host := range map[string]string{
+		"mqtt://127.0.0.1": "127.0.0.1:1883", "mqtts://cloud.example": "cloud.example:8883",
+		"tls://cloud.example": "cloud.example:8883", "wss://cloud.example/mqtt": "cloud.example:443",
+		"ws://[::1]/mqtt": "[::1]:80", "mqtt://127.0.0.1:1885": "127.0.0.1:1885",
+	} {
+		if u, err := parseBrokerURL(raw); err != nil || u.Host != host {
+			t.Errorf("%s: %v %v, want %s", raw, u, err, host)
 		}
 	}
 

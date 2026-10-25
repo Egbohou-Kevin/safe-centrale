@@ -389,7 +389,11 @@ Choix faits au codage :
 - **QoS** : Zigbee2MQTT publie les messages des appareils en QoS 1, non retenus
   (`deploy/zigbee2mqtt/configuration.yaml`). L'adaptateur garde une session durable :
   le broker garde ces messages pendant un redémarrage de l'adaptateur (une porte
-  ouverte entre-temps n'est pas perdue). Zigbee2MQTT ajoute à chaque message l'heure
+  ouverte entre-temps n'est pas perdue). L'adaptateur n'en accuse réception qu'une
+  fois que sa boucle l'a pris, et elle fait tout ce qu'elle a pris, même quand elle
+  s'arrête : un message arrivé pendant l'arrêt n'est pas acquitté, et le broker le
+  redonne au démarrage suivant (voir `agent.md`, « Liaison avec le cloud »). Un arrêt
+  brutal perd encore ce que la boucle avait pris sans l'avoir fait. Zigbee2MQTT ajoute à chaque message l'heure
   où il a entendu l'appareil (`last_seen`, en ISO 8601, réglage `advanced.last_seen`
   du même fichier). Les actions ponctuelles (clavier, panique) sont datées de ce
   moment, jamais plus tard que maintenant, et l'événement publié porte cette heure.

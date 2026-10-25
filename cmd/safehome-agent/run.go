@@ -99,13 +99,13 @@ func daemon(cfg agentconfig.Result, app *agentapp.App, local, cloud *service.Pub
 	}
 	hub := mqtt.Options{
 		BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: service.Subscriptions(app.LocalSubscriptions()), Logger: log,
-		OnMessage: service.Deliver(app.HandleLocal),
+		Take: service.Take(app.HandleLocal),
 	}
 	toCloud := mqtt.Options{
 		BrokerURL: cfg.Cloud.URLs[0], FallbackURLs: cfg.Cloud.URLs[1:], CAFile: cfg.Cloud.CAFile,
 		ClientID: cfg.Cloud.ClientID, Username: cfg.Cloud.Username, Password: cfg.Cloud.Password,
 		Subscriptions: service.Subscriptions(app.CloudSubscriptions()), Will: will, Spread: true, Logger: log.With("broker", "cloud"),
-		OnMessage:    service.Deliver(app.HandleCloud),
+		Take:         service.Take(app.HandleCloud),
 		OnLinkChange: app.LinkChanged,
 	}
 	return service.Daemon{

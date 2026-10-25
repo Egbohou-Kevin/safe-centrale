@@ -152,9 +152,10 @@ func (s *session) config() (autopaho.ClientConfig, error) {
 		OnConnectionDown:              s.connectionDown,
 		OnConnectError:                func(err error) { s.log.Warn("mqtt connection attempt failed", "err", err) },
 		ClientConfig: paho.ClientConfig{
-			ClientID:          s.o.ClientID,
-			OnPublishReceived: []func(paho.PublishReceived) (bool, error){s.received},
-			OnClientError:     func(err error) { s.log.Warn("mqtt client error", "err", err) },
+			ClientID:                   s.o.ClientID,
+			EnableManualAcknowledgment: s.o.Take != nil,
+			OnPublishReceived:          []func(paho.PublishReceived) (bool, error){s.received},
+			OnClientError:              func(err error) { s.log.Warn("mqtt client error", "err", err) },
 			OnServerDisconnect: func(d *paho.Disconnect) {
 				s.log.Warn("mqtt broker asked to disconnect", "reason", d.ReasonCode)
 			},
@@ -254,8 +255,19 @@ func (s *session) endConnection() {
 	}
 }
 
+// received hands a message to the application. With Take, the broker is told it
+// arrived only once the application took it (see Options.Take).
 func (s *session) received(pr paho.PublishReceived) (bool, error) {
-	s.o.OnMessage(fromPaho(pr.Packet))
+	if s.o.Take == nil {
+		s.o.OnMessage(fromPaho(pr.Packet))
+		return true, nil
+	}
+	if !s.o.Take(fromPaho(pr.Packet)) {
+		return true, nil // left with the broker: it gives it again at the next connection
+	}
+	if err := pr.Client.Ack(pr.Packet); err != nil {
+		s.log.Warn("mqtt acknowledgement failed: the broker will give the message again", "topic", pr.Packet.Topic, "err", err)
+	}
 	return true, nil
 }
 

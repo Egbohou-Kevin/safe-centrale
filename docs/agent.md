@@ -61,6 +61,16 @@ l'agent l'attend sur le broker du cloud, sauf les ordres de l'application. L'age
 `alarm/cmd` en QoS 0, et le broker ne garde rien pour lui sur ce topic (voir « Ordres
 et configuration reçus »).
 
+Sur les deux brokers, l'agent n'accuse réception d'un message (QoS 1) qu'une fois que
+sa boucle l'a pris, et elle fait tout ce qu'elle a pris, même quand elle s'arrête. Un
+message qui arrive pendant l'arrêt (entre la fin de la boucle et la déconnexion) n'est
+donc pas acquitté : le broker le garde pour la session suivante, au lieu de l'oublier
+alors que personne ne l'a traité. Les accusés partent dans l'ordre des messages
+(MQTT l'exige) : un message non pris retient ceux qui le suivent, que l'agent ne
+prend pas non plus. Reste perdu ce que la boucle avait pris sans l'avoir fait quand le
+programme meurt d'un coup (plantage, chien de garde, coupure), comme le reste de ce
+qu'elle garde en mémoire.
+
 L'agent ne se dit relié au cloud qu'une fois abonné à ses ordres. Si le broker ne
 répond pas à l'abonnement (10 s), l'agent le redemande, avec le même délai croissant,
 tant que la connexion tient.
