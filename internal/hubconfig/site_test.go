@@ -2,6 +2,7 @@ package hubconfig
 
 import (
 	"bytes"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -90,6 +91,41 @@ func TestWriteSiteKeepsTheDevicesInTheStateFolder(t *testing.T) {
 	}
 	if DevicesSum(t.TempDir()) != "" {
 		t.Fatal("a folder without devices file has a sum")
+	}
+}
+
+// The sirens' names stay with them in the state folder, and the hub runs with them.
+// A site without names writes the file as before them.
+func TestWriteSiteKeepsTheSirensNames(t *testing.T) {
+	path, stateDir := copyExample(t)
+	s, _ := ReadSite(path)
+	if !maps.Equal(s.SirenNames, map[string]string{"dev_siren1": "Reserve"}) {
+		t.Fatalf("the file's names: %v", s.SirenNames)
+	}
+	s.SirenNames = nil
+	if err := WriteSite(path, s); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(stateDir, DevicesFile)); bytes.Contains(data, []byte("siren_names")) {
+		t.Fatalf("a site without names: %s", data)
+	}
+	if r, err := Load(path); err != nil || r.Hub.Escalation.DeviceNames["dev_siren1"] != "Sir\u00e8ne" {
+		t.Fatalf("the devices file's sirens come without the file's names: %v %v", r.Hub.Escalation.DeviceNames, err)
+	}
+
+	s.SirenNames = map[string]string{"dev_siren1": "Entr\u00e9e"}
+	if err := WriteSite(path, s); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ReadSite(path); err != nil || !reflect.DeepEqual(got, s) {
+		t.Fatalf("read back %+v (%v), wrote %+v", got, err, s)
+	}
+	if r, err := Load(path); err != nil || r.Hub.Escalation.DeviceNames["dev_siren1"] != "Entr\u00e9e" {
+		t.Fatalf("%v %v", r.Hub.Escalation.DeviceNames, err)
+	}
+	s.SirenNames = map[string]string{"dev_door": "Porte"}
+	if err := WriteSite(path, s); err == nil || !strings.Contains(err.Error(), "not in siren_ids") {
+		t.Fatalf("a name for a device that is no siren: %v", err)
 	}
 }
 

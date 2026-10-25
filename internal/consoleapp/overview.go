@@ -38,9 +38,13 @@ type Device struct {
 	Offline      bool
 	Zone         *install.Zone
 	Siren        bool
-	CanSound     bool
-	Keypad       bool
-	Kinds        []string // the kinds of zone it can serve
+	// SirenName is what the alerts call it, while a siren: its zone's name when it
+	// has a zone, or else the name it was given (SirenNamed), or the default.
+	SirenName  string
+	SirenNamed bool
+	CanSound   bool
+	Keypad     bool
+	Kinds      []string // the kinds of zone it can serve
 }
 
 // Event is a device event, for the tests.
@@ -127,6 +131,10 @@ func newDevice(site install.Site, id, model string, caps []string, paired, offli
 		Keypad: slices.Contains(caps, contract.CapKeypad)}
 	if z, ok := site.Zones[id]; ok {
 		d.Zone = &z
+	}
+	if d.Siren {
+		d.SirenName = site.SirenName(id)
+		_, d.SirenNamed = site.SirenNames[id]
 	}
 	for _, k := range install.ZoneKinds() {
 		if install.CanServe(k, caps) == nil {

@@ -250,7 +250,10 @@ appareil est retiré, l'adaptateur efface ses états retenus (message vide).
   par la centrale ; si la sirène refuse encore, les contacts reçoivent l'alerte
   `siren_failed`, sous un incident à elle qui nomme l'alarme (`alarm_incident`), et la
   centrale publie `alarm.siren_failed` pour l'historique (voir « Événements d'alarme »,
-  « Alertes » et `adapter-zigbee.md`).
+  « Alertes » et `adapter-zigbee.md`). Un `done` à un `siren.on` d'un cycle suivant la
+  fait revenir : un feu levé ensuite ne la dit plus muette. Ce `done` dit que la sirène
+  a rapporté l'état demandé pour un profil avec `confirm` ; sans `confirm` (la seule
+  sirène livrée), il dit seulement que l'ordre est parti.
 
 Commandes de la v1 : `siren.on`, `siren.off`. `device.identify` (faire clignoter
 ou biper un appareil pour le repérer) est réservée : rien ne l'envoie, aucun profil ne
@@ -353,7 +356,8 @@ le planning arme dans le moteur.
 
 `device_name` (facultatif) est le nom que la configuration du site donne à l'appareil
 (« Porte d'entrée »), 32 caractères au plus (un nom plus long est coupé). Il est absent
-quand l'appareil n'a pas de nom (pas de zone : le sabotage d'un clavier ou d'une sirène).
+quand l'appareil n'a pas de nom (pas de zone : le sabotage d'un clavier ou d'une sirène ;
+le nom d'une sirène, `siren_names`, ne sert qu'aux textes des alertes).
 La configuration nomme un appareil par sa zone : dans `alarm.triggered`, `zone` porte
 aujourd'hui le même nom, mais c'est `device_name` qui dit l'appareil. Les listes
 d'appareils (`bypassed`, `offline`, `low_battery` de `alarm.arming`) restent des
@@ -362,10 +366,11 @@ d'appareils (`bypassed`, `offline`, `low_battery` de `alarm.arming`) restent des
 `alarm.siren_failed` va à l'historique : l'alarme `incident` sonne sans cette sirène,
 le magasin est peut-être silencieux. Il ne termine aucun incident et ne fait sonner
 aucun téléphone : l'alerte aux contacts est l'`alert.request` `siren_failed`, sous un
-incident à elle, qui nomme l'alarme dans `alarm_incident` (voir « Alertes »). Une sirène
-n'a pas de nom dans la configuration du site, d'où l'absence de `device_name`. Après un
-redémarrage de la centrale en pleine alarme, l'événement peut repartir une fois : un
-lecteur range les pannes d'une alarme par sirène.
+incident à elle, qui nomme l'alarme dans `alarm_incident` (voir « Alertes »). Il ne
+porte pas de `device_name` : le nom d'une sirène dans la configuration d'installation
+(`siren_names`) ne sert aujourd'hui qu'au texte des alertes. Après un redémarrage de la
+centrale en pleine alarme, l'événement peut repartir une fois : un lecteur range les
+pannes d'une alarme par sirène.
 
 `incidents` d'`alarm.disarmed` (toujours présent) nomme les incidents que le
 désarmement termine : l'alarme qui sonne (dont l'`alarm.cleared` d'origine `user` part
@@ -378,9 +383,36 @@ de partir.
 
 `alarm.state` (retenu) contient l'état courant : `disarmed`, `arming`, `armed`,
 `entry_delay`, `triggered`. Il porte aussi `since`, et selon l'état :
-`ends_at` (arming, entry_delay), `cycle` et `of` (triggered), `locked_until`
-(si le désarmement est verrouillé), `next_scheduled` (prochain armement
-automatique).
+`ends_at` (arming, entry_delay, triggered), `cycle` et `of` (triggered),
+`incident` et `siren` (triggered), `locked_until` (si le désarmement est
+verrouillé), `next_scheduled` (prochain armement automatique).
+
+En `triggered`, l'état dit où en est l'alarme qui sonne : `incident` (l'incident qui
+sonne), `siren` (`on` pendant un cycle de sirène, `paused` pendant la pause entre deux
+cycles) et `ends_at` (la fin du cycle en cours si `siren` est `on`, la fin de la pause
+si `paused`). `incident` est celui d'`alarm.triggered`, celui des `alert.request` de
+cette alarme, et l'`alarm_incident` d'une `siren_failed` levée pendant elle (qui a son
+propre `incident`). Un feu ou une panique levé pendant l'alarme a aussi son propre
+incident, sans programme de sirène à lui : l'état garde celui de l'alarme qui sonne.
+
+`incident` et `siren` ne viennent qu'en `triggered`. `ends_at` vient aussi en
+`arming` et `entry_delay` (la fin du délai). En `triggered`, les trois vont ensemble
+ou aucun ne vient (`allOf` dans le schéma) ; une centrale antérieure au 25 octobre
+2026 n'en envoie aucun. Chaque étape du programme (fin d'un cycle, fin d'une pause)
+republie `alarm.state` : l'application dit « La sirène sonne (2/3) » ou « En pause,
+reprend à 16:20 » sans autre événement. `siren` est le programme du moteur, pas la
+sirène elle-même : une sirène muette se dit par `alarm.siren_failed`, et `siren` reste
+`on`. Les heures sont celles du programme : un redémarrage de la centrale en pleine
+alarme ne les décale pas (l'échéance est sauvegardée avec l'état du moteur, voir
+`engine.md`).
+
+Un `ends_at` déjà passé, quel que soit l'état, veut dire que l'état retenu n'est plus à
+jour. Le plus souvent, la centrale s'est tue depuis (coupure de courant, liaison
+perdue) et c'est le dernier état qu'elle a dit. Pendant sa fenêtre de démarrage (2 s),
+un événement d'appareil peut aussi republier l'état sauvegardé avant que le moteur
+rejoue les étapes manquées pendant l'arrêt ; l'état à jour suit alors aussitôt. Un
+lecteur ne le montre pas comme un compte à rebours en cours (« reprend à 16:20 » à
+16:40) : il s'appuie sur la présence en ligne de la centrale et attend l'état suivant.
 
 ### Alertes (`alert.*`)
 
@@ -390,7 +422,10 @@ automatique).
   `arming_bypassed`, `battery_low_hub`, `mains_restored`, `device_offline`, `battery_low`, `gsm_degraded`, `zigbee_down`, `siren_failed`), `urgency` (`critical`, `high`, `low`),
   `incident_at`, `zone`, `wave`, `contact`, `channel` (`app`, `whatsapp`, `sms`, `call`) et `text`, écrit
   pour son canal : seul le texte d'un SMS dit comment acquitter (`Repondre 1 si vous
-  gerez.`), l'application et WhatsApp ont leur propre bouton. `devices` (liste d'appareils, facultatif) est rempli quand l'alerte en concerne
+  gerez.`), l'application et WhatsApp ont leur propre bouton. Le texte d'un `fire` levé
+  pendant une alarme dont une sirène est connue muette finit par une phrase comme
+  `La sirene ne repond pas.` (avant la manière d'acquitter), sans autre champ (voir
+  `escalation.md`, « Un feu dit la sirène muette »). `devices` (liste d'appareils, facultatif) est rempli quand l'alerte en concerne
   plusieurs, par exemple `arming_bypassed`, et `percent` (0 à 100) le niveau de
   batterie pour les alertes de batterie.
   `alarm_incident` (facultatif) nomme l'alarme en cours dont l'alerte fait partie,
@@ -763,6 +798,19 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **25 octobre 2026, la sirène dans l'état** : `alarm.state` en `triggered` porte
+  trois champs facultatifs, tous ou aucun : `incident` (l'incident qui sonne), `siren`
+  (`on` pendant un cycle, `paused` pendant la pause) et `ends_at` (la fin du cycle ou
+  de la pause en cours). `incident` et `siren` ne viennent jamais dans un autre état ;
+  `ends_at` reste aussi la fin du délai en `arming` et `entry_delay`, comme avant
+  (`allOf` dans le schéma, voir « Événements d'alarme »). Pour la carte d'alarme de
+  l'application : « La sirène sonne (2/3) », « En pause, reprend à 16:20 ». Aucun
+  nouvel événement : chaque étape du programme de la sirène republiait déjà
+  `alarm.state`. Un `ends_at` déjà passé veut dire que l'état n'est plus à jour. Un
+  cloud qui ne connaît pas encore ces champs les accepte (un champ inconnu est permis),
+  et un cloud à jour accepte l'état d'une centrale antérieure, qui n'en porte aucun :
+  l'ordre de mise à jour est libre, à condition que le cloud recopie `alarm-state.json`
+  à l'octet et ne rende aucun de ces champs obligatoire.
 - **24 octobre 2026, la sirène muette** : `alert.request` porte deux champs
   facultatifs, `alarm_incident` (l'alarme en cours dont l'alerte fait partie) et
   `alarm_handled` (cette alarme est déjà prise en charge : l'alerte se dit sans faire

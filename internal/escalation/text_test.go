@@ -1,6 +1,7 @@
 package escalation
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -195,5 +196,111 @@ func TestTheQuietSirenTextSaysTheAlarmIsHandled(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// A siren is named as the installer named it, or by its default name. A name that
+// already says "sirene" is the subject itself; another goes between brackets.
+func TestTheSirenTextReadsWellWhateverItsName(t *testing.T) {
+	for name, want := range map[string]string{
+		"Sir\u00e8ne":            "Boutique Lome: la sirene ne repond pas a 21:04",
+		"Sir\u00e8ne 2":          "Boutique Lome: la sirene 2 ne repond pas a 21:04",
+		"SIRENE ext\u00e9rieure": "Boutique Lome: la sirene exterieure ne repond pas a 21:04",
+		"R\u00e9serve":           "Boutique Lome: la sirene (Reserve) ne repond pas a 21:04",
+		"Sir\u00e8nes du fond":   "Boutique Lome: la sirene (Sirenes du fond) ne repond pas a 21:04",
+	} {
+		e := newEsc(t, func(c *Config) { c.DeviceNames["dev_siren1"] = name })
+		if text := textOf(t, raise(e, t0, KindSirenFailed, "dev_siren1"), ChannelApp); !strings.Contains(text, want) {
+			t.Errorf("%s: %q, want %q", name, text, want)
+		}
+	}
+	e := newEsc(t, func(c *Config) { c.DeviceNames["dev_siren1"] = "Sir\u00e8ne 2" })
+	e.Handle(Ack{Now: t0, Incident: "x", Contact: "owner"})
+	out := e.Handle(Raise{Now: t0, Incident: "y", Kind: KindSirenFailed, Urgency: UrgencyHigh, Devices: []string{"dev_siren1"}, Alarm: "x"})
+	if text := textOf(t, out, ChannelApp); !strings.Contains(text, "Boutique Lome: la sirene 2 n'a pas sonne a 21:04.") {
+		t.Errorf("quiet: %q", text)
+	}
+}
+
+// fireWith raises a fire while the sirens are known silent, and returns its texts by
+// the application and by SMS.
+func fireWith(t *testing.T, e *Escalation, silent ...string) (app, sms string) {
+	t.Helper()
+	out := e.Handle(Raise{Now: t0, Incident: "f", Kind: KindFire, Urgency: UrgencyCritical, Devices: []string{"dev_back"}, Silent: silent})
+	app, sms = textOf(t, out, ChannelApp), textOf(t, out, ChannelSMS)
+	checkText(t, app)
+	checkText(t, sms)
+	return app, sms
+}
+
+// A fire raised while a siren is known silent says so: the people on the site are not
+// warned by it. The sentence comes before the way to answer, and stays whole when the
+// text is cut; names too long, or that would cut the message, are left out.
+func TestAFireSaysTheSirensKnownSilent(t *testing.T) {
+	names := func(c *Config) {
+		c.DeviceNames["dev_siren1"], c.DeviceNames["dev_siren2"] = "Sir\u00e8ne 1", "R\u00e9serve"
+		c.DeviceNames["dev_long1"], c.DeviceNames["dev_long2"] = strings.Repeat("Grande sirene ", 2), strings.Repeat("Petite sirene ", 2)
+	}
+	const fire = "ALARME INCENDIE Boutique Lome: fumee detectee (Porte arriere) a 21:04."
+	for _, c := range []struct {
+		silent []string
+		want   string
+	}{
+		{nil, ""},
+		{[]string{"dev_siren1"}, " La sirene 1 ne repond pas."},
+		{[]string{"dev_siren2"}, " La sirene (Reserve) ne repond pas."},
+		{[]string{"dev_siren1", "dev_siren2"}, " Les sirenes (Sirene 1, Reserve) ne repondent pas."},
+		{[]string{"dev_long1", "dev_long2"}, " Les sirenes ne repondent pas."},
+	} {
+		app, sms := fireWith(t, newEsc(t, names), c.silent...)
+		if app != fire+c.want || sms != fire+c.want+ackHint {
+			t.Errorf("%v:\n%q\n%q", c.silent, app, sms)
+		}
+	}
+	long := func(c *Config) { names(c); c.SiteName = strings.Repeat("Grande Boutique ", 8) }
+	if _, sms := fireWith(t, newEsc(t, long), "dev_siren2"); !strings.HasSuffix(sms, "... La sirene ne repond pas."+ackHint) {
+		t.Errorf("cut: %q", sms)
+	}
+}
+
+// The sirens' names give way to the message: with the name of a real shop and of one
+// of its zones, naming two silent sirens would cut where and when the fire started,
+// though the message fits whole with the short sentence.
+func TestAFiresPlaceAndHourComeBeforeTheSilentSirensNames(t *testing.T) {
+	shop := func(c *Config) {
+		c.SiteName = "Quincaillerie Esp\u00e9rance B\u00e8-Kpota"
+		c.DeviceNames["dev_back"] = "Arri\u00e8re-boutique c\u00f4t\u00e9 cour"
+		c.DeviceNames["dev_siren1"], c.DeviceNames["dev_siren2"] = "Sir\u00e8ne", "Sir\u00e8ne 2"
+	}
+	const fire = "ALARME INCENDIE Quincaillerie Esperance Be-Kpota: fumee detectee (Arriere-boutique cote cour) a 21:04."
+	app, sms := fireWith(t, newEsc(t, shop), "dev_siren1", "dev_siren2")
+	if app != fire+" Les sirenes (Sirene, Sirene 2) ne repondent pas." {
+		t.Errorf("the application, where the names fit: %q", app)
+	}
+	if sms != fire+" Les sirenes ne repondent pas."+ackHint {
+		t.Errorf("the SMS must keep the zone and the hour: %q", sms)
+	}
+	if _, sms := fireWith(t, newEsc(t, shop), "dev_siren2"); sms != fire+" La sirene 2 ne repond pas."+ackHint {
+		t.Errorf("one siren, whose name fits: %q", sms)
+	}
+}
+
+// The reminders of a fire still say it, after a restart too: the silent sirens are
+// saved with the incident.
+func TestAFiresRemindersStillSayTheSilentSirens(t *testing.T) {
+	a := newEsc(t)
+	a.Handle(Raise{Now: t0, Incident: "f", Kind: KindFire, Urgency: UrgencyCritical, Devices: []string{"dev_back"}, Silent: []string{"dev_siren1"}})
+	raw, err := json.Marshal(a.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snap Snapshot
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		t.Fatal(err)
+	}
+	b := newEsc(t)
+	b.Restore(snap)
+	if text := textOf(t, tick(b, t0.Add(10*time.Minute)), ChannelApp); !strings.HasSuffix(text, " La sirene (dev_siren1) ne repond pas.") {
+		t.Fatalf("a reminder after a restart: %q", text)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -187,7 +188,7 @@ func TestUsageAndArguments(t *testing.T) {
 	for _, args := range [][]string{
 		{}, {"fly"}, {"devices"}, {"devices", "-nonsense"}, {"remove", "-config", path},
 		{"zone", "-config", path, "a", "b"}, {"siren", "-config", path, "add"},
-		{"siren", "-config", path, "paint", "dev_door"},
+		{"siren", "-config", path, "paint", "dev_door"}, {"siren", "-config", path, "name"},
 	} {
 		if code, _, errb := cli(ctx, args...); code != 2 || errb == "" {
 			t.Errorf("%v: %d %q", args, code, errb)
@@ -219,6 +220,24 @@ func TestOfflineChangesNeedNoBroker(t *testing.T) {
 		t.Fatalf("%d %q", code, errb)
 	}
 	if code, _, errb := cli(ctx, "siren", "-config", path, "remove", "dev_nope"); code != 1 || !strings.Contains(errb, "not a siren") {
+		t.Fatalf("%d %q", code, errb)
+	}
+
+	// A siren is named for the alerts' texts; a device that is no siren is not.
+	code, out, errb = cli(ctx, "siren", "-config", path, "name", "-name", "Comptoir", "dev_siren1")
+	if code != 0 || !strings.Contains(out, `dev_siren1: siren "Reserve" is now "Comptoir"`) || !strings.Contains(out, "systemctl restart") {
+		t.Fatalf("%d %q %q", code, out, errb)
+	}
+	if n := readSite(t, path).SirenNames["dev_siren1"]; n != "Comptoir" {
+		t.Fatalf("the name in the file: %q", n)
+	}
+	if code, out, _ := cli(ctx, "siren", "-config", path, "name", "dev_siren1", "-name", "Comptoir"); code != 0 || !strings.Contains(out, "already named") {
+		t.Fatalf("the same name: %d %q", code, out)
+	}
+	if code, _, errb := cli(ctx, "siren", "-config", path, "name", "-name", "Porte", "dev_door"); code != 1 || !strings.Contains(errb, "dev_door is not a siren") {
+		t.Fatalf("%d %q", code, errb)
+	}
+	if code, _, errb := cli(ctx, "siren", "-config", path, "name", "dev_siren1"); code != 1 || !strings.Contains(errb, "siren name is empty") {
 		t.Fatalf("%d %q", code, errb)
 	}
 	if _, err := hubconfig.Load(path); err != nil {
@@ -258,7 +277,7 @@ func TestAnInstallation(t *testing.T) {
 		t.Fatalf("check: %d %q %q", code, out, errb)
 	}
 	code, out, _ = cli(ctx, "devices", "-config", path)
-	for _, want := range []string{"Zigbee2MQTT: online, 8 device(s), pairing closed", `dev_door`, `zone "Entree" (entry)`, "dev_siren1", "siren"} {
+	for _, want := range []string{"Zigbee2MQTT: online, 8 device(s), pairing closed", `dev_door`, `zone "Entree" (entry)`, "dev_siren1", `siren "Reserve"`} {
 		if code != 0 || !strings.Contains(out, want) {
 			t.Fatalf("devices: missing %q in %d %q", want, code, out)
 		}
@@ -304,7 +323,7 @@ func TestAnInstallation(t *testing.T) {
 	if code, _, errb := cli(ctx, "zone", "dev_k7p2", "-config", path, "-name", "Reserve", "-kind", "garage"); code != 1 || !strings.Contains(errb, "unknown zone kind") {
 		t.Fatalf("unknown kind: %d %q", code, errb)
 	}
-	if code, _, errb := cli(ctx, "zone", "dev_k7p2", "-config", path, "-name", "", "-kind", "instant"); code != 1 || !strings.Contains(errb, "empty zone name") {
+	if code, _, errb := cli(ctx, "zone", "dev_k7p2", "-config", path, "-name", "", "-kind", "instant"); code != 1 || !strings.Contains(errb, "zone name is empty") {
 		t.Fatalf("empty name: %d %q", code, errb)
 	}
 	code, out, errb = cli(ctx, "zone", "dev_k7p2", "-config", path, "-name", "Reserve", "-kind", "instant")
@@ -362,8 +381,18 @@ func TestAnInstallation(t *testing.T) {
 		t.Fatal("the only siren was removed from the network")
 	}
 	// With its replacement in place, it can go.
-	if code, out, errb := cli(ctx, "siren", "-config", path, "-force", "add", "dev_siren2"); code != 0 || !strings.Contains(out, "now a siren") {
+	if code, out, errb := cli(ctx, "siren", "-config", path, "-force", "add", "-name", "Vitrine", "dev_siren2"); code != 0 ||
+		!strings.Contains(out, "now a siren") || !strings.Contains(out, `dev_siren2: siren named "Vitrine"`) {
 		t.Fatalf("%d %q %q", code, out, errb)
+	}
+	if code, _, errb := cli(ctx, "siren", "-config", path, "-force", "add", "-name", " ", "dev_siren3"); code != 1 ||
+		!strings.Contains(errb, "siren name is empty") || slices.Contains(readSite(t, path).SirenIDs, "dev_siren3") {
+		t.Fatalf("a bad name is refused before the siren is added: %d %q", code, errb)
+	}
+	if code, _, errb := cli(ctx, "siren", "-config", path, "-force", "add", "-name", "Four", "dev_smoke"); code != 1 ||
+		!strings.Contains(errb, "dev_smoke has a zone: the alerts call it by its zone's name") ||
+		slices.Contains(readSite(t, path).SirenIDs, "dev_smoke") {
+		t.Fatalf("a device with a zone takes no siren name, refused before the siren is added: %d %q", code, errb)
 	}
 	code, out, errb = cli(ctx, "remove", "-config", path, "dev_siren1")
 	if code != 0 || !strings.Contains(out, "siren removed from the configuration") {
@@ -371,6 +400,9 @@ func TestAnInstallation(t *testing.T) {
 	}
 	if code, out, errb := cli(ctx, "siren", "-config", path, "remove", "dev_siren2"); code != 1 || !strings.Contains(errb, "at least one siren") {
 		t.Fatalf("%d %q %q", code, out, errb)
+	}
+	if s := readSite(t, path); !maps.Equal(s.SirenNames, map[string]string{"dev_siren2": "Vitrine"}) {
+		t.Fatalf("a siren removed from the network leaves its name behind: %v", s.SirenNames)
 	}
 	if _, err := hubconfig.Load(path); err != nil {
 		t.Fatalf("the file no longer loads: %v", err)

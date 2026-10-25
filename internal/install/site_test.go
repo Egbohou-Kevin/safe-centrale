@@ -21,7 +21,7 @@ type memSites struct {
 func (m *memSites) Read() (Site, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return Site{Zones: maps.Clone(m.site.Zones), SirenIDs: slices.Clone(m.site.SirenIDs)}, nil
+	return Site{Zones: maps.Clone(m.site.Zones), SirenIDs: slices.Clone(m.site.SirenIDs), SirenNames: maps.Clone(m.site.SirenNames)}, nil
 }
 
 func (m *memSites) Check(s Site) error {
@@ -123,6 +123,78 @@ func TestSirens(t *testing.T) {
 	}
 }
 
+// A siren gets a name for the alerts' texts. Without one, they call it "Sirene" when
+// it is the only one, and by its rank among several.
+func TestSirenNames(t *testing.T) {
+	sites := newSites()
+	e := NewEditor(sites)
+	if s, _ := sites.Read(); s.SirenName("dev_siren") != "Sir\u00e8ne" {
+		t.Fatalf("the only siren, unnamed: %q", s.SirenName("dev_siren"))
+	}
+	if _, err := e.NameSiren("dev_door", "Porte"); !errors.Is(err, ErrNoSiren) || err.Error() != "dev_door is not a siren" {
+		t.Fatalf("a zone is not a siren: %v", err)
+	}
+	for name, want := range map[string]error{" ": ErrEmptyName, strings.Repeat("x", 33): ErrNameTooLong, "A\u202eB": nil} {
+		if _, err := e.NameSiren("dev_siren", name); err == nil || (want != nil && !errors.Is(err, want)) || !strings.HasPrefix(err.Error(), "siren name") {
+			t.Errorf("name %q: %v", name, err)
+		}
+	}
+	if old, err := e.NameSiren("dev_siren", "Entr\u00e9e"); old != "" || err != nil {
+		t.Fatalf("%q %v", old, err)
+	}
+	writes := sites.writes
+	if old, err := e.NameSiren("dev_siren", "Entr\u00e9e"); old != "Entr\u00e9e" || err != nil || sites.writes != writes {
+		t.Fatalf("the same name again must write nothing: %q %v", old, err)
+	}
+	if _, err := e.AddSiren("dev_bell", registered("dev_bell", "siren")); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := sites.Read(); s.SirenName("dev_siren") != "Entr\u00e9e" || s.SirenName("dev_bell") != "Sir\u00e8ne 2" {
+		t.Fatalf("named, and the second of two: %q, %q", s.SirenName("dev_siren"), s.SirenName("dev_bell"))
+	}
+
+	// A siren that stops being one forgets its name; the other is alone again.
+	if _, err := e.RemoveSiren("dev_siren"); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := sites.Read(); len(s.SirenNames) != 0 || s.SirenName("dev_bell") != "Sir\u00e8ne" {
+		t.Fatalf("%+v", s)
+	}
+}
+
+// A siren that also has a zone (a smoke detector that sounds) has its zone's name: it
+// takes no name of its own, a zone given to a named siren replaces its name, and the
+// default names count only the sirens without a zone.
+func TestASirenWithAZoneHasItsZonesName(t *testing.T) {
+	sites := newSites()
+	e := NewEditor(sites)
+	smoke := registered("dev_smoke", "smoke", "siren")
+	if _, err := e.AddSiren("dev_smoke", smoke); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.NameSiren("dev_smoke", "Cuisine haute"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.SetZone("dev_smoke", Zone{Name: "Cuisine", Kind: "24h_fire"}, smoke); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := sites.Read()
+	if len(s.SirenNames) != 0 || s.SirenName("dev_smoke") != "Cuisine" || s.SirenName("dev_siren") != "Sir\u00e8ne" {
+		t.Fatalf("%+v: %q, %q", s, s.SirenName("dev_smoke"), s.SirenName("dev_siren"))
+	}
+	if _, err := e.NameSiren("dev_smoke", "Reserve"); !errors.Is(err, ErrHasZone) ||
+		err.Error() != "dev_smoke has a zone: the alerts call it by its zone's name" {
+		t.Fatalf("a siren with a zone named: %v", err)
+	}
+	// Without its zone, it counts again.
+	if _, err := e.Unzone("dev_smoke"); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := sites.Read(); s.SirenName("dev_siren") != "Sir\u00e8ne 1" || s.SirenName("dev_smoke") != "Sir\u00e8ne 2" {
+		t.Fatalf("%q, %q", s.SirenName("dev_siren"), s.SirenName("dev_smoke"))
+	}
+}
+
 func TestARemovalIsCheckedThenFinished(t *testing.T) {
 	sites := newSites()
 	e := NewEditor(sites)
@@ -149,9 +221,11 @@ func TestARemovalIsCheckedThenFinished(t *testing.T) {
 }
 
 func TestSiteWithoutLeavesTheOriginalAlone(t *testing.T) {
-	s := Site{Zones: map[string]Zone{"a": {Name: "A", Kind: "entry"}}, SirenIDs: []string{"a", "b"}}
+	s := Site{Zones: map[string]Zone{"a": {Name: "A", Kind: "entry"}}, SirenIDs: []string{"a", "b"},
+		SirenNames: map[string]string{"a": "Comptoir", "b": "Reserve"}}
 	w := s.Without("a")
-	if len(w.Zones) != 0 || !slices.Equal(w.SirenIDs, []string{"b"}) || len(s.Zones) != 1 || len(s.SirenIDs) != 2 {
+	if len(w.Zones) != 0 || !slices.Equal(w.SirenIDs, []string{"b"}) || !maps.Equal(w.SirenNames, map[string]string{"b": "Reserve"}) ||
+		len(s.Zones) != 1 || len(s.SirenIDs) != 2 || len(s.SirenNames) != 2 {
 		t.Fatalf("%+v %+v", s, w)
 	}
 	if (Site{}).Without("a").Zones == nil {

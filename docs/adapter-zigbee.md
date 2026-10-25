@@ -243,7 +243,19 @@ arrêtée avec un code), l'alerte part discrète, sans appel ni sonnerie (voir
 `escalation.md`, « Sirène muette pendant une alarme »). La centrale publie aussi
 `alarm.siren_failed` (l'alarme et la sirène) pour l'historique (voir `contract.md`).
 Un échec qui arrive dans la dernière seconde du cycle n'est ni renvoyé ni compté : le
-cycle suivant renvoie l'ordre, avec ses propres tentatives.
+cycle suivant renvoie l'ordre, avec ses propres tentatives. Les textes nomment la
+sirène par son nom d'installation (`siren_names`), ou par défaut « Sirène »,
+« Sirène 2 » (voir `escalation.md`, « Le nom d'une sirène »).
+
+Une sirène signalée muette le reste, pour la centrale, jusqu'à la fin de l'alarme ou
+jusqu'à ce qu'un `siren.on` d'un cycle suivant lui soit répondu `done`. Pendant ce
+temps, un feu levé dit dans son texte que la sirène ne répond pas (voir
+`escalation.md`, « Un feu dit la sirène muette »). Un `done` ne fait rien d'autre : ni
+nouvel événement, ni message aux contacts. Il ne dit que ce que le profil sait : avec
+`confirm`, la sirène a rapporté l'état demandé ; sans, l'ordre est seulement parti
+(voir plus haut). La Heiman HS2WD, seule sirène livrée, n'a pas de `confirm` : pour
+elle, `done` ne prouve pas qu'elle sonne, et une sirène signalée muette parce que
+l'adaptateur était bloqué (`expired`) revient au premier ordre envoyé après sa reprise.
 
 ## État de la liaison
 

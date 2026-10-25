@@ -177,6 +177,12 @@ Les alertes continuent de suivre leur escalade pendant ce temps.
 Un désarmement ou une coupure de sirène avec un code valide arrête tout
 immédiatement.
 
+L'état publié (`alarm.state`) suit ce programme : en `triggered`, il nomme l'incident
+qui sonne, dit si la sirène est dans un cycle (`siren` à `on`) ou dans la pause
+(`paused`), et jusqu'à quand (`ends_at`, voir `contract.md`). Ce sont les heures du
+programme : un tic en retard ne les décale pas, et un redémarrage non plus (l'échéance
+est dans l'état sauvegardé, et `Boot` rejoue à leur heure les étapes manquées).
+
 Quand la sirène s'arrête seule, l'alarme n'est pas finie pour les contacts : son
 escalade continue. Le moteur retient les intrusions et les sabotages de l'armement
 en cours dont la sirène s'est arrêtée seule (dans son état sauvegardé, donc après un
@@ -192,7 +198,12 @@ La centrale vérifie que chaque sirène prend l'ordre : un `siren.on` refusé es
 quelques fois, puis les contacts reçoivent l'alerte `siren_failed` (voir
 `adapter-zigbee.md`). Elle nomme l'alarme qui sonne, et part discrète si cette alarme est
 déjà prise en charge (voir `escalation.md`, « Sirène muette pendant une alarme »). Le
-moteur n'en sait rien : il continue ses cycles.
+moteur n'en sait rien : il continue ses cycles. Les textes nomment la sirène par son
+nom dans la configuration d'installation (`siren_names`), ou par défaut « Sirène »,
+« Sirène 2 ». Jusqu'à la fin de cette alarme, ou jusqu'à ce qu'elle prenne de nouveau
+un ordre de sonner, la sirène est connue muette : un feu levé entre-temps le dit dans
+son texte, puisqu'il n'a pas de programme de sirène à lui et que ses occupants ne
+l'entendent pas (voir `escalation.md`, « Un feu dit la sirène muette »).
 
 ## Sources d'armement et de désarmement
 
@@ -365,7 +376,8 @@ compte à rebours) et `alarm.armed` quand le système est réellement armé.
 Le moteur lève des alertes d'un genre (`intrusion`, `fire`, `panic`, `tamper`,
 `auth_failed`, `arming_bypassed`) ; la supervision lève les siennes (appareil muet,
 pile faible, passerelles) ; la centrale lève `siren_failed` pour une sirène qui ne
-prend pas l'ordre de sonner, rattachée à l'alarme qui sonne. L'escalade, dans la
+prend pas l'ordre de sonner, rattachée à l'alarme qui sonne, et donne à un feu levé
+pendant cette alarme les sirènes connues muettes, que son texte dit. L'escalade, dans la
 centrale, en fait les `alert.request` : qui est prévenu, dans quel ordre et après
 combien de temps sans réponse est décrit dans le document d'escalade. Cette logique
 reste sur le site pour fonctionner sans internet.

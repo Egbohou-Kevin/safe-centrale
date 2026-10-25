@@ -172,6 +172,9 @@ func hubConfig(f file) (hub.Config, error) {
 	if cfg.Engine.Zones, err = zones(f.Zones); err != nil {
 		return hub.Config{}, err
 	}
+	if err := sirenNames(f.SirenIDs, f.Zones, f.SirenNames); err != nil {
+		return hub.Config{}, err
+	}
 	if cfg.Engine.Closing, err = closing(f.Closing); err != nil {
 		return hub.Config{}, err
 	}

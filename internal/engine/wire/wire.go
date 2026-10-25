@@ -248,7 +248,7 @@ func StateData(s engine.State) (contract.AlarmStateData, error) {
 	if !ok {
 		return contract.AlarmStateData{}, fmt.Errorf("wire: unknown mode %q", s.Mode)
 	}
-	return contract.AlarmStateData{
+	d := contract.AlarmStateData{
 		State:       mode,
 		Since:       contract.TS(s.Since),
 		EndsAt:      contract.TSPtr(s.EndsAt),
@@ -257,5 +257,12 @@ func StateData(s engine.State) (contract.AlarmStateData, error) {
 		LockedUntil: contract.TSPtr(s.LockedUntil),
 
 		NextScheduled: contract.TSPtr(s.NextScheduled),
-	}, nil
+	}
+	if s.Incident != "" { // triggered
+		d.Incident, d.Siren = s.Incident, contract.SirenPaused
+		if s.SirenOn {
+			d.Siren = contract.SirenOn
+		}
+	}
+	return d, nil
 }

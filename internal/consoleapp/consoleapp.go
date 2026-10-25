@@ -109,6 +109,8 @@ var (
 	// The installer's application's refusals, named here for the page.
 	ErrNotASiren   = install.ErrCannotSound
 	ErrNoZone      = install.ErrNoZone
+	ErrNoSiren     = install.ErrNoSiren
+	ErrHasZone     = install.ErrHasZone
 	ErrLastSiren   = install.ErrLastSiren
 	ErrEmptyName   = install.ErrEmptyName
 	ErrNameTooLong = install.ErrNameTooLong

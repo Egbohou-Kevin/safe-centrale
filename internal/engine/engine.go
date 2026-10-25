@@ -84,8 +84,12 @@ func (e *Engine) State(now time.Time) State {
 	case ModeArming, ModeEntryDelay:
 		st.EndsAt = e.s.Deadline
 	case ModeTriggered:
+		// The deadline is the siren schedule's own: saved with the snapshot and
+		// replayed at its time by Boot, it stays right across a restart.
 		if inc := e.s.Incident; inc != nil {
+			st.Incident, st.SirenOn = inc.ID, inc.SirenOn
 			st.Cycle, st.Of = inc.Cycle, e.cfg.SirenCycles
+			st.EndsAt = e.s.Deadline
 		}
 	}
 	if now.Before(e.s.LockedUntil) {

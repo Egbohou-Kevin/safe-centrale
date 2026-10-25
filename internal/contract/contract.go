@@ -168,6 +168,12 @@ const (
 	StateTriggered  = "triggered"
 )
 
+// Siren schedule of a triggered alarm (siren of alarm.state).
+const (
+	SirenOn     = "on"     // in a siren cycle
+	SirenPaused = "paused" // in the pause between two cycles
+)
+
 // Acknowledgement statuses (alarm.ack).
 const (
 	AckDone    = "done"

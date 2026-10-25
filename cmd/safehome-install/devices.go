@@ -58,7 +58,7 @@ func use(site install.Site, d contract.RegistryDevice) string {
 		uses = append(uses, fmt.Sprintf("zone %q (%s)", z.Name, z.Kind))
 	}
 	if slices.Contains(site.SirenIDs, d.DeviceID) {
-		uses = append(uses, "siren")
+		uses = append(uses, fmt.Sprintf("siren %q", site.SirenName(d.DeviceID)))
 	}
 	if slices.Contains(d.Capabilities, contract.CapKeypad) {
 		uses = append(uses, "keypad")
