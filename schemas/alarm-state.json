@@ -23,7 +23,7 @@
     "ends_at": {
       "type": "string",
       "format": "date-time",
-      "description": "UTC, à la milliseconde. Fin du délai (arming, entry_delay) ; triggered : fin du cycle de sirène si siren est on, fin de la pause si paused. Déjà passé : la centrale n'a rien publié depuis"
+      "description": "UTC, à la milliseconde. Fin du délai (arming, entry_delay) ; triggered : fin du cycle de sirène si siren est on, fin de la pause si paused. Déjà passé : l'état n'est plus à jour (le plus souvent, la centrale s'est tue)"
     },
     "incident": {
       "type": "string",
