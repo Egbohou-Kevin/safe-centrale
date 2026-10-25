@@ -228,16 +228,22 @@ que l'installateur lui donne (`siren_names` dans la configuration d'installation
 `operations.md`), plus par son identifiant (`dev_siren1`). Les choix par défaut, pris
 le 25 octobre 2026 :
 
-- Sans nom, une sirène s'appelle « Sirène » si c'est la seule du site, et « Sirène 1 »,
-  « Sirène 2 »… (dans l'ordre où elles ont été ajoutées) s'il y en a plusieurs.
-  `safehome-install check` et la console le signalent sur un site à plusieurs sirènes :
-  personne ne sait laquelle est la « 2 ».
+- Sans nom, une sirène s'appelle « Sirène » si c'est la seule du site sans zone, et
+  « Sirène 1 », « Sirène 2 »… (dans l'ordre où elles ont été ajoutées) s'il y en a
+  plusieurs. `safehome-install check` et la console le signalent quand il y en a
+  plusieurs : personne ne sait laquelle est la « 2 ».
 - Un nom qui dit déjà « sirène » (les noms par défaut, ou « Sirène extérieure ») sert
   de sujet : `la sirene ne repond pas`, `la sirene 2 ne repond pas`,
   `la sirene exterieure ne repond pas`. Un autre nom, celui d'un lieu, va entre
   parenthèses : `la sirene (Reserve) ne repond pas`.
 - Un appareil qui a aussi une zone (un détecteur de fumée qui sonne) garde le nom de sa
-  zone.
+  zone, et n'en prend pas d'autre : la centrale refuse un `siren_names` pour lui,
+  l'outil et la console refusent de le nommer, et lui donner une zone remplace son nom
+  de sirène. Il ne compte pas dans les rangs des noms par défaut : avec une seule autre
+  sirène, celle-ci s'appelle « Sirène », jamais « Sirène 2 » sans « Sirène 1 ». La
+  console, `safehome-install devices` et `check` le nomment comme les alertes. Choix du
+  25 octobre 2026, après une revue : ces outils ne regardaient pas la zone, montraient
+  un nom que les alertes ne disaient pas et acceptaient un nom de sirène sans effet.
 - Le nom suit la règle d'un nom de zone : 32 caractères au plus, sans caractère de
   contrôle ni caractère invisible. Les accents sont retirés dans les textes, comme pour
   les zones.
@@ -253,17 +259,33 @@ Décidé le 24 octobre 2026, fait le 25 octobre : un feu levé pendant une alarm
 sirène est connue muette le dit à la fin de son texte, avant la manière de répondre :
 `ALARME INCENDIE Boutique Lome: fumee detectee (Cuisine) a 21:09. La sirene ne repond
 pas. Repondre 1 si vous gerez.` Les personnes sur place ne sont pas prévenues par
-cette sirène. La phrase n'est jamais coupée ; avec plusieurs sirènes muettes, elle les
-nomme (`Les sirenes (Sirene 1, Reserve) ne repondent pas.`), sauf si leurs noms
-prennent trop de place.
+cette sirène. La phrase n'est jamais coupée. Elle nomme les sirènes muettes
+(`La sirene (Reserve) ne repond pas.`, `Les sirenes (Sirene 1, Reserve) ne repondent
+pas.`), sauf si leurs noms prennent trop de place : plus de 64 caractères, ou assez pour
+que le message ne tienne plus en entier. Elle dit alors seulement `La sirene ne repond
+pas.` ou `Les sirenes ne repondent pas.` Choix du 25 octobre 2026, après une revue :
+l'endroit et l'heure d'un feu passent avant le nom des sirènes. Avec le nom d'une vraie
+boutique (`Quincaillerie Esperance Be-Kpota`) et d'une de ses zones
+(`Arriere-boutique cote cour`), nommer deux sirènes faisait couper la zone et l'heure du
+SMS, qui tient en entier avec la phrase courte. Si même la phrase courte ne laisse pas
+la place, c'est le message qui est coupé, comme pour un nom de site trop long : la
+phrase sur la sirène et la manière de répondre restent entières.
 
-Une sirène est connue muette, choix du 25 octobre 2026, quand sa `siren_failed` n'est
-pas encore finie :
+Une sirène est connue muette, choix du 25 octobre 2026 :
 
-- elle a été signalée muette pendant l'alarme qui sonne encore ;
-- et elle n'a pas pris d'ordre de sonner depuis (un `siren.on` répondu `done` à un cycle
-  suivant la fait revenir ; elle redevient muette si elle refuse de nouveau, sans
-  nouvelle alerte).
+- quand elle a été signalée muette pendant l'alarme qui sonne encore ;
+- et qu'aucun `siren.on` d'un cycle suivant ne lui a été répondu `done` depuis. Un
+  `done` à un `siren.off`, à un ordre plus ancien ou à une autre commande ne compte pas.
+  Elle redevient muette si elle refuse de nouveau, sans nouvelle alerte.
+
+C'est l'alarme qui compte, pas l'incident `siren_failed` : acquitter cette alerte la
+termine mais laisse la sirène connue muette, et une sirène revenue n'est plus connue
+muette même si sa `siren_failed` continue son escalade. Un `done` ne prouve pas que la
+sirène sonne : avec un profil qui a un `confirm`, l'appareil a rapporté l'état demandé ;
+sans, l'ordre est seulement parti vers Zigbee2MQTT. C'est le cas de la seule sirène
+livrée, la Heiman HS2WD, qui ne rapporte rien quand elle sonne : une sirène signalée
+muette parce que l'adaptateur était bloqué (`expired`) revient au premier ordre envoyé
+après sa reprise (voir `adapter-zigbee.md`).
 
 Une fois cette alarme finie (désarmement, sirène coupée, fin des cycles), rien n'est
 dit : l'alarme suivante redonne l'ordre à chaque sirène, et une sirène qui refuse encore

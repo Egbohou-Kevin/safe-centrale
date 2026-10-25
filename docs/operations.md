@@ -114,7 +114,8 @@ l'alerte « capteurs injoignables »).
 `siren_ids` (les sirènes) et `siren_names` (facultatif : le nom d'une sirène dans les
 textes des alertes, par identifiant, par exemple `{"dev_siren1": "Reserve"}` ; même
 règle qu'un nom de zone ; une sirène sans nom s'y appelle « Sirène », ou « Sirène 2 »
-parmi plusieurs, voir `escalation.md`), `closing` (heure de fermeture par jour, `"off"`
+parmi plusieurs ; une sirène qui a aussi une zone garde le nom de sa zone et n'a pas de
+`siren_names`, voir `escalation.md`), `closing` (heure de fermeture par jour, `"off"`
 pour ne pas armer ce jour-là), `access.iterations` (coût du hachage, à régler sur la
 centrale réelle).
 
@@ -441,7 +442,7 @@ GOOS=linux GOARCH=arm64 go build -o safehome-install ./cmd/safehome-install
 | `zone -config F -name NOM -kind TYPE APPAREIL` | Donne sa zone à un appareil (ou la change) |
 | `unzone -config F APPAREIL` | Retire la zone d'un appareil |
 | `siren -config F add\|remove APPAREIL` | Fait d'un appareil une sirène, ou plus ; `add -name NOM` la nomme aussi |
-| `siren -config F name -name NOM APPAREIL` | Donne à une sirène son nom dans les textes des alertes (ou le change) |
+| `siren -config F name -name NOM APPAREIL` | Donne à une sirène son nom dans les textes des alertes (ou le change) ; une sirène qui a une zone garde le nom de sa zone |
 | `remove -config F APPAREIL` | Retire un appareil du réseau pour de bon, et de la configuration (zone, sirène) |
 | `watch -config F [APPAREIL]` | Affiche les événements en direct, avec le nom de la zone : pour les tests (déclencher chaque appareil). Les codes du clavier ne s'affichent jamais |
 | `check -config F` | Compare la configuration et les appareils appairés |
@@ -482,11 +483,11 @@ Ce que l'outil vérifie avant de toucher à quoi que ce soit :
 
 - comme **problèmes** (code de sortie 1) : une zone qui ne pourra jamais se déclencher,
   un type de zone inconnu, une zone sans nom, une sirène qui ne sait pas sonner, un nom
-  de sirène fautif ;
+  de sirène fautif ou donné à une sirène qui a une zone ;
 - comme **avertissements** : un appareil appairé qui ne sert à rien, une zone ou une
   sirène dont l'appareil n'est pas appairé, un site sans zone ou sans sirène, une
-  sirène sans nom sur un site qui en a plusieurs (les textes ne la désignent que par
-  son rang, « Sirène 2 »).
+  sirène sans nom ni zone sur un site qui en a plusieurs ainsi (les textes ne la
+  désignent que par son rang, « Sirène 2 »).
 
 Les zones et les sirènes, avec leurs noms, sont écrites dans le dossier d'état de la
 centrale (`/var/lib/safehome/site-devices.json`, droits 0600), pas dans `hub.json` :

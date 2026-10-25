@@ -250,8 +250,10 @@ appareil est retiré, l'adaptateur efface ses états retenus (message vide).
   par la centrale ; si la sirène refuse encore, les contacts reçoivent l'alerte
   `siren_failed`, sous un incident à elle qui nomme l'alarme (`alarm_incident`), et la
   centrale publie `alarm.siren_failed` pour l'historique (voir « Événements d'alarme »,
-  « Alertes » et `adapter-zigbee.md`). Un `done` à un `siren.on` d'un cycle suivant dit
-  que la sirène sonne de nouveau : un feu levé ensuite ne la dit plus muette.
+  « Alertes » et `adapter-zigbee.md`). Un `done` à un `siren.on` d'un cycle suivant la
+  fait revenir : un feu levé ensuite ne la dit plus muette. Ce `done` dit que la sirène
+  a rapporté l'état demandé pour un profil avec `confirm` ; sans `confirm` (la seule
+  sirène livrée), il dit seulement que l'ordre est parti.
 
 Commandes de la v1 : `siren.on`, `siren.off`. `device.identify` (faire clignoter
 ou biper un appareil pour le repérer) est réservée : rien ne l'envoie, aucun profil ne
