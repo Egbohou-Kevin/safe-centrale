@@ -429,6 +429,16 @@ règles : pur, sans horloge) :
   de chaque service n'est pas sauvegardée (elle change chaque minute et userait la
   carte SD). Après un redémarrage, le silence compte depuis le redémarrage, sauf si
   un état retenu plus ancien arrive : il fait foi. Un service déjà muet le reste.
+- La liste des appareils (`Monitor.Devices`, d'où la centrale tire `system.devices`,
+  voir `contract.md`) : les appareils du registre (entrée `Registry`) avec leur zone
+  (`Config.Zones`, reprises de `hub.json`), en ligne ou non, et pour un appareil hors
+  ligne depuis quand et sa dernière nouvelle (données par l'adaptateur dans
+  `Availability`), la pile arrondie à la dizaine et la pile faible (même règle que le
+  résumé). Rien qui bouge avec l'activité de la boutique : la supervision ne reçoit ni
+  porte ni mouvement. La liste fait partie de l'état sauvegardé : après un redémarrage,
+  elle est entière avant le retour des états retenus. La pile y est gardée arrondie,
+  pour ne pas réécrire l'état à chaque point perdu. Un état sauvegardé avant la liste
+  se relit : elle se remplit avec les messages retenus.
 
 Codé et testé côté pilote (`internal/driver`, `internal/adapter/filestore`) :
 
@@ -457,6 +467,27 @@ Codé dans `internal/hub` : l'avertissement à l'armement. Le moteur ne connaît
 santé des appareils ; la centrale garde le dernier résumé de la supervision et ajoute
 les appareils muets et les piles faibles à l'événement `alarm.arming` et à la réponse
 `done` de l'ordre d'armement (voir `contract.md`).
+
+Codé dans `internal/hub` : la liste des appareils, `system.devices` (voir
+`contract.md`), décidée le 25 octobre 2026 pour la fiche Capteurs de l'application.
+Choix faits, à connaître :
+
+- La centrale lit le registre retenu de l'adaptateur (`registry/devices`) et donne les
+  zones de `hub.json` à la supervision, qui fait la liste.
+- Elle suit la présence de chaque appareil par son état `availability` retenu, au
+  démarrage **et ensuite** : lui seul dit depuis quand un appareil est hors ligne et sa
+  dernière nouvelle (`heard`). L'événement `availability`, qui ne dit ni l'un ni
+  l'autre, ne compte plus pour la supervision ; l'adaptateur publie toujours les deux
+  ensemble. Les autres états retenus ne comptent toujours qu'au démarrage.
+- Elle publie la liste à la fin du démarrage, une fois les états retenus revenus (sinon
+  chaque état revenu ferait une liste à lui), puis seulement quand ce qu'elle dit
+  change, comparée octet par octet à la dernière publiée, comme `system.health`. Une
+  liste part donc à chaque démarrage de la centrale, et l'agent la redit au cloud à
+  chaque connexion. Pas de renvoi périodique.
+- La pile est arrondie à la dizaine la plus proche, comme le signal GSM : 15 % se lit
+  20 %, avec `battery_low`. `since` et `heard` partent à la minute. Un appareil dont
+  aucune capacité ne donne un type n'est pas dans la liste (aucun profil aujourd'hui) :
+  le schéma exige un type que l'application sait dire.
 
 Pas encore codé :
 

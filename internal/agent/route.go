@@ -8,9 +8,10 @@ import (
 )
 
 // upRoute says whether a message of the hub goes to the cloud, and how. The list is
-// the contract's "what goes to the cloud": alarm and alert messages, the alarm state
-// and the health, the heartbeat, a few device events, the video sessions and status,
-// the photos' announcements and the agent's own status. Raw sensor events and keypad events stay on the site.
+// the contract's "what goes to the cloud": alarm and alert messages, the alarm state,
+// the health and the device list, the heartbeat, a few device events, the video
+// sessions and status, the photos' announcements and the agent's own status. Raw
+// sensor events and keypad events stay on the site.
 type upRoute struct {
 	types  []string // the envelope types accepted on this topic
 	prio   Priority
@@ -44,6 +45,7 @@ var upRoutes = map[string]upRoute{
 	"alert/result":     {types: []string{contract.TypeAlertResult}, prio: PriorityAlarm},
 	"alert/ack":        {types: []string{contract.TypeAlertAck}, prio: PriorityAlarm},
 	"system/health":    {types: []string{contract.TypeHealth}, prio: PriorityState, retain: true, restate: true},
+	"system/devices":   {types: []string{contract.TypeDevices}, prio: PriorityState, retain: true, restate: true},
 	"system/heartbeat": {types: []string{contract.TypeHeartbeat}, prio: PriorityState},
 	"agent/status":     {types: []string{contract.TypeAgentStatus}, prio: PriorityState, retain: true, own: true},
 	"device/+/event":   {types: []string{contract.TypeDeviceEvent}, prio: PriorityNormal, device: true},

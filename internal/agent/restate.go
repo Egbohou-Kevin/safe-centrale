@@ -9,9 +9,9 @@ import (
 )
 
 // The current state at each connection (see docs/agent.md). The hub publishes its
-// alarm state and its health when they change, and a state already sent never goes
-// again (see newState): a cloud that lost it (its database reset, or it did not keep
-// states yet) would show nothing until the next change. So at each new connection to
+// alarm state, its health and its device list when they change, and a state already
+// sent never goes again (see newState): a cloud that lost it (its database reset, or
+// it did not keep states yet) would show nothing until the next change. So at each new connection to
 // the cloud, the relay says the hub's latest states again, as new messages: the
 // application gives each a new id (the cloud drops a known id as a duplicate) and
 // hands it back (Own). It then goes like any other message: queued, numbered,

@@ -94,10 +94,12 @@ type alarmSide struct {
 
 // healthSide is owned by the monitor's loop.
 type healthSide struct {
-	mon        *health.Monitor
-	loop       *driver.Loop[health.Input, health.Action, health.Snapshot]
-	uplink     health.LinkState // the last internet state given to the escalation
-	lastHealth []byte           // the last system.health published
+	mon         *health.Monitor
+	loop        *driver.Loop[health.Input, health.Action, health.Snapshot]
+	uplink      health.LinkState // the last internet state given to the escalation
+	lastHealth  []byte           // the last system.health published
+	lastDevices []byte           // the last system.devices published
+	booted      bool             // the boot is over: system.devices may go (see publishDevices)
 }
 
 // escalationSide is owned by the escalation's loop.
@@ -203,7 +205,10 @@ func (h *Hub) buildMonitor(now time.Time) (err error) {
 			Tick: func(t time.Time) health.Input { return health.Tick{Now: t} },
 		},
 		Dispatch: h.dispatchHealth,
-		OnChange: func(_ context.Context, t time.Time) { h.publishHealth(t) },
+		OnChange: func(_ context.Context, t time.Time) {
+			h.publishHealth(t)
+			h.publishDevices(t)
+		},
 	})
 	if err != nil {
 		return err
@@ -263,6 +268,7 @@ func (h *Hub) Subscriptions() []inbox.Subscription {
 		{Filter: contract.AgentStatusTopic(site), QoS: 1},
 		{Filter: contract.InstallCmdTopic(site), QoS: 1},
 		{Filter: contract.RegistryEventTopic(site), QoS: 1},
+		{Filter: contract.RegistryDevicesTopic(site), QoS: 1},
 	}
 	for _, id := range h.cfg.SirenIDs {
 		subs = append(subs, inbox.Subscription{Filter: contract.DeviceAckTopic(site, id), QoS: 1})
@@ -325,6 +331,8 @@ func (h *Hub) boot(ctx context.Context) error {
 	}
 	return h.monitor.loop.Do(ctx, func(now time.Time) []health.Action {
 		h.publishHealth(now)
+		h.monitor.booted = true
+		h.publishDevices(now)
 		return nil
 	})
 }

@@ -14,6 +14,7 @@ func TestTopics(t *testing.T) {
 		DeviceStateTopic("tg-lom-0001", "dev_k7p2", CapBattery): "safehome/tg-lom-0001/device/dev_k7p2/state/battery",
 		AlertRequestTopic("tg-lom-0001"):                        "safehome/tg-lom-0001/alert/request",
 		HeartbeatTopic("tg-lom-0001"):                           "safehome/tg-lom-0001/system/heartbeat",
+		DevicesTopic("tg-lom-0001"):                             "safehome/tg-lom-0001/system/devices",
 		AgentCmdTopic("tg-lom-0001"):                            "safehome/tg-lom-0001/agent/cmd",
 		AgentReplayedTopic("tg-lom-0001"):                       "safehome/tg-lom-0001/agent/replayed",
 		InstallModeTopic("tg-lom-0001"):                         "safehome/tg-lom-0001/install/mode",

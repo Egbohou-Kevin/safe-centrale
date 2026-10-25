@@ -130,11 +130,13 @@ installation dans `systeme.md`, fichiers dans `deploy/`.
    commence : la centrale écoute les états retenus des appareils, puis dit au moteur à
    quoi ressemble le site (une porte restée ouverte est connue avant le premier
    événement). Si la liaison ne vient pas en 30 s, la centrale écoute quand même.
-5. Le moteur reprend où il s'était arrêté (armé reste armé), le premier état retenu et
-   le premier message de santé partent.
+5. Le moteur reprend où il s'était arrêté (armé reste armé), le premier état retenu, le
+   premier message de santé et la liste des appareils (`system.devices`) partent.
 
 Les états retenus reçus après la fenêtre sont ignorés : les événements portent ensuite
-chaque changement.
+chaque changement. Sauf la présence des appareils (`availability`), suivie par son état
+retenu même après la fenêtre : lui seul dit depuis quand un appareil est hors ligne et
+sa dernière nouvelle.
 
 **Chien de garde.** Chaque programme dit à systemd qu'il a démarré (`READY=1`), puis,
 toutes les 10 s, qu'il fonctionne encore (`WATCHDOG=1`), mais seulement si ses boucles

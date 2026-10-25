@@ -282,6 +282,7 @@ func TestSubscriptions(t *testing.T) {
 		"safehome/" + site + "/agent/status":         true,
 		"safehome/" + site + "/install/cmd":          true,
 		"safehome/" + site + "/registry/event":       true,
+		"safehome/" + site + "/registry/devices":     true,
 	}
 	for _, s := range r.hub.Subscriptions() {
 		if !want[s.Filter] || s.QoS != 1 {

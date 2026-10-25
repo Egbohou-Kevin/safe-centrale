@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/system-devices.json",
+  "title": "system.devices",
+  "description": "Publié en retenu sur system/devices par la centrale (src health), à chaque vrai changement. La santé de chaque appareil du registre, pour la fiche Capteurs : jamais l'état d'une porte ni un mouvement, jamais une heure pour un appareil en ligne.",
+  "type": "object",
+  "properties": {
+    "devices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "device_id du registre"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Nom de la zone de l'appareil dans la configuration du site ; absent hors zone (une sirène)"
+          },
+          "zone": {
+            "type": "string",
+            "enum": [
+              "entry",
+              "instant",
+              "interior",
+              "24h_fire",
+              "24h_panic",
+              "24h_tamper"
+            ],
+            "description": "Type de la zone de l'appareil ; absent hors zone"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "siren",
+              "keypad",
+              "smoke",
+              "contact",
+              "motion",
+              "glass_break",
+              "vibration",
+              "panic"
+            ],
+            "description": "La première capacité de l'appareil dans cet ordre : siren, keypad, smoke, contact, motion, glass_break, vibration, panic"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Hors ligne seulement : quand il est devenu injoignable, à la minute"
+          },
+          "heard": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Hors ligne seulement : sa dernière nouvelle, à la minute ; absent s'il n'a rien dit depuis le redémarrage de l'adaptateur"
+          },
+          "battery": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "multipleOf": 10,
+            "description": "Pile en %, arrondie à la dizaine ; absente sans lecture"
+          },
+          "battery_low": {
+            "type": "boolean",
+            "const": true,
+            "description": "Présent seulement quand la pile est faible"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "online"
+        ],
+        "if": {
+          "properties": {
+            "online": {
+              "const": true
+            }
+          },
+          "required": [
+            "online"
+          ]
+        },
+        "then": {
+          "properties": {
+            "since": false,
+            "heard": false
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "devices"
+  ]
+}

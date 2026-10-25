@@ -180,6 +180,27 @@ func (r *rig) device(id, capability, value string) {
 	r.send(contract.DeviceEventTopic(site, id), contract.TypeDeviceEvent, event(id, capability, value))
 }
 
+// offline and online play the adapter's word on a device's availability: the event,
+// then the retained state, which alone says since when an offline device is offline
+// (now) and when it was last heard (heard, zero if not since the adapter's restart).
+func (r *rig) offline(id string, heard time.Time) {
+	r.t.Helper()
+	r.presence(id, contract.ValOffline, heard)
+}
+
+func (r *rig) online(id string) {
+	r.t.Helper()
+	r.presence(id, contract.ValOnline, time.Time{})
+}
+
+func (r *rig) presence(id, value string, heard time.Time) {
+	r.t.Helper()
+	r.device(id, contract.CapAvailability, value)
+	st := event(id, contract.CapAvailability, value)
+	st.Since, st.Heard = contract.TSPtr(r.clock.Now()), contract.TSPtr(heard)
+	r.send(contract.DeviceStateTopic(site, id, contract.CapAvailability), contract.TypeDeviceState, st)
+}
+
 func event(id, capability, value string) contract.DeviceEventData {
 	v := json.RawMessage(`"` + value + `"`)
 	if capability == contract.CapBattery || capability == contract.CapLink {
@@ -257,6 +278,7 @@ func (r *rig) validateAll() {
 		contract.TypeAlarmAck: "alarm-ack.json", contract.TypeAlarmState: "alarm-state.json",
 		contract.TypeAlertRequest: "alert-request.json", contract.TypeCommand: "device-command.json",
 		contract.TypeHeartbeat: "system-heartbeat.json", contract.TypeHealth: "system-health.json",
+		contract.TypeDevices:     "system-devices.json",
 		contract.TypeInstallMode: "install-mode.json", contract.TypeAlarmSirenFailed: "alarm-siren-failed.json",
 	}
 	for _, m := range r.broker.All() {

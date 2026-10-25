@@ -87,6 +87,7 @@ Tous les topics commencent par `safehome/{site}/`.
 | `.../config/applied` | Version de configuration appliquée par le site, ou refusée | oui |
 | `.../system/heartbeat` | Signe de vie périodique | non |
 | `.../system/health` | Santé de la centrale (secteur, batterie, liaisons) | oui |
+| `.../system/devices` | Santé de chaque appareil (en ligne, pile), pour la fiche Capteurs | oui |
 | `.../gsm/status` | Lignes de la passerelle GSM (modem, réseau, crédit, test) | oui |
 | `.../zigbee/status` | État du réseau Zigbee (Zigbee2MQTT, appareils muets, appairage) | oui |
 | `.../agent/status` | Liaison avec le cloud, publiée par l'agent de liaison | oui |
@@ -704,6 +705,68 @@ plus de nouvelles depuis `internet_silent_after`, 3 minutes par défaut). Person
 prévenu d'une coupure d'internet : l'escalade passe simplement aux canaux GSM sans
 attendre le cloud.
 
+### `system.devices`
+
+Publié par la centrale (`src` : `health`), retenu sur `system/devices` : la santé de
+chaque appareil du registre, pour la fiche Capteurs de l'application.
+
+```json
+{
+  "type": "system.devices",
+  "data": {
+    "devices": [
+      { "id": "dev_back", "name": "Arrière-cour", "zone": "instant", "type": "contact",
+        "online": false, "since": "2026-10-24T18:47:00.000Z",
+        "heard": "2026-10-24T14:47:00.000Z", "battery": 60 },
+      { "id": "dev_smoke", "name": "Réserve", "zone": "24h_fire", "type": "smoke",
+        "online": true, "battery": 10, "battery_low": true },
+      { "id": "dev_door", "name": "Entrée", "zone": "entry", "type": "contact",
+        "online": true, "battery": 80 },
+      { "id": "dev_siren1", "type": "siren", "online": true }
+    ]
+  }
+}
+```
+
+- `id` : l'identifiant du registre. Seuls les appareils du registre (`registry/devices`)
+  sont dans la liste, rangés par `id` ; un site sans appareil envoie une liste vide.
+- `name`, `zone` : le nom et le type de la zone de l'appareil dans la configuration du
+  site (`zones` de `hub.json`), absents pour un appareil hors zone (une sirène, un
+  clavier). `name` est coupé à 32 caractères, comme `device_name`. `zone` vaut `entry`,
+  `instant`, `interior`, `24h_fire`, `24h_panic` ou `24h_tamper` : l'application les dit
+  en mots simples, jamais tels quels.
+- `type` : la première capacité de l'appareil (commandes comprises : une sirène a
+  `siren`) dans cet ordre : `siren`, `keypad`, `smoke`, `contact`, `motion`,
+  `glass_break`, `vibration`, `panic`. `tamper`, `battery` et `link` ne décident
+  jamais. Un appareil dont aucune capacité ne décide (aucun profil aujourd'hui) n'est
+  pas dans la liste : ce n'est ni un capteur, ni un clavier, ni une sirène.
+- `online` : faux dès que l'adaptateur compte l'appareil hors ligne (un silence de
+  `offline_after`, 4 h par défaut et 2 h pour la sirène, ou un appareil sorti du
+  réseau). Seulement quand il est faux : `since`, quand il est devenu injoignable, et
+  `heard`, sa dernière nouvelle, absente s'il n'a rien dit depuis le redémarrage de
+  l'adaptateur. Les deux à la minute : `since` à la seconde redonnerait l'heure exacte
+  de la dernière nouvelle, l'appareil passant hors ligne un silence fixe après elle. Les deux viennent de l'état `availability` retenu (voir
+  « `device.state` ») et restent figés tant que l'appareil est injoignable : ils ne
+  disent rien de l'activité de la boutique. Aucune heure ne se déduit de l'autre : après
+  un redémarrage de l'adaptateur, le silence compte depuis le redémarrage.
+- Jamais d'heure pour un appareil en ligne (le schéma refuse `since` et `heard` avec
+  `online` à `true`) : l'heure de son dernier message bouge avec chaque porte et chaque
+  passage, et les Aqara ne se signalent d'elles-mêmes qu'environ toutes les 50 minutes.
+- `battery` : la dernière lecture en %, arrondie à la dizaine la plus proche (comme le
+  signal GSM), absente sans pile suivie ou jamais lue. `battery_low` : présent, à
+  `true`, seulement quand la pile est faible, avec la règle de la supervision (faible à
+  15 % ou moins, bonne de nouveau au-dessus de 30 %).
+- Jamais : l'état d'une porte ou d'un mouvement, l'état armé d'une zone, l'adresse
+  Zigbee, la qualité de liaison (utile à l'installateur, qui la lit sur place).
+- Taille : environ 100 octets par appareil, 600 à 900 octets pour un kit.
+- Envoi : seulement sur un vrai changement (en ligne ou non, pile arrondie, pile
+  faible, appareil ajouté ou retiré ; le nom et la zone changent avec la configuration,
+  qui redémarre la centrale), une fois à chaque démarrage de la centrale, une fois les
+  états retenus revenus (comme `system.health`), et de nouveau à chaque connexion de
+  l'agent au cloud. Pas de renvoi périodique.
+- La centrale suit la présence de chaque appareil par son état `availability` retenu,
+  au démarrage et ensuite : l'événement ne dit ni `since` ni `heard`.
+
 ### `agent.status`
 
 Publié retenu par l'agent de liaison sur `agent/status`, sur le broker local et vers
@@ -781,6 +844,17 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **25 octobre 2026, la fiche Capteurs** : nouveau message `system.devices`, publié
+  par la centrale (`src` `health`) et retenu sur `system/devices` : la santé de chaque
+  appareil du registre (nom et type de sa zone, type d'appareil, en ligne ou non, pile
+  arrondie à la dizaine, pile faible), pour la fiche Capteurs de l'application (voir
+  « `system.devices` »). L'agent le relaie au cloud et le redit à chaque connexion, comme
+  `system.health`. Jamais l'état d'une porte ni un mouvement, jamais une heure pour un
+  appareil en ligne. L'état `availability` retenu d'un appareil hors ligne porte
+  `heard`, l'heure de son dernier message à la minute (voir « `device.state` ») ; un
+  `heard` sur un autre état est refusé. Un cloud qui ne connaît pas encore
+  `system.devices` le refuse : il est mis à jour avant la centrale.
+
 - **24 octobre 2026, la sirène muette** : `alert.request` porte deux champs
   facultatifs, `alarm_incident` (l'alarme en cours dont l'alerte fait partie) et
   `alarm_handled` (cette alarme est déjà prise en charge : l'alerte se dit sans faire
@@ -833,9 +907,10 @@ Changements depuis la v1 validée, sans changement de `v` :
 L'agent de liaison transmet seulement :
 
 - les événements `alarm.*` et `alert.*`, et les réponses aux ordres (`alarm.ack`),
-- `alarm.state` et `system.health`, à chaque changement, et de nouveau à chaque
-  connexion de l'agent au cloud (une fois par minute au plus) : le dernier de chacun, même contenu et même `ts`, avec
-  un nouvel `id` (voir `agent.md`). Le cloud garde le plus récent par son `seq` ;
+- `alarm.state`, `system.health` et `system.devices`, à chaque changement, et de
+  nouveau à chaque connexion de l'agent au cloud (une fois par minute au plus) : le
+  dernier de chacun, même contenu et même `ts`, avec un nouvel `id` (voir `agent.md`).
+  Le cloud garde le plus récent par son `seq` ;
 - le `system.heartbeat`,
 - les `device.event` de type `smoke`, `panic`, `tamper`, `mains` et les
   changements utiles de `battery`,

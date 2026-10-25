@@ -22,7 +22,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 |---|---|
 | `internal/engine` | Le moteur d'alarme (le domaine) : machine à états déterministe, sans horloge ni entrées-sorties, sans connaître le contrat. Il tient aussi la table des capteurs acceptés par chaque type de zone (`engine.Accepts`), reprise par l'installateur |
 | `internal/engine/wire` | La traduction entre le domaine et le contrat |
-| `internal/health` | La supervision (second domaine) : batterie de la centrale, piles, appareils muets, résumé quotidien. Mêmes règles que le moteur |
+| `internal/health` | La supervision (second domaine) : batterie de la centrale, piles, appareils muets, résumé quotidien, liste des appareils (`system.devices`). Mêmes règles que le moteur |
 | `internal/health/wire` | La traduction entre la supervision et le contrat |
 | `internal/access` | Les codes d'accès (troisième domaine) : un code par personne, 5 au maximum, stockés hachés avec un algorithme lent, vérification qui dit à qui appartient le code |
 | `internal/escalation` | L'escalade (quatrième domaine) : qui est prévenu, par quel canal, dans quel ordre et après combien de temps ; acquittements, relances, limite par heure |
@@ -38,7 +38,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/maint/wire` | La traduction entre la maintenance et le contrat |
 | `internal/power` | Le module batterie de la centrale (neuvième domaine) : coupure du secteur confirmée après quelques secondes, charge annoncée par paliers, arrêt propre avant la batterie vide |
 | `internal/power/wire` | La traduction entre le module batterie et le contrat (secteur et batterie de l'appareil `hub_device_id`) |
-| `internal/agent` | Le cœur de l'agent de liaison : file pour le cloud à priorités et bornée, état de l'alarme et santé redits à chaque connexion au cloud, contrôle de ce qui descend du cloud, délai de prise en charge des alertes. Sans entrées-sorties ni horloge, il ne connaît que le contrat |
+| `internal/agent` | Le cœur de l'agent de liaison : file pour le cloud à priorités et bornée, état de l'alarme, santé et liste des appareils redits à chaque connexion au cloud, contrôle de ce qui descend du cloud, délai de prise en charge des alertes. Sans entrées-sorties ni horloge, il ne connaît que le contrat |
 
 ### Les couches application
 

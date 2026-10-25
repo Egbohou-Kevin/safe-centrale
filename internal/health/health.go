@@ -36,6 +36,13 @@ type Snapshot struct {
 	Offline    map[string]bool `json:"offline"`     // devices that stopped answering
 	LowBattery map[string]bool `json:"low_battery"` // sensors with a weak battery
 
+	// For the device list (Devices): the registered devices with their capabilities,
+	// the last battery reading of each sensor rounded to ten (all the list says of it),
+	// and since when and since what news each offline device is offline.
+	Registry  map[string][]string `json:"registry"`
+	Batteries map[string]int      `json:"batteries"`
+	Absences  map[string]Absence  `json:"absences"`
+
 	NextSummary time.Time `json:"next_summary"`
 
 	// The components that report their own state and must keep doing so: the GSM
@@ -49,7 +56,24 @@ type Snapshot struct {
 func (s Snapshot) clone() Snapshot {
 	s.Offline = maps.Clone(s.Offline)
 	s.LowBattery = maps.Clone(s.LowBattery)
+	s.Registry = maps.Clone(s.Registry) // a device's list is replaced, never changed in place
+	s.Batteries = maps.Clone(s.Batteries)
+	s.Absences = maps.Clone(s.Absences)
 	return s
+}
+
+// fill makes the maps a saved state may lack (an empty one, or one saved before a
+// map existed).
+func (s *Snapshot) fill() {
+	s.Offline, s.LowBattery = orEmpty(s.Offline), orEmpty(s.LowBattery)
+	s.Registry, s.Batteries, s.Absences = orEmpty(s.Registry), orEmpty(s.Batteries), orEmpty(s.Absences)
+}
+
+func orEmpty[K comparable, V any](m map[K]V) map[K]V {
+	if m == nil {
+		return map[K]V{}
+	}
+	return m
 }
 
 // Status is the public summary, meant for system.health and the app.
@@ -80,9 +104,9 @@ func New(cfg Config, newID func() string, now time.Time) (*Monitor, error) {
 	if newID == nil {
 		return nil, fmt.Errorf("health: newID is required")
 	}
-	return &Monitor{cfg: cfg, newID: newID, s: Snapshot{
-		Offline: map[string]bool{}, LowBattery: map[string]bool{}, NextSummary: cfg.nextSummary(now),
-	}}, nil
+	s := Snapshot{NextSummary: cfg.nextSummary(now)}
+	s.fill()
+	return &Monitor{cfg: cfg, newID: newID, s: s}, nil
 }
 
 // Snapshot returns a copy of the current state.
@@ -92,12 +116,7 @@ func (m *Monitor) Snapshot() Snapshot { return m.s.clone() }
 // component last spoke) is dropped, as a load from disk would.
 func (m *Monitor) Restore(s Snapshot) {
 	s = s.clone()
-	if s.Offline == nil {
-		s.Offline = map[string]bool{}
-	}
-	if s.LowBattery == nil {
-		s.LowBattery = map[string]bool{}
-	}
+	s.fill()
 	m.s = s
 	for _, w := range m.watches() {
 		w.watch.forget()
@@ -145,9 +164,10 @@ func (m *Monitor) Handle(in Input) []Action {
 		out = append(out, m.battery(v)...)
 	case Availability:
 		m.availability(v)
+	case Registry:
+		m.registry(v)
 	case Forget:
-		delete(m.s.Offline, v.DeviceID)
-		delete(m.s.LowBattery, v.DeviceID)
+		m.forget(v.DeviceID)
 	case GSM:
 		m.s.GSM.report(v.Now, v.Seen, v.Usable)
 	case Zigbee:
@@ -207,15 +227,24 @@ func (m *Monitor) tick(now time.Time) []Action {
 
 // --- sensors ---------------------------------------------------------------
 
+// availability records whether a device answers, and for one that does not, the
+// times the adapter gives: the latest word says it all.
 func (m *Monitor) availability(a Availability) {
-	if a.DeviceID == m.cfg.HubDeviceID {
+	id := a.DeviceID
+	if id == m.cfg.HubDeviceID {
 		return // the hub reports its own faults another way
 	}
 	if a.Online {
-		delete(m.s.Offline, a.DeviceID)
-	} else {
-		m.s.Offline[a.DeviceID] = true
+		delete(m.s.Offline, id)
+		delete(m.s.Absences, id)
+		return
 	}
+	m.s.Offline[id] = true
+	if a.Since.IsZero() && a.Heard.IsZero() {
+		delete(m.s.Absences, id)
+		return
+	}
+	m.s.Absences[id] = Absence{Since: a.Since, Heard: a.Heard}
 }
 
 func (m *Monitor) battery(b Battery) []Action {
@@ -231,6 +260,7 @@ func (m *Monitor) battery(b Battery) []Action {
 	case b.Percent > m.cfg.DeviceBatteryRearm:
 		delete(m.s.LowBattery, b.DeviceID)
 	}
+	m.s.Batteries[b.DeviceID] = roundTen(b.Percent)
 	return nil
 }
 

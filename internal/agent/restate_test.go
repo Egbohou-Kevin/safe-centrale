@@ -149,3 +149,30 @@ func TestAFlappingLinkSaysTheStateAgainAtMostOnceAMinute(t *testing.T) {
 		t.Fatalf("a minute later, said again: %v", got)
 	}
 }
+
+// The device list goes up like the health: a retained state, after the alarm's
+// messages, and said again at each new connection. Said on another topic, it stays
+// here.
+func TestTheDeviceListGoesUpLikeTheHealth(t *testing.T) {
+	h := newHarness(t)
+	list := contract.DevicesData{Devices: []contract.DeviceHealth{{ID: "dev_back", Type: contract.CapContact, Online: true}}}
+	listID, _ := h.local(topic("system", "devices"), contract.TypeDevices, list)
+	h.local(topic("alarm", "event"), contract.TypeAlarmArmed, armed)
+	h.local(topic("system", "health"), contract.TypeDevices, list)
+	if got := h.queued(); !reflect.DeepEqual(got, []string{"system/devices", "alarm/event"}) {
+		t.Fatalf("queued %v", got)
+	}
+	if it, ok := h.next(); !ok || it.Topic != topic("alarm", "event") {
+		t.Fatalf("the alarm goes first: %+v", it)
+	}
+	h.linkUp()
+	sent := h.send()
+	if len(sent) != 2 || sent[1].ID != listID || !sent[1].Retain {
+		t.Fatalf("%+v", sent)
+	}
+
+	h.handle(Link{Now: h.now, Up: false})
+	if got := h.restated(h.handle(Link{Now: h.now, Up: true, Transport: "mqtts"})); !reflect.DeepEqual(got, []string{"system/devices"}) {
+		t.Fatalf("said again: %v", got)
+	}
+}

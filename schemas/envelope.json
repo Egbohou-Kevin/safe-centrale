@@ -65,6 +65,7 @@
         "registry.pair_failed",
         "system.heartbeat",
         "system.health",
+        "system.devices",
         "gsm.status",
         "zigbee.status",
         "agent.status",

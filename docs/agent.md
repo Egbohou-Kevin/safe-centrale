@@ -27,7 +27,7 @@ sirène et la passerelle GSM continuent.
 
 | Direction | Contenu | Détail |
 |---|---|---|
-| Local vers cloud | `alarm.*`, `alert.*`, `alarm/state`, `system/health`, événements `smoke`, `panic`, `tamper`, `mains`, `battery` | Liste exacte dans `contract.md` |
+| Local vers cloud | `alarm.*`, `alert.*`, `alarm/state`, `system/health`, `system/devices`, événements `smoke`, `panic`, `tamper`, `mains`, `battery` | Liste exacte dans `contract.md` |
 | Local vers cloud | Heartbeat | Publié par la centrale chaque minute, relayé par l'agent |
 | Local et cloud | `agent.status` | Créé par l'agent : à chaque changement et chaque minute |
 | Local vers cloud | Photos | Envoi à part (voir « Photos ») |
@@ -81,8 +81,8 @@ Quand internet est coupé :
   confirmé repart (le cloud ignore les doublons grâce à `id`).
 - **Seul le dernier heartbeat est gardé** : un signe de vie vieux de deux heures n'a
   aucun intérêt. De même, pour un message retenu (`alarm.state`, `system.health`,
-  `agent.status`, `video.status`, `config.applied`, `install.mode`), seul le dernier
-  compte.
+  `system.devices`, `agent.status`, `video.status`, `config.applied`, `install.mode`),
+  seul le dernier compte.
 - À la reconnexion, la file part par priorité : d'abord l'alarme et les alertes,
   puis les événements, puis les états, et dans l'ordre d'arrivée à priorité égale.
 - La file est bornée : 20 000 messages, 10 Mo ou 7 jours par défaut. Si elle est
@@ -118,19 +118,20 @@ Quand internet est coupé :
   part. L'agent ne lit pas ses propres topics (`agent/status`, `agent/replayed`) sur
   la centrale.
 - **L'état du moment à chaque connexion au cloud** : un cloud qui a perdu l'état de
-  l'alarme ou la santé (base remise à zéro, ou cloud qui ne les gardait pas encore)
-  n'aurait rien jusqu'au prochain changement. À chaque nouvelle connexion au cloud,
-  l'agent redit donc le dernier `alarm.state` et le dernier `system.health` de la
-  centrale, comme des messages neufs : même contenu, même `ts`, mais un nouvel `id`
-  (le cloud jette un `id` connu comme doublon). Ils passent par la file comme les
-  autres : numérotés, confirmés, gardés pour un rejeu. Pas plus d'une fois par
-  connexion, ni plus d'une fois par minute : sur une liaison qui saute (ou deux agents
-  sur le même identifiant, une carte SD clonée, qui se chassent l'un l'autre), chaque
-  connexion ajouterait sinon deux messages, deux fichiers de file et des octets payés
-  en mode économe. Un état redit il y a moins d'une minute est arrivé au cloud ou
-  attend encore dans la file. Un état qui attend déjà dans la file part tel quel. L'agent garde ces deux
-  états en mémoire seulement : après un redémarrage, il les apprend quand le broker de
-  la centrale les redonne, et les redit alors si la connexion au cloud est déjà là. Le
+  l'alarme, la santé ou la liste des appareils (base remise à zéro, ou cloud qui ne
+  les gardait pas encore) n'aurait rien jusqu'au prochain changement. À chaque
+  nouvelle connexion au cloud, l'agent redit donc le dernier `alarm.state`, le dernier
+  `system.health` et le dernier `system.devices` de la centrale, comme des messages
+  neufs : même contenu, même `ts`, mais un nouvel `id` (le cloud jette un `id` connu
+  comme doublon). Ils passent par la file comme les autres : numérotés, confirmés,
+  gardés pour un rejeu. Pas plus d'une fois par connexion, ni plus d'une fois par
+  minute : sur une liaison qui saute (ou deux agents sur le même identifiant, une
+  carte SD clonée, qui se chassent l'un l'autre), chaque connexion ajouterait sinon
+  trois messages, trois fichiers de file et des octets payés en mode économe. Un état
+  redit il y a moins d'une minute est arrivé au cloud ou attend encore dans la file.
+  Un état qui attend déjà dans la file part tel quel. L'agent garde ces trois états en
+  mémoire seulement : après un redémarrage, il les apprend quand le broker de la
+  centrale les redonne, et les redit alors si la connexion au cloud est déjà là. Le
   cloud garde l'état le plus récent par son numéro : le même état redit n'y change
   rien. Ils ne sont pas republiés sur la centrale.
 - **Rejeu** : le cloud demande `agent.replay` (`from`, `to`, 1000 au plus, topic
@@ -269,8 +270,8 @@ la même valeur que dans `video.json`.
 - **Ce qui part comme avant.** Tout le reste : alarmes, alertes, états, santé.
 - **Ce qui part tout de suite quand même.** Un changement de liaison (connexion
   rétablie, repli en WebSocket). Le cloud efface ainsi au plus vite le « hors ligne »
-  laissé par le broker. L'état de l'alarme et la santé redits à chaque connexion
-  partent aussi (quelques centaines d'octets par connexion).
+  laissé par le broker. L'état de l'alarme, la santé et la liste des appareils redits
+  à chaque connexion partent aussi (environ un kilo-octet par connexion).
 - **Après une coupure.** Le cloud reçoit le heartbeat le plus récent, pas les
   anciens.
 - **Ce que voit le cloud.** `agent.status` porte `economy`, et le cloud sait alors

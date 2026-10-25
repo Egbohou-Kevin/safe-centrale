@@ -52,6 +52,11 @@ type Config struct {
 	// internet counts as down. Nobody is told: the escalation just stops waiting for
 	// the internet.
 	InternetSilentAfter time.Duration
+
+	// Zones gives the zone of each device, by device id, as the site's configuration
+	// does: the device list (Monitor.Devices) names a device by it. A device outside
+	// any zone (a siren, a keypad) has none.
+	Zones map[string]Zone
 }
 
 // DefaultConfig returns the defaults decided in docs/escalation.md. HubDeviceID has

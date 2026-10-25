@@ -22,7 +22,7 @@ type Config struct {
 	SirenIDs    []string
 
 	Engine engine.Config
-	Health health.Config // HubDeviceID is taken from the field above
+	Health health.Config // HubDeviceID is taken from the field above, Zones from Engine
 	Access access.Config
 	// Escalation holds the contacts and the plans: who is told, and how.
 	Escalation escalation.Config
@@ -103,10 +103,15 @@ func (c Config) validate() error {
 	return nil
 }
 
-// healthConfig is the monitor's configuration, with the hub's battery module.
+// healthConfig is the monitor's configuration, with the hub's battery module and the
+// zones of the devices, which its device list names them by.
 func (c Config) healthConfig() health.Config {
 	hc := c.Health
 	hc.HubDeviceID = c.HubDeviceID
+	hc.Zones = make(map[string]health.Zone, len(c.Engine.Zones))
+	for id, z := range c.Engine.Zones {
+		hc.Zones[id] = health.Zone{Name: z.Name, Kind: string(z.Kind)}
+	}
 	return hc
 }
 
