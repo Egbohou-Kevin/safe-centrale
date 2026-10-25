@@ -36,6 +36,11 @@ type Rule struct {
 	Momentary bool
 	// CodeFrom is the field holding the code typed with the action (keypads).
 	CodeFrom string
+	// Rest is the value the state goes back to without a word from the device, when
+	// Zigbee2MQTT says it by itself: a motion sensor tells a movement, and Zigbee2MQTT
+	// publishes "no movement" on its own timer, with the last_seen of the movement
+	// (see noNews). Empty: only the device moves the state.
+	Rest string
 }
 
 // ProfileCommand is what a command of the profile sends, and what confirms it.
@@ -197,6 +202,8 @@ func (r Rule) validate(capability string) error {
 		return fmt.Errorf("%s carries a code, it must be an action", capability)
 	case r.Max < 0 || r.Step < 0:
 		return fmt.Errorf("%s has a negative scale or step", capability)
+	case r.Rest != "" && (r.Momentary || !r.produces(r.Rest)):
+		return fmt.Errorf("%s rests at %q, which its rule never reads as a state", capability, r.Rest)
 	}
 	for raw, v := range r.Map {
 		if v == "" {

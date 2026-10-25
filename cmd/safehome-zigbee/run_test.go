@@ -194,6 +194,13 @@ func TestTheAdapterEndToEndWithASimulatedZigbee2MQTT(t *testing.T) {
 		d, _ := contract.DecodeData[contract.ZigbeeStatusData](st[len(st)-1])
 		return d
 	}
+	// The retained "online" may date from before a power cut: the adapter asks
+	// Zigbee2MQTT whether it runs, and believes it once it answers.
+	drivertest.WaitFor(t, "a health check", func() bool { return len(f.on("zigbee2mqtt/bridge/request/health_check")) > 0 })
+	var check map[string]any
+	json.Unmarshal(f.on("zigbee2mqtt/bridge/request/health_check")[0].Payload, &check)
+	healthy, _ := json.Marshal(map[string]any{"data": map[string]any{"healthy": true}, "status": "ok", "transaction": check["transaction"]})
+	f.publish(t, "zigbee2mqtt/bridge/response/health_check", string(healthy), false)
 	drivertest.WaitFor(t, "the bridge online", func() bool { return status().Bridge == contract.BridgeOnline })
 
 	// The installer pairs a door sensor and a siren.

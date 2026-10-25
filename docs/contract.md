@@ -544,7 +544,9 @@ vit) :
 }
 ```
 
-- `bridge` : `online` quand Zigbee2MQTT et sa clé tournent, `offline` sinon.
+- `bridge` : `online` quand Zigbee2MQTT et sa clé tournent, `offline` sinon, et au
+  démarrage de l'adaptateur tant que Zigbee2MQTT n'a pas prouvé qu'il tourne (voir
+  `adapter-zigbee.md`, « État de la liaison »).
 - `devices` : appareils enregistrés ; `offline` : ceux qui ne répondent plus ;
   `pairing` : le réseau est ouvert aux nouveaux appareils, Zigbee2MQTT l'a confirmé,
   ou un appareil entré pendant la fenêtre est encore interrogé (3 minutes au plus).

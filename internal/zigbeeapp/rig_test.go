@@ -184,6 +184,18 @@ func (r *rig) answerJoin(reason string) map[string]any {
 	return req
 }
 
+// retainedOnline hands over the "online" the broker kept, as at the start, and
+// answers the health check it calls for, as Zigbee2MQTT does.
+func (r *rig) retainedOnline() {
+	r.t.Helper()
+	asked := len(r.rawOn("bridge/request/health_check"))
+	r.z2m("bridge/state", `{"state":"online"}`, true)
+	drivertest.WaitFor(r.t, "a health check", func() bool { return len(r.rawOn("bridge/request/health_check")) > asked })
+	req := r.rawOn("bridge/request/health_check")[asked]
+	b, _ := json.Marshal(map[string]any{"data": map[string]any{"healthy": true}, "status": "ok", "transaction": req["transaction"]})
+	r.z2m("bridge/response/health_check", string(b), false)
+}
+
 // pair adds a device through the whole pairing sequence.
 func (r *rig) pair(id, ieee, model string) {
 	r.t.Helper()

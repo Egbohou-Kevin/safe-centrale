@@ -85,6 +85,12 @@ un par fichier, dans le dossier `profiles_dir` (exemples dans `config/profiles/`
   message, jamais gardée comme état. `code_from` : le champ du code tapé (clavier).
   Seuls `disarm` et `silence` portent le code ; un code tapé avec une autre touche est
   écarté, la touche reste (un clavier peut envoyer le code tapé avant « armer »).
+- `rest` : la valeur de repos d'un état, que Zigbee2MQTT annonce de lui-même, sans
+  trame de l'appareil. Le détecteur de mouvement Aqara ne dit jamais « plus de
+  mouvement » : Zigbee2MQTT le publie sur sa propre minuterie, environ 90 s après le
+  mouvement, avec le `last_seen` du mouvement (voir « Cache rejoué par Zigbee2MQTT »).
+  Sans `rest`, ce retour au repos serait écarté, et le détecteur resterait « detected »
+  pour toujours : ses mouvements suivants ne changeraient plus rien.
 - Une commande envoie `payload` ; la chaîne `"{duration_s}"` y est remplacée par la
   durée. Avec `confirm` (`capability`, `value`), la commande n'est `done` que quand
   l'appareil rapporte cet état ; sans, elle l'est dès l'envoi.
@@ -248,18 +254,30 @@ est enregistré chez nous » (voir `architecture.md`).
   pas déclencher l'alarme.
 - **Cache rejoué par Zigbee2MQTT.** À chacun de ses démarrages, Zigbee2MQTT republie
   l'état en cache de chaque appareil (`advanced.cache_state_send_on_startup`, vrai par
-  défaut), non retenu, avec le vieux `last_seen`. Un message dont le `last_seen` n'est
-  pas plus récent que ce que l'appareil a dit en dernier n'est pas une nouvelle : il
-  est écarté en entier. Il ne remet pas en ligne une porte dont la pile est morte, et
-  ne rejoue pas comme une ouverture un vieux « open » que le cache de Zigbee2MQTT
-  (sauvegardé toutes les quelques minutes) garderait encore. Pour un appareil hors
+  défaut), non retenu, avec le vieux `last_seen`. Un message dont le `last_seen` est
+  plus ancien que ce que l'appareil a dit en dernier n'est pas une nouvelle : il est
+  écarté en entier. Il ne remet pas en ligne une porte dont la pile est morte, et ne
+  rejoue pas comme une ouverture un vieux « open » que le cache de Zigbee2MQTT
+  (sauvegardé toutes les quelques minutes) garderait encore. Un message au même
+  `last_seen` que le dernier est cette relecture, ou une parole de Zigbee2MQTT
+  lui-même : aucun appareil n'a parlé (Zigbee2MQTT date chaque message de la dernière
+  trame reçue de l'appareil, pas de sa publication). On n'en lit que le retour d'un
+  état à son repos (`rest` du profil, le « plus de mouvement » de sa minuterie) ; il
+  ne remet pas l'appareil en ligne et ne déclenche rien d'autre. Une relecture ne
+  ramène ainsi jamais un mouvement ni une ouverture. Pour un appareil hors
   ligne, sa dernière nouvelle est gardée dans l'état de l'adaptateur et vaut aussi
   après un redémarrage ; pour un appareil en ligne, seulement tant que l'adaptateur
   tourne (la sauvegarder à chaque message userait la carte SD). Après un redémarrage
   de toute la centrale, la relecture d'un appareil en ligne compte donc encore, comme
-  avant. Un message sans `last_seen` ne peut pas être jugé et compte. Le réglage de
-  Zigbee2MQTT n'est pas changé : une clé que sa version refuserait l'empêcherait de
-  démarrer.
+  avant. Un message sans `last_seen` ne peut pas être jugé et compte. Après un recul
+  de l'horloge système (module d'horloge en avance corrigé par NTP), le `last_seen`
+  recule avec elle : une dernière parole datée après l'arrivée du message n'est pas
+  comparée, sans quoi chaque nouveau message, une porte qui s'ouvre comme une fumée,
+  serait écarté jusqu'à ce que l'horloge la rattrape (pour un appareil hors ligne,
+  même après un redémarrage). L'adaptateur suit donc l'horloge, en arrière aussi, et
+  ramène à sa durée normale une attente qu'elle aurait repoussée (relance d'une
+  commande, fenêtre d'appairage). Le réglage de Zigbee2MQTT n'est pas changé : une clé
+  que sa version refuserait l'empêcherait de démarrer.
 - **`battery` et `link`** : publiés seulement quand la valeur change de façon utile
   (voir `contract.md`).
 - **Présence.** L'adaptateur note l'heure du dernier message de chaque appareil. Sans
@@ -329,6 +347,21 @@ L'adaptateur surveille l'état du pont Zigbee2MQTT et de la clé :
 
 Le moteur déclare alors un défaut (voir `engine.md`). Un redémarrage automatique du
 pont est assuré par le système (service ou conteneur avec redémarrage).
+
+Le pont n'est en ligne que sur une preuve de cette exécution de l'adaptateur : l'état
+sauvegardé ne compte pas, et un `online` retenu ne suffit pas. Le broker garde le
+dernier mot de Zigbee2MQTT, et après une coupure de courant sans arrêt propre, ce mot
+est le `online` d'avant : ni l'arrêt de Zigbee2MQTT ni sa dernière volonté n'ont pu
+le remplacer (le broker était coupé aussi). Si la clé ne répond plus au démarrage
+suivant, Zigbee2MQTT s'arrête avant de se connecter au broker, redémarre toutes les
+5 s sans jamais toucher à `bridge/state`, et ce vieux `online` resterait cru : aucun
+capteur entendu, la liaison dite bonne. Sur un `online` retenu, l'adaptateur demande
+donc à Zigbee2MQTT s'il tourne (`bridge/request/health_check`, avec une transaction
+qui porte l'heure) : le pont est en ligne à sa réponse, quelle qu'elle soit. Sans
+réponse au bout de 3 s, la demande est refaite, 3 fois en tout, puis le pont reste
+hors ligne (la centrale prévient le propriétaire 3 minutes plus tard), jusqu'à une
+réponse tardive ou au `online` que Zigbee2MQTT publie en se connectant, non retenu
+pour l'adaptateur déjà abonné, qui vaut preuve.
 
 ## Sauvegarde du réseau Zigbee
 
@@ -434,7 +467,8 @@ Choix faits au codage :
   le broker pendant un arrêt de l'adaptateur arrive en retard : le silence de
   l'appareil compte depuis son arrivée, mais `heard` est l'heure où Zigbee2MQTT l'a
   entendu (`last_seen`, jamais plus tard que l'arrivée ; l'arrivée sans `last_seen`), et
-  ne recule jamais. Daté de l'arrivée, `heard` dirait au propriétaire que sa porte était
+  ne recule jamais, sauf derrière l'horloge système reculée : jamais plus tard que
+  maintenant. Daté de l'arrivée, `heard` dirait au propriétaire que sa porte était
   surveillée plus longtemps qu'elle ne l'a été, de toute la durée de l'arrêt.
 - **Commandes** : une à la fois par appareil ; une nouvelle remplace celle qui attend
   (réponse `failed`, raison `superseded`). Sans confirmation au bout de 3 s, elle est
@@ -458,8 +492,9 @@ Choix faits au codage :
 - **États retenus** : un sujet par capacité (`device/{id}/state/{capacité}`), correction
   du contrat trouvée en codant : avec un seul sujet par appareil, la pile effaçait
   l'état de la porte.
-- **Santé** : l'adaptateur publie `zigbee.status` (retenu, répété chaque minute). La
-  centrale passe le lien `zigbee` à `down` quand le pont est arrêté, à `silent` quand
+- **Santé** : l'adaptateur publie `zigbee.status` (retenu, répété chaque minute),
+  avec le pont hors ligne au démarrage jusqu'à une preuve qu'il tourne (voir « État de
+  la liaison »). La centrale passe le lien `zigbee` à `down` quand le pont est arrêté, à `silent` quand
   l'adaptateur se tait depuis 3 minutes, et prévient le propriétaire (`zigbee_down`)
   3 minutes après le début de la panne : 3 minutes pour un pont arrêté, 6 pour un
   adaptateur muet.
@@ -488,8 +523,8 @@ Constaté sur le matériel (essai du 24 octobre 2026, Zigbee2MQTT 2.14.2 sur Nod
   particulier le format de `bridge/state`. `permit_join` (l'adaptateur envoie `value`
   et `time` pour couvrir les versions 1 et 2) est vérifié avec la version 2.14.2 : elle
   lit `time` et refuse plus de 254 secondes. La `transaction` recopiée dans la réponse
-  (ok ou erreur) et l'option d'appareil `qos` (lue à chaque message, sans redémarrage)
-  sont lues dans le code de Zigbee2MQTT 2.x (`lib/util/utils.ts`,
+  (ok ou erreur), la demande `health_check` et l'option d'appareil `qos` (lue à chaque
+  message, sans redémarrage) sont lues dans le code de Zigbee2MQTT 2.x (`lib/util/utils.ts`,
   `lib/extension/bridge.ts`, `lib/controller.ts`), pas encore vues sur le kit : à
   vérifier avec un vrai clavier (après l'appairage, la section `devices:` de la
   configuration de Zigbee2MQTT porte `qos: 0`, et

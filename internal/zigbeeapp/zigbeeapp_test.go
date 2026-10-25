@@ -28,7 +28,15 @@ func TestTheStartPublishesTheRegistryAndTheStatus(t *testing.T) {
 	if !st[0].Retain || st[0].Topic != contract.ZigbeeStatusTopic(site) || r.status().Bridge != contract.BridgeOffline {
 		t.Fatalf("%+v", r.status())
 	}
+	// The "online" the broker kept may date from before a power cut: Zigbee2MQTT is
+	// asked whether it runs, and the bridge is online once it answers.
 	r.z2m("bridge/state", `{"state":"online"}`, true)
+	drivertest.WaitFor(t, "a health check", func() bool { return len(r.rawOn("bridge/request/health_check")) == 1 })
+	r.settle()
+	if r.status().Bridge != contract.BridgeOffline {
+		t.Fatal("not believed before Zigbee2MQTT answers")
+	}
+	r.retainedOnline()
 	drivertest.WaitFor(t, "the bridge online", func() bool { return r.status().Bridge == contract.BridgeOnline })
 	r.validateAll()
 }
@@ -147,7 +155,7 @@ func TestAKeypadIsPublishedAtQoS0ByZigbee2MQTT(t *testing.T) {
 	if got := r.rawOn("bridge/request/device/options"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v", got)
 	}
-	r.z2m("bridge/state", `{"state":"online"}`, true)
+	r.retainedOnline()
 	drivertest.WaitFor(t, "asked again", func() bool { return len(r.rawOn("bridge/request/device/options")) == 2 })
 	if got := r.rawOn("bridge/request/device/options")[1]; !reflect.DeepEqual(got, want[0]) {
 		t.Fatalf("%+v", got)
@@ -529,4 +537,23 @@ func TestAStrayDeviceIsAskedToLeaveAndJournaled(t *testing.T) {
 		t.Fatalf("removed by force: %v", rm)
 	}
 	r.validateAll()
+}
+
+// The system clock is set back (an RTC running fast that NTP corrects): Zigbee2MQTT's
+// last_seen follows it at once. The core follows the clock as well, or a door opened
+// meanwhile would look heard before its last message, and be dropped.
+func TestADoorIsHeardAfterTheClockIsSetBack(t *testing.T) {
+	r := newRig(t, nil)
+	r.pair("dev_door", "0x01", "MCCGQ11LM")
+	seen := func(at time.Time) string { return `"last_seen":"` + at.Format(time.RFC3339) + `"` }
+	r.z2m("dev_door", `{"contact":true,`+seen(r.clock.Now())+`}`, false)
+	r.settle()
+	before := len(r.broker.On(contract.DeviceEventTopic(site, "dev_door")))
+	r.clock.Set(r.clock.Now().Add(-30 * time.Minute))
+	r.z2m("dev_door", `{"contact":false,`+seen(r.clock.Now().Add(-time.Second))+`}`, false)
+	drivertest.WaitFor(t, "the door event", func() bool { return len(r.broker.On(contract.DeviceEventTopic(site, "dev_door"))) == before+1 })
+	ev := r.broker.On(contract.DeviceEventTopic(site, "dev_door"))[before]
+	if d, _ := contract.DecodeData[contract.DeviceEventData](ev.Env); d.StringValue() != "open" {
+		t.Fatalf("%+v", d)
+	}
 }

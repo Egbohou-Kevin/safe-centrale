@@ -26,10 +26,20 @@ type Report struct {
 	Heard time.Time
 }
 
-// Bridge says whether Zigbee2MQTT and its radio stick are up.
+// Bridge says whether Zigbee2MQTT and its radio stick are up. Retained is true for
+// the broker's copy of what Zigbee2MQTT said when it last connected: no evidence that
+// it runs now (see bridge).
 type Bridge struct {
-	Now    time.Time
-	Online bool
+	Now      time.Time
+	Online   bool
+	Retained bool
+}
+
+// Health is Zigbee2MQTT's answer to a health check (HealthCheck), whatever it says:
+// it runs. Txn is the transaction the request carried, which Zigbee2MQTT echoes.
+type Health struct {
+	Now time.Time
+	Txn string
 }
 
 // Interviewed says that Zigbee2MQTT finished questioning a device that joined: OK
@@ -97,6 +107,7 @@ func (p Pair) at() time.Time        { return p.Now }
 func (j JoinAnswer) at() time.Time  { return j.Now }
 func (r Remove) at() time.Time      { return r.Now }
 func (c Command) at() time.Time     { return c.Now }
+func (h Health) at() time.Time      { return h.Now }
 
 // Action is what the core asks the driver to do.
 type Action interface{ isAction() }
@@ -153,6 +164,9 @@ type Expel struct {
 	IEEE  string
 	Force bool
 }
+
+// HealthCheck asks Zigbee2MQTT whether it runs; its answer carries Txn (see bridge).
+type HealthCheck struct{ Txn string }
 
 // CarriesCode says that a device's messages carry an access code (a keypad):
 // Zigbee2MQTT must publish them at QoS 0, so that the broker never keeps one for a
@@ -215,6 +229,7 @@ func (PermitJoin) isAction()      {}
 func (Rename) isAction()          {}
 func (Expel) isAction()           {}
 func (CarriesCode) isAction()     {}
+func (HealthCheck) isAction()     {}
 func (Ack) isAction()             {}
 func (Added) isAction()           {}
 func (Rejected) isAction()        {}

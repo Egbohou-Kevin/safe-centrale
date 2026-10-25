@@ -561,7 +561,7 @@ Codé et testé côté pilote (`internal/driver`, `internal/adapter/filestore`) 
 
 - Boucle d'horloge générique : échéance du domaine devenue un tic à la bonne heure,
   entrées traitées dans l'ordre, temps qui ne recule jamais (sauf pour un domaine qui
-  suit l'horloge, comme le moteur).
+  suit l'horloge, comme le moteur et l'adaptateur Zigbee).
 - Sauvegarde de l'état après chaque changement, sans réécrire un état identique
   (la carte SD s'use), avec écriture atomique, copie de la version précédente et
   reprise sur cette copie si le fichier est abîmé. Un état abîmé des deux côtés

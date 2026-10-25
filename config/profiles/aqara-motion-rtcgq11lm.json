@@ -1,9 +1,9 @@
 {
   "name": "aqara.motion.rtcgq11lm",
   "models": ["RTCGQ11LM"],
-  "note": "Aqara motion sensor. It reports motion, then clear after about 90 seconds. To check on the real device.",
+  "note": "Aqara motion sensor. It reports motion only: the clear comes from Zigbee2MQTT's own timer, about 90 seconds later, with the last_seen of the motion (hence rest). To check on the real device.",
   "capabilities": {
-    "motion":  { "from": "occupancy", "map": { "true": "detected", "false": "clear" } },
+    "motion":  { "from": "occupancy", "map": { "true": "detected", "false": "clear" }, "rest": "clear" },
     "battery": { "from": "battery" },
     "link":    { "from": "linkquality", "max": 255, "step": 20 }
   }

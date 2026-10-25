@@ -133,6 +133,9 @@ func New(cfg Config, deps Deps) (*App, error) {
 	}
 	a.loop, err = driver.New(driver.Options[zigbee.Input, zigbee.Action, zigbee.Snapshot]{
 		Name: keyZigbee, Clock: deps.Clock, Store: deps.Store, Logger: log,
+		// Zigbee2MQTT's last_seen follows the system clock, set back too: so does the
+		// core, which pulls back what that leaves in the future (see zigbee.pullBack).
+		FollowsClock: true,
 		Core: driver.Core[zigbee.Input, zigbee.Action, zigbee.Snapshot]{
 			Handle: a.core.Handle, NextWake: a.core.NextWake, Snapshot: a.core.Snapshot, Restore: a.core.Restore,
 			Tick: func(t time.Time) zigbee.Input { return zigbee.Tick{Now: t} },

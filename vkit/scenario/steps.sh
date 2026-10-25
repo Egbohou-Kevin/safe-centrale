@@ -62,7 +62,10 @@ step_install() {
 	sleep 3
 	# Every device says how it is, as real ones do soon after pairing.
 	zigbee send $DOOR '{"contact":true,"battery":95,"linkquality":200}'
-	zigbee send $MOTION '{"occupancy":false,"battery":95,"linkquality":200}'
+	# The motion sensor never says "no movement": Zigbee2MQTT does, on its own timer,
+	# with the last_seen of the sensor's last frame.
+	zigbee send $MOTION '{"occupancy":true,"battery":95,"linkquality":200}'
+	zigbee say $MOTION '{"occupancy":false,"battery":95,"linkquality":200}'
 	zigbee send $SMOKE '{"smoke":false,"tamper":false,"battery":95,"linkquality":200}'
 	zigbee send $KEYPAD '{"tamper":false,"battery":95,"linkquality":200}'
 	sleep 2

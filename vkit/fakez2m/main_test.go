@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sync"
 	"testing"
+	"time"
 
 	"safehome/internal/adapter/mqtt"
 )
@@ -75,16 +76,39 @@ func TestADeviceOptionSetsTheQoSOfItsReports(t *testing.T) {
 	if m, body := r.last(t); m.Topic != "zigbee2mqtt/bridge/response/device/options" || body["status"] != "ok" {
 		t.Fatalf("%s %v", m.Topic, body)
 	}
-	if err := z.report("0x06", `{"action":"disarm","action_code":"1357"}`); err != nil {
+	if err := z.report("0x06", `{"action":"disarm","action_code":"1357"}`, false); err != nil {
 		t.Fatal(err)
 	}
 	if m, _ := r.last(t); m.Topic != "zigbee2mqtt/0x06" || m.QoS != 0 {
 		t.Fatalf("%s at QoS %d", m.Topic, m.QoS)
 	}
-	if err := z.report("0x01", `{"contact":false}`); err != nil {
+	if err := z.report("0x01", `{"contact":false}`, false); err != nil {
 		t.Fatal(err)
 	}
 	if m, _ := r.last(t); m.QoS != 1 {
 		t.Fatalf("a door at QoS %d", m.QoS)
+	}
+}
+
+// What Zigbee2MQTT says by itself (the motion sensor's "no movement", on its own
+// timer) carries the last_seen of the device's last frame, as the real one does: the
+// adapter must hear it all the same.
+func TestWhatZigbee2MQTTSaysByItselfKeepsTheLastSeen(t *testing.T) {
+	z, r := newFake()
+	if err := z.order([]string{"send", "0x02", `{"occupancy":true}`}); err != nil {
+		t.Fatal(err)
+	}
+	_, moved := r.last(t)
+	time.Sleep(2 * time.Millisecond) // a new frame would get a new time
+	if err := z.order([]string{"say", "0x02", `{"occupancy":false}`}); err != nil {
+		t.Fatal(err)
+	}
+	if _, rest := r.last(t); rest["occupancy"] != false || rest["last_seen"] != moved["last_seen"] {
+		t.Fatalf("%v after %v", rest, moved)
+	}
+	time.Sleep(2 * time.Millisecond)
+	z.order([]string{"send", "0x02", `{"occupancy":true}`})
+	if _, again := r.last(t); again["last_seen"] == moved["last_seen"] {
+		t.Fatal("a frame from the device gets a new last_seen")
 	}
 }

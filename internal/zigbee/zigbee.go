@@ -101,9 +101,9 @@ type Snapshot struct {
 	Devices   map[string]Device           `json:"devices"`
 	States    map[string]map[string]State `json:"states"`
 	Offline   map[string]bool             `json:"offline"`
-	Retired   map[string]bool             `json:"retired"` // ids never given again
-	Pending   map[string]Pending          `json:"pending"` // by device: one command at a time
-	Bridge    bool                        `json:"bridge"`
+	Retired   map[string]bool             `json:"retired"`             // ids never given again
+	Pending   map[string]Pending          `json:"pending"`             // by device: one command at a time
+	Bridge    bool                        `json:"bridge"`              // Zigbee2MQTT known to run since the start (see bridge)
 	PairUntil time.Time                   `json:"pair_until"`          // zero while closed
 	PairRenew time.Time                   `json:"pair_renew,omitzero"` // next request to keep it open, zero if none
 	PairRef   string                      `json:"pair_ref"`
@@ -181,6 +181,9 @@ type Network struct {
 	// expelled counts the requests to leave sent to each stranger since the start
 	// (see stranger). Not saved: a stranger that speaks after a restart is asked again.
 	expelled map[string]int
+	// health is the health check that waits for Zigbee2MQTT's answer (see bridge).
+	// Not saved: the retained state that calls for it comes again at each start.
+	health Asking
 }
 
 // New creates the core. newID proposes device ids (for example "dev_k7p2"); one
@@ -238,12 +241,14 @@ func (n *Network) Restore(s Snapshot) {
 			s.Devices[id] = d
 		}
 	}
+	// Zigbee2MQTT running before is no evidence that it runs now (see bridge).
+	s.Bridge = false
 	n.s = s
 	n.seen, n.news = map[string]time.Time{}, maps.Clone(s.Heard)
 	if n.news == nil {
 		n.news = map[string]time.Time{}
 	}
-	n.said, n.coded, n.expelled = map[string]time.Time{}, false, map[string]int{}
+	n.said, n.coded, n.expelled, n.health = map[string]time.Time{}, false, map[string]int{}, Asking{}
 }
 
 // Devices lists the registry, sorted by id.
@@ -283,6 +288,9 @@ func (n *Network) NextWake() time.Time {
 	if n.s.PairAsk.Txn != "" {
 		add(n.s.PairAsk.Deadline)
 	}
+	if !n.health.Deadline.IsZero() {
+		add(n.health.Deadline)
+	}
 	for _, j := range n.s.Joining {
 		add(j.At.Add(JoinWait))
 	}
@@ -306,6 +314,7 @@ func (n *Network) NextWake() time.Time {
 // Handle processes an input and returns the actions to carry out.
 func (n *Network) Handle(in Input) []Action {
 	now := in.at()
+	n.pullBack(now)
 	for id := range n.s.Devices {
 		if _, ok := n.seen[id]; !ok {
 			n.seen[id] = now
@@ -331,6 +340,8 @@ func (n *Network) Handle(in Input) []Action {
 		out = n.remove(v)
 	case Command:
 		out = n.command(v)
+	case Health:
+		out = n.healthy(v)
 	}
 	return append(out, n.due(now)...)
 }
@@ -338,38 +349,10 @@ func (n *Network) Handle(in Input) []Action {
 // due runs what the clock has made due: the end of a pairing window or its next
 // piece, commands not confirmed in time, devices silent for too long.
 func (n *Network) due(now time.Time) []Action {
-	out := n.pairingDue(now)
+	out := append(n.pairingDue(now), n.healthDue(now)...)
 	n.joinsDue(now)
 	out = append(out, n.retryPending(now)...)
 	return append(out, n.markSilent(now)...)
-}
-
-// bridge follows Zigbee2MQTT's state. A pairing window ends when Zigbee2MQTT goes
-// offline, and says so to whoever asked for it: Zigbee2MQTT starts again with the
-// network closed, and the installer must not wait in front of a closed network. Each
-// time it comes online, it is told again which devices carry a code: a keypad paired
-// before, or a configuration of Zigbee2MQTT restored from a backup, gets its setting
-// back.
-func (n *Network) bridge(b Bridge) []Action {
-	n.s.Bridge = b.Online
-	if !b.Online {
-		n.coded = false
-		if !n.s.PairUntil.IsZero() {
-			return n.failPairing(ReasonBridgeOffline)
-		}
-		return nil
-	}
-	if n.coded {
-		return nil
-	}
-	n.coded = true
-	var out []Action
-	for _, d := range n.Devices() {
-		if n.byName[d.Profile].carriesCode() {
-			out = append(out, CarriesCode{IEEE: d.IEEE})
-		}
-	}
-	return out
 }
 
 // resolve finds a device by its name in Zigbee2MQTT: its id once renamed, its IEEE
