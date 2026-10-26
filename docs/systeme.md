@@ -566,19 +566,56 @@ relance, mauvaise configuration, refus, caméras, Zigbee2MQTT et sa version de N
 ## Maintenance
 
 Le système étant en lecture seule, une mise à jour (sécurité, nouvelle version de nos
-programmes) se fait en **mode maintenance** :
+programmes) se fait en **mode maintenance**. Procédure validée sur le Pi les 25 et 26 octobre 2026,
+en deux redémarrages :
 
-```bash
-sudo raspi-config nonint disable_overlayfs && sudo reboot
-# ... apt full-upgrade, nouveaux programmes dans /usr/local/bin, etc.
-sudo raspi-config nonint enable_overlayfs && sudo reboot
-```
+1. **Avant tout**, garder une copie de `/boot/firmware/cmdline.txt` sur l'ordinateur, et noter
+   l'état de l'alarme (armée ou non). Ne rien désarmer.
+2. **Sortir de la lecture seule.** `raspi-config nonint disable_overlayfs` ne reconnaît pas
+   `overlayroot=tmpfs:recurse=0` et ne change rien : retirer ce mot de `cmdline.txt` à la main
+   (la partition de démarrage reste inscriptible), puis redémarrer :
+
+   ```bash
+   sudo sed -i 's/overlayroot=tmpfs[^ ]* //' /boot/firmware/cmdline.txt
+   grep -c overlayroot /boot/firmware/cmdline.txt   # 0
+   sudo reboot
+   ```
+
+3. **Après le redémarrage**, `findmnt -no FSTYPE /` dit `ext4`, mais `/` reste en lecture seule :
+   `systemd-remount-fs` est masqué (étape 12). Le remonter en écriture :
+   `sudo mount -o remount,rw /`.
+4. **Vérifier l'heure** (`timedatectl`) : le 26 octobre, le Pi n'avait ni DNS ni heure juste dans ce
+   mode, et `apt` ou TLS échouent avec une heure fausse. Tout est revenu après le second
+   redémarrage. Sans heure juste, ne lancer ni `apt` ni l'installation.
+5. **Copier le paquet après ce redémarrage** (pas avant : en lecture seule, il disparaîtrait), le
+   faire **sans** `-s` quand la configuration du site est déjà sur la centrale (aucun secret dans le
+   paquet), puis `sudo ./safehome/deploy/install.sh`. Garder d'abord une copie des unités systemd
+   en place : si une unité nouvelle empêche un service de démarrer, remettre la sienne seule,
+   `systemctl daemon-reload`, puis redémarrer ce service.
+6. **Vérifier** : chaque service `active` pendant deux minutes, `safehome-hub version`,
+   `systemctl --failed` vide.
+7. **Effacer le paquet et tout dossier `site/`** copié sur la centrale (`rm -rf ~/safehome`), puis
+   `ls ~` : rien ne doit rester. Le 26 octobre, un dossier `site/` avec des secrets restait d'un
+   essai précédent.
+8. **Revenir en lecture seule** : `sudo raspi-config nonint enable_overlayfs`, puis **avant de
+   redémarrer** remettre `overlayroot=tmpfs:recurse=0` dans `cmdline.txt` (étape 12), comparer avec
+   la copie (`cmp`), vérifier que `systemd-remount-fs` est toujours masqué
+   (`systemctl is-enabled systemd-remount-fs` dit `masked`), et seulement alors `sudo reboot`.
+9. **Après le second redémarrage** : `/` en overlay, `/data` en ext4, les services actifs, l'alarme
+   dans le même état qu'avant.
 
 Conséquence : **pas de mises à jour automatiques** (elles seraient effacées au
 redémarrage). La centrale n'est pas joignable depuis internet (derrière la box ou
 l'opérateur 4G), ce qui limite le risque ; prévoir une maintenance par mois au début.
 Pendant la maintenance l'alarme continue de tourner, sauf pendant les deux
 redémarrages (environ une minute chacun).
+
+**Essai du 26 octobre 2026** (même Pi, version de `main` du jour, site configuré sans sirène et sans
+ligne SMS, `without_gsm`) : la procédure ci-dessus a demandé un troisième redémarrage, faute de
+l'étape 2 écrite ainsi ; le durcissement des unités (`865e2fc`) n'a fait tomber aucun service ;
+`safehome-hub check` accepte un site sans sirène ; `safehome-gsm` reste désactivé ; 668 Mo de
+mémoire disponibles. Constaté ensuite : juste après le redémarrage, un capteur pas encore entendu
+est donné hors ligne jusqu'à son premier message (en cours de correction).
 
 Changer la configuration (`/etc/safehome`) demande aussi le mode maintenance. Les
 codes d'accès, les zones et les sirènes, eux, sont dans l'état (`/var/lib/safehome`) et
