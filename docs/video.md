@@ -214,7 +214,13 @@ consommer les données mobiles du client.
   qui a été consommé depuis (corrigé le 25 octobre 2026 après une revue). Celle d'une session en cours rejoint le disque tous les 10 Mo et à
   la fin de la session, pas à chaque comptage (toutes les 2 s, la carte SD s'userait) :
   un arrêt brutal en perd moins de 10 Mo. Les sessions, elles, ne sont pas gardées :
-  après un redémarrage du service, leurs flux sont arrêtés et le relais le voit.
+  après un redémarrage du service, leurs flux sont arrêtés et le relais le voit. Une
+  horloge qui saute en avant (NTP qui corrige au démarrage le Pi sans module
+  d'horloge) n'arrête aucune session : la boucle le voit sur l'horloge monotone (voir
+  `architecture.md`) et le domaine avance d'autant le début de chaque session, son
+  passage à `live` et son dernier envoi, comme le prochain test des caméras et les
+  photos de l'heure (`Service.Stepped`) ; `duration_s` compte le temps vraiment passé
+  (26 octobre 2026).
 - **Le comptage** : les octets de vidéo et de son que go2rtc envoie, lus toutes les
   2 secondes. L'enveloppe RTMP et TLS n'est pas comptée (quelques pour cent en plus,
   à mesurer sur le kit).

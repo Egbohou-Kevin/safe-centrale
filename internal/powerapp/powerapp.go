@@ -122,7 +122,8 @@ func New(cfg Config, deps Deps) (*App, error) {
 		Name: keyPower, Clock: deps.Clock, Store: deps.Store, Logger: log,
 		Core: driver.Core[power.Input, power.Action, power.Snapshot]{
 			Handle: a.core.Handle, NextWake: a.core.NextWake, Snapshot: a.core.Snapshot, Restore: a.core.Restore,
-			Tick: func(t time.Time) power.Input { return power.Tick{Now: t} },
+			Tick:    func(t time.Time) power.Input { return power.Tick{Now: t} },
+			Stepped: a.core.Stepped,
 		},
 		Dispatch: a.dispatch,
 	})

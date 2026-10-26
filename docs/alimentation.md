@@ -52,7 +52,11 @@ si une alerte de batterie est partie. Une coupure seule n'est pas une alerte.
 d'alimentation 3 secondes. Le module demande alors l'arrêt au Pi, qui s'éteint
 proprement, puis il coupe le courant. Au retour du secteur, le module rallume le Pi
 (réglage « AUTO ON » de la carte, **à valider**), et la centrale repart dans l'état
-où elle était (armée reste armée).
+où elle était (armée reste armée). Les 30 secondes, comme les 3 du secteur, comptent
+le temps vraiment passé : si NTP avance l'horloge entre-temps (le Pi sans module
+d'horloge repart après une coupure de sa dernière heure connue, et la 4G lui donne
+internet pendant la coupure), le programme le voit sur l'horloge monotone et n'éteint
+pas la centrale plus tôt (voir `architecture.md`, 26 octobre 2026).
 
 Un module qui ne répond plus est écrit une fois dans le journal, puis une fois
 quand il répond à nouveau. Un module absent au démarrage arrête le programme, que

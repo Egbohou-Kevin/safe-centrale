@@ -556,3 +556,25 @@ func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 		t.Fatal("a message taken before the stop was lost")
 	}
 }
+
+// The Pi has no battery clock: after a power cut it starts from the last time it knew,
+// hours late, and NTP sets it forward a few seconds later. An alert for the app that
+// the cloud has not confirmed yet does not fail at once for it (the hub would send it
+// by SMS for nothing): the cloud keeps the time that really remains of its wait.
+func TestAClockSetForwardFailsNoAlertAtOnce(t *testing.T) {
+	r := newRig(t, nil)
+	r.app.LinkChanged(true, "mqtts")
+	r.fromHub(topic("alert", "request"), contract.TypeAlertRequest, contract.AlertRequestData{Incident: "inc1",
+		Kind: contract.AlertIntrusion, Urgency: contract.UrgencyCritical, Wave: 1, Contact: "u_owner", Channel: contract.ChannelApp, Text: "ALARME"})
+	drivertest.WaitFor(t, "the alert to leave", func() bool { return len(r.cloud.OfType(contract.TypeAlertRequest)) == 1 })
+	failed := func() int { return len(r.local.OfType(contract.TypeAlertResult)) }
+	r.clock.Set(r.clock.Now().Add(14 * time.Hour)) // NTP
+	r.clock.Advance(5 * time.Second)
+	r.app.loop.Do(context.Background(), func(time.Time) []agent.Action { return nil })
+	r.settle()
+	if n := failed(); n != 0 {
+		t.Fatalf("%d alert.result after a clock set forward, 5 s into a 10 s wait", n)
+	}
+	r.clock.Advance(5 * time.Second)
+	drivertest.WaitFor(t, "the failure at the end of the wait", func() bool { return failed() == 1 })
+}

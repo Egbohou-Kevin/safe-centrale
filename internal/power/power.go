@@ -85,6 +85,25 @@ func (m *Monitor) Restore(Snapshot) {}
 // NextWake returns when the core wants a tick: never, it moves with the readings.
 func (m *Monitor) NextWake() time.Time { return time.Time{} }
 
+// Stepped takes a forward step d of the system clock, which the driver sees on the
+// monotonic clock (driver.Core.Stepped): a Pi without a battery clock starts from the
+// last time it knew, hours late after a power cut, and NTP sets it forward once
+// internet is there, which the 4G gives during a cut too. The waits under way move with
+// the clock, so that each keeps the time that really passed: a cell low for a few
+// seconds does not cut the hub at once, and a line read the other way once does not
+// change the supply.
+func (m *Monitor) Stepped(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	if !m.settleFrom.IsZero() {
+		m.settleFrom = m.settleFrom.Add(d)
+	}
+	if !m.lowFrom.IsZero() {
+		m.lowFrom = m.lowFrom.Add(d)
+	}
+}
+
 // Handle processes one input.
 func (m *Monitor) Handle(in Input) []Action {
 	switch v := in.(type) {

@@ -433,3 +433,24 @@ func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 		t.Fatal("an error was logged for a message given up at shutdown")
 	}
 }
+
+// The Pi has no battery clock: after a power cut it starts from the last time it knew,
+// hours late, and NTP sets it forward a few seconds later. An alert waiting for the
+// network is not given up as too old for it: its age counts the time that really
+// passed, and it goes out once the network is back.
+func TestAClockSetForwardGivesUpNoWaitingMessage(t *testing.T) {
+	r := newRig(t, nil)
+	failingRequest(r)
+	r.clock.Set(r.clock.Now().Add(14 * time.Hour)) // NTP
+	r.clock.Advance(time.Minute)
+	r.gw.loop.Do(context.Background(), func(now time.Time) []gsm.Action { return r.gw.core.Handle(gsm.Tick{Now: now}) })
+	drivertest.WaitFor(t, "the SMS once the network is back", func() bool {
+		r.settle()
+		sent, _, _, _ := r.modem.count()
+		return sent == 1
+	})
+	if strings.Contains(r.logs.String(), "timeout") {
+		t.Fatalf("logs:\n%s", r.logs.String())
+	}
+	r.validateAll()
+}

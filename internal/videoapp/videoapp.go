@@ -177,7 +177,8 @@ func New(cfg Config, deps Deps) (*App, error) {
 		Name: keyVideo, Clock: deps.Clock, Store: deps.Store, Logger: log,
 		Core: driver.Core[video.Input, video.Action, video.Snapshot]{
 			Handle: a.core.Handle, NextWake: a.core.NextWake, Snapshot: a.core.Snapshot, Restore: a.core.Restore,
-			Tick: func(t time.Time) video.Input { return video.Tick{Now: t, Synced: a.synced()} },
+			Tick:    func(t time.Time) video.Input { return video.Tick{Now: t, Synced: a.synced()} },
+			Stepped: a.core.Stepped,
 		},
 		Dispatch: a.dispatch,
 		OnChange: func(_ context.Context, now time.Time) { a.publishStatus(now) },

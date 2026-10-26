@@ -137,7 +137,8 @@ func New(cfg Config, deps Deps) (*Gateway, error) {
 		Name: keyGSM, Clock: deps.Clock, Store: deps.Store, Logger: log,
 		Core: driver.Core[gsm.Input, gsm.Action, gsm.Snapshot]{
 			Handle: g.core.Handle, NextWake: g.core.NextWake, Snapshot: g.core.Snapshot, Restore: g.core.Restore,
-			Tick: func(t time.Time) gsm.Input { return gsm.Tick{Now: t} },
+			Tick:    func(t time.Time) gsm.Input { return gsm.Tick{Now: t} },
+			Stepped: g.core.Stepped,
 		},
 		Dispatch: g.dispatch,
 		OnChange: func(_ context.Context, now time.Time) { g.publishStatus(now) },

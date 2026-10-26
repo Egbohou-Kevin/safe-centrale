@@ -244,6 +244,17 @@ la même interface.
 
 ## Choix faits au codage
 
+Une horloge qui saute en avant (le Pi 4 sans module d'horloge, corrigé par NTP au
+démarrage après une coupure) ne vieillit aucune demande : la boucle le voit sur
+l'horloge monotone (voir `architecture.md`) et le domaine avance d'autant l'arrivée de
+chaque demande en file, son attente avant la reprise, le temps donné à une ligne, la
+prochaine vérification et le prochain SMS de test, et l'heure où chaque contact a été
+prévenu, pour un « 1 » (`Gateway.Stepped`). Sans cela, une alerte qui attendait le
+réseau était abandonnée comme trop vieille (`timeout`). Le moment où un incident a été
+dit la première fois ne bouge pas : il se compare à l'heure de l'opérateur sur le « 1 »
+(26 octobre 2026). Une demande écrite par la centrale juste avant le saut et lue juste
+après reste jugée sur ses deux heures : le cas tient en quelques millisecondes.
+
 Découpage, selon l'architecture hexagonale :
 
 | Paquet | Rôle |

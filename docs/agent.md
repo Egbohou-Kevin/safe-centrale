@@ -355,6 +355,16 @@ arrêté de l'agent la croirait dépassée pour tout ce temps (corrigé le 25 oc
 après une revue : après un recul de l'horloge, chaque ordre de l'application était
 refusé `expired`).
 
+Une horloge qui saute en avant (NTP qui corrige au démarrage le Pi sans module
+d'horloge, parti de sa dernière heure connue) ne fait rien expirer : la boucle le voit
+sur l'horloge monotone (voir `architecture.md`) et l'agent avance d'autant ce qu'il
+chronomètre (`Relay.Stepped`) : l'attente de la confirmation d'une alerte par le cloud
+(sinon elle échouait aussitôt, et la centrale passait au GSM pour rien), ce dont il se
+souvient un moment (alertes, incidents, messages arrivés au cloud, photos, états redits,
+messages répétés), ses limites de débit, et l'âge des messages en file, en mémoire
+seulement : leur copie sur disque n'est pas réécrite, la file les garde une semaine.
+L'échéance d'une adresse de photo, donnée par le cloud, ne bouge pas (26 octobre 2026).
+
 ## Authentification
 
 - **Chaque centrale a ses propres identifiants**, fournis à l'installation. Elle

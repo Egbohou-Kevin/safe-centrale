@@ -194,6 +194,35 @@ func (v *Service) Restore(s Snapshot) {
 	v.s, v.unsaved = s, 0
 }
 
+// Stepped takes a forward step d of the system clock, which the driver sees on the
+// monotonic clock (driver.Core.Stepped): a Pi without a battery clock starts from the
+// last time it knew, hours late after a power cut, and NTP sets it forward once
+// internet is there. Every wait under way moves with the clock, so that each keeps the
+// time that really passed: a session is not ended as stalled or too long for it, and
+// says how long it really lasted; the next check of the cameras and the photos of the
+// last hour keep their time too. The month of the usage is the calendar's: it follows
+// the clock (see month).
+func (v *Service) Stepped(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	for _, s := range v.sessions {
+		s.started, s.liveAt, s.grewAt = moved(s.started, d), moved(s.liveAt, d), moved(s.grewAt, d)
+	}
+	v.nextProbe = moved(v.nextProbe, d)
+	for i, t := range v.s.PhotosAt {
+		v.s.PhotosAt[i] = moved(t, d)
+	}
+}
+
+// moved is t moved by d, the zero time staying zero (no deadline).
+func moved(t time.Time, d time.Duration) time.Time {
+	if t.IsZero() {
+		return t
+	}
+	return t.Add(d)
+}
+
 // asap is a wake-up time already past: check the cameras at once.
 var asap = time.Unix(0, 0).UTC()
 

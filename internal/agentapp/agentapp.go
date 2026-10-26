@@ -137,7 +137,8 @@ func New(cfg Config, deps Deps) (*App, error) {
 		Name: keyAgent, Clock: deps.Clock, Store: deps.Store, Logger: log,
 		Core: driver.Core[agent.Input, agent.Action, agent.Snapshot]{
 			Handle: core.Handle, NextWake: core.NextWake, Snapshot: core.Snapshot, Restore: core.Restore,
-			Tick: func(t time.Time) agent.Input { return agent.Tick{Now: t} },
+			Tick:    func(t time.Time) agent.Input { return agent.Tick{Now: t} },
+			Stepped: core.Stepped,
 		},
 		Dispatch: a.dispatch,
 		OnChange: func(context.Context, time.Time) { a.poke() }, // the queue moved

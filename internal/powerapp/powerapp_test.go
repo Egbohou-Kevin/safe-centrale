@@ -187,3 +187,24 @@ func TestTheConfigurationIsChecked(t *testing.T) {
 		}
 	}
 }
+
+// The Pi has no battery clock: after a power cut it starts from the last time it knew,
+// hours late, and NTP sets it forward a few seconds later (over the 4G, during the
+// cut too). A cell low for a few seconds does not shut the hub down for it: the cut
+// waits the 30 s that really pass.
+func TestAClockSetForwardCutsNothingEarly(t *testing.T) {
+	r := start(t)
+	r.waitTold(contract.CapMains, `"present"`)
+	r.board.set(func(b *fakeBoard) { b.lost = true })
+	r.polls(4)
+	r.waitTold(contract.CapMains, `"present"`, `"lost"`)
+	r.board.set(func(b *fakeBoard) { b.mv, b.pct = 2950, 1 })
+	r.polls(5)
+	r.clock.Set(r.clock.Now().Add(14 * time.Hour)) // NTP
+	r.polls(5)
+	if n := r.board.cutCount(); n != 0 {
+		t.Fatalf("%d cuts, 10 s after the cell went low", n)
+	}
+	r.polls(21)
+	drivertest.WaitFor(t, "the cut", func() bool { return r.board.cutCount() == 1 })
+}

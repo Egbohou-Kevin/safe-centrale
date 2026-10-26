@@ -681,3 +681,34 @@ func TestAnOrderDeliveredTwiceIsCarriedOutOnce(t *testing.T) {
 		t.Fatalf("the session started %d times", n)
 	}
 }
+
+// The Pi has no battery clock: after a power cut it starts from the last time it knew,
+// hours late, and NTP sets it forward a few seconds later. A session live at that
+// moment is not ended as stalled for it, and says how long it really lasted.
+func TestAClockSetForwardEndsNoSession(t *testing.T) {
+	h := start(t)
+	h.request("s1", "cam_caisse")
+	drivertest.WaitFor(t, "the stream", func() bool { return h.stream.stream("cam_caisse") != nil })
+	s := h.stream.stream("cam_caisse")
+	s.set(1000, nil)
+	h.progress()
+	drivertest.WaitFor(t, "live", func() bool { return h.broker.has("s1", contract.VideoLive, "") })
+	h.clock.Set(h.clock.Now().Add(14 * time.Hour)) // NTP
+	s.set(2000, nil)
+	h.progress()
+	h.app.Alive(context.Background())
+	h.send(contract.TypeVideoStop, contract.VideoStopData{Session: "s1"})
+	drivertest.WaitFor(t, "ended", func() bool {
+		for _, d := range h.broker.sessions() {
+			if d.Status == contract.VideoEnded {
+				return true
+			}
+		}
+		return false
+	})
+	for _, d := range h.broker.sessions() {
+		if d.Status == contract.VideoEnded && (d.Reason != contract.VideoStopped || d.DurationS > 60) {
+			t.Fatalf("after a clock set forward: %+v", d)
+		}
+	}
+}
