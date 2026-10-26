@@ -80,7 +80,10 @@ tout de suite, un contact retiré ne désarme plus. `safehome-hub codes set` ref
 un contact ; `codes list` signale ces codes restants. La console les liste (« Codes
 d'anciens contacts ») et permet de les retirer. Les fichiers d'état écrits par un outil
 lancé avec `sudo` prennent le propriétaire du dossier, le verrou des codes
-(`codes.lock`) aussi ; sinon l'outil échoue en le disant.
+(`codes.lock`) aussi ; sinon l'outil échoue en le disant. Le verrou n'est jamais pris à
+travers un lien : un `codes.lock` qui est un lien symbolique, ou un autre nom d'un autre
+fichier, est refusé et laissé tel quel, pour qu'un outil lancé en root ne donne jamais un
+autre fichier au propriétaire du dossier.
 Le nombre de tours du hachage (`access.iterations`) doit être réglé sur le
 Raspberry Pi réel : à mesurer à l'installation, il n'a pas encore été chronométré.
 

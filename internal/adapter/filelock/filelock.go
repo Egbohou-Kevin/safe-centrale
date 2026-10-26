@@ -37,9 +37,16 @@ func Hold(dir, name string, wait time.Duration) (release func(), err error) {
 // hold is Hold for a folder owned by owner, nil where the system has none.
 func hold(dir, name string, wait time.Duration, owner *syscall.Stat_t) (release func(), err error) {
 	path := filepath.Join(dir, name)
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	// Never through a link: run as root, the lock would hand the link's target to the
+	// folder's owner. The file opened must be a plain file of its own, too (no other
+	// name for it).
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("filelock: %w", err)
+		return nil, fmt.Errorf("filelock: %s is not a plain file: %w", name, err)
+	}
+	if err := plain(f); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("filelock: %s: %w", name, err)
 	}
 	if err := ownedLike(f, owner); err != nil {
 		f.Close()
@@ -58,6 +65,25 @@ func hold(dir, name string, wait time.Duration, owner *syscall.Stat_t) (release 
 		}
 		time.Sleep(retry)
 	}
+}
+
+// errNotPlain refuses a lock file that is not a plain file with one name.
+var errNotPlain = errors.New("not a plain file with a single name: remove it")
+
+// plain checks that the file opened is a plain file with no other name: a hard link
+// to another file must not be given away either.
+func plain(f *os.File) error {
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errNotPlain
+	}
+	if st, ok := info.Sys().(*syscall.Stat_t); ok && st.Nlink != 1 {
+		return errNotPlain
+	}
+	return nil
 }
 
 // ownedLike gives the file the owner and group of the folder, unless it has them.
