@@ -443,6 +443,10 @@ func TestOrdersFromTheCloud(t *testing.T) {
 				Command: contract.CmdPostpone, Origin: contract.OriginApp, User: "u_owner"})
 			return a
 		},
+		"config without any contact": func() []Action {
+			_, _, a := h.cloud(topic("config", "set"), contract.TypeConfigSet, contract.ConfigSetData{Version: 99, Contacts: []contract.ConfigContact{}})
+			return a
+		},
 		"other site": func() []Action {
 			_, _, a := h.cloud(contract.Topic("tg-lom-0002", "alarm", "cmd"), contract.TypeAlarmCommand, cmd(contract.OriginApp, nil))
 			return a

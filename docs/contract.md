@@ -718,12 +718,13 @@ et en données mobiles son forfait vidéo. Le cloud envoie le tout à chaque cha
 
 - Le message porte **toute** la configuration réglée par le cloud, pas une
   différence : un champ absent garde la valeur des fichiers du site. Une liste
-  envoyée (`contacts`, `closing`) remplace celle des fichiers, même vide :
-  `"contacts": []` retire tous les contacts, `"closing": {}` toute mise en service
-  automatique, y compris après un redémarrage.
+  envoyée (`contacts`, `closing`) remplace celle des fichiers : `"closing": {}`
+  retire toute mise en service automatique, y compris après un redémarrage.
+  `"contacts": []` est refusé (`config.applied` `rejected`) : personne ne serait plus
+  prévenu d'une alarme.
 - Limites : délais de 10 à 300 s (sortie) et de 10 à 180 s (entrée), 5 contacts au
-  plus, dont un propriétaire (`owner`) dès qu'il y en a un (une liste vide est
-  acceptée : personne n'est prévenu d'une alarme, `check` le signale). Rôles : `owner`, `deputy`, `guard`,
+  plus et 1 au moins, dont un propriétaire (`owner`). Seul le fichier du site peut
+  n'avoir aucun contact (personne n'est alors prévenu d'une alarme, `check` le signale). Rôles : `owner`, `deputy`, `guard`,
   `manager`, `other`. `sms` et `call` demandent un numéro au format international
   (`+228...`). `quota_mb` de 0 à 8 388 608. `max_s` ne dépasse pas la plus longue
   session vidéo.

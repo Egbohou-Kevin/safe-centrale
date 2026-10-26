@@ -153,6 +153,18 @@ pendant une alarme, les demandes en file occupaient la ligne et aucune vérifica
 ne venait, si bien qu'un modem bloqué n'était redémarré qu'une fois la file vidée,
 avec une ligne dite en état de marche pendant que chaque envoi échouait.
 
+## Numéro retiré des contacts
+
+Les contacts et leurs numéros viennent du cloud (`config.set`). Un numéro avec lequel la
+passerelle tournait, et qu'elle n'a plus à son démarrage suivant (un contact retiré, ou
+passé à un autre numéro), reçoit un SMS : « safeHome: ce numero ne recevra plus les
+alertes de l'alarme. Si personne ne l'a demande, appelez votre installateur. » Une
+liste changée de loin, par erreur ou par quelqu'un qui aurait pris la main sur le cloud,
+ne fait donc pas taire un numéro sans qu'il le sache, et par un canal que le cloud ne
+tient pas. Le premier démarrage qui garde les numéros ne prévient personne ; un numéro
+passé d'un contact à un autre non plus. Ce SMS a la priorité la plus basse, ne fait
+l'objet d'aucun `alert.result` et n'est jamais compté comme une alerte.
+
 ## SMS entrants
 
 - La passerelle ne garde que les SMS dont le numéro est celui d'un contact du site.

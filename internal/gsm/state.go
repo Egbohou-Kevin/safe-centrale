@@ -28,6 +28,10 @@ type Snapshot struct {
 	// Told is, for each contact, the incidents sent to them within ackAmbiguity, once
 	// each, first told first: the ones a "1" may be meant for (see ackTarget).
 	Told map[string][]OpenItem `json:"told,omitempty"`
+	// Numbers are the contacts' numbers the gateway last ran with, sorted: one that is
+	// gone at the next start is told so by SMS (see noticeRemoved). Nil until the
+	// first start that keeps them.
+	Numbers []string `json:"numbers,omitempty"`
 }
 
 // Job is a request in the queue, or a test SMS.
@@ -50,6 +54,7 @@ type Job struct {
 	Deadline  time.Time `json:"-"`                 // when that line is given up
 	Reported  bool      `json:"reported"`          // a failure was already reported
 	Test      bool      `json:"test"`
+	Notice    bool      `json:"notice,omitempty"` // tells a number it no longer gets the alerts
 }
 
 // LineState is what the gateway knows of a line.
@@ -113,6 +118,7 @@ func (s Snapshot) clone() Snapshot {
 		out.Jobs[i] = j
 	}
 	out.Seen = slices.Clone(s.Seen)
+	out.Numbers = slices.Clone(s.Numbers)
 	out.Closed = slices.Clone(s.Closed)
 	out.Lines = make(map[string]LineState, len(s.Lines))
 	for id, l := range s.Lines {

@@ -419,3 +419,44 @@ func TestALateFailureForAWaitingJobDoesNotLengthenItsWait(t *testing.T) {
 		t.Fatalf("retry at %v, want 5 s after the timeout", got)
 	}
 }
+
+// A number taken off the contacts (a contact removed, or given another number) is
+// told so by SMS at the next start: the contacts come from the cloud, and a list
+// changed from there must not silence a number without it knowing. The first start
+// tells nobody, nor does a number that only moved to another contact.
+func TestANumberTakenOffTheContactsIsToldSo(t *testing.T) {
+	g := newGW(t, 1)
+	up(t, g, t0)
+	if ex := of[Execute](g.Handle(Tick{Now: t0})); len(ex) != 0 {
+		t.Fatalf("the first start tells nobody: %+v", ex)
+	}
+	saved := g.Snapshot()
+
+	g = newGW(t, 1, func(c *Config) {
+		c.Contacts = map[string]string{"owner": "+22899999999", "manager": "+228 70 00 00 01"}
+	})
+	g.Restore(saved)
+	out := g.Handle(Tick{Now: t0.Add(time.Minute)})
+	ex := of[Execute](out)
+	for _, a := range out {
+		if c, ok := a.(CheckLine); ok {
+			ex = append(ex, of[Execute](g.Handle(Probe{Now: t0.Add(time.Minute), Line: c.Line, Responding: true, Registered: true, Operator: "op"}))...)
+		}
+	}
+	if len(ex) != 1 || ex[0].Number != "+22890123456" || ex[0].Channel != ChannelSMS || ex[0].Text != noticeText {
+		t.Fatalf("the owner's old number is told, and only it: %+v", ex)
+	}
+	if out := g.Handle(Outcome{Now: t0.Add(time.Minute), Job: ex[0].Job, Line: "line1", OK: true, MsgRef: "9"}); len(of[Report](out)) != 0 {
+		t.Fatalf("a notice is no alert: nothing to report: %+v", out)
+	}
+	saved = g.Snapshot()
+
+	g = newGW(t, 1, func(c *Config) {
+		c.Contacts = map[string]string{"owner": "+22899999999", "manager": "+228 70 00 00 01"}
+	})
+	g.Restore(saved)
+	up(t, g, t0.Add(2*time.Minute))
+	if g.Queued() != 0 {
+		t.Fatal("the same numbers again: nobody is told")
+	}
+}

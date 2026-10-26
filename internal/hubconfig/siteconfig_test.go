@@ -138,13 +138,18 @@ func TestTheCloudCheckLaysTheDevicesAsTheHubDoes(t *testing.T) {
 	}
 }
 
-// An empty list from the cloud (no contact, no automatic arming) is a list sent: it is
-// checked as such, and the hub runs on it after the restart too, not on its file's.
+// An empty list from the cloud (no automatic arming) is a list sent: it is checked as
+// such, and the hub runs on it after the restart too, not on its file's. An empty list
+// of contacts is refused: every alarm would go unheard.
 func TestEmptyListsFromTheCloudOutliveTheRestart(t *testing.T) {
 	path, state := exampleWithState(t)
-	d := contract.ConfigSetData{Version: 7, Contacts: []contract.ConfigContact{}, Closing: map[string]string{}}
+	if _, err := WithSiteConfig(path, contract.ConfigSetData{Version: 7, Contacts: []contract.ConfigContact{}}); err == nil {
+		t.Fatal("a configuration without any contact was taken")
+	}
+	owner := []contract.ConfigContact{{ID: "u_owner", Name: "Owner", Role: "owner", Channels: []string{"app"}}}
+	d := contract.ConfigSetData{Version: 7, Contacts: owner, Closing: map[string]string{}}
 	checked, err := WithSiteConfig(path, d)
-	if err != nil || len(checked.Hub.Escalation.Contacts) != 0 || len(checked.Hub.Engine.Closing) != 0 {
+	if err != nil || len(checked.Hub.Escalation.Contacts) != 1 || len(checked.Hub.Engine.Closing) != 0 {
 		t.Fatalf("checked: %v, %d contact(s), %d closing day(s)", err, len(checked.Hub.Escalation.Contacts), len(checked.Hub.Engine.Closing))
 	}
 	if err := siteconfig.Write(state, d); err != nil {
@@ -154,7 +159,7 @@ func TestEmptyListsFromTheCloudOutliveTheRestart(t *testing.T) {
 	if err != nil || r.SiteErr != nil || r.SiteVersion != 7 {
 		t.Fatalf("%v %v %d", err, r.SiteErr, r.SiteVersion)
 	}
-	if len(r.Hub.Escalation.Contacts) != 0 || len(r.Hub.Engine.Closing) != 0 {
+	if len(r.Hub.Escalation.Contacts) != 1 || len(r.Hub.Engine.Closing) != 0 {
 		t.Fatalf("after the restart: %d contact(s), %d closing day(s), the file's lists came back", len(r.Hub.Escalation.Contacts), len(r.Hub.Engine.Closing))
 	}
 }

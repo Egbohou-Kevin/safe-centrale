@@ -48,6 +48,9 @@ func (g *Gateway) sent(o Outcome) []Action {
 		g.recordTest(o.Line, true, o.Now)
 		return nil
 	}
+	if j.Notice {
+		return nil
+	}
 	g.told(j.Contact, OpenItem{Incident: j.Incident, At: o.Now, Priority: j.Priority, Secondary: j.Secondary})
 	if j.Channel == ChannelSMS && o.MsgRef != "" {
 		g.remember(o.Line+"/"+o.MsgRef, j.Ref)
@@ -70,7 +73,7 @@ func (g *Gateway) failed(id uint64, line string, reason Reason, now time.Time) [
 		// Its incident ended while the line was sending it: not retried, but its
 		// failure is said, unless it was already.
 		var out []Action
-		if !j.Test && !j.Reported {
+		if j.Ref != "" && !j.Reported {
 			out = []Action{Report{Ref: j.Ref, Status: StatusFailed, Reason: reason}}
 		}
 		g.remove(i)
@@ -101,7 +104,7 @@ func (g *Gateway) roundFailed(i int, now time.Time) []Action {
 	j.Attempts++
 	j.Tried = nil
 	j.NotBefore = now.Add(g.backoff(j.Attempts))
-	if j.Reported {
+	if j.Reported || j.Ref == "" {
 		return nil
 	}
 	j.Reported = true

@@ -114,6 +114,9 @@ func (d ConfigSetData) Validate() error {
 	switch {
 	case d.Version < 1:
 		return fmt.Errorf("%w: version must be at least 1", ErrInvalid)
+	case d.Contacts != nil && len(d.Contacts) == 0:
+		// A list sent replaces the hub's: an empty one would leave every alarm unheard.
+		return fmt.Errorf("%w: a site keeps at least one contact", ErrInvalid)
 	case len(d.Contacts) > MaxContacts:
 		return fmt.Errorf("%w: %d contacts at most", ErrInvalid, MaxContacts)
 	case d.ExitDelayS != 0 && (d.ExitDelayS < MinDelayS || d.ExitDelayS > MaxExitDelayS):

@@ -107,16 +107,20 @@ func TestChanged(t *testing.T) {
 	}
 }
 
-// An empty list is kept as sent, apart from a list not sent: "contacts": [] removes
-// every contact, no "contacts" leaves the program's file in charge.
+// An empty list is kept as sent, apart from a list not sent: "closing": {} removes
+// every automatic arming, no "closing" leaves the program's file in charge. An empty
+// list of contacts is refused: every alarm would go unheard.
 func TestAnEmptyListIsKept(t *testing.T) {
 	dir := t.TempDir()
-	d := contract.ConfigSetData{Version: 2, Contacts: []contract.ConfigContact{}, Closing: map[string]string{}}
+	if err := Write(dir, contract.ConfigSetData{Version: 2, Contacts: []contract.ConfigContact{}}); err == nil {
+		t.Fatal("a configuration without any contact was written")
+	}
+	d := contract.ConfigSetData{Version: 2, Closing: map[string]string{}}
 	if err := Write(dir, d); err != nil {
 		t.Fatal(err)
 	}
-	if got, _, err := Read(dir); err != nil || got.Contacts == nil || got.Closing == nil {
-		t.Fatalf("%+v %v: the empty lists were dropped", got, err)
+	if got, _, err := Read(dir); err != nil || got.Closing == nil {
+		t.Fatalf("%+v %v: the empty list was dropped", got, err)
 	}
 	if err := Write(dir, contract.ConfigSetData{Version: 3}); err != nil {
 		t.Fatal(err)

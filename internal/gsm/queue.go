@@ -2,6 +2,7 @@ package gsm
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 	"time"
 )
@@ -79,6 +80,7 @@ func (g *Gateway) timers(now time.Time) []Action {
 	out := g.lineTimeouts(now)
 	out = append(out, g.dropExpired(now)...)
 	g.queueTest(now)
+	g.noticeRemoved(now)
 	return out
 }
 
@@ -118,7 +120,7 @@ func (g *Gateway) dropExpired(now time.Time) []Action {
 			kept = append(kept, j)
 			continue
 		}
-		if !j.Test && !j.Reported {
+		if j.Ref != "" && !j.Reported {
 			out = append(out, Report{Ref: j.Ref, Status: StatusFailed, Reason: ReasonTimeout})
 		}
 	}
@@ -138,6 +140,33 @@ func (g *Gateway) queueTest(now time.Time) {
 		return
 	}
 	g.addJob(Job{Number: g.test, Channel: ChannelSMS, Priority: PriorityOther, Text: testText, Received: now, Test: true})
+}
+
+// noticeText tells a number taken off the contacts that it no longer gets the alerts.
+const noticeText = "safeHome: ce numero ne recevra plus les alertes de l'alarme. Si personne ne l'a demande, appelez votre installateur."
+
+// noticeRemoved tells by SMS each number the gateway ran with before and no longer
+// has: a contact removed, or given another number. The contacts come from the cloud;
+// a list changed from there (by mistake, or by someone who took it over) must not
+// silence a number without it knowing, by a channel the cloud does not hold. The
+// first start that keeps the numbers tells nobody.
+func (g *Gateway) noticeRemoved(now time.Time) {
+	current := slices.Sorted(maps.Values(g.numbers))
+	current = slices.Compact(current)
+	if current == nil {
+		current = []string{}
+	}
+	if slices.Equal(current, g.s.Numbers) {
+		return
+	}
+	if g.s.Numbers != nil {
+		for _, n := range g.s.Numbers {
+			if !slices.Contains(current, n) {
+				g.addJob(Job{Number: n, Channel: ChannelSMS, Priority: PriorityOther, Text: noticeText, Received: now, Notice: true})
+			}
+		}
+	}
+	g.s.Numbers = current
 }
 
 // --- scheduling -----------------------------------------------------------------------
