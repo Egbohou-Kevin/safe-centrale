@@ -51,9 +51,14 @@ func Disarmed(d contract.DisarmedData) []gsm.Cancel {
 }
 
 // Acked turns an alert.ack into a gateway input, without its Now: a contact took
-// the incident in hand and its escalation is over.
+// the incident in hand and its escalation is over. One given in the app is confirmed
+// to the contact by SMS.
 func Acked(d contract.AlertAckData) (gsm.Cancel, bool) {
-	return gsm.Cancel{Incident: d.Incident}, d.Incident != ""
+	c := gsm.Cancel{Incident: d.Incident}
+	if d.Via == contract.ChannelApp {
+		c.Confirm = d.Contact
+	}
+	return c, d.Incident != ""
 }
 
 // priority: what protects lives first, then intrusions, then the rest.

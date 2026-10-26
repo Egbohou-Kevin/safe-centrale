@@ -153,6 +153,15 @@ pendant une alarme, les demandes en file occupaient la ligne et aucune vérifica
 ne venait, si bien qu'un modem bloqué n'était redémarré qu'une fois la file vidée,
 avec une ligne dite en état de marche pendant que chaque envoi échouait.
 
+## Acquittement dans l'application
+
+Un `alert.ack` venu de l'application (`via` à `app`) arrête l'escalade, SMS et appels
+compris, et vient du cloud. La passerelle envoie donc au contact qui l'a donné, s'il a un
+numéro, un SMS : « safeHome: l'alarme est prise en charge en votre nom dans
+l'application. Si ce n'est pas vous, personne ne s'en occupe: agissez. » Une fois par
+incident ; un acquittement par SMS (le « 1 ») n'est pas confirmé. Comme le SMS de numéro
+retiré, il ne fait l'objet d'aucun `alert.result`.
+
 ## Numéro retiré des contacts
 
 Les contacts et leurs numéros viennent du cloud (`config.set`). Un numéro avec lequel la

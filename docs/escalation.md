@@ -84,6 +84,12 @@ Moyens d'acquitter :
   être celui d'un contact.
 - **Bouton dans l'application** ou la notification.
 
+Un acquittement donné dans l'application passe par le cloud et arrête les SMS et les
+appels de l'escalade : la passerelle GSM le confirme donc au contact par un SMS, une fois
+par incident (« l'alarme est prise en charge en votre nom dans l'application »), pour
+qu'un acquittement qu'il n'a pas donné ne lui reste pas inconnu. Un contact sans numéro
+ne peut pas en être averti (voir `gsm-gateway.md`).
+
 Un acquittement est enregistré dans un événement `alert.ack` avec le contact et le
 moyen utilisé. Il rend aussi discrète l'alerte d'une sirène muette pendant cette
 alarme (voir « Sirène muette pendant une alarme »).

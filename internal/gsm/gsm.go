@@ -145,6 +145,7 @@ func (g *Gateway) Handle(in Input) []Action {
 	case Probe:
 		out = append(out, g.probe(v)...)
 	case Cancel:
+		g.confirm(v)
 		out = append(out, g.cancel(v.Incident)...)
 	case Restarted:
 		g.restarted(v.Line)

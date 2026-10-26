@@ -118,6 +118,9 @@ type Probe struct {
 type Cancel struct {
 	Now      time.Time
 	Incident string
+	// Confirm is the contact who acknowledged the incident in the app, if so: told by
+	// SMS (see confirmText).
+	Confirm string
 }
 
 // Restarted says that a RestartModem is over.

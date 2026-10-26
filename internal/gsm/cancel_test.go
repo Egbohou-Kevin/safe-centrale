@@ -184,3 +184,22 @@ func TestAMessageDroppedAfterAFailureSaysTheFailure(t *testing.T) {
 	out := g.Handle(Cancel{Now: t0.Add(2 * time.Second), Incident: "inc-r1"})
 	onlyReport(t, out, "r1", StatusFailed, ReasonNoCredit)
 }
+
+// An acknowledgement in the app is confirmed to its contact by SMS, once per incident;
+// a contact without a number cannot be told.
+func TestAnAcknowledgementInTheAppIsConfirmed(t *testing.T) {
+	g := newGW(t, 1)
+	up(t, g, t0)
+	ex := of[Execute](g.Handle(Cancel{Now: t0, Incident: "inc-1", Confirm: "owner"}))
+	if len(ex) != 1 || ex[0].Number != "+22890123456" || ex[0].Text != confirmText {
+		t.Fatalf("%+v", ex)
+	}
+	if out := g.Handle(Outcome{Now: t0, Job: ex[0].Job, Line: "line1", OK: true}); len(of[Report](out)) != 0 {
+		t.Fatalf("a confirmation is no alert: %+v", out)
+	}
+	g.Handle(Cancel{Now: t0, Incident: "inc-1", Confirm: "owner"})
+	g.Handle(Cancel{Now: t0, Incident: "inc-2", Confirm: "u_app_only"})
+	if g.Queued() != 0 {
+		t.Fatal("told once, and only with a number")
+	}
+}

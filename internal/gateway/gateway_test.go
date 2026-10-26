@@ -355,8 +355,30 @@ func TestAnAcknowledgementDropsTheWaitingMessages(t *testing.T) {
 	r := newRig(t, nil)
 	failingRequest(r)
 	r.publish(contract.AlertAckTopic(site), r.ids.New(), t0, contract.TypeAlertAck,
-		contract.AlertAckData{Incident: "inc1", Contact: "u_owner", Via: contract.ChannelApp})
+		contract.AlertAckData{Incident: "inc1", Contact: "u_owner", Via: contract.ChannelSMS})
 	noSMSAfterRetry(r)
+}
+
+// An acknowledgement given in the app comes through the cloud, and ends the SMS and
+// calls of the escalation: the contact is told by SMS that the alarm is taken in hand
+// in their name, once, so that one they did not give is not left unknown to them.
+func TestAnAcknowledgementInTheAppIsConfirmedBySMS(t *testing.T) {
+	r := newRig(t, nil)
+	failingRequest(r)
+	for range 2 {
+		r.publish(contract.AlertAckTopic(site), r.ids.New(), t0, contract.TypeAlertAck,
+			contract.AlertAckData{Incident: "inc1", Contact: "u_owner", Via: contract.ChannelApp})
+	}
+	drivertest.WaitFor(r.t, "the alert dropped", func() bool { return strings.Contains(r.logs.String(), "incident is over") })
+	r.clock.Advance(time.Minute) // the line checked again: the network is back
+	r.gw.loop.Do(context.Background(), func(now time.Time) []gsm.Action { return r.gw.core.Handle(gsm.Tick{Now: now}) })
+	drivertest.WaitFor(r.t, "the confirmation", func() bool { sent, _, _, _ := r.modem.count(); return sent == 1 })
+	r.settle()
+	r.modem.mu.Lock()
+	defer r.modem.mu.Unlock()
+	if len(r.modem.sent) != 1 || !strings.Contains(r.modem.sent[0].text, "en votre nom") {
+		t.Fatalf("one confirmation, and the alert dropped: %+v", r.modem.sent)
+	}
 }
 
 // The escalation ignores an acknowledgement from someone who is not a contact, and
