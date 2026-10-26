@@ -509,6 +509,14 @@ redémarrage :
    que le moteur sait ne déclenche rien non plus (voir plus bas) ;
 5. il publie son état retenu ; le redémarrage se voit au `boot_id` du heartbeat.
 
+L'heure de l'armement est gardée dans l'état (`armed_since`) : `alarm.state` en
+`armed` la donne pour `since`, même après un délai d'entrée ou une alarme qui ont
+laissé le local armé, et après un redémarrage. L'heure d'entrée dans le mode
+(`since` de l'état sauvegardé) reste celle du retour à `armed`, que l'étape 2 utilise
+pour les capteurs momentanés : un mouvement commencé pendant l'alarme reste ancien.
+Corrigé le 26 octobre 2026 après l'essai sur la vraie centrale : une alarme finie
+seule republiait « armée depuis » l'heure de sa fin.
+
 Les états retenus du broker peuvent être vieux de quelques minutes : Mosquitto ne les
 écrit sur disque que toutes les 5 minutes (`autosave_interval`, pour la carte SD), et
 après un arrêt brutal (une coupure sans la carte X728, un redémarrage par le chien de

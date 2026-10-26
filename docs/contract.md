@@ -419,6 +419,13 @@ de partir.
 `incident` et `siren` (triggered), `locked_until` (si le désarmement est
 verrouillé), `next_scheduled` (prochain armement automatique).
 
+`since` est l'heure d'entrée dans l'état, à une exception près : en `armed`, c'est
+l'heure de l'armement (la fin du délai de sortie), même après un délai d'entrée ou une
+alarme qui ont laissé le local armé. Une alarme finie seule (son programme épuisé) ou
+coupée au code republie `armed` avec le `since` de l'armement, pas l'heure de sa fin.
+Corrigé le 26 octobre 2026 après l'essai sur la vraie centrale (« armée depuis 10:33 »
+pour un armement à 10:30) ; aucun champ ne change.
+
 En `triggered`, l'état dit où en est l'alarme qui sonne : `incident` (l'incident qui
 sonne), `siren` (`on` pendant un cycle de sirène, `paused` pendant la pause entre deux
 cycles) et `ends_at` (la fin du cycle en cours si `siren` est `on`, la fin de la pause

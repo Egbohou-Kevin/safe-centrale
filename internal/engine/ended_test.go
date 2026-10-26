@@ -202,3 +202,45 @@ func TestEndingWantsTheCodeAndEndsNothingWithoutAnAlarm(t *testing.T) {
 	}
 	q.mustBe(ModeArmed)
 }
+
+// The trial of 26 October 2026: armed at 10:30, an alarm whose siren program ran out
+// by itself, the shop still armed. alarm.state said "armed" since the end of the
+// alarm (10:33:09): it is armed since the arming, through the alarm, the entry delay
+// before it and a restart.
+func TestArmedSinceStaysTheArmingThroughAnAlarm(t *testing.T) {
+	h := newHarness(t, trialTimings)
+	h.arm(func(c *Command) { c.Origin = OriginApp })
+	h.advance(30 * time.Second)
+	h.mustBe(ModeArmed)
+	armedAt := h.now
+	h.advance(2 * time.Minute)
+	h.open(door)
+	h.mustBe(ModeEntryDelay)
+	h.advance(15 * time.Second)
+	h.mustBe(ModeTriggered)
+	h.e = restart(t, h)
+	h.e.Boot(h.now, nil)
+	for range 4 {
+		h.advance(25 * time.Second)
+	}
+	h.mustBe(ModeArmed)
+	if s := h.e.State(h.now); !s.Since.Equal(armedAt) {
+		t.Fatalf("armed since %v, want the arming at %v", s.Since, armedAt)
+	}
+	h.e = restart(t, h)
+	h.e.Boot(h.now, nil)
+	h.breakWindow()
+	h.advance(5 * time.Minute)
+	h.mustBe(ModeArmed)
+	if s := h.e.State(h.now); !s.Since.Equal(armedAt) {
+		t.Fatalf("armed since %v after a second alarm and a restart, want %v", s.Since, armedAt)
+	}
+
+	// A new arming starts its own.
+	h.cmd(CmdDisarm, goodCode("u_kevin"))
+	h.close(door)
+	h.armed()
+	if s := h.e.State(h.now); !s.Since.Equal(h.now) {
+		t.Fatalf("a new arming: since %v, want %v", s.Since, h.now)
+	}
+}

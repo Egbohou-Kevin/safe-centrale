@@ -104,6 +104,7 @@ func (e *Engine) armNow(c Command) []Action {
 // any more to be told.
 func (e *Engine) finishArming(at time.Time) []Action {
 	e.setMode(ModeArmed, at)
+	e.s.ArmedSince = at
 	e.s.Deadline = time.Time{}
 	out := []Action{Emit{Armed{Origin: e.s.ArmOrigin, User: e.s.ArmUser}}}
 

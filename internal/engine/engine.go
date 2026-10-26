@@ -68,6 +68,9 @@ func (e *Engine) Restore(s Snapshot) {
 	if s.Tampered == nil {
 		s.Tampered = map[string]bool{}
 	}
+	if s.Mode == ModeArmed && s.ArmedSince.IsZero() {
+		s.ArmedSince = s.Since // saved before ArmedSince was kept
+	}
 	e.s = s
 	e.awaitingBoot = true
 }
@@ -88,6 +91,13 @@ func (e *Engine) NextWake() time.Time {
 func (e *Engine) State(now time.Time) State {
 	st := State{Mode: e.s.Mode, Since: e.s.Since}
 	switch e.s.Mode {
+	case ModeArmed:
+		// Armed since the arming, through the alarms that left the site armed (trial
+		// of 26 October 2026: "armed since 10:33" for an arming at 10:30). One later
+		// than the mode's own start comes from a clock set back since: not said.
+		if a := e.s.ArmedSince; !a.IsZero() && a.Before(e.s.Since) {
+			st.Since = a
+		}
 	case ModeArming, ModeEntryDelay:
 		st.EndsAt = e.s.Deadline
 	case ModeTriggered:
@@ -260,6 +270,9 @@ func isSirenOn(a Action) bool { _, on := a.(SirenOn); return on }
 func (e *Engine) setMode(m Mode, at time.Time) {
 	e.s.Mode = m
 	e.s.Since = at
+	if m == ModeDisarmed || m == ModeArming {
+		e.s.ArmedSince = time.Time{}
+	}
 	if m == ModeDisarmed {
 		e.planSchedule(at)
 	} else {

@@ -46,6 +46,11 @@ type Snapshot struct {
 
 	ArmOrigin Origin `json:"arm_origin,omitempty"`
 	ArmUser   string `json:"arm_user,omitempty"`
+	// ArmedSince is when the exit delay of the current arming ended: the site stays
+	// armed since then through an entry delay and an alarm that leave it armed (see
+	// endIncident), which State says. Since stays when the mode began, which Boot
+	// needs (see older). Zero while disarmed or arming.
+	ArmedSince time.Time `json:"armed_since,omitzero"`
 
 	Bypassed   map[string]bool `json:"bypassed"`    // devices bypassed until disarming
 	Open       map[string]bool `json:"open"`        // contacts that are currently open
