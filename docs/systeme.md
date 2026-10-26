@@ -56,6 +56,15 @@ d'administration, et ne peuvent écrire que dans `/var/lib/safehome`
 série (groupe `dialout`), le programme du module batterie à ses broches et à son bus
 (groupes `gpio` et `i2c`).
 
+Chaque unité `safehome-*` ferme aussi ce dont nos programmes n'ont pas besoin : ni
+module ni journal du noyau, ni bit setuid, ni temps réel, ni espace de noms, ni
+personnalité, et seulement les sockets Unix, IP et netlink. Aucune n'a de capacité, sauf
+la console (`CAP_NET_BIND_SERVICE`, pour sa page sur le port 80). Leur mémoire n'est
+jamais à la fois inscriptible et exécutable, sauf pour la vidéo (go2rtc et ffmpeg). La
+centrale, l'agent et l'adaptateur Zigbee, qui n'ouvrent aucun appareil, ont un `/dev`
+privé. `ProtectClock` et `PrivateDevices` ailleurs ne sont pas mis : ils fermeraient les
+ports série, les broches, le bus et la caméra (un test de `deploy` le vérifie).
+
 ## Disposition de la carte SD (32 Go)
 
 | Partition | Taille | Contenu | Montée |

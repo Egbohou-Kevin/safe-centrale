@@ -491,3 +491,39 @@ func TestTheConsolesNetworkRoutesNothing(t *testing.T) {
 		t.Fatalf("NetworkManager runs only an executable script: %v", err)
 	}
 }
+
+// Every unit of ours closes what the programs never need. ProtectClock and, where a
+// device is opened, PrivateDevices are left out: they restrict /dev to a list, which
+// would close the serial ports, the battery module's lines and bus, and the camera.
+func TestEveryProgramIsHardened(t *testing.T) {
+	devices := []string{"gsm", "power", "video", "console", "maint"}
+	for _, p := range programs(t) {
+		t.Run(p, func(t *testing.T) {
+			path := filepath.Join("systemd", "safehome-"+p+".service")
+			u := readUnit(t, path)
+			for key, want := range map[string]string{
+				"ProtectKernelModules": "yes", "ProtectKernelLogs": "yes", "RestrictSUIDSGID": "yes",
+				"RestrictRealtime": "yes", "RestrictNamespaces": "yes", "LockPersonality": "yes",
+				"RestrictAddressFamilies": "AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+			} {
+				if got := u.get(t, "Service", key); got != want {
+					t.Errorf("%s = %q, want %q", key, got, want)
+				}
+			}
+			if p != "console" && u.get(t, "Service", "CapabilityBoundingSet") != "" {
+				t.Error("a program without a capability keeps an empty CapabilityBoundingSet")
+			}
+			if p != "video" && u.get(t, "Service", "MemoryDenyWriteExecute") != "yes" {
+				t.Error("MemoryDenyWriteExecute is for every Go program (not go2rtc and ffmpeg)")
+			}
+			for _, line := range rawLines(t, path) {
+				if strings.HasPrefix(line, "ProtectClock=") || strings.HasPrefix(line, "DeviceAllow=") {
+					t.Errorf("%s restricts /dev to a list", line)
+				}
+				if line == "PrivateDevices=yes" && slices.Contains(devices, p) {
+					t.Error("PrivateDevices hides the devices this program opens")
+				}
+			}
+		})
+	}
+}

@@ -33,6 +33,14 @@ PrivateTmp=yes
 ReadWritePaths=/var/lib/safehome
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+MemoryDenyWriteExecute=yes
 
 [Install]
 WantedBy=multi-user.target
