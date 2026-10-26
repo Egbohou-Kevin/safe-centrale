@@ -11,6 +11,7 @@ import (
 	"safehome/internal/adapter/filestore"
 	"safehome/internal/adapter/mqtt/mqtttest"
 	"safehome/internal/contract"
+	"safehome/internal/driver"
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/escalation"
 	"safehome/internal/hub"
@@ -114,9 +115,14 @@ func TestCodesCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Three codes were refused as taken above: the tools now wait 10 minutes, which
+	// this test does not.
+	if err := store.Save("codes-taken", []byte("[]")); err != nil {
+		t.Fatal(err)
+	}
 	before := gone.Hub
 	before.Escalation.Contacts = append(slices.Clone(before.Escalation.Contacts), escalation.Contact{ID: "u_gone"})
-	if tool, err := hub.OpenSiteCodes(before, store); err != nil || tool.Set("u_gone", "615273") != nil {
+	if tool, err := hub.OpenSiteCodes(before, store, driver.SystemClock()); err != nil || tool.Set("u_gone", "615273") != nil {
 		t.Fatal(err)
 	}
 	if _, out, _ := cli(t, "", "codes", "-config", path, "list"); !strings.Contains(out, "u_gone (not a contact of the site") {

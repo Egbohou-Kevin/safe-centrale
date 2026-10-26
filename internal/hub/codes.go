@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"safehome/internal/access"
 	"safehome/internal/driver"
@@ -19,14 +20,31 @@ import (
 type SiteCodes struct {
 	people, installer *access.Registry
 	contacts          []escalation.Contact
+	store             driver.Store
+	now               func() time.Time
 }
+
+// keyTaken keeps when a code was refused as someone else's (see Set).
+const keyTaken = "codes-taken"
+
+// A code refused as someone else's tells that it opens the site: takenLimit of them
+// within takenWindow stop the codes from being set until the window has passed, so
+// that the installer's tools cannot be used to try the codes one after another.
+const (
+	takenLimit  = 3
+	takenWindow = 10 * time.Minute
+)
+
+// ErrTooManyTaken refuses a code while too many were refused as someone else's.
+var ErrTooManyTaken = errors.New("hub: too many codes refused as someone else's, wait 10 minutes")
 
 // ErrNotAContact refuses a code for someone who is neither a contact of the site nor
 // the installer: the hub would leave it aside.
 var ErrNotAContact = errors.New("hub: not a contact of the site")
 
-// OpenSiteCodes opens the codes saved in store, for the contacts of cfg.
-func OpenSiteCodes(cfg Config, store driver.Store) (*SiteCodes, error) {
+// OpenSiteCodes opens the codes saved in store, for the contacts of cfg; clock dates
+// the codes refused as someone else's (see Set).
+func OpenSiteCodes(cfg Config, store driver.Store, clock driver.Clock) (*SiteCodes, error) {
 	people, err := openCodes(cfg.Access, store)
 	if err != nil {
 		return nil, err
@@ -35,7 +53,7 @@ func OpenSiteCodes(cfg Config, store driver.Store) (*SiteCodes, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SiteCodes{people: people, installer: installer, contacts: cfg.Escalation.Contacts}, nil
+	return &SiteCodes{people: people, installer: installer, contacts: cfg.Escalation.Contacts, store: store, now: clock.Now}, nil
 }
 
 // openCodes opens the people's codes saved in store.
@@ -85,11 +103,47 @@ func (s *SiteCodes) Set(user, code string) error {
 	if user != InstallerUser && !slices.ContainsFunc(s.contacts, func(c escalation.Contact) bool { return c.ID == user }) {
 		return fmt.Errorf("%w: %s", ErrNotAContact, user)
 	}
-	own, other := s.of(user)
-	if _, taken := other.Verify(code); taken {
-		return access.ErrCodeTaken
+	taken, err := s.recentTaken()
+	if err != nil {
+		return err
 	}
-	return own.Set(user, code)
+	if len(taken) >= takenLimit {
+		return ErrTooManyTaken
+	}
+	own, other := s.of(user)
+	if _, theirs := other.Verify(code); theirs {
+		err = access.ErrCodeTaken
+	} else {
+		err = own.Set(user, code)
+	}
+	if errors.Is(err, access.ErrCodeTaken) {
+		if serr := s.saveTaken(append(taken, s.now())); serr != nil {
+			return serr
+		}
+	}
+	return err
+}
+
+// recentTaken returns when codes were refused as someone else's within takenWindow.
+func (s *SiteCodes) recentTaken() ([]time.Time, error) {
+	data, found, err := s.store.Load(keyTaken)
+	if err != nil || !found {
+		return nil, err
+	}
+	var at []time.Time
+	if err := json.Unmarshal(data, &at); err != nil {
+		return nil, nil // damaged: counted afresh
+	}
+	now := s.now()
+	return slices.DeleteFunc(at, func(t time.Time) bool { return !now.Before(t.Add(takenWindow)) || t.After(now) }), nil
+}
+
+func (s *SiteCodes) saveTaken(at []time.Time) error {
+	b, err := json.Marshal(at)
+	if err != nil {
+		return err
+	}
+	return s.store.Save(keyTaken, b)
 }
 
 // Remove removes the code of user (access.ErrNoSuchUser if there is none).

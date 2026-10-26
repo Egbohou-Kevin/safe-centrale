@@ -70,7 +70,10 @@ difficile à deviner.
 centrale (`safehome-hub codes ... set UTILISATEUR`, le code est lu sur l'entrée
 standard : il ne reste ni dans l'historique du shell ni dans la liste des processus).
 Un code faible (chiffres répétés, suite) ou déjà pris est refusé, 5 personnes au
-maximum. Si la centrale tourne, elle recharge les codes toute seule (signal SIGHUP).
+maximum. Un code refusé parce qu'il est déjà pris dit qu'il ouvre le site : après 3
+refus de ce genre en 10 minutes, la ligne de commande et la console refusent tout
+nouveau code pendant 10 minutes, pour qu'elles ne servent pas à essayer les codes l'un
+après l'autre (les refus sont gardés dans le dossier d'état, `codes-taken.json`). Si la centrale tourne, elle recharge les codes toute seule (signal SIGHUP).
 La centrale ignore le code d'une personne qui n'est plus contact du site (elle le
 journalise, sans le code). Elle prend les contacts tels qu'ils sont enregistrés au
 moment où elle relit les codes (fichier de la centrale et configuration venue du

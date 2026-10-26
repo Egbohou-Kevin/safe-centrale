@@ -217,6 +217,7 @@ var refusals = []struct {
 	{consoleapp.ErrCodeInvalid, "code_invalid"},
 	{consoleapp.ErrCodeWeak, "code_weak"},
 	{consoleapp.ErrCodeTaken, "code_taken"},
+	{consoleapp.ErrCodeWait, "code_wait"},
 	{consoleapp.ErrCodeFull, "code_full"},
 	{consoleapp.ErrNoSuchCode, "no_such_code"},
 }

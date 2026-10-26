@@ -10,6 +10,7 @@ import (
 	"safehome/internal/adapter/filelock"
 	"safehome/internal/adapter/filestore"
 	"safehome/internal/consoleapp"
+	"safehome/internal/driver"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
 	"safehome/internal/service"
@@ -59,7 +60,7 @@ func (c codes) open() (*hub.SiteCodes, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("the state directory: %w", err)
 	}
-	site, err := hub.OpenSiteCodes(cfg.Hub, store)
+	site, err := hub.OpenSiteCodes(cfg.Hub, store, driver.SystemClock())
 	return site, cfg.StateDir, err
 }
 
@@ -97,6 +98,8 @@ func (c codes) Set(user, code string) error {
 			return consoleapp.ErrCodeWeak
 		case errors.Is(err, access.ErrCodeTaken):
 			return consoleapp.ErrCodeTaken
+		case errors.Is(err, hub.ErrTooManyTaken):
+			return consoleapp.ErrCodeWait
 		case errors.Is(err, access.ErrTooManyUsers):
 			return consoleapp.ErrCodeFull
 		}

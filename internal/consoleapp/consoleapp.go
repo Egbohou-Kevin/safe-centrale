@@ -126,6 +126,7 @@ var (
 	ErrCodeInvalid  = errors.New("a code is 4 to 8 digits")
 	ErrCodeWeak     = errors.New("code too easy to guess")
 	ErrCodeTaken    = errors.New("this code belongs to someone else")
+	ErrCodeWait     = errors.New("too many codes refused as someone else's: wait 10 minutes")
 	ErrCodeFull     = errors.New("the site already has the maximum number of codes")
 	ErrNoSuchCode   = errors.New("no code left by someone who is no longer a contact")
 )

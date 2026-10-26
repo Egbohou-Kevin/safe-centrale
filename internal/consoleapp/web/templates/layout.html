@@ -76,6 +76,7 @@
   {{else if eq .Code "code_invalid"}}Un code fait de 4 à 8 chiffres.
   {{else if eq .Code "code_weak"}}Code trop facile à deviner : pas de chiffres répétés ni de suite (1234, 1111).
   {{else if eq .Code "code_taken"}}Ce code est déjà pris : choisissez-en un autre.
+  {{else if eq .Code "code_wait"}}Trop de codes refusés car déjà pris : attendez 10 minutes.
   {{else if eq .Code "code_full"}}Le site a déjà le nombre maximal de codes : retirez d'abord le code d'une personne qui n'est plus contact.
   {{else if eq .Code "no_such_code"}}{{.ID}} n'a pas de code à retirer ici.
   {{else}}Refusé : {{.Detail}}{{end}}

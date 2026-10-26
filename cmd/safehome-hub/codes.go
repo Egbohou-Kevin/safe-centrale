@@ -11,6 +11,7 @@ import (
 	"safehome/internal/access"
 	"safehome/internal/adapter/filelock"
 	"safehome/internal/adapter/filestore"
+	"safehome/internal/driver"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
 	"safehome/internal/service"
@@ -81,7 +82,7 @@ func openCodes(cfg hubconfig.Result, change bool) (*hub.SiteCodes, func(), error
 		release()
 		return nil, nil, fmt.Errorf("cannot open the state directory: %w", err)
 	}
-	site, err := hub.OpenSiteCodes(cfg.Hub, store)
+	site, err := hub.OpenSiteCodes(cfg.Hub, store, driver.SystemClock())
 	if err != nil {
 		release()
 		return nil, nil, fmt.Errorf("cannot read the access codes: %w", err)
@@ -150,6 +151,8 @@ func describe(err error) string {
 		return "too easy to guess (no repeated digit, no straight run of digits)"
 	case errors.Is(err, access.ErrCodeTaken):
 		return "another person already has this code"
+	case errors.Is(err, hub.ErrTooManyTaken):
+		return "too many codes refused as another person's: wait 10 minutes"
 	case errors.Is(err, access.ErrTooManyUsers):
 		return "the site already has the maximum number of codes: remove one first"
 	case errors.Is(err, access.ErrInvalidUser):

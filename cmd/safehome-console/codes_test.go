@@ -16,6 +16,7 @@ import (
 	"safehome/internal/adapter/filestore"
 	"safehome/internal/adapter/pidfile"
 	"safehome/internal/consoleapp"
+	"safehome/internal/driver"
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/escalation"
 	"safehome/internal/hub"
@@ -40,7 +41,7 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool, err := hub.OpenSiteCodes(cfg.Hub, store)
+	tool, err := hub.OpenSiteCodes(cfg.Hub, store, driver.SystemClock())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +93,7 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	// A code left by someone no longer a contact is listed apart, and removed.
 	before := cfg.Hub
 	before.Escalation.Contacts = append(slices.Clone(before.Escalation.Contacts), escalation.Contact{ID: "u_gone"})
-	if other, err := hub.OpenSiteCodes(before, store); err != nil || other.Set("u_gone", "7391") != nil {
+	if other, err := hub.OpenSiteCodes(before, store, driver.SystemClock()); err != nil || other.Set("u_gone", "7391") != nil {
 		t.Fatal(err)
 	}
 	if _, leftovers, err := c.People(); err != nil || !slices.Equal(leftovers, []string{"u_gone"}) {
