@@ -97,6 +97,9 @@ type App struct {
 	seq    *outbox.Sequencer
 	kick   chan struct{} // the queue moved: something may be ready for the cloud
 	relink chan struct{} // the link changed: worth trying again at once
+	// links counts the link's changes, so that the sender tells a change it has not
+	// seen from one it took into account already (see wait).
+	links atomic.Uint64
 
 	uploads sync.WaitGroup // the photos being sent
 

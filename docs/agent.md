@@ -104,8 +104,12 @@ Quand internet est coupé :
 - **Refus du broker du cloud** : un message refusé pour de bon (accusé de réception
   avec un code d'échec : non autorisé, invalide…) est supprimé. Renvoyé, il bloquerait
   toute la file derrière lui. Le journal donne son type, jamais son contenu. Un refus
-  passager (quota dépassé) est réessayé. Une alerte pour l'application refusée ainsi
-  échoue tout de suite : la centrale passe au GSM.
+  passager (quota dépassé) est réessayé, après 1 s, puis deux fois plus à chaque
+  refus (30 s au plus) ; un changement de la liaison abrège l'attente, mais seulement
+  s'il est venu après le choix du message refusé (corrigé le 26 octobre 2026 : un
+  changement déjà vu abrégeait l'attente, et la suivante doublait pour rien). Une
+  alerte pour l'application refusée ainsi échoue tout de suite : la centrale passe au
+  GSM.
 - **Sur la carte SD**, chaque message de la file est un petit fichier, dans le
   dossier `agent_queue` du répertoire d'état. Ajouter, numéroter ou envoyer un
   message n'écrit que son fichier, jamais toute la file. Le dernier numéro donné au

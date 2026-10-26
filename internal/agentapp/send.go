@@ -36,6 +36,7 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action)
 			// Before the status enters the queue, whose save wakes the sender: the
 			// sender takes this signal now, rather than later, where it would cut a
 			// retry's wait short.
+			a.links.Add(1)
 			signal(a.relink)
 			a.publishStatus(now, v.Status)
 		case agent.Dropped:
@@ -183,7 +184,7 @@ func (a *App) repeatStatus(ctx context.Context) {
 func (a *App) sender(ctx context.Context) {
 	delay := a.cfg.RetryMin
 	for {
-		it, ok, err := a.next(ctx)
+		it, ok, seen, err := a.next(ctx)
 		if err != nil {
 			return
 		}
@@ -216,7 +217,7 @@ func (a *App) sender(ctx context.Context) {
 		if !errors.Is(err, outbox.ErrUnavailable) {
 			a.log.Warn("the cloud did not take a message, trying again", "topic", it.Topic, "err", err)
 		}
-		if !a.wait(ctx, delay) {
+		if !a.wait(ctx, delay, seen) {
 			return
 		}
 		delay = min(delay*2, a.cfg.RetryMax)
@@ -226,11 +227,14 @@ func (a *App) sender(ctx context.Context) {
 // next asks the core, on its loop, for the item to send now: none while the link is
 // down. An item numbered at this first attempt is saved before Do returns. The answer
 // is read only if Do waited for it: at a stop, Do may return while the loop still
-// writes it.
-func (a *App) next(ctx context.Context) (agent.Item, bool, error) {
+// writes it. It also returns how many link changes the answer took into account (see
+// wait).
+func (a *App) next(ctx context.Context) (agent.Item, bool, uint64, error) {
 	var it agent.Item
 	var ok bool
+	var seen uint64
 	err := a.loop.Do(ctx, func(time.Time) []agent.Action {
+		seen = a.links.Load()
 		if !a.core.Up() {
 			return nil
 		}
@@ -239,22 +243,31 @@ func (a *App) next(ctx context.Context) (agent.Item, bool, error) {
 		return save
 	})
 	if err != nil {
-		return agent.Item{}, false, err
+		return agent.Item{}, false, 0, err
 	}
-	return it, ok, nil
+	return it, ok, seen, nil
 }
 
-// wait waits d on the agent's clock, or less if the link changes. New messages do
-// not cut it short: the cloud's broker refused the last one, and must not be pressed
-// at every new message.
-func (a *App) wait(ctx context.Context, d time.Duration) bool {
+// wait waits d on the agent's clock, or less if the link changed since the attempt
+// was chosen (seen, see next). New messages do not cut it short: the cloud's broker
+// refused the last one, and must not be pressed at every new message. Nor does the
+// signal of a change the attempt already saw: the loop signals a change on its own
+// goroutine, and the sender may take its item after that change before it takes the
+// signal; the retry went at once then, and the next wait was twice as long (a test
+// waiting for the first retry timed out under -race, 26 October 2026).
+func (a *App) wait(ctx context.Context, d time.Duration, seen uint64) bool {
 	fired, stop := a.deps.Clock.Timer(d)
 	defer stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-fired:
-	case <-a.relink:
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-fired:
+			return true
+		case <-a.relink:
+			if a.links.Load() != seen {
+				return true
+			}
+		}
 	}
-	return true
 }
