@@ -553,6 +553,18 @@ supervision et les codes : pas d'horloge, pas d'entrée-sortie, les entrées por
 heure. La couche application (`internal/hub`) lui donne les alertes du moteur et de la
 supervision, et publie ce qu'il décide. Là où le document laissait un doute :
 
+- **Horloge avancée au démarrage.** Le Pi 4 sans module d'horloge repart après une
+  coupure de sa dernière heure connue, puis NTP l'avance d'un coup de toute la durée de
+  la coupure. La boucle le voit sur l'horloge monotone (voir `architecture.md`) : la
+  prochaine vague ou relance de chaque incident, l'attente de la confirmation du cloud
+  et le relais par le GSM avancent d'autant, comme la limite horaire et la mémoire d'un
+  jour (`Escalation.Stepped`) ; sans cela, toutes les vagues et relances partaient
+  d'un coup. `incident_at` reste l'heure de la levée : les étapes comptent d'elle plus
+  le saut (`moved` dans l'état sauvegardé). De même, la supervision avance le dernier
+  message de la passerelle GSM, de l'adaptateur Zigbee et de l'agent, et le début d'une
+  panne pas encore dite (`Monitor.Stepped`) : pas de `zigbee_down` ni de
+  `gsm_degraded` pour un service entendu juste avant le saut (26 octobre 2026).
+
 - **Une demande par contact et par canal.** Les alertes brutes du moteur ne sont plus
   publiées telles quelles : l'escalade les transforme en `alert.request` précis (`contact`,
   `channel`, `wave`, `text`). Un canal n'a qu'à envoyer ce qu'on lui demande. Chaque

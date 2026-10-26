@@ -41,6 +41,9 @@ type IncidentSnap struct {
 	Devices  []string  `json:"devices"`
 	Percent  int       `json:"percent"`
 	RaisedAt time.Time `json:"raised_at"`
+	// Moved is how far the system clock stepped forward since RaisedAt (see Stepped):
+	// the steps fall due from RaisedAt plus Moved, RaisedAt staying the time told.
+	Moved time.Duration `json:"moved,omitempty"`
 	// Alarm is the alarm under way the alert is part of (Raise.Alarm). Quiet: that
 	// alarm is handled, the alert is told without ringing (see quieten).
 	Alarm string `json:"alarm,omitempty"`

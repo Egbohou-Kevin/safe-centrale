@@ -129,6 +129,23 @@ func (m *Monitor) Restore(s Snapshot) {
 	}
 }
 
+// Stepped takes a forward step d of the system clock, which the driver sees on the
+// monotonic clock (driver.Core.Stepped): a Pi without a battery clock starts from the
+// last time it knew, hours late after a power cut, and NTP sets it forward once
+// internet is there. The silence of each component it watches (the GSM gateway, the
+// Zigbee adapter, the link agent) keeps the time that really passed: a gateway heard a
+// minute ago is not silent for hours, and no zigbee_down or gsm_degraded goes out for
+// it. The daily summary is a time of day, not a wait: it stays, and so do the times of
+// the device list, which are only said.
+func (m *Monitor) Stepped(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	for _, w := range m.watches() {
+		w.watch.stepped(d)
+	}
+}
+
 // NextWake returns the time at which the driver must send a Tick: the next daily
 // summary, or earlier when a component's silence becomes too long or its alert is
 // due.

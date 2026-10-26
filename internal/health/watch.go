@@ -146,3 +146,15 @@ func (w *Watch) state() LinkState {
 	}
 	return LinkDown
 }
+
+// stepped moves the watch by a forward step d of the system clock (see
+// Monitor.Stepped): its silence, and an outage not told yet, keep the time that really
+// passed. One already told keeps its start: it is no longer timed, only said.
+func (w *Watch) stepped(d time.Duration) {
+	if !w.Seen.IsZero() {
+		w.Seen = w.Seen.Add(d)
+	}
+	if !w.DownSince.IsZero() && !w.Alerted {
+		w.DownSince = w.DownSince.Add(d)
+	}
+}

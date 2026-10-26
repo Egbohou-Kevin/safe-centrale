@@ -190,7 +190,7 @@ func (h *Hub) buildEngine(now time.Time) (err error) {
 		FollowsClock: true,
 		Core: driver.Core[engine.Input, engine.Action, engine.Snapshot]{
 			Handle: h.alarm.eng.Handle, NextWake: h.alarm.eng.NextWake, Snapshot: h.alarm.eng.Snapshot, Restore: h.alarm.eng.Restore,
-			Tick: func(t time.Time) engine.Input { return engine.Tick{Now: t} },
+			Tick: func(t time.Time) engine.Input { return engine.Tick{Now: t} }, Stepped: h.alarm.eng.Stepped,
 		},
 		Dispatch: h.dispatchEngine,
 		OnChange: func(_ context.Context, t time.Time) {
@@ -211,7 +211,7 @@ func (h *Hub) buildMonitor(now time.Time) (err error) {
 		Name: keyHealth, Clock: h.deps.Clock, Store: h.deps.Store, Logger: h.log,
 		Core: driver.Core[health.Input, health.Action, health.Snapshot]{
 			Handle: h.monitor.mon.Handle, NextWake: h.monitor.mon.NextWake, Snapshot: h.monitor.mon.Snapshot, Restore: h.monitor.mon.Restore,
-			Tick: func(t time.Time) health.Input { return health.Tick{Now: t} },
+			Tick: func(t time.Time) health.Input { return health.Tick{Now: t} }, Stepped: h.monitor.mon.Stepped,
 		},
 		Dispatch: h.dispatchHealth,
 		OnChange: func(_ context.Context, t time.Time) {
@@ -237,7 +237,7 @@ func (h *Hub) buildEscalation() (err error) {
 		Name: keyEscalation, Clock: h.deps.Clock, Store: h.deps.Store, Logger: h.log,
 		Core: driver.Core[escalation.Input, escalation.Action, escalation.Snapshot]{
 			Handle: h.escal.esc.Handle, NextWake: h.escal.esc.NextWake, Snapshot: h.escal.esc.Snapshot, Restore: h.escal.esc.Restore,
-			Tick: func(t time.Time) escalation.Input { return escalation.Tick{Now: t} },
+			Tick: func(t time.Time) escalation.Input { return escalation.Tick{Now: t} }, Stepped: h.escal.esc.Stepped,
 		},
 		Dispatch: h.dispatchEscalation,
 	})

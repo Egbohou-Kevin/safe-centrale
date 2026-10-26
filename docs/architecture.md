@@ -118,8 +118,17 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   telle qu'elle est. Un saut de l'horloge en avant (NTP qui corrige au démarrage un
   Pi sans module d'horloge, parti de sa dernière heure connue) se voit sur l'horloge
   monotone (`driver.Monotonic`) : la boucle le dit au cœur qui le demande
-  (`Core.Stepped`), qui avance d'autant ce qu'il chronomètre. Seul l'adaptateur Zigbee
-  le demande (le silence des appareils, 26 octobre 2026). `driver.Every` répète un
+  (`Core.Stepped`), qui avance d'autant ce qu'il chronomètre. Chaque cœur qui mesure
+  une durée sur l'heure lue le demande : l'adaptateur Zigbee (le silence des appareils,
+  26 octobre 2026), puis le moteur (délais, sirène, verrouillage), la supervision (le
+  silence des services), l'escalade (vagues et relances), la passerelle GSM (l'âge des
+  demandes), l'agent (l'attente de confirmation du cloud), l'alimentation (la coupure
+  sur batterie vide) et la vidéo (les sessions). Seules les durées avancent : une heure
+  du jour (l'armement automatique, le résumé quotidien) et les heures publiées (`at`,
+  `since`, `incident_at`) restent ce qu'elles sont, et ce qui est publié après le saut
+  est daté sur l'heure juste. La maintenance ne le demande pas : sa fin borne un accès
+  à distance, qu'un saut raccourcit (le côté sûr) sans jamais le prolonger, et l'ouvrir
+  demande le cloud, donc internet, donc une heure déjà juste. `driver.Every` répète un
   travail (un statut, le battement de cœur) sur la même horloge. La fausse horloge des
   tests (`drivertest`) fait comme la vraie : ses minuteries suivent une horloge
   monotone, que `Set` ne bouge pas.

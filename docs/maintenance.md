@@ -108,6 +108,10 @@ entrer la centrale).
   que la session dure, sans nouveau message.
 - Si le service redémarre pendant une session, elle reprend jusqu'à son heure de fin
   (elle est gardée dans le dossier d'état, fichier `maint.json` et sa copie `.prev`).
+  Une horloge qui saute en avant (NTP qui corrige au démarrage le Pi sans module
+  d'horloge) peut la finir plus tôt : sa fin n'avance pas avec le saut, contrairement
+  aux durées des autres services (voir `architecture.md`). Elle borne un accès à
+  distance : la raccourcir est le côté sûr, la prolonger ne l'est pas.
 
 ## Installation
 

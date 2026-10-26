@@ -353,6 +353,17 @@ doit aussi connaître le code.
   l'horloge de la centrale, qui l'a vérifié. Corrigé le 25 octobre 2026 après une
   revue : pendant une exécution, le temps du moteur s'arrêtait jusqu'à ce que
   l'horloge le rattrape, et tout ce qu'il posait durait le recul de plus.
+- Une horloge qui saute en avant (le Pi 4 sans module d'horloge repart après une
+  coupure de sa dernière heure connue, puis NTP l'avance d'un coup de toute la durée de
+  la coupure) n'écourte rien : la boucle le voit sur l'horloge monotone et le dit au
+  moteur (`Engine.Stepped`, voir `architecture.md`), qui avance d'autant l'échéance en
+  cours (délai de sortie ou d'entrée, cycle de sirène ou pause), la fin d'un délai
+  d'entrée qu'une autre alarme a interrompu, les codes en cours de vérification, le
+  verrouillage et les codes faux de sa fenêtre, et le début de l'alarme (sa durée,
+  `duration_s`). Sans cela, un délai de sortie armait d'un coup, une entrée pendant le
+  délai d'entrée sonnait aussitôt, la sirène s'arrêtait et le verrouillage tombait.
+  L'armement automatique est une heure du jour : il ne bouge pas. Les heures publiées
+  (`since`, l'heure de la dernière alarme) non plus (26 octobre 2026).
 - La vérification d'un code est lente exprès (environ une seconde par code enregistré
   sur la centrale). Un bon code tapé dans la dernière seconde du délai d'entrée
   arriverait au moteur après sa fin : la sirène et la première vague d'alertes
