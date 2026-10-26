@@ -135,7 +135,10 @@ func TestTheReadingsAreToldAtOnceAndKept(t *testing.T) {
 	r.waitTold(contract.CapMains, `"present"`)
 	r.waitTold(contract.CapBattery, `95`)
 	for _, c := range []string{contract.CapMains, contract.CapBattery} {
-		if st := r.broker.On(contract.DeviceStateTopic(site, device, c)); len(st) != 1 || !st[0].Retain {
+		// The state follows the event on the outbox: it may land just after.
+		topic := contract.DeviceStateTopic(site, device, c)
+		drivertest.WaitFor(t, c+" state", func() bool { return len(r.broker.On(topic)) > 0 })
+		if st := r.broker.On(topic); len(st) != 1 || !st[0].Retain {
 			t.Fatalf("%s state: %+v", c, st)
 		}
 	}
