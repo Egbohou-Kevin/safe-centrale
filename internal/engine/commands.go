@@ -130,14 +130,41 @@ func (e *Engine) finishArming(at time.Time) []Action {
 	return out
 }
 
+// bypass leaves out of this arming the doors and windows named, as a forced arming
+// does: only during the exit delay, and only a door or a window (entry or instant
+// zone) open at that moment. An interior zone, a closed door or a zone the site does
+// not know is never bypassed: the order is refused whole. Each bypass is told to the
+// contacts (arming_bypassed), since nothing else would show it: the zones it leaves
+// out watch nothing until the next disarm.
 func (e *Engine) bypass(c Command) []Action {
-	if e.s.Mode != ModeDisarmed && e.s.Mode != ModeArming {
+	if e.s.Mode != ModeArming {
 		return refused(c, ReasonWrongState)
 	}
+	var wrong, fresh []string
 	for _, id := range c.Devices {
+		kind := e.cfg.Zones[id].Kind
+		switch {
+		case (kind != ZoneEntry && kind != ZoneInstant) || !e.s.Open[id]:
+			wrong = append(wrong, id)
+		case !e.s.Bypassed[id] && !slices.Contains(fresh, id):
+			fresh = append(fresh, id)
+		}
+	}
+	if len(wrong) > 0 {
+		r := reply(c, StatusRefused, ReasonWrongState)
+		r.Detail = map[string]any{"devices": wrong}
+		return []Action{r}
+	}
+	if len(fresh) == 0 {
+		return done(c)
+	}
+	for _, id := range fresh {
 		e.s.Bypassed[id] = true
 	}
-	return done(c)
+	slices.Sort(fresh)
+	al := e.alert(AlertArmingBypassed, nil)
+	al.Devices = fresh
+	return []Action{al, reply(c, StatusDone, "")}
 }
 
 // --- disarming -----------------------------------------------------------------

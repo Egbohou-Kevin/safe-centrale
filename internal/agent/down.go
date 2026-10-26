@@ -145,8 +145,14 @@ func (c Cloud) wall() time.Time {
 	return c.Wall
 }
 
-// appOrder reads an order from the cloud: it must come from the app. It returns why
-// it is refused, or "".
+// appOrders are the orders the app may give through the cloud. Bypassing zones and
+// postponing the automatic arming are for the people on site: from afar, without a
+// code, they would leave the shop unwatched. Arming needs no code; the others need the
+// site's code, which the hub checks.
+var appOrders = []string{contract.CmdArm, contract.CmdArmNow, contract.CmdDisarm, contract.CmdSilence, contract.CmdEnd}
+
+// appOrder reads an order from the cloud: it must come from the app, and be one the
+// app may give (appOrders). It returns why it is refused, or "".
 func appOrder(env contract.Envelope) (contract.AlarmCommandData, string) {
 	d, err := contract.DecodeData[contract.AlarmCommandData](env)
 	switch {
@@ -154,6 +160,8 @@ func appOrder(env contract.Envelope) (contract.AlarmCommandData, string) {
 		return d, err.Error()
 	case d.Origin != contract.OriginApp:
 		return d, "an order from the cloud must come from the app, not " + d.Origin
+	case !slices.Contains(appOrders, d.Command):
+		return d, "the app may not give this order from afar: " + d.Command
 	}
 	return d, ""
 }

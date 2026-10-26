@@ -430,6 +430,19 @@ func TestOrdersFromTheCloud(t *testing.T) {
 			_, _, a := h.cloud(topic("config", "set"), contract.TypeConfigSet, contract.ConfigSetData{EntryDelayS: 30})
 			return a
 		},
+		// Orders for the people on site only: without a code they would leave the
+		// shop unwatched (zones bypassed, the automatic arming put off).
+		"bypass from afar": func() []Action {
+			_, _, a := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, contract.AlarmCommandData{
+				Command: contract.CmdBypass, Origin: contract.OriginApp, User: "u_owner",
+				Args: contract.CommandArgs{Devices: []string{"dev_door", "dev_motion", "dev_window"}}})
+			return a
+		},
+		"postpone from afar": func() []Action {
+			_, _, a := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, contract.AlarmCommandData{
+				Command: contract.CmdPostpone, Origin: contract.OriginApp, User: "u_owner"})
+			return a
+		},
 		"other site": func() []Action {
 			_, _, a := h.cloud(contract.Topic("tg-lom-0002", "alarm", "cmd"), contract.TypeAlarmCommand, cmd(contract.OriginApp, nil))
 			return a

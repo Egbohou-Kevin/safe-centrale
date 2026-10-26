@@ -158,15 +158,54 @@ func TestBypassClearedOnDisarm(t *testing.T) {
 
 func TestBypassCommand(t *testing.T) {
 	h := newHarness(t)
-	h.open(back)
-	h.cmd(CmdBypass, func(c *Command) { c.Devices = []string{back} })
-	h.arm() // no need to force: the zone is already bypassed
-	h.mustBe(ModeArming)
+	h.arm()
+	h.open(back) // opened during the exit delay
+	acts := h.cmd(CmdBypass, func(c *Command) { c.Devices = []string{back} })
+	if r := replyOf(t, acts); r.Status != StatusDone {
+		t.Fatalf("bypassing an open window during the exit delay: %+v", r)
+	}
+	if al := alerts(acts); len(al) != 1 || al[0].Kind != AlertArmingBypassed || !reflect.DeepEqual(al[0].Devices, []string{back}) {
+		t.Fatalf("a bypass is told to the contacts: %v", al)
+	}
+	if al := alerts(h.cmd(CmdBypass, func(c *Command) { c.Devices = []string{back} })); len(al) != 0 {
+		t.Fatalf("a zone already bypassed is not told again: %v", al)
+	}
+	h.advance(h.cfg.ExitDelay)
+	h.mustBe(ModeArmed)
+	noActions(t, h.close(back))
+	noActions(t, h.open(back))
+	h.mustBe(ModeArmed)
 
-	h.advance(2 * time.Minute)
 	r := replyOf(t, h.cmd(CmdBypass, func(c *Command) { c.Devices = []string{window} }))
 	if r.Status != StatusRefused || r.Reason != ReasonWrongState {
 		t.Fatalf("bypassing while armed must be refused: %+v", r)
+	}
+}
+
+// A bypass is only for a door or a window open during the exit delay: never while
+// disarmed, ahead of an arming, never for an interior zone, a closed door or a device
+// the site does not know. The order is then refused whole, and nothing is bypassed.
+func TestBypassRefusedOutsideAnOpenDoorDuringTheExitDelay(t *testing.T) {
+	h := newHarness(t)
+	h.open(back)
+	if r := replyOf(t, h.cmd(CmdBypass, func(c *Command) { c.Devices = []string{back} })); r.Status != StatusRefused || r.Reason != ReasonWrongState {
+		t.Fatalf("a bypass while disarmed must be refused: %+v", r)
+	}
+	if r := replyOf(t, h.arm()); r.Reason != ReasonZoneOpen {
+		t.Fatalf("the refused bypass left the door blocking arming: %+v", r)
+	}
+	h.close(back)
+	h.arm()
+	h.open(back)
+	h.moves()
+	for _, devs := range [][]string{{motion}, {door}, {window}, {"dev_unknown"}, {back, motion}} {
+		r := replyOf(t, h.cmd(CmdBypass, func(c *Command) { c.Devices = devs }))
+		if r.Status != StatusRefused || r.Reason != ReasonWrongState || !reflect.DeepEqual(r.Detail["devices"], devs[len(devs)-1:]) {
+			t.Fatalf("bypass of %v must be refused: %+v", devs, r)
+		}
+	}
+	if b := h.e.Snapshot().Bypassed; len(b) != 0 {
+		t.Fatalf("nothing is bypassed after refusals: %v", b)
 	}
 }
 
@@ -211,5 +250,30 @@ func TestAnAlarmThatRunsOutDuringTheExitDelayEndsTheArming(t *testing.T) {
 	onlyEvent[Armed](t, as)
 	if al := alerts(as); len(al) != 1 || al[0].Kind != AlertArmingBypassed || !reflect.DeepEqual(al[0].Devices, []string{window}) {
 		t.Fatalf("the open window is bypassed and told: %v", al)
+	}
+}
+
+// An order to bypass every intrusion zone while disarmed, ahead of the evening's arming,
+// is refused: armed later at the keypad, the shop still watches every door, window and
+// motion detector.
+func TestABypassAheadOfTheArmingLeavesEveryZoneWatching(t *testing.T) {
+	for _, intrusion := range []func(h *harness) []Action{
+		func(h *harness) []Action { return h.open(door) },
+		func(h *harness) []Action { return h.breakWindow() },
+		func(h *harness) []Action { return h.open(back) },
+		func(h *harness) []Action { return h.moves() },
+	} {
+		h := newHarness(t)
+		r := replyOf(t, h.cmd(CmdBypass, func(c *Command) {
+			c.Origin = OriginApp
+			c.Devices = []string{door, back, window, motion}
+		}))
+		if r.Status != StatusRefused {
+			t.Fatalf("bypass while disarmed: %+v", r)
+		}
+		h.armed()
+		intrusion(h)
+		h.advance(h.cfg.EntryDelay)
+		h.mustBe(ModeTriggered)
 	}
 }

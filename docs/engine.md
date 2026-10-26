@@ -175,7 +175,14 @@ l'alarme finie, le système passait en `armed` sans délai ni contournement.
 À la fin du délai de sortie (ou à `arm_now`), une porte `entry` restée ouverte
 démarre le délai d'entrée, comme si elle venait de s'ouvrir. Une zone `instant`
 restée ouverte est contournée, et une alerte `arming_bypassed` liste les appareils
-(`devices`) : personne n'est plus au clavier pour l'apprendre. Un contact ne signale
+(`devices`) : personne n'est plus au clavier pour l'apprendre.
+
+L'ordre `alarm.bypass` ne contourne que pendant le délai de sortie, et seulement une
+porte ou une fenêtre (zone `entry` ou `instant`) ouverte à ce moment : jamais une zone
+`interior`, une porte fermée ou un appareil inconnu, ni à l'avance, désarmé. Sinon il
+est refusé entier (`wrong_state`, `detail.devices`). Chaque contournement lève une
+alerte `arming_bypassed` qui liste les appareils : rien d'autre ne le montrerait. L'agent
+ne le laisse jamais venir du cloud. Un contact ne signale
 que ses changements : une fenêtre ouverte pendant le délai et restée ouverte ne
 dirait plus rien ensuite.
 
@@ -427,7 +434,8 @@ Choix faits au codage :
 - **Report pendant le délai de sortie** : il annule ce délai (événement
   `alarm.disarmed`, contournements effacés), puis le plan repart de l'heure prévue
   plus 30 minutes. Chaque report fait de nouveau l'objet d'un préavis.
-- **Pas de code** pour reporter : c'est une facilité, pas un droit d'accès.
+- **Pas de code** pour reporter : c'est une facilité, pas un droit d'accès. Elle est
+  donc pour la centrale elle-même : l'agent ne laisse pas venir `alarm.postpone` du cloud.
 - **Zone ouverte** : l'armement automatique contourne la zone et envoie une alerte
   `arming_bypassed` qui liste les appareils (`devices`).
 - **Fuseau** : `Config.Location` (UTC par défaut, donc Lomé). Les heures de

@@ -137,7 +137,10 @@ func TestATamperDuringAnAlarmIsReported(t *testing.T) {
 
 func TestPermanentZonesCannotBeBypassed(t *testing.T) {
 	h := newHarness(t, func(c *Config) { c.PanicSiren = true })
-	h.cmd(CmdBypass, func(c *Command) { c.Devices = []string{smoke, tamper, panic_} })
+	h.arm()
+	if r := replyOf(t, h.cmd(CmdBypass, func(c *Command) { c.Devices = []string{smoke, tamper, panic_} })); r.Status != StatusRefused {
+		t.Fatalf("a permanent zone is never bypassed: %+v", r)
+	}
 	if al := alerts(h.signal(tamper, SensorTamper, true)); len(al) != 1 || al[0].Kind != AlertTamper {
 		t.Fatalf("a bypassed tamper zone still reports: %v", al)
 	}
@@ -145,6 +148,7 @@ func TestPermanentZonesCannotBeBypassed(t *testing.T) {
 	h.mustBe(ModeTriggered)
 
 	h = newHarness(t, func(c *Config) { c.PanicSiren = true })
+	h.arm()
 	h.cmd(CmdBypass, func(c *Command) { c.Devices = []string{panic_} })
 	h.signal(panic_, SensorPanic, true)
 	h.mustBe(ModeTriggered)

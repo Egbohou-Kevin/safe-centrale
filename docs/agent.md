@@ -196,7 +196,9 @@ Quand le moteur demande une alerte par application ou WhatsApp :
 Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
 
 - **Seuls sont acceptés** : un ordre de l'application sur `alarm/cmd` (`origin` à
-  `app`), une session vidéo sur `video/cmd` (un `video.stop` sans session est refusé), la configuration du site sur
+  `app`, et seulement `alarm.arm`, `alarm.arm_now`, `alarm.disarm`, `alarm.silence` ou
+  `alarm.end` : contourner des zones ou reporter l'armement automatique se fait sur
+  place, jamais de loin), une session vidéo sur `video/cmd` (un `video.stop` sans session est refusé), la configuration du site sur
   `config/set` (vérifiée : version, limites, numéros), un ordre de maintenance sur
   `maint/cmd` (une heure au plus, voir `maintenance.md`), et sur `alert/result` et
   `alert/ack` les réponses à une alerte que l'agent a transmise (un `alert.ack` doit
@@ -250,7 +252,7 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
     réessayer dans quelques secondes.
 
   Seul un ordre qui a passé les contrôles reçoit cette réponse : topic et enveloppe du
-  site, type attendu, `origin` à `app`. Les autres sont refusés sans réponse, comme
+  site, type attendu, `origin` à `app`, ordre permis à l'application. Les autres sont refusés sans réponse, comme
   avant. La réponse ne reprend rien de l'ordre sauf son `id` (jamais le code). L'ordre
   répondu est gardé parmi les `id` déjà vus : redonné plus tard par le broker, il ne
   s'exécute pas après un `refused`. La réponse part au cloud seulement, sans passer par

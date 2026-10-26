@@ -311,6 +311,13 @@ le planning arme dans le moteur.
 | `alarm.bypass` | Contourne des zones pour la période d'armement | `devices` (liste) |
 | `alarm.postpone` | Reporte l'armement automatique | |
 
+L'agent ne laisse passer du cloud que `alarm.arm`, `alarm.arm_now`, `alarm.disarm`,
+`alarm.silence` et `alarm.end` : `alarm.bypass` et `alarm.postpone`, sans code, sont
+pour la centrale elle-même, jamais de loin. Le moteur ne contourne que pendant le délai
+de sortie, une porte ou une fenêtre (zone `entry` ou `instant`) ouverte à ce moment ;
+sinon l'ordre est refusé entier (`wrong_state`, `detail.devices` les appareils en
+cause). Chaque contournement lève une alerte `arming_bypassed` qui liste les appareils.
+
 - `code` : 4 à 8 chiffres ASCII, rien d'autre (`pattern` `^[0-9]{4,8}$` du schéma),
   la forme des codes de la centrale (`security-install.md`). Un code d'une autre forme
   n'est celui de personne : la centrale le compterait comme faux. Un test de la centrale

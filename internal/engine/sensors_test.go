@@ -117,16 +117,16 @@ func TestAcceptsMatchesTheZoneTable(t *testing.T) {
 func TestForgetDropsARemovedDevice(t *testing.T) {
 	h := newHarness(t)
 	h.open(back)
-	h.cmd(CmdBypass, func(c *Command) { c.Devices = []string{window} })
 	if r := replyOf(t, h.arm()); r.Reason != ReasonZoneOpen {
 		t.Fatalf("an open door blocks arming: %+v", r)
 	}
+	h.arm(force) // bypasses the back door
 	noActions(t, h.e.Handle(Forget{Now: h.now, DeviceID: back}))
-	noActions(t, h.e.Handle(Forget{Now: h.now, DeviceID: window}))
 	s := h.e.Snapshot()
 	if len(s.Open) != 0 || len(s.Bypassed) != 0 {
 		t.Fatalf("open %v, bypassed %v", s.Open, s.Bypassed)
 	}
+	h.cmd(CmdDisarm, goodCode("u_42"))
 	h.arm()
 	h.mustBe(ModeArming)
 	noActions(t, h.e.Handle(Forget{Now: h.now, DeviceID: "dev_never_seen"}))
