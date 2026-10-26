@@ -95,6 +95,11 @@
           }
         }
       }
+    },
+    "sirens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Depuis le 26 octobre 2026 : le nombre de sirènes que la configuration du site nomme (siren_ids), appairées ou non. 0 : le site n'a pas de sirène, par choix ; ses alarmes ne sonnent pas, la centrale ne dit aucun alarm.siren_cycle ni aucune siren_failed, et personne ne doit dire qu'une sirène sonne. Absent d'une centrale plus ancienne : inconnu"
     }
   },
   "required": [

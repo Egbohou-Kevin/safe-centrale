@@ -123,7 +123,7 @@ func TestACloudConfigurationThatDoesNotFitNeverStopsTheHub(t *testing.T) {
 // a devices file the hub leaves aside must not make every configuration refused.
 func TestTheCloudCheckLaysTheDevicesAsTheHubDoes(t *testing.T) {
 	path, state := exampleWithState(t)
-	if err := os.WriteFile(filepath.Join(state, DevicesFile), []byte(`{"zones": {}, "siren_ids": []}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(state, DevicesFile), []byte(`{"zones": {}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if r, err := Load(path); err != nil || r.DevicesErr == nil {

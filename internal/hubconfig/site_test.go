@@ -154,8 +154,8 @@ func TestWriteSiteRefusesWhatTheHubWouldRefuse(t *testing.T) {
 	if err := CheckSite(path, s); err == nil {
 		t.Fatal("CheckSite accepted what WriteSite refuses")
 	}
-	if err := CheckSite(path, install.Site{Zones: map[string]install.Zone{}}); err == nil || !strings.Contains(err.Error(), "siren") {
-		t.Fatalf("a site without siren: %v", err)
+	if err := CheckSite(path, install.Site{Zones: map[string]install.Zone{}}); err != nil {
+		t.Fatalf("a site without a siren is valid (26 October 2026): %v", err)
 	}
 	delete(s.Zones, "dev_x")
 	if err := CheckSite(path, s); err != nil {
@@ -170,7 +170,7 @@ func TestADamagedDevicesFileNeverStopsTheHub(t *testing.T) {
 	for name, content := range map[string]string{
 		"broken JSON":    `{"zones": `,
 		"unknown key":    `{"zones": {}, "siren_ids": ["dev_siren1"], "sirens": []}`,
-		"no siren":       `{"zones": {}, "siren_ids": []}`,
+		"no siren list":  `{"zones": {}}`,
 		"unknown kind":   `{"zones": {"dev_door": {"name": "A", "kind": "garage"}}, "siren_ids": ["dev_siren1"]}`,
 		"trailing data":  `{"zones": {}, "siren_ids": ["dev_siren1"]} {}`,
 		"stray brace":    `{"zones": {}, "siren_ids": ["dev_siren1"]} }`,

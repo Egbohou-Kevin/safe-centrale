@@ -278,8 +278,15 @@ réponse » : personne ne l'a pris en charge, l'alerte de la sirène reste bruya
   « 1 » par SMS ne dit pas à quelle alerte il répond : reçu quand l'alarme et la sirène
   muette ont été envoyées au contact à quelques minutes d'écart, il acquitte d'abord la
   sirène muette, et un deuxième « 1 » l'alarme (voir `gsm-gateway.md`, « 1 »).
-- Un désarmement ne termine pas `siren_failed` : il la rend discrète. La sirène reste à
-  réparer, et le fait arrive quand même.
+- Un désarmement ne coupe pas l'escalade de `siren_failed` : il la rend discrète, et elle
+  finit `informed`. La sirène reste à réparer, et le fait arrive quand même. La fin de
+  l'alarme sans désarmer (`alarm.end`, « Couper l'alarme ») fait exactement de même, comme
+  la sirène coupée avec un code. Pour les téléphones, chacune de ces fins termine aussi
+  l'alerte de la sirène : le cloud la déduit de l'`alarm_incident` de l'alerte et leur dit
+  la fin avec le même mot que pour l'alarme (décidé le 26 octobre 2026, après le
+  deuxième essai : « Couper l'alarme » laissait la carte de la sirène muette dans
+  l'application, que seul « Désarmer » faisait partir). Un acquittement de l'alarme ne la
+  termine pas.
 - Un contact qui n'accepte que l'appel ne reçoit pas l'alerte discrète. C'est journalisé,
   et l'escalade de l'alarme l'a déjà appelé.
 - Hors alarme (un futur test de sirène, ou le bip d'armement), `siren_failed` reste une

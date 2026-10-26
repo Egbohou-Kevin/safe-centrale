@@ -19,7 +19,10 @@ import (
 type Config struct {
 	Site        string // for example "tg-lom-0001"
 	HubDeviceID string // the hub's battery module: its mains and battery readings are the hub's
-	SirenIDs    []string
+	// SirenIDs are the site's sirens. None is a site without a siren, by choice (26
+	// October 2026): an alarm then only sends messages, and the hub says nothing of a
+	// siren (see NoSiren).
+	SirenIDs []string
 
 	Engine engine.Config
 	Health health.Config // HubDeviceID is taken from the field above, Zones from Engine
@@ -52,9 +55,6 @@ func DefaultConfig(site, hubDeviceID string, sirenIDs ...string) Config {
 	}
 }
 
-// errNoSiren refuses a site without a siren.
-var errNoSiren = errors.New("hub: at least one siren is required: an alarm that cannot sound is a misconfiguration")
-
 // Validate checks the whole configuration, domains included, without building
 // anything.
 func (c Config) Validate() error {
@@ -78,8 +78,6 @@ func (c Config) validate() error {
 		return fmt.Errorf("hub: invalid site %q", c.Site)
 	case c.HubDeviceID == "":
 		return errors.New("hub: HubDeviceID is required")
-	case len(c.SirenIDs) == 0:
-		return errNoSiren
 	case c.HeartbeatEvery <= 0 || c.SirenCommandTTL <= 0:
 		return errors.New("hub: durations must be positive")
 	case c.BootWindow < 0:
@@ -102,6 +100,10 @@ func (c Config) validate() error {
 	}
 	return nil
 }
+
+// NoSiren says whether the site has no siren, by choice: its alarms sound nothing, and
+// the history tells no siren cycle (docs/engine.md, "Un site sans sirene").
+func (c Config) NoSiren() bool { return len(c.SirenIDs) == 0 }
 
 // healthConfig is the monitor's configuration, with the hub's battery module and the
 // zones of the devices, which its device list names them by.

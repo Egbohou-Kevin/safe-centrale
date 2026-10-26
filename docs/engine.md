@@ -221,6 +221,24 @@ son texte, puisqu'il n'a pas de programme de sirène à lui tant qu'elle sonne e
 ses occupants ne l'entendent pas (voir `escalation.md`, « Un feu dit la sirène
 muette »).
 
+### Un site sans sirène
+
+Décidé le 26 octobre 2026, au deuxième essai sur la vraie centrale : le site déclarait
+une sirène jamais appairée, et chaque intrusion levait une `siren_failed`. Un site sans
+sirène est une configuration valide et calme : `"siren_ids": []` dans `hub.json` (la
+ligne absente reste refusée : un oubli, pas un choix). `safehome-hub check` l'accepte et
+le dit (« no siren, by choice »), le script d'installation aussi.
+
+- Le moteur ne change pas : son programme mesure toujours la durée de l'alarme (cycles et
+  pauses, puis la fin d'origine `timeout`), et l'escalade suit le sien.
+- La centrale n'envoie aucun ordre de sirène, ne publie aucun `alarm.siren_cycle`, et ne
+  lève jamais `siren_failed` : rien ne peut refuser de sonner.
+- `system.devices` dit `sirens` à `0` (le nombre de sirènes que la configuration nomme,
+  appairées ou non) : le cloud et l'application ne disent jamais « La sirène sonne »
+  (`alarm.state` garde le mot `siren` du programme, voir `contract.md`).
+- Les outils d'installation ne retirent jamais la dernière sirène d'un site : un site sans
+  sirène est un choix écrit dans `hub.json`, pas l'effet d'un retrait.
+
 ## Une alarme pendant une autre
 
 Rien de ce qui arrive pendant une alarme n'est perdu. Une autre alarme d'un genre

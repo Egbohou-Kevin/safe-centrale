@@ -8,6 +8,7 @@
 package hubconfig
 
 import (
+	"errors"
 	"fmt"
 	"time"
 	_ "time/tzdata" // the hub's image may have no time zone database
@@ -150,6 +151,10 @@ func build(f file) (Result, error) {
 	}
 	return r, nil
 }
+
+// errNoSirenList refuses a file without siren_ids. Left out, it is a forgotten line
+// rather than a choice: a site without a siren says so, as one without a GSM line does.
+var errNoSirenList = errors.New(`siren_ids is required: give "siren_ids": [] for a site without a siren (its alarms then only send messages)`)
 
 // hubConfig lays the file over the defaults of the hub and of its domains.
 func hubConfig(f file) (hub.Config, error) {

@@ -102,8 +102,10 @@ var (
 	ErrNoSiren     = errors.New("is not a siren")
 	ErrHasZone     = errors.New("has a zone: the alerts call it by its zone's name")
 	ErrCannotSound = errors.New("cannot sound")
-	// ErrLastSiren: the hub refuses a site without a siren. The editor says so before
-	// asking the hub, for a tool to explain it.
+	// ErrLastSiren: the installer's tools never take a site's last siren away, by a
+	// slip of the finger. A site without a siren is valid (26 October 2026), but it is
+	// a choice written in hub.json ("siren_ids": []), never the side effect of a
+	// removal.
 	ErrLastSiren = errors.New("the site must keep at least one siren")
 	// ErrRemoving: the device's removal is already under way (a second tap, another
 	// tab). Accepted, it would end with the first one's hold.

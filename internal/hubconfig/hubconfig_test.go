@@ -211,6 +211,21 @@ func TestWithoutGSM(t *testing.T) {
 	}
 }
 
+// A site without a siren, by choice (26 October 2026), says so: "siren_ids": []. A
+// file that leaves the line out is refused, a forgotten line rather than a choice.
+func TestWithoutASiren(t *testing.T) {
+	body := strings.Replace(minimal, `["dev_siren1"]`, `[]`, 1)
+	r, err := parse([]byte(body))
+	if err != nil || !r.Hub.NoSiren() {
+		t.Fatalf("%v", err)
+	}
+	left := strings.Replace(minimal, `,
+  "siren_ids": ["dev_siren1"]`, "", 1)
+	if _, err := parse([]byte(left)); err == nil || !strings.Contains(err.Error(), `"siren_ids": []`) {
+		t.Fatalf("a file without siren_ids: %v", err)
+	}
+}
+
 func TestOverrides(t *testing.T) {
 	r := with(t, `"alarm": {"exit_delay": "90s", "entry_delay": "1m", "siren_cycles": 2, "panic_siren": true, "postpone_max": 0},
 		"health": {"hub_battery_warn": 50, "summary_at": "07:30", "gsm_degraded_after": "15m", "gsm_silent_after": "5m",

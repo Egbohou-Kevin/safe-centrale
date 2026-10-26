@@ -53,7 +53,7 @@ func TestTheDeviceListShowsEachRegisteredDevice(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	r.settle()
-	if got := lists(r); len(got) != 1 || string(got[0].Env.Data) != `{"devices":[]}` || !got[0].Retain || got[0].Env.Src != srcHealth {
+	if got := lists(r); len(got) != 1 || string(got[0].Env.Data) != `{"devices":[],"sirens":1}` || !got[0].Retain || got[0].Env.Src != srcHealth {
 		t.Fatalf("at boot, the list of a site without devices yet: %+v", got)
 	}
 	r.theShop()
@@ -69,7 +69,7 @@ func TestTheDeviceListShowsEachRegisteredDevice(t *testing.T) {
 		`{"id":"dev_door","name":"entrance","zone":"entry","type":"contact","online":true},` +
 		`{"id":"dev_keypad","type":"keypad","online":true},` +
 		`{"id":"dev_motion","name":"shop","zone":"interior","type":"motion","online":true,"battery":10,"battery_low":true},` +
-		`{"id":"dev_siren","type":"siren","online":true}]}`
+		`{"id":"dev_siren","type":"siren","online":true}],"sirens":1}`
 	if got := lastList(t, r); got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}
@@ -119,7 +119,7 @@ func TestTheDeviceListGoesOnlyOnARealChange(t *testing.T) {
 			t.Fatalf("change %d: %d system.devices, want %d", i, got, n+i+1)
 		}
 	}
-	if got := lastList(t, r); got != `{"devices":[{"id":"dev_door","name":"entrance","zone":"entry","type":"contact","online":true,"battery":70}]}` {
+	if got := lastList(t, r); got != `{"devices":[{"id":"dev_door","name":"entrance","zone":"entry","type":"contact","online":true,"battery":70}],"sirens":1}` {
 		t.Fatalf("%s", got)
 	}
 }

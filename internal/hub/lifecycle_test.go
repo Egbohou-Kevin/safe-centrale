@@ -205,7 +205,6 @@ func TestConfigValidation(t *testing.T) {
 	bad := map[string]func(*Config){
 		"bad site":        func(c *Config) { c.Site = "Lome" },
 		"no hub device":   func(c *Config) { c.HubDeviceID = "" },
-		"no siren":        func(c *Config) { c.SirenIDs = nil },
 		"empty siren id":  func(c *Config) { c.SirenIDs = []string{""} },
 		"no heartbeat":    func(c *Config) { c.HeartbeatEvery = 0 },
 		"no siren ttl":    func(c *Config) { c.SirenCommandTTL = 0 },
@@ -228,8 +227,8 @@ func TestConfigValidation(t *testing.T) {
 	}
 	c := testConfig()
 	c.SirenIDs = nil
-	if err := c.Validate(); !errors.Is(err, errNoSiren) {
-		t.Errorf("no siren: %v, want errNoSiren", err)
+	if err := c.Validate(); err != nil || !c.NoSiren() {
+		t.Errorf("a site without a siren is valid (26 October 2026): %v", err)
 	}
 }
 

@@ -36,6 +36,10 @@ const (
 // dispatchEngine turns what the engine decided into messages. It runs on the
 // engine loop's goroutine and only queues: the sending is done elsewhere.
 //
+// A site without a siren (Config.NoSiren) tells no siren cycle: the engine's schedule
+// still times the alarm (its end, alarm.cleared by timeout), but nothing sounds, and
+// the history must not say it does.
+//
 // The siren leaves first, then the events and the replies: if the broker is slow,
 // what matters most for people leaves first. The alerts go to the escalation, whose
 // own loop queues the alert requests a moment later, after the siren.
@@ -50,6 +54,9 @@ func (h *Hub) dispatchEngine(_ context.Context, now time.Time, actions []engine.
 	h.escalateEngine(now, actions)
 	h.warnOfFaults(&out)
 	for _, ev := range out.Events {
+		if ev.Type == contract.TypeAlarmSirenCycle && h.cfg.NoSiren() {
+			continue // a site without a siren: the engine's schedule times the alarm, nothing sounds
+		}
 		h.out.Send(srcEngine, contract.AlarmEventTopic(h.cfg.Site), ev.Type, ev.Data, false, now)
 	}
 	for _, ack := range out.Acks {

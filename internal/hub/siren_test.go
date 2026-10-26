@@ -523,3 +523,78 @@ func TestAFireSaysTheSirenKnownSilent(t *testing.T) {
 		})
 	}
 }
+
+// The second trial of 26 October 2026: "Couper l'alarme" (alarm.end) ended the
+// intrusion, and the siren's alert was left as if nobody had. The end of the alarm
+// handles it as a disarm does: the escalation of the siren's alert ends informed, what
+// is left of it rings nobody, and the cloud closes it on the phones from the alarm's
+// end (docs/contract.md, alarm.cleared). Without either, nobody handled it: it ends
+// unanswered.
+func TestEndingTheAlarmHandlesItsSilentSirenAsADisarmDoes(t *testing.T) {
+	for _, c := range []struct{ order, outcome string }{
+		{"", "unanswered"}, {contract.CmdEnd, "informed"}, {contract.CmdDisarm, "informed"},
+	} {
+		t.Run("order "+c.order, func(t *testing.T) {
+			r := newRig(t, nil, withContacts)
+			r.start()
+			r.setCode("u_owner", "482915")
+			trigger(r)
+			failEveryOrder(r)
+			drivertest.WaitFor(t, "the siren's alert", func() bool { r.settle(); return len(sirenAlerts(r)) == 3 })
+			if c.order != "" {
+				r.order(c.order, contract.CommandArgs{Code: "482915"}, contract.OriginApp, "u_owner")
+				drivertest.WaitFor(t, "the alarm ended", func() bool { r.settle(); return len(eventsOf(r, contract.TypeAlarmCleared)) == 1 })
+			}
+			for range 4 {
+				r.clock.Advance(30 * time.Second)
+				r.settle()
+			}
+			want := "kind=siren_failed outcome=" + c.outcome
+			drivertest.WaitFor(t, want, func() bool { r.settle(); return strings.Count(r.logs.String(), "kind=siren_failed outcome=") == 1 })
+			if !strings.Contains(r.logs.String(), want) {
+				t.Fatalf("want %s:\n%s", want, r.logs.String())
+			}
+			r.validateAll()
+		})
+	}
+}
+
+// A site without a siren, by choice (26 October 2026: the first real hub had none
+// paired): its configuration is valid, and its alarm is calm. No siren order, no
+// siren cycle in the history, no siren_failed; the alarm still times out at the end
+// of the engine's schedule, and the device list says the site has no siren.
+func TestASiteWithoutASirenIsCalm(t *testing.T) {
+	r := newRig(t, nil, withContacts, func(c *Config) { c.SirenIDs = nil })
+	r.start()
+	if d := dataOf[contract.DevicesData](t, r.broker.On(contract.DevicesTopic(site))[0]); d.Sirens == nil || *d.Sirens != 0 {
+		t.Fatalf("the device list says no siren: %+v", d)
+	}
+	trigger(r)
+	for range 40 {
+		r.clock.Advance(time.Minute)
+		r.settle()
+	}
+	for _, m := range r.broker.All() {
+		if m.Env.Type == contract.TypeCommand || m.Env.Type == contract.TypeAlarmSirenCycle || m.Env.Type == contract.TypeAlarmSirenFailed {
+			t.Fatalf("a site without a siren: %s on %s", m.Env.Type, m.Topic)
+		}
+	}
+	if len(sirenAlerts(r)) != 0 {
+		t.Fatal("no siren_failed")
+	}
+	cleared := eventsOf(r, contract.TypeAlarmCleared)
+	if len(cleared) != 1 || dataOf[contract.ClearedData](t, cleared[0]).Origin != contract.OriginTimeout {
+		t.Fatalf("the alarm times out: %d cleared", len(cleared))
+	}
+	r.mustBe(engine.ModeArmed)
+	r.validateAll()
+}
+
+// A site with sirens says how many, paired or not.
+func TestTheDeviceListSaysHowManySirens(t *testing.T) {
+	r := newRig(t, nil)
+	r.start()
+	if d := dataOf[contract.DevicesData](t, r.broker.On(contract.DevicesTopic(site))[0]); d.Sirens == nil || *d.Sirens != 1 {
+		t.Fatalf("%+v", d)
+	}
+}

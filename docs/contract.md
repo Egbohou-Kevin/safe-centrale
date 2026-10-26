@@ -372,7 +372,7 @@ le planning arme dans le moteur.
 | `alarm.disarmed` | Le système est désarmé | `origin`, `user`, `incidents` (les incidents que ce désarmement termine, liste vide s'il n'en termine aucun) |
 | `alarm.entry_delay` | Un détecteur d'entrée s'est ouvert | `ends_at`, `device_id`, `device_name` |
 | `alarm.triggered` | L'alarme se déclenche | `incident`, cause : `device_id`, `device_name`, `capability`, `zone` |
-| `alarm.siren_cycle` | Un cycle de sirène démarre | `incident`, `cycle`, `of` |
+| `alarm.siren_cycle` | Un cycle de sirène démarre ; jamais sur un site sans sirène | `incident`, `cycle`, `of` |
 | `alarm.siren_failed` | Une sirène refuse de sonner pendant une alarme, renvois compris (une fois par sirène et par alarme) | `incident` (l'alarme), `device_id` (la sirène) |
 | `alarm.cleared` | L'alarme est arrêtée | `incident`, `origin` (`user` ou `timeout`), `user`, `duration_s` ; `ended` (vrai) quand une personne l'a terminée avec `alarm.end` |
 | `alarm.arming_scheduled` | Annonce de l'armement automatique | `scheduled_for` |
@@ -430,7 +430,10 @@ ou aucun ne vient (`allOf` dans le schéma) ; une centrale antérieure au 25 oct
 republie `alarm.state` : l'application dit « La sirène sonne (2/3) » ou « En pause,
 reprend à 16:20 » sans autre événement. `siren` est le programme du moteur, pas la
 sirène elle-même : une sirène muette se dit par `alarm.siren_failed`, et `siren` reste
-`on`. Les heures sont celles du programme : un redémarrage de la centrale en pleine
+`on`. Sur un site sans sirène (`sirens` à 0 dans `system.devices`), le programme mesure
+toujours la durée de l'alarme (sa fin, `alarm.cleared` d'origine `timeout`), mais rien
+ne sonne : aucun `alarm.siren_cycle` ne part, et un lecteur ne dit jamais que la sirène
+sonne. Les heures sont celles du programme : un redémarrage de la centrale en pleine
 alarme ne les décale pas (l'échéance est sauvegardée avec l'état du moteur, voir
 `engine.md`).
 
@@ -470,6 +473,14 @@ lecteur ne le montre pas comme un compte à rebours en cours (« reprend à 16:2
   une panique du site attend encore une réponse, la centrale ne le met pas, même si
   l'alarme est prise en charge : l'alerte reste bruyante (voir `escalation.md`, « Sirène
   muette pendant une alarme »).
+  La fin de l'alarme par une personne termine aussi, pour les téléphones, les alertes
+  qui la nomment dans `alarm_incident` (décidé le 26 octobre 2026) : son `alarm.cleared`
+  d'origine `user` (sirène coupée, ou `ended` avec `alarm.end`), ou l'`alarm.disarmed`
+  qui la compte dans `incidents`. Le cloud dit leur fin aux téléphones qu'il a fait
+  sonner pour elles, avec le même mot que pour l'alarme (désarmée, sirène coupée,
+  terminée). La centrale, elle, ne les coupe pas : elle les rend discrètes, et leur
+  escalade finit `informed` (voir `escalation.md`). Un acquittement de l'alarme ne les
+  termine pas.
   `incident_at` (obligatoire) est l'heure où l'incident a été levé, en UTC à la
   milliseconde comme le `ts` de l'enveloppe : la même à chaque vague et à chaque
   relance de l'incident, alors que `ts` est l'heure de la demande (une deuxième vague
@@ -838,7 +849,8 @@ chaque appareil du registre, pour la fiche Capteurs de l'application.
       { "id": "dev_door", "name": "Entrée", "zone": "entry", "type": "contact",
         "online": true, "battery": 80 },
       { "id": "dev_siren1", "type": "siren", "online": true }
-    ]
+    ],
+    "sirens": 1
   }
 }
 ```
@@ -884,6 +896,13 @@ chaque appareil du registre, pour la fiche Capteurs de l'application.
   revenu. La retenir ne cacherait rien : un événement `battery` ou `tamper` porté par
   le même message part au cloud tout de suite, et `alarm.armed` et `alarm.disarmed`
   disent déjà quand la boutique ferme et ouvre.
+- `sirens` (depuis le 26 octobre 2026, toujours envoyé par la centrale, absent d'une
+  plus ancienne) : le nombre de sirènes que la configuration du site nomme
+  (`siren_ids`), appairées ou non. Une sirène nommée mais pas appairée n'est pas dans
+  `devices` (elle n'est pas au registre) et compte ici. `0` : le site n'a pas de sirène,
+  par choix (`"siren_ids": []` dans `hub.json`) ; ses alarmes ne font que prévenir, la
+  centrale ne dit aucun `alarm.siren_cycle` ni aucune `siren_failed`, et le cloud et
+  l'application ne disent jamais qu'une sirène sonne, ni qu'elle n'a pas sonné.
 - `battery` : la dernière lecture en %, arrondie à la dizaine la plus proche (comme le
   signal GSM), absente sans pile suivie ou jamais lue. `battery_low` : présent, à
   `true`, seulement quand la pile est faible, avec la règle de la supervision (faible à
@@ -979,6 +998,16 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
   dans les journaux.
 
 Changements depuis la v1 validée, sans changement de `v` :
+
+- **26 octobre 2026, la fin d'une alarme et le site sans sirène** (deuxième essai sur la
+  vraie centrale, une sirène configurée jamais appairée) : la fin de l'alarme par une
+  personne termine aussi, pour les téléphones, les alertes qui la nomment
+  (`alarm_incident`, la sirène muette) : rien ne change dans les messages, le cloud la
+  déduit de l'`alarm.cleared` ou de l'`alarm.disarmed` de l'alarme (voir « Alertes »).
+  Un site sans sirène est valide (`"siren_ids": []`) : `system.devices` porte `sirens`
+  (facultatif, le nombre de sirènes que la configuration nomme, appairées ou non ; `0`
+  pour un site sans sirène), et un tel site ne publie aucun `alarm.siren_cycle`. Un
+  cloud qui ne connaît pas `sirens` l'ignore.
 
 - **25 octobre 2026, « Vu » et la centrale sans SMS** : nouveau message `alert.seen`
   (`incident`, `contact`, `at`), du cloud vers la centrale sur `alert/seen` : un contact

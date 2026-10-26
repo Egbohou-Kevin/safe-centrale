@@ -73,6 +73,11 @@ type HealthData struct {
 // device going offline or its first message back (see docs/contract.md).
 type DevicesData struct {
 	Devices []DeviceHealth `json:"devices"`
+	// Sirens is how many sirens the site's configuration names (siren_ids), paired or
+	// not (since 26 October 2026). 0: the site has none, by choice: its alarms sound
+	// nothing, the hub tells no siren cycle and no siren_failed, and the cloud and the
+	// app never say a siren sounds. Absent from an older hub: unknown.
+	Sirens *int `json:"sirens,omitempty"`
 }
 
 // DeviceHealth is one device of system.devices.

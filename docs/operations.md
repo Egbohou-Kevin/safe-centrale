@@ -127,7 +127,8 @@ clé, la ligne SMS est attendue, et une passerelle muette est une panne (voir
 `escalation.md`, « Une centrale sans ligne SMS »).
 
 À noter : `timezone` (Lomé : `Africa/Lome`, UTC), `zones` (le rôle de chaque appareil),
-`siren_ids` (les sirènes) et `siren_names` (facultatif : le nom d'une sirène dans les
+`siren_ids` (les sirènes ; `[]` pour un site sans sirène, par choix : ses alarmes ne
+font que prévenir, voir `engine.md`, « Un site sans sirène » ; la ligne est obligatoire) et `siren_names` (facultatif : le nom d'une sirène dans les
 textes des alertes, par identifiant, par exemple `{"dev_siren1": "Reserve"}` ; même
 règle qu'un nom de zone ; une sirène sans nom s'y appelle « Sirène », ou « Sirène 2 »
 parmi plusieurs ; une sirène qui a aussi une zone garde le nom de sa zone et n'a pas de
@@ -500,8 +501,8 @@ Ce que l'outil vérifie avant de toucher à quoi que ce soit :
   Zigbee) n'est accepté qu'avec `-force`.
 - **La configuration reste valable** : la nouvelle version est vérifiée comme au
   démarrage de la centrale avant d'être écrite. Par exemple, la dernière sirène ne peut
-  pas être retirée (la centrale refuse un site sans sirène) : il faut d'abord ajouter
-  la nouvelle. Pour `remove`, cette vérification a lieu **avant** le retrait du réseau,
+  pas être retirée : il faut d'abord ajouter la nouvelle (un site sans sirène est un
+  choix écrit dans `hub.json`, `"siren_ids": []`, jamais l'effet d'un retrait). Pour `remove`, cette vérification a lieu **avant** le retrait du réseau,
   qui ne se défait pas. Pendant le retrait, l'appareil est tenu pour parti : aucun
   autre changement du même programme ne peut laisser un site qui ne marcherait pas sans
   lui (retirer l'autre sirène, par exemple). Cette garde ne vaut qu'à l'intérieur d'un

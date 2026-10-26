@@ -30,10 +30,14 @@ func zones(in map[string]zoneFile) (map[string]engine.Zone, error) {
 	return out, nil
 }
 
-// sirenNames checks the sirens' names: each names a siren of the list without a zone
+// sirenNames checks the sirens' list, which must be there (errNoSirenList), and their
+// names: each names a siren of the list without a zone
 // (a device with a zone has its zone's name), by the installer's rule
 // (install.ValidSirenName), since it goes into the same texts as a zone's name.
 func sirenNames(ids []string, zones map[string]zoneFile, names map[string]string) error {
+	if ids == nil {
+		return errNoSirenList
+	}
 	for _, id := range slices.Sorted(maps.Keys(names)) { // the same error first, whatever the map order
 		if !slices.Contains(ids, id) {
 			return fmt.Errorf("siren_names: %q is not in siren_ids", id)

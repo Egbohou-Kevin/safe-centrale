@@ -106,12 +106,30 @@ func TestTheCheckSaysASiteHasNoGSMLine(t *testing.T) {
 func TestTheCheckFailsWhenTheDevicesFileIsLeftAside(t *testing.T) {
 	state := t.TempDir()
 	path := writeConfig(t, "mqtt://127.0.0.1:1883", state, "")
-	devices := `{"zones": {"dev_door": {"name": "Entrance", "kind": "entry"}}, "siren_ids": []}`
+	devices := `{"zones": {"dev_door": {"name": "Entrance", "kind": "garage"}}, "siren_ids": []}`
 	if err := os.WriteFile(filepath.Join(state, hubconfig.DevicesFile), []byte(devices), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errb := cli(t, "", "check", "-config", path)
 	if code != 1 || !strings.Contains(errb, "configuration error") || !strings.Contains(errb, hubconfig.DevicesFile) {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errb)
+	}
+}
+
+// A site without a siren, by choice (26 October 2026), passes the check, which says it:
+// the installation script goes on.
+func TestTheCheckAcceptsASiteWithoutASiren(t *testing.T) {
+	state := t.TempDir()
+	path := writeConfig(t, "mqtt://127.0.0.1:1883", state, "")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(string(raw), `["dev_siren1"]`, `[]`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errb := cli(t, "", "check", "-config", path)
+	if code != 0 || !strings.Contains(out, "0 siren(s)") || !strings.Contains(out, "no siren, by choice") {
 		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errb)
 	}
 }

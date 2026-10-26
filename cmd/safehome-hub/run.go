@@ -75,6 +75,9 @@ func check(cfg hubconfig.Result, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "configuration OK: site %s, %d zone(s), %d siren(s), %d contact(s), state in %s\n",
 		cfg.Hub.Site, len(cfg.Hub.Engine.Zones), len(cfg.Hub.SirenIDs), len(cfg.Hub.Escalation.Contacts), cfg.StateDir)
+	if cfg.Hub.NoSiren() {
+		fmt.Fprintln(stdout, "no siren, by choice: an alarm only sends messages")
+	}
 	if cfg.DevicesSum != "" {
 		fmt.Fprintf(stdout, "zones and sirens: set by the installer's tools (%s in %s)\n", hubconfig.DevicesFile, cfg.StateDir)
 	}

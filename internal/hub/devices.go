@@ -12,7 +12,9 @@ import (
 // The device list (system.devices): the health of each registered device, for the
 // owner's list of sensors. The monitor builds it from the registry, the zones of the
 // site, the battery readings and the retained availability of each device; the hub
-// publishes it, and the link agent hands it to the cloud.
+// publishes it, and the link agent hands it to the cloud. It says how many sirens the
+// site's configuration names, paired or not: 0 for a site without a siren, so that
+// the cloud and the app never say a siren sounds there.
 
 // registrySnapshotMessage takes the adapter's registry (registry.snapshot, retained):
 // the monitor lists the devices it names.
@@ -37,5 +39,7 @@ func (h *Hub) publishDevices(now time.Time) {
 		return
 	}
 	data := healthwire.Devices(h.monitor.mon.Devices())
+	sirens := len(h.cfg.SirenIDs)
+	data.Sirens = &sirens
 	h.publishChanged(&h.monitor.lastDevices, contract.DevicesTopic(h.cfg.Site), contract.TypeDevices, data, now)
 }
