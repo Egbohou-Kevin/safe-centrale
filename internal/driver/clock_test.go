@@ -40,3 +40,27 @@ func TestTheCoreSeesWallTimeOnly(t *testing.T) {
 		}
 	}
 }
+
+// A core that asks (Core.Stepped) is told how far the clock read stepped forward
+// beyond the time that really passed: not a step back, not a drift under a second,
+// not the time that passed.
+func TestACoreIsToldTheClockSteppedForward(t *testing.T) {
+	r := newRig(t, nil)
+	var steps []time.Duration
+	r.loop.o.Core.Stepped = func(d time.Duration) { steps = append(steps, d) }
+	r.start()
+	do := func() { r.loop.Do(r.ctx, func(time.Time) []engine.Action { return nil }) }
+	do()
+	r.clock.Advance(time.Hour)
+	do()
+	r.clock.Set(r.clock.Now().Add(500 * time.Millisecond))
+	do()
+	r.clock.Set(r.clock.Now().Add(-time.Hour))
+	do()
+	r.clock.Set(r.clock.Now().Add(14 * time.Hour))
+	r.clock.Advance(time.Minute)
+	do()
+	if len(steps) != 1 || steps[0] != 14*time.Hour {
+		t.Fatalf("steps told: %v, want 14h only", steps)
+	}
+}

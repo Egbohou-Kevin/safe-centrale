@@ -176,7 +176,8 @@ func TestTheConsoleKnowsNoAdapter(t *testing.T) {
 }
 
 // The driver is where the real clock lives, but it takes it through the Clock
-// interface: only SystemClock may read it.
+// interface: only SystemClock may read it, and the origin of its monotonic clock
+// (Elapsed, see driver.Monotonic).
 func TestDriverReadsTheClockOnlyInSystemClock(t *testing.T) {
 	fset, files := parsePackage(t, filepath.Join(root(t), "internal", "driver"))
 	var total int
@@ -184,14 +185,15 @@ func TestDriverReadsTheClockOnlyInSystemClock(t *testing.T) {
 		calls := clockCalls(fset, f)
 		total += len(calls)
 		for _, c := range calls {
-			if !strings.Contains(c, "time.Now") && !strings.Contains(c, "time.NewTimer") {
+			if !strings.Contains(c, "time.Now") && !strings.Contains(c, "time.NewTimer") && !strings.Contains(c, "time.Since") {
 				t.Errorf("internal/driver/%s uses the clock in an unexpected way: %s", name, c)
 			}
 		}
 	}
-	// Exactly two places: SystemClock.Now and SystemClock.Timer.
-	if total != 2 {
-		t.Errorf("internal/driver reads the clock in %d places, want 2 (SystemClock.Now and SystemClock.Timer)", total)
+	// Exactly four places: SystemClock.Now, SystemClock.Timer, SystemClock.Elapsed and
+	// its origin.
+	if total != 4 {
+		t.Errorf("internal/driver reads the clock in %d places, want 4 (SystemClock.Now, Timer, Elapsed and its origin)", total)
 	}
 }
 

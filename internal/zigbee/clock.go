@@ -45,6 +45,20 @@ func (n *Network) pullBack(now time.Time) {
 	}
 }
 
+// Stepped takes a forward step of the system clock, which the driver sees on the
+// monotonic clock: a Pi without a battery clock starts from the last time it knew,
+// hours late after a power cut, and NTP sets it forward once internet is there. A
+// device not heard since the start is not silent for those hours (26 October 2026: a
+// door "offline" from the start until it was opened). Every wait under way, and when
+// each device last spoke, move with the clock, so that each keeps the time that really
+// passed. The last news are not moved: they are what Zigbee2MQTT said, and its next
+// message, dated on the new time, is later still.
+func (n *Network) Stepped(d time.Duration) {
+	if d > 0 {
+		n.shift(d)
+	}
+}
+
 // shift moves every wait under way by d, and when each device last spoke: the clock
 // stepped by d.
 func (n *Network) shift(d time.Duration) {

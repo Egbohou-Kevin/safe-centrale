@@ -493,6 +493,18 @@ Choix faits au codage :
   ne recule jamais, sauf derrière l'horloge système reculée : jamais plus tard que
   maintenant. Daté de l'arrivée, `heard` dirait au propriétaire que sa porte était
   surveillée plus longtemps qu'elle ne l'a été, de toute la durée de l'arrêt.
+- **Horloge avancée au démarrage** : le Pi 4 sans module d'horloge repart, après une
+  coupure, de la dernière heure qu'il connaissait, puis NTP l'avance d'un coup de toute
+  la durée de la coupure, quelques secondes après le démarrage. Le silence se mesurait
+  sur l'heure lue : chaque appareil pas encore entendu passait aussitôt hors ligne, et
+  y restait jusqu'à son premier message (essai du 26 octobre 2026 : une porte « hors
+  ligne » dès le démarrage, jusqu'à ce qu'on l'ouvre). La boucle compare désormais
+  l'heure lue à l'horloge monotone, qu'aucune correction ne bouge, et dit au cœur
+  chaque saut en avant d'au moins une seconde (`Core.Stepped`) ; le cœur avance de
+  même le dernier message de chaque appareil et chaque attente en cours : le silence
+  compte le temps vraiment passé. Pas de faux « en ligne » durable : un appareil muet
+  pendant `offline_after` depuis le démarrage passe hors ligne comme avant. Le
+  contrat ne change pas.
 - **Commandes** : une à la fois par appareil ; une nouvelle remplace celle qui attend
   (réponse `failed`, raison `superseded`). Sans confirmation au bout de 3 s, elle est
   renvoyée, 3 fois en tout, puis `failed` (`no_confirmation`). Une commande périmée

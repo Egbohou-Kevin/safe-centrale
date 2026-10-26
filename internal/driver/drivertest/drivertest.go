@@ -39,6 +39,13 @@ func (c *FakeClock) Now() time.Time {
 	return c.now
 }
 
+// Elapsed reads the monotonic clock: how far Advance moved (driver.Monotonic).
+func (c *FakeClock) Elapsed() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.elapsed
+}
+
 // Timer fires once the clock is moved d forward. A timer of zero or less fires at
 // once, as with the real clock.
 func (c *FakeClock) Timer(d time.Duration) (<-chan time.Time, func()) {

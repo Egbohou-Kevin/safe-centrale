@@ -36,6 +36,17 @@ type Clock interface {
 	Timer(d time.Duration) (fired <-chan time.Time, stop func())
 }
 
+// Monotonic is a Clock that also tells how much time really passed: a monotonic
+// clock, which no correction of the system clock moves. With it, the loop sees the
+// system clock stepping forward (see Core.Stepped).
+type Monotonic interface {
+	Elapsed() time.Duration // since any fixed origin
+}
+
+// minStep is the least forward step of the system clock told to a core: NTP slewing
+// the clock moves it by less, and a core loses nothing to so little.
+const minStep = time.Second
+
 // Store keeps the state between runs. See internal/adapter/filestore.
 type Store interface {
 	Save(name string, data []byte) error
@@ -51,6 +62,12 @@ type Core[In, Act, Snap any] struct {
 	Snapshot func() Snap        // the state to save
 	Restore  func(Snap)         // put a saved state back
 	Tick     func(time.Time) In // build the input that means "time has passed"
+	// Stepped, if set, is told on the loop's goroutine, before the next task, that the
+	// system clock stepped forward by d (a clock started late after a power cut, then
+	// set by NTP), so that the core moves what it times by d: a silence measured on
+	// the clock read would count hours that did not pass. It needs a Monotonic clock.
+	// A step back is not told: a core that follows the clock sees it (FollowsClock).
+	Stepped func(d time.Duration)
 }
 
 // Options configures a loop.
@@ -95,8 +112,10 @@ type Loop[In, Act, Snap any] struct {
 	sending atomic.Int32  // enqueue calls between their look at closing and their send
 	stopped chan struct{}
 	last    time.Time // latest time handed to the core: unless FollowsClock, time never goes back
-	saved   []byte    // last state written, to skip identical writes
-	seen    []byte    // last state observed, to tell OnChange something moved
+	read    time.Time // the clock's last reading, and the monotonic clock then (see stepped)
+	elapsed time.Duration
+	saved   []byte // last state written, to skip identical writes
+	seen    []byte // last state observed, to tell OnChange something moved
 }
 
 const queueSize = 256
@@ -157,11 +176,29 @@ func New[In, Act, Snap any](o Options[In, Act, Snap]) (*Loop[In, Act, Snap], err
 // back from a saved state carry none).
 func (l *Loop[In, Act, Snap]) now() time.Time {
 	t := l.o.Clock.Now().Round(0)
+	l.stepped(t)
 	if t.Before(l.last) && !l.o.FollowsClock {
 		t = l.last
 	}
 	l.last = t
 	return t
+}
+
+// stepped tells the core how far the clock read at t stepped forward since its last
+// reading, beyond the time that really passed (Core.Stepped).
+func (l *Loop[In, Act, Snap]) stepped(t time.Time) {
+	m, ok := l.o.Clock.(Monotonic)
+	if !ok || l.o.Core.Stepped == nil {
+		return
+	}
+	e := m.Elapsed()
+	if !l.read.IsZero() {
+		if step := t.Sub(l.read) - (e - l.elapsed); step >= minStep {
+			l.log.Info("the system clock stepped forward: the core keeps the time that really passed", "step", step.Round(time.Second))
+			l.o.Core.Stepped(step)
+		}
+	}
+	l.read, l.elapsed = t, e
 }
 
 // Run serves the core until ctx is cancelled. It must be called once.
@@ -327,7 +364,13 @@ func SystemClock() Clock { return systemClock{} }
 
 type systemClock struct{}
 
+// origin is the monotonic clock's origin, for Elapsed.
+var origin = time.Now()
+
 func (systemClock) Now() time.Time { return time.Now() }
+
+// Elapsed reads the monotonic clock (Monotonic).
+func (systemClock) Elapsed() time.Duration { return time.Since(origin) }
 
 func (systemClock) Timer(d time.Duration) (<-chan time.Time, func()) {
 	t := time.NewTimer(d)

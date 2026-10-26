@@ -595,3 +595,46 @@ func TestADeviceWithoutProfileIsSaidAtTheStart(t *testing.T) {
 		t.Fatalf("logs:\n%s", l)
 	}
 }
+
+// The Pi has no battery clock: after a power cut it starts from the last time it knew,
+// hours late, and NTP sets it forward a few seconds later. A door not heard since the
+// start is not silent for those hours: its silence counts the time that really passed
+// (26 October 2026, a door "offline" from the start until it was opened). One that stays
+// silent for offline_after still goes offline.
+func TestAClockSetForwardAtTheStartSilencesNoDevice(t *testing.T) {
+	store := drivertest.NewMemStore()
+	r := newRig(t, store)
+	r.pair("dev_door", "0x01", "MCCGQ11LM")
+	r.z2m("dev_door", `{"contact":true}`, false)
+	r.settle()
+	r.stop()
+
+	again := newRig(t, store) // starts from the last time it knew
+	again.settle()
+	type said struct {
+		d  contract.DeviceEventData
+		at time.Time
+	}
+	presence := func() []said {
+		var out []said
+		for _, m := range again.broker.On(contract.DeviceEventTopic(site, "dev_door")) {
+			if d, _ := contract.DecodeData[contract.DeviceEventData](m.Env); d.Capability == contract.CapAvailability {
+				out = append(out, said{d, m.Env.TS.Time})
+			}
+		}
+		return out
+	}
+	start := again.clock.Now()
+	again.clock.Set(start.Add(14 * time.Hour)) // NTP
+	again.clock.PassTimer(t, time.Minute)      // the status again, through the loop
+	again.settle()
+	if p := presence(); len(p) != 0 || len(again.status().Offline) != 0 {
+		t.Fatalf("the door went offline on a clock set forward: %+v, status %+v", p, again.status())
+	}
+	again.clock.Advance(4*time.Hour - time.Minute)
+	drivertest.WaitFor(t, "the door offline after offline_after", func() bool { return len(presence()) == 1 })
+	if p := presence()[0]; p.d.StringValue() != contract.ValOffline || !p.at.Equal(start.Add(18*time.Hour)) {
+		t.Fatalf("%+v", p)
+	}
+	again.validateAll()
+}

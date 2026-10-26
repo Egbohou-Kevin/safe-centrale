@@ -115,7 +115,11 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   chaque nouveau message pour un ancien (voir `adapter-zigbee.md`, « Cache rejoué »).
   Les autres domaines gardent le garde : il leur faudrait chacun la même reprise. Le
   garde ne vaut que pendant une exécution : un nouveau processus part de l'horloge
-  telle qu'elle est. `driver.Every` répète un
+  telle qu'elle est. Un saut de l'horloge en avant (NTP qui corrige au démarrage un
+  Pi sans module d'horloge, parti de sa dernière heure connue) se voit sur l'horloge
+  monotone (`driver.Monotonic`) : la boucle le dit au cœur qui le demande
+  (`Core.Stepped`), qui avance d'autant ce qu'il chronomètre. Seul l'adaptateur Zigbee
+  le demande (le silence des appareils, 26 octobre 2026). `driver.Every` répète un
   travail (un statut, le battement de cœur) sur la même horloge. La fausse horloge des
   tests (`drivertest`) fait comme la vraie : ses minuteries suivent une horloge
   monotone, que `Set` ne bouge pas.

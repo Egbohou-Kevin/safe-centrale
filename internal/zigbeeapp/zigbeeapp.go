@@ -145,7 +145,8 @@ func New(cfg Config, deps Deps) (*App, error) {
 		FollowsClock: true,
 		Core: driver.Core[zigbee.Input, zigbee.Action, zigbee.Snapshot]{
 			Handle: a.core.Handle, NextWake: a.core.NextWake, Snapshot: a.core.Snapshot, Restore: a.core.Restore,
-			Tick: func(t time.Time) zigbee.Input { return zigbee.Tick{Now: t} },
+			Tick:    func(t time.Time) zigbee.Input { return zigbee.Tick{Now: t} },
+			Stepped: a.core.Stepped,
 		},
 		Dispatch: a.dispatch,
 		OnChange: func(_ context.Context, now time.Time) { a.publishStatus(now) },
