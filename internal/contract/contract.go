@@ -194,6 +194,10 @@ const (
 	ReasonWrongState     = "wrong_state"
 	ReasonPostponeLimit  = "postpone_limit"
 	ReasonUnknownCommand = "unknown_command"
+	// ReasonBadSeal: the link agent could not open the sealed code of an order from the app
+	// (wrong key, stale, seen before, or not a code). The hub never got it, nor counted it
+	// as a wrong code.
+	ReasonBadSeal = "bad_seal"
 	// ReasonRateLimited: the link agent refused an order from the app over its limit
 	// of messages from the cloud; the hub never got it.
 	ReasonRateLimited = "rate_limited"

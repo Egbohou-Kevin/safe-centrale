@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"reflect"
+	"safehome/internal/sealcode"
 	"slices"
 	"sync"
 	"testing"
@@ -125,6 +126,7 @@ type rig struct {
 	upl    *fakeUploader
 	app    *App
 	ids    *contract.IDGenerator
+	key    *sealcode.Key
 	logs   *drivertest.SyncBuffer
 	cancel context.CancelFunc // stops the agent; done is closed once it stopped
 	done   chan struct{}
@@ -141,10 +143,14 @@ func newRigWith(t *testing.T, d *disk, cfg Config) *rig {
 	if d == nil {
 		d = newDisk()
 	}
-	r := &rig{t: t, clock: drivertest.NewFakeClock(t0), disk: d, local: &outboxtest.Broker{}, cloud: &outboxtest.Broker{}, ids: contract.NewIDGenerator(),
+	key, err := sealcode.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &rig{t: t, key: key, clock: drivertest.NewFakeClock(t0), disk: d, local: &outboxtest.Broker{}, cloud: &outboxtest.Broker{}, ids: contract.NewIDGenerator(),
 		photos: &memPhotos{files: map[string][]byte{}}, upl: &fakeUploader{}, logs: drivertest.Logs(t)}
 	app, err := New(cfg, Deps{Clock: r.clock, Store: d.store, Queue: d.queue, Local: r.local, Cloud: r.cloud,
-		Photos: r.photos, Uploader: r.upl, NewID: r.ids.New, Logger: slog.New(slog.NewTextHandler(r.logs, nil))})
+		Photos: r.photos, Uploader: r.upl, NewID: r.ids.New, Key: key, Logger: slog.New(slog.NewTextHandler(r.logs, nil))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,3 +237,13 @@ func same(m outboxtest.Message, sent []byte) bool {
 }
 
 var triggered = contract.TriggeredData{Incident: "inc1", DeviceID: "dev_door", Capability: contract.CapContact, Zone: "Entree"}
+
+// sealed is a code as a phone seals it for this agent, at the clock's time.
+func (r *rig) sealed(code, command string) string {
+	r.t.Helper()
+	s, err := sealcode.Seal(r.key.Public(), code, site, command, r.clock.Now())
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return s
+}

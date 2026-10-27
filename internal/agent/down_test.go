@@ -16,7 +16,7 @@ import (
 func TestAnOrderThatComesTooLateIsAnsweredAtOnce(t *testing.T) {
 	h := newHarness(t)
 	past := contract.TS(t0)
-	order := contract.AlarmCommandData{Command: contract.CmdDisarm, Args: contract.CommandArgs{Code: "482915"},
+	order := contract.AlarmCommandData{Command: contract.CmdDisarm, Args: contract.CommandArgs{Sealed: h.sealed("482915", contract.CmdDisarm)},
 		Origin: contract.OriginApp, User: "u_owner", Exp: &past}
 	id, raw, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order)
 	if a := of[AnswerOrder](acts); len(a) != 1 || a[0] != (AnswerOrder{Ref: id, Status: contract.AckExpired}) || len(of[PublishLocal](acts)) != 0 {
@@ -54,7 +54,7 @@ func TestAClockSetBackDoesNotExpireFreshOrders(t *testing.T) {
 		b, _ := h.msg(typ, data)
 		return h.handle(Cloud{Now: h.now, Wall: wall, Topic: tp, Payload: b})
 	}
-	order := contract.AlarmCommandData{Command: contract.CmdDisarm, Args: contract.CommandArgs{Code: "482915"},
+	order := contract.AlarmCommandData{Command: contract.CmdDisarm, Args: contract.CommandArgs{Sealed: h.sealedAt(wall, "482915", contract.CmdDisarm)},
 		Origin: contract.OriginApp, User: "u_owner", Exp: &exp}
 	if acts := send(topic("alarm", "cmd"), contract.TypeAlarmCommand, order); len(of[PublishLocal](acts)) != 1 {
 		t.Fatalf("the order goes to the hub: %+v", acts)
@@ -217,5 +217,79 @@ func TestAClockSetBackDoesNotStopTheAllowance(t *testing.T) {
 		if _, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order); len(of[PublishLocal](acts)) != 1 {
 			t.Fatalf("order %d: %+v", i+1, acts)
 		}
+	}
+}
+
+func TestACodeSealedForTheHubIsOpenedForTheEngine(t *testing.T) {
+	h := newHarness(t)
+	exp := contract.TS(t0.Add(time.Minute))
+	order := contract.AlarmCommandData{Command: contract.CmdDisarm, Args: contract.CommandArgs{Sealed: h.sealed("482915", contract.CmdDisarm)},
+		Origin: contract.OriginApp, User: "u_owner", Exp: &exp}
+	id, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order)
+	pub := of[PublishLocal](acts)
+	if len(pub) != 1 {
+		t.Fatalf("%+v", acts)
+	}
+	env, err := contract.ParseEnvelope(pub[0].Payload)
+	if err != nil || env.ID != id {
+		t.Fatalf("%v %+v", err, env)
+	}
+	d, _ := contract.DecodeData[contract.AlarmCommandData](env)
+	if d.Args.Code != "482915" || d.Args.Sealed != "" || d.Command != contract.CmdDisarm || d.User != "u_owner" || d.Exp == nil {
+		t.Fatalf("the hub's order: %+v", d)
+	}
+}
+
+func TestACodeThatDoesNotOpenIsAnsweredBadSealAndNeverCounted(t *testing.T) {
+	h := newHarness(t)
+	exp := contract.TS(t0.Add(time.Minute))
+	other := newHarness(t)
+	mk := func(sealed string, cmd string) contract.AlarmCommandData {
+		return contract.AlarmCommandData{Command: cmd, Args: contract.CommandArgs{Sealed: sealed}, Origin: contract.OriginApp, Exp: &exp}
+	}
+	for name, order := range map[string]contract.AlarmCommandData{
+		"another key":     mk(other.sealed("482915", contract.CmdDisarm), contract.CmdDisarm),
+		"another command": mk(h.sealed("482915", contract.CmdDisarm), contract.CmdSilence),
+		"junk":            mk("AAAA", contract.CmdDisarm),
+	} {
+		id, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order)
+		a := of[AnswerOrder](acts)
+		if len(a) != 1 || a[0] != (AnswerOrder{Ref: id, Status: contract.AckRefused, Reason: contract.ReasonBadSeal}) || len(of[PublishLocal](acts)) != 0 {
+			t.Errorf("%s: %+v", name, acts)
+		}
+	}
+}
+
+func TestASealIsUsedOnce(t *testing.T) {
+	h := newHarness(t)
+	exp := contract.TS(t0.Add(time.Minute))
+	order := contract.AlarmCommandData{Command: contract.CmdDisarm, Args: contract.CommandArgs{Sealed: h.sealed("482915", contract.CmdDisarm)}, Origin: contract.OriginApp, Exp: &exp}
+	if _, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order); len(of[PublishLocal](acts)) != 1 {
+		t.Fatalf("%+v", acts)
+	}
+	// The cloud keeps the seal and gives it again in an order of its own.
+	_, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order)
+	if a := of[AnswerOrder](acts); len(a) != 1 || a[0].Reason != contract.ReasonBadSeal || len(of[PublishLocal](acts)) != 0 {
+		t.Fatalf("a replayed seal passed: %+v", acts)
+	}
+}
+
+func TestACodeInTheClearFromTheCloudIsRefused(t *testing.T) {
+	h := newHarness(t)
+	exp := contract.TS(t0.Add(time.Minute))
+	order := contract.AlarmCommandData{Command: contract.CmdDisarm, Args: contract.CommandArgs{Code: "482915"}, Origin: contract.OriginApp, Exp: &exp}
+	_, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order)
+	if len(of[Refused](acts)) != 1 || len(of[PublishLocal](acts)) != 0 {
+		t.Fatalf("%+v", acts)
+	}
+}
+
+func TestWithoutAKeyNoSealedOrderPasses(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.Seal = nil })
+	exp := contract.TS(t0.Add(time.Minute))
+	order := contract.AlarmCommandData{Command: contract.CmdDisarm, Args: contract.CommandArgs{Sealed: "AAAA"}, Origin: contract.OriginApp, Exp: &exp}
+	_, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order)
+	if len(of[PublishLocal](acts)) != 0 {
+		t.Fatalf("%+v", acts)
 	}
 }

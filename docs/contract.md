@@ -349,7 +349,7 @@ cause). Chaque contournement lève une alerte `arming_bypassed` qui liste les ap
 
 - `status` : `done`, `refused`, `expired`, `failed`.
 - `reason` si refus : `zone_open`, `bad_code`, `locked_out`, `wrong_state`,
-  `postpone_limit`, `rate_limited`. Une commande inconnue répond `failed` avec la raison
+  `postpone_limit`, `rate_limited`, `bad_seal`. Une commande inconnue répond `failed` avec la raison
   `unknown_command`.
 - L'agent de liaison répond lui-même, tout de suite, à un ordre de l'application qu'il
   ne transmet pas à la centrale, pour que le cloud n'attende pas une réponse qui ne
@@ -956,9 +956,38 @@ le cloud, à chaque changement et de nouveau chaque minute même sans changement
   de chaque minute. Il ne déclare donc le site muet qu'après 15 minutes sans nouvelles,
   au lieu de 3. Un changement de liaison (`uplink` ou `transport`) part tout de suite.
   Sur la centrale, rien ne change : l'état y est publié chaque minute.
+- `key` : la clé publique de l'agent (P-256, point non compressé de 65 octets, en base64),
+  créée au premier démarrage. Les téléphones scellent le code d'accès avec elle (voir
+  « Le code scellé ») : le cloud la relaie et ne voit jamais le code. Absente du dernier
+  message ci-dessous.
 - Le même message, avec `uplink` à `down` et `seq` à 0, est le « dernier message »
   (Last Will) que le broker du cloud publie si la connexion se coupe sans prévenir.
   L'agent le publie lui-même quand il s'arrête proprement.
+
+### Le code scellé
+
+Un ordre `alarm.command` venu du cloud ne porte jamais `args.code` en clair : l'agent le
+refuse. Le téléphone y met `args.sealed`, le code scellé pour la clé de l'agent
+(`internal/sealcode`, bibliothèque standard seule), en base64 :
+
+| Octets | Contenu |
+|---|---|
+| 1 | version, `0x01` |
+| 65 | clé publique éphémère du téléphone (P-256, non compressée) |
+| 12 | nonce AES-GCM |
+| 32 | chiffré (16) et étiquette (16) |
+
+- Clé : ECDH P-256 entre la clé éphémère et celle de l'agent, puis HKDF-SHA256
+  (sel : clé éphémère ‖ clé de l'agent, info `safehome/code/v1`), 32 octets pour AES-256-GCM.
+- En clair : l'heure du téléphone (secondes depuis 1970, 8 octets, grand-boutiste) ‖ les
+  chiffres du code, complétés à 8 octets par des zéros (tous les sceaux ont la même taille).
+- Données authentifiées : `safehome/code/v1|<site>|<commande>`.
+- L'agent refuse (`alarm.ack` `refused`, raison `bad_seal`) un sceau qui ne s'ouvre pas
+  (autre clé, autre site, autre commande, altéré), dont l'heure est à plus de cinq minutes
+  de la sienne, qu'il a déjà vu (la clé éphémère le nomme), ou qui n'est pas un code de 4 à
+  8 chiffres. La centrale ne le compte pas comme un code faux.
+- Il ouvre le sceau et donne au moteur un `alarm.command` ordinaire, `args.code` en clair,
+  sur le broker local seulement.
 
 ### `gsm.status`
 

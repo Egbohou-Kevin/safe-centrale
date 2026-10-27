@@ -16,6 +16,10 @@
           "pattern": "^[0-9]{4,8}$",
           "description": "Code d'accès : 4 à 8 chiffres ASCII, rien d'autre (la règle de la centrale). Jamais écrit dans un journal, jamais renvoyé."
         },
+        "sealed": {
+          "type": "string",
+          "description": "Le code scellé par le téléphone pour l'agent de liaison (ECIES P-256, voir contract.md) : tout ce que le cloud porte. L'agent l'ouvre et donne au moteur `code`, jamais `sealed`."
+        },
         "force": {
           "type": "boolean"
         },

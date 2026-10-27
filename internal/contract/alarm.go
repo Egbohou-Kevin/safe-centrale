@@ -10,7 +10,10 @@ import (
 // CommandArgs are the arguments of an order to the engine. The access code is
 // never printed or written to a log: String, GoString and LogValue mask it.
 type CommandArgs struct {
-	Code    string   `json:"code,omitempty"`
+	Code string `json:"code,omitempty"`
+	// Sealed is the code sealed by the phone for the link agent (internal/sealcode): all
+	// the cloud carries. The agent opens it and gives the engine Code, never Sealed.
+	Sealed  string   `json:"sealed,omitempty"`
 	Force   bool     `json:"force,omitempty"`
 	Devices []string `json:"devices,omitempty"`
 }

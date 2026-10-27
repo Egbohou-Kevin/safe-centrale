@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"safehome/internal/sealcode"
 	"slices"
 	"strings"
 	"testing"
@@ -40,7 +41,7 @@ func TestTheStatusSaysWhetherTheClientsDataIsSpared(t *testing.T) {
 func TestNewNeedsItsPortsAndAGoodConfig(t *testing.T) {
 	d := newDisk()
 	good := Deps{Clock: drivertest.NewFakeClock(t0), Store: d.store, Queue: d.queue, Local: &outboxtest.Broker{}, Cloud: &outboxtest.Broker{}, Photos: &memPhotos{},
-		Uploader: &fakeUploader{}, NewID: contract.NewIDGenerator().New}
+		Uploader: &fakeUploader{}, NewID: contract.NewIDGenerator().New, Key: testKey(t)}
 	if _, err := New(DefaultConfig(site), Deps{Clock: good.Clock, Store: d.store, Queue: d.queue, Local: good.Local, NewID: good.NewID}); err == nil {
 		t.Error("an agent without the cloud was built")
 	}
@@ -244,7 +245,7 @@ func TestAnOrderAfterTheClockWasSetBackReachesTheHub(t *testing.T) {
 	back := t0.Add(-30 * time.Minute)
 	r.clock.Set(back)
 	r.fromCloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, contract.AlarmCommandData{Command: contract.CmdDisarm,
-		Args: contract.CommandArgs{Code: "482915"}, Origin: contract.OriginApp, User: "u_owner", Exp: contract.TSPtr(back.Add(time.Minute))})
+		Args: contract.CommandArgs{Sealed: r.sealed("482915", contract.CmdDisarm)}, Origin: contract.OriginApp, User: "u_owner", Exp: contract.TSPtr(back.Add(time.Minute))})
 	drivertest.WaitFor(t, "the order on the hub", func() bool {
 		for _, m := range r.local.All() {
 			if m.Topic == topic("alarm", "cmd") {
@@ -264,7 +265,7 @@ func TestAnOrderTheHubWillNotGetIsAnsweredToTheCloud(t *testing.T) {
 	r := newRig(t, nil)
 	r.app.LinkChanged(true, "mqtts")
 	order := r.fromCloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, contract.AlarmCommandData{Command: contract.CmdDisarm,
-		Args: contract.CommandArgs{Code: "482915"}, Origin: contract.OriginApp, User: "u_owner", Exp: contract.TSPtr(t0.Add(-time.Second))})
+		Args: contract.CommandArgs{Sealed: r.sealed("482915", contract.CmdDisarm)}, Origin: contract.OriginApp, User: "u_owner", Exp: contract.TSPtr(t0.Add(-time.Second))})
 	env, _ := contract.ParseEnvelope(order)
 	drivertest.WaitFor(t, "the answer", func() bool { return len(r.cloud.OfType(contract.TypeAlarmAck)) == 1 })
 	ack := r.cloud.OfType(contract.TypeAlarmAck)[0]
@@ -577,4 +578,41 @@ func TestAClockSetForwardFailsNoAlertAtOnce(t *testing.T) {
 	}
 	r.clock.Advance(5 * time.Second)
 	drivertest.WaitFor(t, "the failure at the end of the wait", func() bool { return failed() == 1 })
+}
+
+func testKey(t *testing.T) *sealcode.Key {
+	t.Helper()
+	k, err := sealcode.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
+// The agent's public key reaches the cloud with agent.status, and the code it opens
+// reaches the hub in the clear while the cloud's copy stays sealed.
+func TestTheCodeIsOpenedForTheHubAndTheStatusCarriesTheKey(t *testing.T) {
+	r := newRig(t, nil)
+	r.app.LinkChanged(true, "mqtts")
+	sealed := r.sealed("482915", contract.CmdDisarm)
+	r.fromCloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, contract.AlarmCommandData{Command: contract.CmdDisarm,
+		Args: contract.CommandArgs{Sealed: sealed}, Origin: contract.OriginApp, User: "u_owner", Exp: contract.TSPtr(t0.Add(time.Minute))})
+	drivertest.WaitFor(t, "the order on the hub", func() bool {
+		for _, m := range r.local.All() {
+			if m.Topic == topic("alarm", "cmd") {
+				env, _ := contract.ParseEnvelope(m.Payload)
+				d, _ := contract.DecodeData[contract.AlarmCommandData](env)
+				return d.Args.Code == "482915" && d.Args.Sealed == ""
+			}
+		}
+		return false
+	})
+	if st := lastStatus(t, r.local); st.Key != r.key.Public() {
+		t.Errorf("the status says key %q", st.Key)
+	}
+	for _, m := range r.cloud.All() {
+		if bytes.Contains(m.Payload, []byte("482915")) {
+			t.Fatalf("the code went to the cloud: %s", m.Topic)
+		}
+	}
 }

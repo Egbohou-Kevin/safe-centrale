@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/photodir"
 	"safehome/internal/adapter/upload"
 	"safehome/internal/agentapp"
+	"safehome/internal/sealcode"
 	"safehome/internal/service"
 )
 
@@ -50,4 +53,37 @@ func (u uploader) Put(ctx context.Context, url, token string, body io.Reader, si
 		return fmt.Errorf("%w: %w", agentapp.ErrUploadRefused, err)
 	}
 	return err
+}
+
+// codeKey reads the agent's key for the sealed codes, or draws one at the first start. It
+// is written with the rights of its owner alone, whole or not at all.
+func codeKey(dir string) (*sealcode.Key, error) {
+	path := filepath.Join(dir, "code-key")
+	b, err := os.ReadFile(path)
+	if err == nil {
+		return sealcode.Parse(string(b))
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	k, err := sealcode.Generate()
+	if err != nil {
+		return nil, err
+	}
+	tmp, err := os.CreateTemp(dir, "code-key-*") // 0600
+	if err != nil {
+		return nil, err
+	}
+	_, werr := tmp.WriteString(k.Encode())
+	if cerr := tmp.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = os.Rename(tmp.Name(), path)
+	}
+	if werr != nil {
+		os.Remove(tmp.Name())
+		return nil, werr
+	}
+	return k, nil
 }

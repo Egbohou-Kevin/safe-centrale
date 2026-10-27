@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/sealcode"
 )
 
 // Config holds the relay's settings.
@@ -50,6 +51,16 @@ type Config struct {
 	// Economy, when set, sends the heartbeat and agent.status to the cloud at most this
 	// often (EconomyEvery on mobile data paid by the client); zero sends them all.
 	Economy time.Duration
+
+	// Seal opens the access codes the phones sealed for this agent (internal/sealcode): the
+	// cloud carries no code in the clear. Without it, an order from the app that needs a
+	// code is refused.
+	Seal Opener
+}
+
+// Opener is the agent's key for the sealed codes: *sealcode.Key.
+type Opener interface {
+	Open(sealed, site, command string, now time.Time) (sealcode.Opened, error)
 }
 
 // DefaultConfig returns the defaults of docs/agent.md.

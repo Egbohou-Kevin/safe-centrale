@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"slices"
 	"time"
 
@@ -168,17 +169,54 @@ func appOrder(env contract.Envelope) (contract.AlarmCommandData, string) {
 
 // passOrder passes an order from the app on to the hub. One that came too late is
 // answered expired at once, as the engine would answer it: the cloud need not wait
-// for an answer that cannot come. Its code goes nowhere.
+// for an answer that cannot come. Its code goes nowhere but to the hub, opened from the
+// phone's seal: a code in the clear from the cloud is refused, and a seal that does not
+// open, or was seen before, is answered bad_seal (the hub never counts it as a wrong code).
 func (r *Relay) passOrder(c Cloud, env contract.Envelope, route downRoute) []Action {
 	d, why := appOrder(env)
 	if why != "" {
 		return []Action{Refused{Topic: c.Topic, Reason: why}}
 	}
+	if d.Args.Code != "" {
+		return []Action{Refused{Topic: c.Topic, Reason: "a code from the cloud must be sealed"}}
+	}
 	r.markSeen(env.ID) // passed on or answered: once either way
 	if expired(c.wall(), d.Exp) {
 		return []Action{AnswerOrder{Ref: env.ID, Status: contract.AckExpired}}
 	}
-	return []Action{PublishLocal{Topic: c.Topic, Payload: c.Payload, Code: route.code}}
+	payload := c.Payload
+	if d.Args.Sealed != "" {
+		var ok bool
+		if payload, ok = r.unseal(c, env, d); !ok {
+			return []Action{AnswerOrder{Ref: env.ID, Status: contract.AckRefused, Reason: contract.ReasonBadSeal}}
+		}
+	}
+	return []Action{PublishLocal{Topic: c.Topic, Payload: payload, Code: route.code}}
+}
+
+// unseal opens the order's sealed code and returns the order for the hub, with the code
+// in the clear and no seal. A seal is used once: its key is remembered with the ids.
+func (r *Relay) unseal(c Cloud, env contract.Envelope, d contract.AlarmCommandData) ([]byte, bool) {
+	if r.cfg.Seal == nil {
+		return nil, false
+	}
+	o, err := r.cfg.Seal.Open(d.Args.Sealed, r.cfg.Site, d.Command, c.wall())
+	if err != nil {
+		return nil, false
+	}
+	mark := "seal:" + o.Ephemeral
+	if slices.Contains(r.s.Seen, mark) {
+		return nil, false
+	}
+	r.markSeen(mark)
+	d.Args.Code, d.Args.Sealed = o.Code, ""
+	data, err := json.Marshal(d)
+	if err != nil {
+		return nil, false
+	}
+	env.Data = data
+	b, err := json.Marshal(env)
+	return b, err == nil
 }
 
 // overLimit refuses a message over the cloud's allowance. An order from the app that

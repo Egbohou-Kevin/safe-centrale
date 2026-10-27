@@ -22,6 +22,7 @@ import (
 	"safehome/internal/driver"
 	"safehome/internal/inbox"
 	"safehome/internal/outbox"
+	"safehome/internal/sealcode"
 )
 
 // Config holds what the agent needs to know.
@@ -73,6 +74,9 @@ type Deps struct {
 	Photos   Photos
 	Uploader Uploader
 	NewID    func() string
+	// Key opens the access codes the phones sealed (internal/sealcode); its public half goes
+	// to the cloud in agent.status.
+	Key *sealcode.Key
 	// Logger: never given a message's content, which may hold a video token.
 	Logger *slog.Logger
 }
@@ -91,12 +95,13 @@ type App struct {
 	deps Deps
 	log  *slog.Logger
 
-	core   *agent.Relay
-	loop   *driver.Loop[agent.Input, agent.Action, agent.Snapshot]
-	out    *outbox.Outbox
-	seq    *outbox.Sequencer
-	kick   chan struct{} // the queue moved: something may be ready for the cloud
-	relink chan struct{} // the link changed: worth trying again at once
+	core      *agent.Relay
+	publicKey string // deps.Key's, sent to the cloud with agent.status
+	loop      *driver.Loop[agent.Input, agent.Action, agent.Snapshot]
+	out       *outbox.Outbox
+	seq       *outbox.Sequencer
+	kick      chan struct{} // the queue moved: something may be ready for the cloud
+	relink    chan struct{} // the link changed: worth trying again at once
 	// links counts the link's changes, so that the sender tells a change it has not
 	// seen from one it took into account already (see wait).
 	links atomic.Uint64
@@ -116,13 +121,14 @@ func New(cfg Config, deps Deps) (*App, error) {
 		return nil, err
 	}
 	if deps.Clock == nil || deps.Store == nil || deps.Queue == nil || deps.Local == nil || deps.Cloud == nil ||
-		deps.Photos == nil || deps.Uploader == nil || deps.NewID == nil {
-		return nil, errors.New("agentapp: Clock, Store, Queue, Local, Cloud, Photos, Uploader and NewID are required")
+		deps.Photos == nil || deps.Uploader == nil || deps.NewID == nil || deps.Key == nil {
+		return nil, errors.New("agentapp: Clock, Store, Queue, Local, Cloud, Photos, Uploader, NewID and Key are required")
 	}
 	log := deps.Logger
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
+	cfg.Relay.Seal = deps.Key
 	core, err := agent.New(cfg.Relay)
 	if err != nil {
 		return nil, err
@@ -131,7 +137,7 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &App{cfg: cfg, deps: deps, log: log, core: core, seq: seq, kick: make(chan struct{}, 1), relink: make(chan struct{}, 1)}
+	a := &App{cfg: cfg, deps: deps, log: log, core: core, publicKey: deps.Key.Public(), seq: seq, kick: make(chan struct{}, 1), relink: make(chan struct{}, 1)}
 	a.life, a.stop = context.WithCancel(context.Background())
 	// The agent builds its own messages, to hand them to the core as well: it shares
 	// the outbox's counter (see publishOwn).

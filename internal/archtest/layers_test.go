@@ -81,12 +81,18 @@ func TestInboxKnowsOnlyTheContract(t *testing.T) {
 	}.check(t, "inbox")
 }
 
-// The agent's core moves contract messages: it knows the contract and nothing else,
+// The agent's core moves contract messages: it knows the contract (and the key that opens the sealed codes) and nothing else,
 // does no I/O and never reads the clock. Its application layer adds the driver, the
 // inbox and the outbox, and no adapter.
 func TestTheAgentCoreKnowsOnlyTheContract(t *testing.T) {
-	layer{local: internal("contract"), noClock: true}.check(t, "agent")
-	layer{local: internal("agent", "contract", "driver", "inbox", "outbox")}.check(t, "agentapp")
+	layer{local: internal("contract", "sealcode"), noClock: true}.check(t, "agent")
+	layer{local: internal("agent", "contract", "driver", "inbox", "outbox", "sealcode")}.check(t, "agentapp")
+}
+
+// The sealed code's package is a leaf: standard library only, it knows nothing of the
+// module and reads no clock (the caller says what time it is).
+func TestTheSealedCodeKnowsNothingOfTheModule(t *testing.T) {
+	layer{local: internal(), noClock: true}.check(t, "sealcode")
 }
 
 // The video service's application layer drives the streams through its own

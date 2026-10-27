@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/sealcode"
 )
 
 const site = "tg-lom-0001"
@@ -16,6 +17,7 @@ var t0 = time.Date(2026, 10, 20, 21, 0, 0, 0, time.UTC)
 
 type harness struct {
 	t      *testing.T
+	key    *sealcode.Key
 	r      *Relay
 	now    time.Time
 	ids    *contract.IDGenerator
@@ -26,6 +28,11 @@ type harness struct {
 func newHarness(t *testing.T, edit ...func(*Config)) *harness {
 	t.Helper()
 	cfg := DefaultConfig(site)
+	key, err := sealcode.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Seal = key
 	for _, e := range edit {
 		e(&cfg)
 	}
@@ -33,7 +40,7 @@ func newHarness(t *testing.T, edit ...func(*Config)) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &harness{t: t, r: r, now: t0, ids: contract.NewIDGenerator(), disk: map[string]Item{}}
+	return &harness{t: t, key: key, r: r, now: t0, ids: contract.NewIDGenerator(), disk: map[string]Item{}}
 }
 
 // handle hands an input to the relay, carries out its queue actions on the disk, and
@@ -189,4 +196,16 @@ func event(dev, capability, value, code string) contract.DeviceEventData {
 func appAlert(incident string) contract.AlertRequestData {
 	return contract.AlertRequestData{Incident: incident, Kind: contract.AlertIntrusion, Urgency: contract.UrgencyCritical,
 		Wave: 1, Contact: "u_owner", Channel: contract.ChannelApp, Text: "ALARME"}
+}
+
+// sealed is a code as a phone seals it for the relay, at the harness's time.
+func (h *harness) sealed(code, command string) string { return h.sealedAt(h.now, code, command) }
+
+func (h *harness) sealedAt(at time.Time, code, command string) string {
+	h.t.Helper()
+	s, err := sealcode.Seal(h.key.Public(), code, site, command, at)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return s
 }

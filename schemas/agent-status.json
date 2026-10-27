@@ -33,6 +33,11 @@
       "minimum": 0,
       "description": "Messages abandonnés (file pleine, trop vieux, refusés par le broker du cloud), comptés à travers les redémarrages"
     },
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Clé publique de l'agent (P-256, 65 octets en base64) : les téléphones scellent le code d'accès avec elle, le cloud ne le voit jamais"
+    },
     "economy": {
       "type": "boolean",
       "description": "Données mobiles payées par le client : le heartbeat et cet état n'arrivent au cloud que toutes les 5 minutes"

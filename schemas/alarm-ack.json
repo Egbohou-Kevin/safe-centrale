@@ -28,9 +28,10 @@
         "wrong_state",
         "postpone_limit",
         "unknown_command",
-        "rate_limited"
+        "rate_limited",
+        "bad_seal"
       ],
-      "description": "rate_limited : refusé par l'agent de liaison, au-delà de sa limite de messages du cloud ; la centrale ne l'a pas reçu."
+      "description": "rate_limited : refusé par l'agent de liaison, au-delà de sa limite de messages du cloud ; la centrale ne l'a pas reçu. bad_seal : l'agent de liaison n'a pas pu ouvrir le code scellé (mauvaise clé, périmé, déjà vu, ou pas un code) ; la centrale ne l'a pas reçu et ne l'a pas compté comme un code faux."
     },
     "detail": {
       "type": "object"

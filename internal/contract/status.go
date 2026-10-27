@@ -51,6 +51,9 @@ type AgentStatusData struct {
 	// Economy: on mobile data paid by the client, the heartbeat and this status reach
 	// the cloud only every 5 minutes (a change of the link goes at once).
 	Economy bool `json:"economy,omitempty"`
+	// Key is the link agent's public key (P-256, 65 bytes in base64): the phones seal
+	// the access code with it (internal/sealcode), so that the cloud never sees it.
+	Key string `json:"key,omitempty"`
 }
 
 // GSMHealth groups the GSM lines.

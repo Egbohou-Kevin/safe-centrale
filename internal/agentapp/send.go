@@ -101,7 +101,7 @@ func (a *App) publishStatus(now time.Time, st agent.Status) {
 	}
 	a.publishOwn(now, contract.AgentStatusTopic(a.cfg.Site), contract.TypeAgentStatus, contract.AgentStatusData{
 		Uplink: uplink, Transport: st.Transport, Queued: st.Queued, OldestS: int(st.Oldest / time.Second), Dropped: st.Dropped,
-		Economy: a.cfg.Relay.Economy > 0,
+		Economy: a.cfg.Relay.Economy > 0, Key: a.publicKey,
 	}, true)
 }
 
