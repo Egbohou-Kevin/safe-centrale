@@ -18,6 +18,7 @@
         },
         "sealed": {
           "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{147}=$",
           "description": "Le code scellé par le téléphone pour l'agent de liaison (ECIES P-256, voir contract.md) : tout ce que le cloud porte. L'agent l'ouvre et donne au moteur `code`, jamais `sealed`."
         },
         "force": {
