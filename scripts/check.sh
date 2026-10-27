@@ -26,6 +26,8 @@ if [ -z "${CHECK_VERBOSE:-}" ] && [ -z "${CI:-}" ] && [ -z "${CHECK_QUIET_INNER:
 	tail -n 60 "$log" >&2
 	exit "$status"
 fi
+# The inner run forgets it, so a check it starts (a test of creator) is quiet in its turn.
+unset CHECK_QUIET_INNER
 set -euo pipefail
 
 quick=false

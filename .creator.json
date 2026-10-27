@@ -5,6 +5,6 @@
     ".claude/launch.json": "4a6ee2954530d1a0b753ec9c41da93156432458eaa7cd7463a4ec382efccca07",
     ".githooks/pre-commit": "1cb2a50a666849448020f0ec9224ff89784076632ee84f892e239a4d0acbba94",
     "CLAUDE.md": "8fd186473a689303234ad4f5a7e61dfede8e99f21cf1c15ec09e54361869aca2",
-    "scripts/check.sh": "ccef4b89f53cad8dd9f64616bc4f052b1e12bd64c2c668d9c1e7a37214fae22b"
+    "scripts/check.sh": "66c200603d7bfd030fee169fdaef09d85e9077fa52d8e50822d4044abb590d2b"
   }
 }
