@@ -3,8 +3,8 @@
   "base_version": "2026-10-27.1",
   "laid": {
     ".claude/launch.json": "4a6ee2954530d1a0b753ec9c41da93156432458eaa7cd7463a4ec382efccca07",
-    ".githooks/pre-commit": "684122638cdf93b717dcc6a7b7373fb636eef1fb376892ee53336dc9b9f51271",
+    ".githooks/pre-commit": "1cb2a50a666849448020f0ec9224ff89784076632ee84f892e239a4d0acbba94",
     "CLAUDE.md": "8fd186473a689303234ad4f5a7e61dfede8e99f21cf1c15ec09e54361869aca2",
-    "scripts/check.sh": "258f0d85b9fca2ad7ef7d717a330da7e7bbe2e64a55f8334606e68a62ca2b349"
+    "scripts/check.sh": "ccef4b89f53cad8dd9f64616bc4f052b1e12bd64c2c668d9c1e7a37214fae22b"
   }
 }

@@ -6,9 +6,7 @@
 #
 # It checks the working tree, not only what is staged. Skip it once with
 # git commit --no-verify; the full checks run once anyway, before the merge.
-#
-# Green says one line, red shows the end of the log: every line printed here lands in the
-# session's context. The whole log stays in .git/creator-check.log; CHECK_VERBOSE=1 prints it all.
+# scripts/check.sh says one line when green (profiles/quiet.sh); CHECK_VERBOSE=1 shows all.
 set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 # What is the project's own: the "env" of .creator.json, exported for scripts/check.sh.
@@ -17,17 +15,4 @@ if [ -f "$root/.creator.json" ]; then
 for k, v in json.load(open(sys.argv[1])).get("env", {}).items():
     print("export %s=%s" % (k, shlex.quote(str(v))))' "$root/.creator.json")"
 fi
-if [ "${CHECK_VERBOSE:-}" = 1 ]; then
-	exec "$root/scripts/check.sh" --quick
-fi
-log="$(git rev-parse --absolute-git-dir)/creator-check.log"
-SECONDS=0
-if "$root/scripts/check.sh" --quick >"$log" 2>&1; then
-	echo "check vert en ${SECONDS}s ($(wc -l <"$log" | tr -d ' ') lignes dans $log)" >&2
-	exit 0
-else
-	status=$?
-fi
-echo "check ROUGE (code $status, ${SECONDS}s) ; les 60 dernières lignes, le tout dans $log :" >&2
-tail -n 60 "$log" >&2
-exit "$status"
+exec "$root/scripts/check.sh" --quick

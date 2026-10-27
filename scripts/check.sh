@@ -11,6 +11,21 @@
 #
 # The guardrails themselves live in internal/qualitytest and internal/archtest
 # (docs/architecture.md, "Les garde-fous").
+# Quiet unless CHECK_VERBOSE=1 or under CI: green says one line, red the end of the log.
+# Every line printed here lands in a session's context (creator, profiles/quiet.sh).
+if [ -z "${CHECK_VERBOSE:-}" ] && [ -z "${CI:-}" ] && [ -z "${CHECK_QUIET_INNER:-}" ]; then
+	log="$(git rev-parse --absolute-git-dir 2>/dev/null || echo "${TMPDIR:-/tmp}")/creator-check.log"
+	SECONDS=0
+	if CHECK_QUIET_INNER=1 "$BASH" "$0" "$@" >"$log" 2>&1; then
+		echo "check vert en ${SECONDS}s ($(wc -l <"$log" | tr -d ' ') lignes dans $log)" >&2
+		exit 0
+	else
+		status=$?
+	fi
+	echo "check ROUGE (code $status, ${SECONDS}s) ; les 60 dernières lignes, le tout dans $log :" >&2
+	tail -n 60 "$log" >&2
+	exit "$status"
+fi
 set -euo pipefail
 
 quick=false
