@@ -1,4 +1,10 @@
 {
   "profile": "go",
-  "base_version": "2026-10-27.1"
+  "base_version": "2026-10-27.1",
+  "laid": {
+    ".claude/launch.json": "4a6ee2954530d1a0b753ec9c41da93156432458eaa7cd7463a4ec382efccca07",
+    ".githooks/pre-commit": "dc114257a07cbce6428334450ee4a73b874e835bd8a2055359ed1907bde934e8",
+    "CLAUDE.md": "8fd186473a689303234ad4f5a7e61dfede8e99f21cf1c15ec09e54361869aca2",
+    "scripts/check.sh": "258f0d85b9fca2ad7ef7d717a330da7e7bbe2e64a55f8334606e68a62ca2b349"
+  }
 }
