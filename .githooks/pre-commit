@@ -5,6 +5,13 @@
 #   git config core.hooksPath .githooks
 #
 # It checks the working tree, not only what is staged. Skip it once with
-# git commit --no-verify; the CI runs the full checks anyway.
+# git commit --no-verify; the full checks run once anyway, before the merge.
 set -euo pipefail
-exec "$(git rev-parse --show-toplevel)/scripts/check.sh" --quick
+root="$(git rev-parse --show-toplevel)"
+# What is the project's own: the "env" of .creator.json, exported for scripts/check.sh.
+if [ -f "$root/.creator.json" ]; then
+	eval "$(python3 -c 'import json, shlex, sys
+for k, v in json.load(open(sys.argv[1])).get("env", {}).items():
+    print("export %s=%s" % (k, shlex.quote(str(v))))' "$root/.creator.json")"
+fi
+exec "$root/scripts/check.sh" --quick
