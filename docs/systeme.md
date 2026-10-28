@@ -609,7 +609,9 @@ seule (étape 12).
 
 `go test ./deploy` fait tourner le script sur un faux système : fichiers posés,
 relance, mauvaise configuration, refus, caméras, Zigbee2MQTT et sa version de Node.js,
-le fichier d'horloge gardé sur `/data` (une seule fois, même relancé).
+le fichier d'horloge gardé sur `/data` (une seule fois, même relancé), la version précédente de
+chaque programme changé (`.prev`) ; il fait aussi tourner la phase 2 de `deploy/update-hub.sh`
+contre une fausse centrale, qui remet les `.prev` quand les nouveaux programmes ne tiennent pas.
 
 ## Maintenance
 
@@ -633,6 +635,24 @@ La phase 4 refuse aussi une centrale dont l'heure au démarrage repartirait du j
 lecture seule : le dossier de timesyncd (`/var/lib/systemd/timesync`) doit être monté depuis `/data`
 (ext4) et `systemd-timesyncd` actif. La ligne `/data` du fstab n'a pas `nofail` : une carte dont
 `/data` ne monte pas s'arrête au démarrage (choix laissé à Kevin, 28 octobre 2026).
+
+**Retour arrière des programmes** (28 octobre 2026). `install.sh` garde chaque programme qu'il
+remplace (`safehome-*` de `/usr/local/bin`) en `safehome-<programme>.prev`, à côté, quand l'ancien
+diffère du nouveau ; un programme identique ou neuf n'en laisse aucun, pas même un `.prev` d'une
+mise à jour précédente (il ramènerait une version plus vieille que celle qui tourne). La phase 2
+attend ensuite deux minutes : si la version lue n'est pas celle du paquet, ou si une unité n'est
+pas `active` (un programme qui plante au démarrage n'est jamais `failed` : `Restart=always` sans
+limite le laisse `activating`), elle remet chaque `.prev` à sa place (`mv`, d'un coup),
+`systemctl daemon-reload`, redémarre les services activés parmi eux, attend encore deux minutes,
+puis s'arrête en disant que l'ancienne version est revenue (et si ses services tiennent). Rien
+n'est désarmé ; l'état de l'alarme (`/var/lib/safehome`) n'est pas touché. Ni la configuration
+(déjà vérifiée par les nouveaux programmes), ni les unités ne reviennent : les unités d'avant sont
+dans `/data/maintenance/units-<date>.tgz`, à remettre à la main si besoin (étape 5). Le retour ne
+joue pas quand `install.sh` lui-même échoue (sa configuration revient, les programmes restent).
+Les `.prev` s'écrivent en maintenance (`/` en ext4 inscriptible) et restent sous l'overlay après le
+retour en lecture seule : c'est voulu, l'ancienne version reste à portée de main. Place prise : au
+plus un `.prev` par programme, 9 ; les 9 programmes du paquet `dist/maj-8b00128` font 66 788 Kio
+(`du -sk`, environ 65 Mio), le plafond quand tous changent.
 
 1. **Avant tout**, garder une copie de `/boot/firmware/cmdline.txt` sur l'ordinateur, et noter
    l'état de l'alarme (armée ou non). Ne rien désarmer.
