@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/sealcode"
 )
 
 // An order from the app the agent does not pass on is answered at once: the cloud
@@ -291,5 +292,36 @@ func TestWithoutAKeyNoSealedOrderPasses(t *testing.T) {
 	_, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order)
 	if len(of[PublishLocal](acts)) != 0 {
 		t.Fatalf("%+v", acts)
+	}
+}
+
+// A cloud that keeps a seal must not get it through by pushing its mark out of the ids
+// it floods with: the seals are remembered apart, as long as they open.
+func TestASealIsUsedOnceEvenAfterAFlood(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.SeenSize = 2; c.DownBurst = 100 })
+	exp := contract.TS(t0.Add(time.Minute))
+	order := contract.AlarmCommandData{Command: contract.CmdDisarm, Args: contract.CommandArgs{Sealed: h.sealed("482915", contract.CmdDisarm)}, Origin: contract.OriginApp, Exp: &exp}
+	if _, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order); len(of[PublishLocal](acts)) != 1 {
+		t.Fatalf("%+v", acts)
+	}
+	arm := contract.AlarmCommandData{Command: contract.CmdArm, Origin: contract.OriginApp, Exp: &exp}
+	for range 5 {
+		if _, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, arm); len(of[PublishLocal](acts)) != 1 {
+			t.Fatalf("%+v", acts)
+		}
+	}
+	h.now = h.now.Add(sealcode.Window)
+	order.Exp = contract.TSPtr(h.now.Add(time.Minute)) // the cloud's own, fresh order
+	_, _, acts := h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, order)
+	if a := of[AnswerOrder](acts); len(a) != 1 || a[0].Reason != contract.ReasonBadSeal || len(of[PublishLocal](acts)) != 0 {
+		t.Fatalf("a replayed seal passed after a flood: %+v", acts)
+	}
+	// Once it can no longer open, it is forgotten: the memory holds what still opens.
+	h.now = h.now.Add(time.Second)
+	h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, arm)
+	h.cloud(topic("alarm", "cmd"), contract.TypeAlarmCommand, contract.AlarmCommandData{Command: contract.CmdDisarm,
+		Args: contract.CommandArgs{Sealed: h.sealed("482915", contract.CmdDisarm)}, Origin: contract.OriginApp, Exp: contract.TSPtr(h.now.Add(time.Minute))})
+	if n := len(h.r.Snapshot().Seals); n != 1 {
+		t.Fatalf("%d seals remembered, want 1", n)
 	}
 }

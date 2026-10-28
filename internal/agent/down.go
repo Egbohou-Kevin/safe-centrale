@@ -2,10 +2,12 @@ package agent
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
 	"time"
 
 	"safehome/internal/contract"
+	"safehome/internal/sealcode"
 )
 
 // From the cloud to the hub: what the cloud may send, checked before it reaches the
@@ -195,20 +197,23 @@ func (r *Relay) passOrder(c Cloud, env contract.Envelope, route downRoute) []Act
 }
 
 // unseal opens the order's sealed code and returns the order for the hub, with the code
-// in the clear and no seal. A seal is used once: its key is remembered with the ids.
+// in the clear and no seal. A seal is used once: its key is remembered as long as the
+// seal opens (Snapshot.Seals). Only seals that opened are kept, and each one took an
+// order from the allowance: the memory stays small.
 func (r *Relay) unseal(c Cloud, env contract.Envelope, d contract.AlarmCommandData) ([]byte, bool) {
 	if r.cfg.Seal == nil {
 		return nil, false
 	}
-	o, err := r.cfg.Seal.Open(d.Args.Sealed, r.cfg.Site, d.Command, c.wall())
+	now := c.wall()
+	o, err := r.cfg.Seal.Open(d.Args.Sealed, r.cfg.Site, d.Command, now)
 	if err != nil {
 		return nil, false
 	}
-	mark := "seal:" + o.Ephemeral
-	if slices.Contains(r.s.Seen, mark) {
+	maps.DeleteFunc(r.s.Seals, func(_ string, at time.Time) bool { return now.Sub(at) > sealcode.Window })
+	if _, used := r.s.Seals[o.Ephemeral]; used {
 		return nil, false
 	}
-	r.markSeen(mark)
+	r.s.Seals[o.Ephemeral] = o.At
 	d.Args.Code, d.Args.Sealed = o.Code, ""
 	data, err := json.Marshal(d)
 	if err != nil {

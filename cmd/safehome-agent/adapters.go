@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -56,16 +57,47 @@ func (u uploader) Put(ctx context.Context, url, token string, body io.Reader, si
 }
 
 // codeKey reads the agent's key for the sealed codes, or draws one at the first start. It
-// is written with the rights of its owner alone, whole or not at all.
-func codeKey(dir string) (*sealcode.Key, error) {
+// is written with the rights of its owner alone, whole or not at all, and on the card
+// before it is used. A key file open to others is made private again. A damaged one (a
+// power cut) is set aside and replaced, rather than stop the agent, which carries the
+// alarms: the new public half reaches the phones with agent.status, and a seal made for
+// the old one is answered bad_seal. A key read or written whole is used even when it
+// cannot be made private or its folder flushed (a file left to root, a card that refuses
+// a folder sync): that is warned, not fatal. No message quotes the key.
+func codeKey(dir string, log *slog.Logger) (*sealcode.Key, error) {
 	path := filepath.Join(dir, "code-key")
 	b, err := os.ReadFile(path)
-	if err == nil {
-		return sealcode.Parse(string(b))
-	}
-	if !errors.Is(err, os.ErrNotExist) {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return newCodeKey(dir, path, log)
+	case err != nil:
 		return nil, err
 	}
+	k, err := sealcode.Parse(string(b))
+	if err != nil {
+		log.Error("the key for the sealed codes is damaged: set aside, a new one is drawn", "path", path, "err", err)
+		if err := os.Rename(path, path+".damaged"); err != nil {
+			return nil, err
+		}
+		return newCodeKey(dir, path, log)
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if st.Mode().Perm()&0o077 != 0 {
+		log.Warn("the key for the sealed codes was open to others: made private", "path", path, "mode", st.Mode().Perm().String())
+		if err := chmodFile(path, 0o600); err != nil {
+			log.Warn("the key for the sealed codes could not be made private: used as it is", "path", path, "err", err)
+		}
+	}
+	return k, nil
+}
+
+// newCodeKey draws a key and writes it at path: a file of its own (0600), flushed to the
+// card, then renamed, and the folder flushed too, so that a power cut leaves the old
+// state or the whole key.
+func newCodeKey(dir, path string, log *slog.Logger) (*sealcode.Key, error) {
 	k, err := sealcode.Generate()
 	if err != nil {
 		return nil, err
@@ -75,6 +107,9 @@ func codeKey(dir string) (*sealcode.Key, error) {
 		return nil, err
 	}
 	_, werr := tmp.WriteString(k.Encode())
+	if werr == nil {
+		werr = tmp.Sync()
+	}
 	if cerr := tmp.Close(); werr == nil {
 		werr = cerr
 	}
@@ -85,5 +120,27 @@ func codeKey(dir string) (*sealcode.Key, error) {
 		os.Remove(tmp.Name())
 		return nil, werr
 	}
+	if err := syncFolder(dir); err != nil {
+		log.Warn("the folder of the key for the sealed codes could not be flushed: key used", "path", path, "err", err)
+	}
 	return k, nil
+}
+
+// chmodFile and syncFolder are os.Chmod and syncDir, replaced in tests to make them fail.
+var (
+	chmodFile  = os.Chmod
+	syncFolder = syncDir
+)
+
+// syncDir flushes a folder, so that a file renamed into it stays there after a power cut.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	err = d.Sync()
+	if cerr := d.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }

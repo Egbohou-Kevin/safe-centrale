@@ -959,7 +959,12 @@ le cloud, à chaque changement et de nouveau chaque minute même sans changement
 - `key` : la clé publique de l'agent (P-256, point non compressé de 65 octets, en base64),
   créée au premier démarrage. Les téléphones scellent le code d'accès avec elle (voir
   « Le code scellé ») : le cloud la relaie et ne voit jamais le code. Absente du dernier
-  message ci-dessous.
+  message ci-dessous. La clé privée est dans `code-key`, dans le dossier d'état de l'agent :
+  droits de son propriétaire seul (remis à 0600 au démarrage s'ils sont plus larges, avec
+  un avertissement), écrite entière sur la carte puis renommée. Abîmée (vide, tronquée),
+  elle est mise de côté en `code-key.damaged` et remplacée par une nouvelle plutôt que
+  d'arrêter l'agent, qui porte les alarmes : les téléphones reçoivent la nouvelle par
+  `key`, et un sceau fait pour l'ancienne est refusé `bad_seal` (28/10/2026).
 - Le même message, avec `uplink` à `down` et `seq` à 0, est le « dernier message »
   (Last Will) que le broker du cloud publie si la connexion se coupe sans prévenir.
   L'agent le publie lui-même quand il s'arrête proprement.
@@ -986,6 +991,10 @@ refuse. Le téléphone y met `args.sealed`, le code scellé pour la clé de l'ag
   (autre clé, autre site, autre commande, altéré), dont l'heure est à plus de cinq minutes
   de la sienne, qu'il a déjà vu (la clé éphémère le nomme), ou qui n'est pas un code de 4 à
   8 chiffres. La centrale ne le compte pas comme un code faux.
+- L'agent se souvient de chaque sceau ouvert tant qu'il s'ouvrirait encore (jusqu'à l'heure du
+  sceau plus cinq minutes), à part des identifiants des messages : un cloud qui garde un sceau
+  ne peut pas le faire oublier en envoyant des milliers de messages, puis le rejouer
+  (28/10/2026 ; avant, la marque du sceau partageait les 2048 derniers identifiants).
 - Il ouvre le sceau et donne au moteur un `alarm.command` ordinaire, `args.code` en clair,
   sur le broker local seulement.
 
