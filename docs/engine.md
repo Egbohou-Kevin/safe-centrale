@@ -536,8 +536,8 @@ avant la coupure reviendrait ouverte, et serait prise pour une porte ouverte pen
 l'arrêt : une sirène au retour du courant. De même un détecteur de fumée revenu au
 repos, ou un mouvement dont le retour au repos n'était pas encore écrit. Le moteur, lui,
 écrit son état à chaque changement. Il garde donc, dans son état, l'heure du dernier
-état qu'il a pris de chaque porte, fenêtre, détecteur de fumée et sabotage (`heard`),
-et écarte au démarrage l'état retenu qui n'est pas plus récent. Un capteur
+état qu'il a pris de chaque porte, fenêtre, détecteur de fumée, sabotage et bouton
+panique (`heard`), et écarte au démarrage l'état retenu qui n'est pas plus récent. Un capteur
 momentané (mouvement, vibration, bris de vitre) n'a pas cette heure, que chaque passant
 réécrirait : son état est écarté s'il a commencé avant le mode où est le moteur (ou
 avant la fin du délai de sortie en cours). Vivant, il a été entendu alors et a fait ce
@@ -546,7 +546,12 @@ ne dit pas quand il a commencé, ou daté après maintenant (une horloge partie 
 est pris tel quel. Un état changé pendant la fenêtre de démarrage est une nouvelle de
 ce démarrage, jamais écartée. Corrigé le 25 octobre 2026 après une revue : une fenêtre
 fermée deux minutes avant une coupure, la boutique armée, déclenchait l'intrusion au
-retour du courant.
+retour du courant. Corrigé le 28 octobre 2026, trouvé par les tests de séquences
+aléatoires (`internal/engine/random_test.go`) : pendant un délai de sortie encore en
+cours, sa fin, après maintenant, faisait prendre tel quel tout état momentané (un bouton
+panique pressé avant l'armement donnait une seconde alerte au redémarrage, une sirène
+avec `PanicSiren`) ; et un bouton panique pressé dans le mode en cours, sans heure
+gardée, donnait une nouvelle alerte à chaque redémarrage.
 
 Après une restauration, le moteur ne rejoue aucune échéance avant `Boot` : ni tic, ni
 rattrapage au passage d'un ordre ou d'un signal reçu pendant la fenêtre de démarrage.

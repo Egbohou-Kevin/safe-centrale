@@ -89,9 +89,9 @@ func (e *Engine) learn(now time.Time, current []Signal) []Signal {
 // the hub was off: a siren the moment the power returns. So would a smoke detector that
 // cleared, and a movement whose return to rest came after the save.
 //
-// A door, a window, a smoke detector or a tamper is older than the last state the
-// engine took from it (Heard). A momentary sensor (a movement, a vibration, glass
-// breaking) keeps no such time, which every passer-by would rewrite: its state is
+// A door, a window, a smoke detector, a tamper or a panic button is older than the
+// last state the engine took from it (Heard). A momentary sensor (a movement, a
+// vibration, glass breaking) keeps no such time, which every passer-by would rewrite: its state is
 // older when it began before the mode the engine is in, or during the exit delay under
 // way. Live, it was heard then, and did what it does in that mode; active since, it is
 // no new movement. A state that does not say when it began is trusted, as is one dated
@@ -108,14 +108,22 @@ func (e *Engine) older(now time.Time, sig Signal) bool {
 	}
 	from := e.s.Since
 	if e.s.Mode == ModeArming {
-		from = later(from, e.s.Deadline)
+		// The exit delay under way, as far as now while it still runs: its end after
+		// now is no clock ahead, and must not make every state trusted.
+		end := e.s.Deadline
+		if end.After(now) {
+			end = now
+		}
+		from = later(from, end)
 	}
 	return !from.After(now) && !sig.Now.After(from)
 }
 
 // hear records when the engine took the state of a sensor that keeps one in every
 // mode: a door or a window (its Open moves with each anyway), a smoke detector, a
-// tamper. Between Restore and Boot, the change is marked as this run's own (early).
+// tamper; and of a panic button, which a silent panic leaves in the mode it found, so
+// that a restart in that mode does not alert it again. Between Restore and Boot, the
+// change is marked as this run's own (early).
 func (e *Engine) hear(sig Signal) {
 	key := sensorKey(sig.DeviceID, sig.Sensor)
 	if e.awaitingBoot {
@@ -124,7 +132,7 @@ func (e *Engine) hear(sig Signal) {
 		}
 		e.early[key] = true
 	}
-	if !lasting(sig.Sensor) || sig.Now.IsZero() {
+	if !lasting(sig.Sensor) && sig.Sensor != SensorPanic || sig.Now.IsZero() {
 		return
 	}
 	if e.s.Heard == nil {
