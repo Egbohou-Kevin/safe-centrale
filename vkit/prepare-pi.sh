@@ -62,6 +62,14 @@ if ! grep -q safehome-data /etc/fstab; then
 fi
 systemctl daemon-reload
 mountpoint -q /data || mount /data
-mkdir -p /data/safehome /data/mosquitto /data/zigbee2mqtt
+# Every source of a bind in fstab-data, before mount -a (deploy_test.go checks it);
+# timesyncd's clock file as on the Pi (docs/systeme.md, step 2).
+mkdir -p /data/safehome /data/mosquitto /data/zigbee2mqtt /data/timesync /var/lib/systemd/timesync
+if [ ! -e /data/timesync/clock ] && [ -f /var/lib/systemd/timesync/clock ]; then
+	cp -p /var/lib/systemd/timesync/clock /data/timesync/
+fi
+if getent passwd systemd-timesync >/dev/null; then
+	chown -R systemd-timesync:systemd-timesync /data/timesync
+fi
 mount -a
 echo "prepare-pi.sh: done; restart the VM to boot on the standard kernel"

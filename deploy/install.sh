@@ -126,7 +126,10 @@ chown mosquitto:mosquitto "$ROOT/var/lib/mosquitto"
 # systemd-timesyncd's clock file, the date it sets the clock forward to at boot before
 # NTP, kept on the data partition (docs/systeme.md, step 2); taken from the next boot on.
 # The folder and the file as it is now first, the line in fstab last: a boot never finds
-# the line without its folder. A hub installed before 28 October 2026 gets it here.
+# the line without its folder (deploy_test.go checks the order). It must not: through
+# StateDirectory=, timesyncd requires the mounts of its folder (systemd.exec(5), implicit
+# dependencies), so a failed bind leaves the hub without NTP. A hub installed before
+# 28 October 2026 gets it here.
 TIMESYNC=/var/lib/systemd/timesync
 mkdir -p "$ROOT/data/timesync"
 chmod 755 "$ROOT/data/timesync"
@@ -209,7 +212,6 @@ rm -rf "$backup"
 
 put "$BUNDLE/deploy/system/journald-safehome.conf" "$ROOT/etc/systemd/journald.conf.d/safehome.conf" 644
 put "$BUNDLE/deploy/system/watchdog-safehome.conf" "$ROOT/etc/systemd/system.conf.d/safehome-watchdog.conf" 644
-put "$BUNDLE/deploy/system/timesyncd-safehome.conf" "$ROOT/etc/systemd/system/systemd-timesyncd.service.d/safehome.conf" 644
 put "$BUNDLE/deploy/mosquitto/mosquitto.conf" "$ROOT/etc/mosquitto/mosquitto.conf" 644
 if has console; then
 	# The console makes its network through NetworkManager, as the service's user,

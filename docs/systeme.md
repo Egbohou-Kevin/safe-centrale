@@ -43,8 +43,7 @@ Réglages système : `system/journald-safehome.conf` (journaux),
 `system/watchdog-safehome.conf` (chien de garde), `system/safehome-boot-clock.service`
 (l'heure lue tôt au démarrage, avant NTP, dans `/run/safehome-boot-clock` : le hub
 s'en sert au redémarrage, voir `engine.md`), `system/fstab-data` (partition de
-données), `system/timesyncd-safehome.conf` (`systemd-timesyncd` attend le dossier de son
-horloge, gardé sur `/data`, voir l'étape 2), `system/polkit-safehome-console.rules` (la console peut créer, lever,
+données, dont le dossier de l'horloge de `systemd-timesyncd`, voir l'étape 2), `system/polkit-safehome-console.rules` (la console peut créer, lever,
 baisser et supprimer les connexions de NetworkManager, sans éteindre la radio ; la
 règle vaut pour tout programme lancé sous `safehome`, voir la limite dans
 `security-install.md`), `system/nm-dispatcher-safehome-console` (le réseau de la
@@ -155,25 +154,27 @@ jusqu'à ce que NTP réponde, 37 s après le démarrage). Son dossier est donc a
 `/data/timesync` : l'horloge repart de la dernière synchronisation, le retard n'est plus que
 la durée de l'arrêt (plus une minute au plus).
 
-- **Ordre** : le drop-in `system/timesyncd-safehome.conf`
-  (`WantsMountsFor=/var/lib/systemd/timesync`) fait démarrer `systemd-timesyncd` après ce
-  montage, lui-même après `/data` (un bind suit le montage de sa source). Aucun cycle : ces
-  montages ne viennent qu'après `local-fs-pre.target` et la carte, jamais après
+- **Ordre** : rien à ajouter à l'unité. `systemd-timesyncd` a
+  `StateDirectory=systemd/timesync` ; d'après `systemd.exec(5)` (dépendances implicites),
+  une unité qui a `StateDirectory=` reçoit d'elle-même `Requires=` et `After=` sur tous les
+  montages qu'il faut pour atteindre ce dossier, comme avec `RequiresMountsFor=`. Elle démarre
+  donc après ce bind, lui-même après `/data` (un bind suit le montage de sa source). Aucun
+  cycle : ces montages ne viennent qu'après `local-fs-pre.target` et la carte, jamais après
   `sysinit.target`, avant laquelle `systemd-timesyncd` démarre ; `safehome-boot-clock` reste
-  après lui et avant `sysinit.target`, donc avant le réseau. `WantsMountsFor` (systemd 256 et
-  plus ; Debian 13 a la 257) plutôt que `RequiresMountsFor` : la ligne n'ajoute aucun échec.
+  après lui et avant `sysinit.target`, donc avant le réseau.
 - **`nofail`** : un bind qui échoue n'arrête pas le démarrage (`local-fs.target` ne l'exige
-  pas). `StateDirectory=` de l'unité peut déjà exiger ce montage (dépendances implicites,
-  `systemd.exec(5)`) : un dossier `/data/timesync` absent empêcherait alors
-  `systemd-timesyncd` de démarrer (plus de NTP, visible dans `systemctl --failed`) ; d'où le
-  dossier créé avant la ligne, ici comme par le script. La ligne de `/data` elle-même n'a
-  pas `nofail` (déjà avant ce changement) : sans la partition, le démarrage finit en mode de
+  pas). Mais ce `Requires=` implicite fait qu'un bind qui échoue (dossier `/data/timesync`
+  absent, erreur de montage) empêche `systemd-timesyncd` de démarrer : plus de NTP du tout
+  pendant la marche, visible dans `systemctl --failed`. La sûreté tient donc au dossier créé
+  avant la ligne de `fstab`, ici comme par le script d'installation et le kit virtuel (un
+  test le vérifie pour chaque source de bind). La ligne de `/data` elle-même n'a pas
+  `nofail` (déjà avant ce changement) : sans la partition, le démarrage finit en mode de
   secours.
 - **Propriétaire** : `systemd-timesync`, l'utilisateur système de l'unité (`User=`, pas
   `DynamicUser=` : le fichier est bien dans `/var/lib/systemd/timesync`, pas sous
   `/var/lib/private`). systemd le remet de lui-même à chaque démarrage du service
   (`StateDirectory=`).
-- **Mise à jour** : le script d'installation pose le dossier, la ligne et le drop-in s'ils
+- **Mise à jour** : le script d'installation pose le dossier et la ligne s'ils
   manquent ; une centrale installée avant le 28/10 les reçoit à sa mise à jour
   (`deploy/update-hub.sh`, phase 2), sans geste à la main.
 
@@ -401,7 +402,6 @@ coupés (moins de mémoire, rien d'exposé). Le `base_topic` doit être le même
 
 ```bash
 sudo cp deploy/systemd/*.service deploy/system/safehome-boot-clock.service /etc/systemd/system/
-sudo install -D -m 644 deploy/system/timesyncd-safehome.conf /etc/systemd/system/systemd-timesyncd.service.d/safehome.conf
 sudo systemctl daemon-reload
 sudo systemctl enable safehome-boot-clock   # prise au prochain démarrage, avant NTP
 sudo systemctl enable --now zigbee2mqtt safehome-zigbee safehome-gsm safehome-hub safehome-agent
@@ -683,7 +683,8 @@ Depuis le 28 octobre 2026, la phase 2 (`install.sh`) garde aussi le fichier d'ho
 phase 3. Ce premier démarrage repart de l'heure de l'installation (quelques minutes de retard), les
 suivants de la dernière synchronisation. À vérifier sur le Pi après la première mise à jour qui le
 pose : `findmnt /var/lib/systemd/timesync` (la partition 3),
-`systemctl show systemd-timesyncd -p After -p Requires` (le montage y est), `systemctl --failed`
+`systemctl show systemd-timesyncd -p After -p Requires` (le montage y est, par
+`StateDirectory=`), `systemctl is-active systemd-timesyncd` (`active`), `systemctl --failed`
 vide, et l'heure de `/run/safehome-boot-clock` proche de l'heure réelle après un redémarrage.
 
 Conséquence : **pas de mises à jour automatiques** (elles seraient effacées au
