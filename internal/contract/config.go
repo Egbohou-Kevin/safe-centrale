@@ -39,6 +39,7 @@ const MaxQuotaMB = 1 << 23
 // MaxConfigVersion is the highest version the cloud can number: it counts the seconds
 // from 2026-01-01 in a 32-bit int (enough until 2094). A higher one is a mistake or a
 // forgery, and once kept it would make every later configuration "older": refused.
+// A forged one below it, far ahead of the clock, is still kept: open, Kevin's choice.
 const MaxConfigVersion = math.MaxInt32
 
 // ConfigContact is a person to alert. Phone, in international form (+22890000001),

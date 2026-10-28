@@ -740,6 +740,12 @@ et en données mobiles son forfait vidéo. Le cloud envoie le tout à chaque cha
   Une version au-delà de 2 147 483 647 est refusée (`rejected`, la raison le dit) et
   n'est pas gardée : gardée, elle ferait refuser comme « plus ancienne » toute
   configuration suivante. La centrale le note dans son journal.
+  Ce plafond ne ferme pas tout : une version forgée sous 2 147 483 647 mais loin
+  devant l'horloge (par exemple 2 000 000 000) est encore gardée, et la centrale
+  refuse ensuite toute vraie configuration jusqu'à ce que le cloud la rattrape
+  (vers 2089). Le remède reste à choisir (Kevin) : refuser une version plus d'un
+  jour en avance sur les secondes écoulées depuis 2026 à l'horloge de la centrale,
+  ou une remise à zéro de la version gardée par la maintenance.
 - `quota_mb` et `max_s` ne valent qu'en données mobiles ; en liaison fixe, le site les
   ignore.
 - La centrale vérifie la configuration avec ses fichiers, la garde, puis redémarre
