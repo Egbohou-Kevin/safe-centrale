@@ -247,6 +247,38 @@ func TestABadConfigurationPutsThePreviousOneBack(t *testing.T) {
 	}
 }
 
+// An update keeps the program it replaces as X.prev, for update-hub.sh to put back when
+// the services do not hold; an unchanged or new program leaves none, not even one left
+// from an earlier update.
+func TestAnUpdateKeepsThePreviousProgramsOnlyWhereTheyChanged(t *testing.T) {
+	r := newRig(t)
+	r.minimalSite()
+	r.mustRun()
+	bin := "usr/local/bin/"
+	if matches, _ := filepath.Glob(r.path(bin + "*.prev")); len(matches) > 0 {
+		t.Fatalf("a first install kept %v", matches)
+	}
+	running, _ := os.ReadFile(r.path(bin + "safehome-hub"))
+	writeScript(t, filepath.Join(r.bundle, "bin", "safehome-hub"), "# the new hub\n"+fakeProgram)
+	writeFile(t, r.path(bin+"safehome-gsm.prev"), "left from an earlier update")
+	if err := os.Remove(r.path(bin + "safehome-power")); err != nil {
+		t.Fatal(err)
+	}
+
+	r.mustRun()
+	if b, err := os.ReadFile(r.path(bin + "safehome-hub.prev")); err != nil || string(b) != string(running) {
+		t.Errorf("safehome-hub.prev = %q (%v), want the program it replaced", b, err)
+	}
+	if b, _ := os.ReadFile(r.path(bin + "safehome-hub")); !strings.Contains(string(b), "# the new hub") {
+		t.Error("safehome-hub is not the new program")
+	}
+	for _, p := range []string{"safehome-gsm.prev", "safehome-power.prev", "safehome-agent.prev", "safehome-install.prev"} {
+		if r.exists(bin + p) {
+			t.Errorf("%s kept, though its program is unchanged or new", p)
+		}
+	}
+}
+
 func TestABadProfileWithoutSiteFolderPutsThePreviousOnesBack(t *testing.T) {
 	r := newRig(t)
 	r.minimalSite()

@@ -166,6 +166,19 @@ put() {
 	mv -f "$2.new" "$2"
 }
 
+# put_program SRC DEST: puts a program, keeping the one it replaces as DEST.prev when they
+# differ, for update-hub.sh to put back if the services do not hold (docs/systeme.md,
+# "Maintenance"). An unchanged or new program leaves no .prev: one left from an earlier
+# update would bring back a version older than the one running.
+put_program() {
+	if [ -f "$2" ] && ! cmp -s "$1" "$2"; then
+		cp -p "$2" "$2.prev"
+	else
+		rm -f "$2.prev"
+	fi
+	put "$1" "$2" 755
+}
+
 if [ -x "$BUNDLE/bin/go2rtc" ]; then
 	put "$BUNDLE/bin/go2rtc" "$BIN/go2rtc" 755
 fi
@@ -221,7 +234,7 @@ if has console; then
 fi
 
 for p in $PROGRAMS $TOOLS; do
-	put "$BUNDLE/bin/safehome-$p" "$BIN/safehome-$p" 755
+	put_program "$BUNDLE/bin/safehome-$p" "$BIN/safehome-$p"
 done
 for u in "$BUNDLE"/deploy/systemd/*.service; do
 	put "$u" "$UNITS/$(basename "$u")" 644
