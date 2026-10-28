@@ -611,7 +611,9 @@ seule (étape 12).
 relance, mauvaise configuration, refus, caméras, Zigbee2MQTT et sa version de Node.js,
 le fichier d'horloge gardé sur `/data` (une seule fois, même relancé), la version précédente de
 chaque programme changé (`.prev`) ; il fait aussi tourner la phase 2 de `deploy/update-hub.sh`
-contre une fausse centrale, qui remet les `.prev` quand les nouveaux programmes ne tiennent pas.
+contre une fausse centrale, qui remet les `.prev` quand les nouveaux programmes ne tiennent pas,
+et sa phase 4, qui s'arrête au premier défaut (`/` pas en overlay, dossier de timesyncd hors de
+`/data`, timesyncd arrêté, services qui ne tiennent pas, mode de l'alarme changé) en le disant.
 
 ## Maintenance
 
@@ -652,7 +654,15 @@ les `.prev` existants, qui sont les programmes qui tenaient ; elle n'ajoute que 
 changés depuis. La phase 2 lit d'abord la version (sans attendre) : si elle n'est pas celle du
 paquet, ou si le programme ne sait même pas la dire, le retour joue tout de suite ; sinon elle
 attend deux minutes, et si une unité n'est pas `active` (un programme qui plante au démarrage n'est
-jamais `failed` : `Restart=always` sans limite le laisse `activating`), le retour joue aussi. Le
+jamais `failed` : `Restart=always` sans limite le laisse `activating`), si `safehome-hub.service`
+ne tourne pas du tout (une unité arrêtée n'est pas listée), ou si une unité n'est pas active
+depuis au moins une minute, le retour joue aussi. Ce dernier point attrape un programme qui plante
+juste après s'être dit prêt (`RestartSec=2`) : il paraît `active` la plupart du temps, mais son
+dernier démarrage (`ActiveEnterTimestampMonotonic`, comparé à `/proc/uptime`) est récent ; la
+première minute reste au démarrage (`Type=notify`). `NRestarts` n'a pas été retenu : les unités
+qu'`install.sh` ne redémarre pas gardent leur compte depuis le démarrage de la centrale, et sa
+remise à zéro par un `systemctl restart` n'a pas pu être vérifiée sans toucher la centrale (revue
+du 28 octobre 2026). La phase 4 attend les services de la même façon. Le
 retour remet chaque `.prev` à sa place (`mv`, d'un coup ; un seul `mv` raté arrête tout en nommant
 ceux déjà revenus), `systemctl daemon-reload`, redémarre les services activés parmi eux (un
 redémarrage raté est dit, la suite continue), attend encore deux minutes, puis s'arrête en disant
@@ -724,7 +734,8 @@ plus un `.prev` par programme, 9 ; les 9 programmes du paquet `dist/maj-8b00128`
    sudo systemctl daemon-reload
    for p in $back; do systemctl is-enabled -q "$p" && sudo systemctl restart "$p"; done
    ```
-6. **Vérifier** : chaque service `active` pendant deux minutes, `safehome-hub version`,
+6. **Vérifier** : chaque service `active` pendant deux minutes (et depuis au moins une minute :
+   `systemctl show -p ActiveEnterTimestamp <unité>`), `safehome-hub version`,
    `systemctl --failed` vide. Puis confirmer les nouveaux programmes :
    `sudo rm -f /usr/local/bin/.safehome-prev.unconfirmed` (la phase 2 le fait elle-même).
 7. **Effacer le paquet et tout dossier `site/`** copié sur la centrale (`rm -rf ~/safehome`), puis

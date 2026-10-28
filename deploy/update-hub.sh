@@ -61,9 +61,13 @@ wait_back() {
 	die "the hub did not come back after 4 minutes"
 }
 
-# services_hold: after two minutes, every unit active and none failed. A program that
-# crashes at start never reaches failed (Restart=always, no start limit): it stays
-# activating, so anything but active counts.
+# services_hold: after two minutes, safehome-hub.service running, every unit active for
+# the last minute at least, none failed. A program that crashes at start never reaches
+# failed (Restart=always, no start limit): it stays activating, so anything but active
+# counts. One that crashes a moment after it says it is ready (RestartSec=2) is active
+# most of the time: its last start (ActiveEnterTimestampMonotonic, against /proc/uptime)
+# must be a minute old, which leaves the first minute for a start (Type=notify). A unit
+# that is not running at all is not listed: the hub must be.
 services_hold() {
 	echo "== services for two minutes"
 	sleep 120
@@ -76,6 +80,34 @@ services_hold() {
 	bad=$(printf '%s\n' "$list" | awk 'NF && $3 != "active" {n++} END {print n + 0}')
 	if [ "$bad" -ne 0 ]; then
 		echo "!! $bad service(s) not active" >&2
+		return 1
+	fi
+	if ! printf '%s\n' "$list" | awk '$1 == "safehome-hub.service" {found = 1} END {exit !found}'; then
+		echo "!! safehome-hub.service is not running" >&2
+		return 1
+	fi
+	names=$(printf '%s\n' "$list" | awk 'NF {printf "%s ", $1}')
+	if ! since=$(pi "cat /proc/uptime && echo && systemctl show -p Id -p ActiveState -p ActiveEnterTimestampMonotonic $names"); then
+		echo "!! the services' start times cannot be read" >&2
+		return 1
+	fi
+	# One block per unit, its lines in systemd's order, not the order asked.
+	recent=$(printf '%s\n' "$since" | awk 'BEGIN {RS = ""; FS = "\n"}
+		NR == 1 {split($1, u, " "); now = u[1] * 1000000; next}
+		{
+			id = state = at = ""
+			for (i = 1; i <= NF; i++) {
+				k = substr($i, 1, index($i, "=") - 1)
+				v = substr($i, index($i, "=") + 1)
+				if (k == "Id") id = v
+				else if (k == "ActiveState") state = v
+				else if (k == "ActiveEnterTimestampMonotonic") at = v
+			}
+			if (state != "active" || at == "" || now - at < 60000000)
+				printf "%s (%s, since %d s) ", id, state, (now - at) / 1000000
+		}')
+	if [ -n "$recent" ]; then
+		echo "!! not active for the last minute: $recent" >&2
 		return 1
 	fi
 	echo "   failed units:"
