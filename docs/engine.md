@@ -567,9 +567,10 @@ le début du mode) a donc été posée avant le recul :
 
 - un état daté après maintenant a été daté avant le recul, sur la même horloge : il se
   compare à elle comme d'habitude (plus ancien ou égal, il est écarté) ;
-- un état daté avant le démarrage du système l'a été avant le recul, sur la même
-  horloge lui aussi : il se compare de même. Le hub donne à `Boot` cette heure de
-  démarrage, maintenant moins `/proc/uptime` (`sysclock.Uptime`, port `Deps.Uptime`) ;
+- un état daté avant le démarrage du système, sur l'horloge telle qu'elle est
+  maintenant, l'a été avant le recul (sauf un saut de NTP avant le démarrage du hub,
+  voir les limites connues) : il se compare de même. Le hub donne à `Boot` cette heure
+  de démarrage, maintenant moins `/proc/uptime` (`sysclock.Uptime`, port `Deps.Uptime`) ;
 - un état daté depuis le démarrage du système, au plus maintenant, l'a été après le
   recul, pendant le démarrage : c'est peut-être une vraie intrusion, il est pris tel
   quel, sauf s'il porte exactement l'heure que le moteur a gardée de ce capteur (c'est
@@ -618,7 +619,15 @@ Limites connues (28 octobre 2026) :
 - une heure mise à part par une marche précédente ne s'ordonne pas par l'heure de
   démarrage (voir plus haut) : une porte refermée après la dernière écriture du broker
   pendant cette marche, ouverte plus longtemps que le nouveau recul, peut encore
-  déclencher.
+  déclencher ;
+- une horloge avancée par NTP entre le démarrage du système et celui du hub (le hub
+  ne voit que les sauts postérieurs à son propre démarrage) : l'heure de démarrage se
+  calcule alors sur l'horloge corrigée, et un état daté pendant ce temps sur l'horloge
+  encore reculée paraît antérieur au démarrage du système. Il est écarté s'il n'est
+  pas plus récent que l'heure entendue, puis mis à part (`set_aside`), donc écarté
+  aussi aux démarrages suivants : c'est une alerte perdue, rare (une intrusion dans
+  les quelques secondes après la mise sous tension, la porte refermée ensuite). Cette
+  perte existait avant le lot ; la corriger est un autre lot, à décider par Kevin.
 
 Le début du mode suit la même règle. Trouvé postérieur à maintenant, il est mis à
 part (`since_ahead`, que l'état publié dit toujours) et ramené à maintenant (`since`),
