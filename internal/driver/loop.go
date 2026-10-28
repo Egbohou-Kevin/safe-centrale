@@ -175,8 +175,9 @@ func New[In, Act, Snap any](o Options[In, Act, Snap]) (*Loop[In, Act, Snap], err
 // hide the step back from the guard, and the core works on wall time (deadlines read
 // back from a saved state carry none).
 func (l *Loop[In, Act, Snap]) now() time.Time {
+	before := l.monotonic()
 	t := l.o.Clock.Now().Round(0)
-	l.stepped(t)
+	l.stepped(t, before)
 	if t.Before(l.last) && !l.o.FollowsClock {
 		t = l.last
 	}
@@ -184,14 +185,28 @@ func (l *Loop[In, Act, Snap]) now() time.Time {
 	return t
 }
 
+// monotonic reads the monotonic clock, zero without one.
+func (l *Loop[In, Act, Snap]) monotonic() time.Duration {
+	if m, ok := l.o.Clock.(Monotonic); ok {
+		return m.Elapsed()
+	}
+	return 0
+}
+
 // stepped tells the core how far the clock read at t stepped forward since its last
-// reading, beyond the time that really passed (Core.Stepped).
-func (l *Loop[In, Act, Snap]) stepped(t time.Time) {
+// reading, beyond the time that really passed (Core.Stepped). The monotonic clock read
+// before is the one read after when t pairs with it: time that really passed while t
+// was read (a fake clock moved, a process paused) pairs t with neither, and the reading
+// is skipped; the next one tells a step against the last reading that paired.
+func (l *Loop[In, Act, Snap]) stepped(t time.Time, before time.Duration) {
 	m, ok := l.o.Clock.(Monotonic)
 	if !ok || l.o.Core.Stepped == nil {
 		return
 	}
 	e := m.Elapsed()
+	if e-before >= minStep {
+		return
+	}
 	if !l.read.IsZero() {
 		if step := t.Sub(l.read) - (e - l.elapsed); step >= minStep {
 			l.log.Info("the system clock stepped forward: the core keeps the time that really passed", "step", step.Round(time.Second))
