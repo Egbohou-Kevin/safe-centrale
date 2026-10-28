@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The install script runs here on a folder that stands for / (SAFEHOME_ROOT), with the
@@ -33,6 +34,16 @@ var fakes = map[string]string{
 // fakeProgram stands for a safehome-* program: check fails on a configuration or a
 // device profile that says BAD.
 const fakeProgram = `if [ "$1" = check ]; then ! grep -qrs BAD "$3" "$(dirname "$3")/profiles"; fi`
+
+// hubFstab is the real hub's fstab before 28 October 2026: the binds of the programs only.
+const hubFstab = `PARTUUID=4e639091-02  /  ext4  defaults,noatime  0  1
+LABEL=safehome-data  /data                 ext4  defaults,noatime,commit=5  0  2
+/data/safehome       /var/lib/safehome     none  bind                       0  0
+/data/mosquitto      /var/lib/mosquitto    none  bind                       0  0
+/data/zigbee2mqtt    /var/lib/zigbee2mqtt  none  bind                       0  0`
+
+// lastSync is the date of timesyncd's clock file on the system before the install.
+var lastSync = time.Date(2026, 10, 28, 9, 38, 27, 0, time.UTC)
 
 type rig struct {
 	t      *testing.T
@@ -64,6 +75,11 @@ func newRig(t *testing.T) *rig {
 	copyTree(t, filepath.Join("..", "config", "profiles"), filepath.Join(r.bundle, "config", "profiles"))
 	for _, d := range []string{"data", "var/lib/safehome", "var/lib/mosquitto", "var/lib/zigbee2mqtt"} {
 		mkdir(t, filepath.Join(r.root, d))
+	}
+	writeFile(t, filepath.Join(r.root, "etc", "fstab"), hubFstab+"\n")
+	writeFile(t, filepath.Join(r.root, timesyncdClock[1:], "clock"), "")
+	if err := os.Chtimes(filepath.Join(r.root, timesyncdClock[1:], "clock"), lastSync, lastSync); err != nil {
+		t.Fatal(err)
 	}
 	r.env = append(os.Environ(), "SAFEHOME_ROOT="+r.root, "ROOT="+r.root, "LOG="+r.log,
 		"PATH="+stubs+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -131,6 +147,7 @@ func TestInstallLaysEverythingAndStartsTheSite(t *testing.T) {
 		"etc/safehome/profiles/aqara-contact-mccgq11lm.json", "etc/safehome/maint.key",
 		"etc/systemd/system/safehome-hub.service", "etc/systemd/system/zigbee2mqtt.service",
 		"etc/systemd/system/safehome-boot-clock.service",
+		"etc/systemd/system/systemd-timesyncd.service.d/safehome.conf",
 		"etc/systemd/journald.conf.d/safehome.conf", "etc/systemd/system.conf.d/safehome-watchdog.conf",
 		"etc/mosquitto/mosquitto.conf",
 	} {
@@ -300,6 +317,55 @@ func TestInstallRefusesWhatWouldBreakTheSite(t *testing.T) {
 				if !regexp.MustCompile(`^(id|uname|findmnt|mountpoint) `).MatchString(cmd) {
 					t.Errorf("ran %q before the refusal", cmd)
 				}
+			}
+		})
+	}
+}
+
+// timesyncd's clock file moves to the data partition at the first install or update
+// after 28 October 2026: a hub updated by deploy/update-hub.sh needs no step by hand.
+func TestTimesyncdsClockFileMovesToTheDataPartitionOnce(t *testing.T) {
+	bind := timesyncdBind(t)
+	cases := []struct{ name, fstab, want string }{
+		{"a hub with the binds of the programs", hubFstab + "\n", hubFstab + "\n" + bind + "\n"},
+		{"no newline at the end", hubFstab, hubFstab + "\n" + bind + "\n"},
+		{"every line of fstab-data already there (step 2)", hubFstab + "\n" + bind + "\n", hubFstab + "\n" + bind + "\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRig(t)
+			r.minimalSite()
+			writeFile(t, r.path("etc/fstab"), c.fstab)
+			cmds := r.mustRun()
+			if got, _ := os.ReadFile(r.path("etc/fstab")); string(got) != c.want {
+				t.Errorf("fstab:\n%s\nwant:\n%s", got, c.want)
+			}
+			fi, err := os.Stat(r.path("data/timesync"))
+			if err != nil || fi.Mode().Perm() != 0o755 {
+				t.Fatalf("data/timesync: %v %v", fi, err)
+			}
+			clock := r.path("data/timesync/clock")
+			if fi, err := os.Stat(clock); err != nil || !fi.ModTime().Equal(lastSync) {
+				t.Fatalf("data/timesync/clock: %v %v, want the date of the last sync %v", fi, err, lastSync)
+			}
+			if !slices.Contains(cmds, "chown -R systemd-timesync:systemd-timesync /data/timesync") {
+				t.Error("the folder is not given to timesyncd's user")
+			}
+
+			// Run again: nothing changes, not even the date the clock is set to at boot.
+			later := lastSync.Add(time.Hour)
+			if err := os.Chtimes(r.path(timesyncdClock[1:]+"/clock"), later, later); err != nil {
+				t.Fatal(err)
+			}
+			r.mustRun()
+			if got, _ := os.ReadFile(r.path("etc/fstab")); string(got) != c.want {
+				t.Errorf("fstab after a second run:\n%s", got)
+			}
+			if fi, err := os.Stat(clock); err != nil || !fi.ModTime().Equal(lastSync) {
+				t.Errorf("data/timesync/clock replaced by the second run: %v %v", fi, err)
+			}
+			if r.exists("etc/fstab.new") {
+				t.Error("the fstab being written is left behind")
 			}
 		})
 	}

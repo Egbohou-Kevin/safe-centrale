@@ -583,3 +583,44 @@ func TestTheClockAtBootIsTakenBeforeNTP(t *testing.T) {
 		t.Error("the file being written is left behind")
 	}
 }
+
+// timesyncdClock is where systemd-timesyncd keeps its clock file (its StateDirectory=).
+const timesyncdClock = "/var/lib/systemd/timesync"
+
+// timesyncdBind returns the line of fstab-data that binds timesyncd's folder, or "".
+func timesyncdBind(t *testing.T) string {
+	t.Helper()
+	for _, l := range rawLines(t, filepath.Join("system", "fstab-data")) {
+		if f := strings.Fields(l); len(f) == 6 && !strings.HasPrefix(f[0], "#") && f[1] == timesyncdClock {
+			return l
+		}
+	}
+	return ""
+}
+
+func TestTimesyncdsClockFileIsKeptAcrossBoots(t *testing.T) {
+	// The system being read-only, timesyncd's clock file never moved from the day the
+	// system went read-only, and every boot started from that day (28 October 2026).
+	line := timesyncdBind(t)
+	if line == "" {
+		t.Fatalf("fstab-data binds nothing on %s: the clock starts from the day the system went read-only", timesyncdClock)
+	}
+	f := strings.Fields(line)
+	opts := strings.Split(f[3], ",")
+	if !strings.HasPrefix(f[0], "/data/") || f[2] != "none" || !slices.Contains(opts, "bind") {
+		t.Errorf("%q: want a bind from a folder of /data", line)
+	}
+	if !slices.Contains(opts, "nofail") {
+		t.Errorf("%q: without nofail, a missing folder would stop the boot", line)
+	}
+
+	// Mounted before timesyncd reads it; only ordered, nothing else that could make a cycle
+	// with sysinit.target, which timesyncd starts before.
+	u := readUnit(t, filepath.Join("system", "timesyncd-safehome.conf"))
+	if got := u.get(t, "Unit", "WantsMountsFor"); got != timesyncdClock {
+		t.Errorf("WantsMountsFor = %q, want %s", got, timesyncdClock)
+	}
+	if len(u) != 1 || len(u["Unit"]) != 1 {
+		t.Errorf("the drop-in sets %v: only the mount it waits for", u)
+	}
+}

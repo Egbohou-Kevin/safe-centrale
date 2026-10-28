@@ -123,6 +123,39 @@ chown safehome:safehome "$ROOT/var/lib/safehome" "$ROOT/var/lib/zigbee2mqtt"
 chmod 700 "$ROOT/var/lib/safehome"
 chown mosquitto:mosquitto "$ROOT/var/lib/mosquitto"
 
+# systemd-timesyncd's clock file, the date it sets the clock forward to at boot before
+# NTP, kept on the data partition (docs/systeme.md, step 2); taken from the next boot on.
+# The folder and the file as it is now first, the line in fstab last: a boot never finds
+# the line without its folder. A hub installed before 28 October 2026 gets it here.
+TIMESYNC=/var/lib/systemd/timesync
+mkdir -p "$ROOT/data/timesync"
+chmod 755 "$ROOT/data/timesync"
+if [ ! -e "$ROOT/data/timesync/clock" ] && [ -f "$ROOT$TIMESYNC/clock" ]; then
+	# Its date, not now: the clock may not be synced yet at the first install.
+	cp -p "$ROOT$TIMESYNC/clock" "$ROOT/data/timesync/clock"
+fi
+# systemd gives the folder to timesyncd's user at each start anyway (StateDirectory=).
+if getent passwd systemd-timesync >/dev/null; then
+	chown -R systemd-timesync:systemd-timesync "$ROOT/data/timesync"
+fi
+# timesync_line FILE: the line of FILE that mounts on $TIMESYNC.
+timesync_line() { awk -v m="$TIMESYNC" '$1 !~ /^#/ && $2 == m' "$1" 2>/dev/null; }
+fstab="$ROOT/etc/fstab"
+if [ -z "$(timesync_line "$fstab")" ]; then
+	line="$(timesync_line "$BUNDLE/deploy/system/fstab-data")"
+	[ -n "$line" ] || fail "the bundle's fstab-data binds nothing on $TIMESYNC"
+	{
+		if [ -s "$fstab" ]; then
+			cat "$fstab"
+			[ -z "$(tail -c 1 "$fstab")" ] || echo
+		fi
+		printf '%s\n' "$line"
+	} >"$fstab.new"
+	chmod 644 "$fstab.new"
+	mv -f "$fstab.new" "$fstab"
+	say "$TIMESYNC bound to /data/timesync in /etc/fstab, from the next boot on"
+fi
+
 # put SRC DEST MODE: replaces DEST in one step (a running program keeps its old file).
 put() {
 	mkdir -p "$(dirname "$2")"
@@ -176,6 +209,7 @@ rm -rf "$backup"
 
 put "$BUNDLE/deploy/system/journald-safehome.conf" "$ROOT/etc/systemd/journald.conf.d/safehome.conf" 644
 put "$BUNDLE/deploy/system/watchdog-safehome.conf" "$ROOT/etc/systemd/system.conf.d/safehome-watchdog.conf" 644
+put "$BUNDLE/deploy/system/timesyncd-safehome.conf" "$ROOT/etc/systemd/system/systemd-timesyncd.service.d/safehome.conf" 644
 put "$BUNDLE/deploy/mosquitto/mosquitto.conf" "$ROOT/etc/mosquitto/mosquitto.conf" 644
 if has console; then
 	# The console makes its network through NetworkManager, as the service's user,
