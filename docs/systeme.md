@@ -647,7 +647,8 @@ aucun pour un programme qu'elle n'avait pas encore atteint. Un `.prev` est entie
 d'abord en `.prev.new`, puis renommé ; un `.prev.new` laissé par une coupure n'est jamais remis, et
 l'installation suivante l'efface (revue du 28 octobre 2026). Avant de remplacer le premier programme,
 il pose la marque `/usr/local/bin/.safehome-prev.unconfirmed` (retirée s'il ne garde aucun `.prev`),
-qui contient un jeton tiré au hasard pour cette exécution : tant qu'elle est là, les programmes en
+qui contient un jeton tiré au hasard pour cette exécution, lisible par tous (0644, même par-dessus
+une marque plus ancienne en 0600) : tant qu'elle est là, les programmes en
 place ne sont pas confirmés,
 et une nouvelle installation (phase 2 relancée après une coupure, paquet refait entre-temps) garde
 les `.prev` existants, qui sont les programmes qui tenaient ; elle n'ajoute que ceux des programmes
@@ -684,7 +685,18 @@ déjà les nouveaux et la marque est posée : la phase 2 fait alors le même ret
 par la marque lue avant `install.sh` : seule une marque nouvelle ou changée (le jeton de cette
 exécution) fait jouer le retour ; une marque laissée par une phase 2 coupée, inchangée, ne le fait
 pas, et la phase 2 s'arrête en disant que les programmes en place restent ceux d'une exécution non
-confirmée.
+confirmée. Le jeton relu après l'échec est comparé à celui lu juste avant `install.sh`, par
+`sudo -n cat` ; la phase 2 distingue une marque absente, une marque lue (son jeton) et une marque
+illisible, qui n'est jamais prise pour une marque inchangée (revue du 28 octobre 2026). Une marque
+vide, de l'ancien format sans jeton, se lit comme un jeton vide : `install.sh` la réécrit avec le
+sien avant de remplacer le premier programme, donc une marque restée vide après l'échec veut dire
+qu'il ne les a pas atteints, et une marque changée fait jouer le retour. Une marque illisible avant
+`install.sh` arrête la phase 2 sans rien installer. Après l'échec, la marque est relue jusqu'à six
+fois (dix secondes d'écart) : une connexion perdue ne passe pas pour « rien de remplacé ». Une
+marque présente mais illisible fait jouer le retour : posée par cette exécution, ou laissée par une
+exécution coupée, ses `.prev` sont de toute façon les programmes qui tenaient (`install.sh` les
+garde tant que la marque est là). Si la centrale ne répond plus du tout, la phase 2 s'arrête en
+disant que l'état est inconnu et que rien n'est revenu : vérifier à la main (étapes 5 et 6).
 Les `.prev` s'écrivent en maintenance (`/` en ext4 inscriptible) et restent sous l'overlay après le
 retour en lecture seule : c'est voulu, l'ancienne version reste à portée de main. Place prise : au
 plus un `.prev` par programme, 9 ; les 9 programmes du paquet `dist/maj-8b00128` font 66 788 Kio
