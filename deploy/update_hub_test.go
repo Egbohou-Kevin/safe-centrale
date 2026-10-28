@@ -113,6 +113,9 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 			want: []string{"the hub says (version not readable); the previous programs are back and their services hold"}},
 		{name: "the previous programs do not hold either", installed: "0.3.0", crashing: "0.3.0 0.2.1", marked: true, state: back,
 			want: []string{"the new programs do not hold; the previous programs are back but the services still do not hold"}},
+		// The rollback's restarts block too: 100 s there as well.
+		{name: "the previous hub restarted 90 s ago", installed: "0.3.0", crashing: "0.3.0", flapping: "0.2.1", flapAge: "90", marked: true, state: back,
+			want: []string{"!! not active for the last 100 s", "the new programs do not hold; the previous programs are back but the services still do not hold"}},
 		{name: "a restart fails", installed: "0.3.0", crashing: "0.3.0", restart: "fails", marked: true, state: back,
 			want: []string{"!! safehome-hub back, but its restart failed", "the previous programs are back and their services hold"}},
 		{name: "a previous program cannot be put back", installed: "0.3.0", crashing: "0.3.0", mvFails: "safehome-gsm.prev", marked: true, state: partial,
