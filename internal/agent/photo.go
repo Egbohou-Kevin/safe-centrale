@@ -1,8 +1,11 @@
 package agent
 
 import (
+	"cmp"
 	"maps"
+	"net/url"
 	"slices"
+	"strings"
 	"time"
 
 	"safehome/internal/contract"
@@ -14,6 +17,10 @@ import (
 // never published on the hub) and has the application send the file, one at a time,
 // once nothing of an alarm waits in the queue: the photos follow the alarm's
 // messages, never ahead of them. It says how it went (photo.sent).
+//
+// A photo and its token go only to the cloud (uploadAllowed): an address the cloud
+// gives elsewhere, a foreign host or the shop's network, is refused like a broken
+// order, and nothing is sent.
 
 // photo is a photo waiting for its upload.
 type photo struct {
@@ -98,6 +105,9 @@ func (r *Relay) photoUpload(now time.Time, env contract.Envelope) string {
 	if why = orExpired(why, now, &d.Exp); why != "" {
 		return why
 	}
+	if !r.uploadAllowed(d.URL) {
+		return "upload address outside the cloud's hosts" // never the token
+	}
 	p, ok := r.s.Photos[d.Photo]
 	if !ok {
 		return "upload of a photo the agent does not know"
@@ -105,6 +115,21 @@ func (r *Relay) photoUpload(now time.Time, env contract.Envelope) string {
 	p.URL, p.Token, p.Exp, p.RetryAt, p.Tries = d.URL, d.Token, d.Exp.Time, time.Time{}, 0
 	r.s.Photos[d.Photo] = p
 	return ""
+}
+
+// uploadAllowed says whether a photo may go to target: https, no credentials, a host
+// that is exactly one of the cloud's addresses' (any case, nothing that merely ends
+// like it), on https's port or on the port that address names.
+func (r *Relay) uploadAllowed(target string) bool {
+	u, err := url.Parse(target)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Hostname() == "" {
+		return false
+	}
+	port := cmp.Or(u.Port(), "443")
+	return slices.ContainsFunc(r.cfg.CloudURLs, func(raw string) bool {
+		c, err := url.Parse(raw)
+		return err == nil && strings.EqualFold(c.Hostname(), u.Hostname()) && (port == "443" || port == c.Port())
+	})
 }
 
 // uploaded takes the application's word on an upload.
@@ -179,8 +204,11 @@ func (r *Relay) uploads(now time.Time) []Action {
 	if id == "" {
 		return nil
 	}
-	r.sending = id
 	p := r.s.Photos[id]
+	if !r.uploadAllowed(p.URL) {
+		return r.lostAddress(id) // kept from before the rule, or from another cloud
+	}
+	r.sending = id
 	return []Action{Upload{Photo: id, URL: p.URL, Token: p.Token}}
 }
 

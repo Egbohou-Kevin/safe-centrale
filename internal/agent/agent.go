@@ -11,6 +11,7 @@ package agent
 import (
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"time"
 
@@ -56,6 +57,10 @@ type Config struct {
 	// cloud carries no code in the clear. Without it, an order from the app that needs a
 	// code is refused.
 	Seal Opener
+
+	// CloudURLs are the cloud's addresses (cloud.urls). A photo goes only to one of
+	// their hosts (photo.go); without them, no photo leaves.
+	CloudURLs []string
 }
 
 // Opener is the agent's key for the sealed codes: *sealcode.Key.
@@ -92,6 +97,11 @@ func (c Config) Validate() error {
 		return fmt.Errorf("agent: the journal bounds must be positive (at least 1 KB)")
 	case c.Economy < 0:
 		return fmt.Errorf("agent: Economy must not be negative")
+	}
+	for i, raw := range c.CloudURLs {
+		if u, err := url.Parse(raw); err != nil || u.Hostname() == "" {
+			return fmt.Errorf("agent: CloudURLs[%d] has no host", i)
+		}
 	}
 	return nil
 }

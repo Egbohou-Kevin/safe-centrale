@@ -135,7 +135,9 @@ type rig struct {
 
 func newRig(t *testing.T, d *disk) *rig {
 	t.Helper()
-	return newRigWith(t, d, DefaultConfig(site))
+	cfg := DefaultConfig(site)
+	cfg.Relay.CloudURLs = []string{"wss://api.safehome.example:443/mqtt"}
+	return newRigWith(t, d, cfg)
 }
 
 func newRigWith(t *testing.T, d *disk, cfg Config) *rig {

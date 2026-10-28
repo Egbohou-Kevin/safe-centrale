@@ -489,6 +489,32 @@ func TestAPhotoIsUploadedThenRemoved(t *testing.T) {
 	}
 }
 
+// An address outside the cloud's hosts is refused and logged, nothing is sent, and its
+// token shows nowhere.
+func TestAPhotoGoesNowhereButTheCloud(t *testing.T) {
+	r := newRig(t, nil)
+	r.app.LinkChanged(true, "mqtts")
+	r.photoTaken("p1", 4000)
+	drivertest.WaitFor(t, "photo.taken in the cloud", func() bool { return len(r.cloud.OfType(contract.TypePhotoTaken)) == 1 })
+	r.fromCloud(topic("photo", "cmd"), contract.TypePhotoUpload, contract.PhotoUploadData{
+		Photo: "p1", URL: "https://api.safehome.example.evil.net/v1/photos/p1", Token: "tok-stolen", Exp: contract.TS(r.clock.Now().Add(time.Hour)),
+	})
+	drivertest.WaitFor(t, "the refusal logged", func() bool { return strings.Contains(r.logs.String(), "outside the cloud's hosts") })
+	r.uploadOrder("p1") // the cloud's own address still works
+	drivertest.WaitFor(t, "the upload", func() bool { return len(r.upl.calls()) == 1 })
+	if c := r.upl.calls(); len(c) != 1 || !strings.HasPrefix(c[0], "https://api.safehome.example/") {
+		t.Fatalf("%v", c)
+	}
+	if strings.Contains(r.logs.String(), "tok-stolen") {
+		t.Fatal("the token in the logs")
+	}
+	for _, m := range append(r.local.All(), r.cloud.All()...) {
+		if strings.Contains(string(m.Payload), "tok-stolen") {
+			t.Fatalf("the token left on %s", m.Topic)
+		}
+	}
+}
+
 func TestUploadFailures(t *testing.T) {
 	r := newRig(t, nil)
 	r.app.LinkChanged(true, "mqtts")

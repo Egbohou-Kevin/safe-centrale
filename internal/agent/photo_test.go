@@ -2,6 +2,7 @@ package agent
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,8 +18,13 @@ func (h *harness) photo(id string) []Action {
 
 func (h *harness) address(id string, valid time.Duration) []Action {
 	h.t.Helper()
+	return h.addressTo(id, "https://api.safehome.example/v1/photos/"+id, valid)
+}
+
+func (h *harness) addressTo(id, target string, valid time.Duration) []Action {
+	h.t.Helper()
 	_, _, acts := h.cloud(topic("photo", "cmd"), contract.TypePhotoUpload, contract.PhotoUploadData{
-		Photo: id, URL: "https://api.safehome.example/v1/photos/" + id, Token: "tok-" + id, Exp: contract.TS(h.now.Add(valid)),
+		Photo: id, URL: target, Token: "tok-" + id, Exp: contract.TS(h.now.Add(valid)),
 	})
 	return acts
 }
@@ -247,5 +253,99 @@ func TestMaintenanceOrdersPassWhenValid(t *testing.T) {
 	h.local(topic("maint", "session"), contract.TypeMaintSession, contract.MaintSessionData{Session: "m1", Status: contract.MaintOpen})
 	if !slices.Contains(h.queued(), "maint/session") {
 		t.Fatal("the owner sees it: it goes up")
+	}
+}
+
+// The cloud's addresses in newHarness: api.safehome.example, on 8883 and 443.
+var outsideTheCloud = map[string]string{
+	"a foreign host":           "https://evil.net/v1/photos/p1",
+	"a misleading subdomain":   "https://api.safehome.example.evil.net/v1/photos/p1",
+	"a host that ends like it": "https://evilapi.safehome.example/v1/photos/p1",
+	"a parent domain":          "https://safehome.example/v1/photos/p1",
+	"a trailing dot":           "https://api.safehome.example./v1/photos/p1",
+	"the shop's network":       "https://192.168.1.1/v1/photos/p1",
+	"another port":             "https://api.safehome.example:8443/v1/photos/p1",
+}
+
+func TestPhotosGoOnlyToTheCloudsHosts(t *testing.T) {
+	for name, target := range outsideTheCloud {
+		h := newHarness(t)
+		h.linkUp()
+		h.photo("p1")
+		h.sendQueue()
+		acts := h.addressTo("p1", target, time.Hour)
+		refused := of[Refused](acts)
+		if len(refused) != 1 || strings.Contains(refused[0].Reason, "tok-p1") {
+			t.Errorf("%s: %+v", name, acts)
+		}
+		acts = append(acts, h.advance(time.Minute)...)
+		if ups := of[Upload](acts); len(ups) != 0 || h.r.Snapshot().Photos["p1"].Token != "" {
+			t.Errorf("%s: the photo and its token would leave for %s: %+v", name, target, ups)
+		}
+	}
+	// The cloud's host, whatever its case, on https's port: sent.
+	h := newHarness(t)
+	h.linkUp()
+	h.photo("p1")
+	h.sendQueue()
+	ups := of[Upload](h.addressTo("p1", "https://API.SafeHome.example:443/v1/photos/p1", time.Hour))
+	if len(ups) != 1 || ups[0].Token != "tok-p1" {
+		t.Fatalf("%+v", ups)
+	}
+}
+
+func TestWithoutCloudAddressesNoPhotoLeaves(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.CloudURLs = nil })
+	h.linkUp()
+	h.photo("p1")
+	h.sendQueue()
+	if acts := h.address("p1", time.Hour); len(of[Refused](acts)) != 1 || len(of[Upload](acts)) != 0 {
+		t.Fatalf("%+v", acts)
+	}
+}
+
+// An address kept from before the rule, or from a cloud no longer configured, is not
+// used: the agent says it lost it, and the cloud may send another.
+func TestAKeptAddressOutsideTheCloudIsNotUsed(t *testing.T) {
+	h := newHarness(t)
+	h.photo("p1")
+	snap := h.r.Snapshot()
+	p := snap.Photos["p1"]
+	p.URL, p.Token, p.Exp = "https://evil.net/v1/photos/p1", "tok-p1", h.now.Add(time.Hour)
+	snap.Photos["p1"] = p
+	h.r = h.restored(snap, h.disk)
+	acts := h.handle(Link{Now: h.now, Up: true, Transport: "mqtts"})
+	acts = append(acts, h.advance(time.Minute)...)
+	if len(of[Upload](acts)) != 0 {
+		t.Fatalf("%+v: sent outside the cloud", acts)
+	}
+	if r := reports(acts); len(r) != 1 || r[0].Reason != contract.PhotoURLExpired || h.r.Snapshot().Photos["p1"].Token != "" {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestUploadAllowed(t *testing.T) {
+	r := newHarness(t).r
+	for target, want := range map[string]bool{
+		"https://api.safehome.example/v1/photos/p1":      true,
+		"https://API.SAFEHOME.EXAMPLE/v1/photos/p1":      true,
+		"https://api.safehome.example:443/v1/photos/p1":  true,
+		"https://api.safehome.example:8883/v1/photos/p1": true, // the port of one of the cloud's addresses
+		"http://api.safehome.example/v1/photos/p1":       false,
+		"https://user@api.safehome.example/v1/photos/p1": false,
+		"https://api.safehome.example:443@evil.net/p1":   false,
+		"https://api.safehome.example:0443/p1":           false,
+		"https:///v1/photos/p1":                          false,
+		"api.safehome.example/v1/photos/p1":              false,
+		"":                                               false,
+	} {
+		if got := r.uploadAllowed(target); got != want {
+			t.Errorf("%q: %v", target, got)
+		}
+	}
+	for name, target := range outsideTheCloud {
+		if r.uploadAllowed(target) {
+			t.Errorf("%s: %q allowed", name, target)
+		}
 	}
 }

@@ -33,6 +33,7 @@ func newHarness(t *testing.T, edit ...func(*Config)) *harness {
 		t.Fatal(err)
 	}
 	cfg.Seal = key
+	cfg.CloudURLs = []string{"mqtts://api.safehome.example:8883", "wss://api.safehome.example:443/mqtt"}
 	for _, e := range edit {
 		e(&cfg)
 	}

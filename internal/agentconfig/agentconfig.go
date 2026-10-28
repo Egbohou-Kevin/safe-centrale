@@ -103,15 +103,17 @@ func build(f file, dir string) (Result, error) {
 	if r.Cloud, err = cloud(f.Cloud, f.Site, dir); err != nil {
 		return Result{}, err
 	}
-	if r.App, err = appConfig(f); err != nil {
+	if r.App, err = appConfig(f, r.Cloud.URLs); err != nil {
 		return Result{}, err
 	}
 	return r, nil
 }
 
-// appConfig reads the agent's settings over the defaults.
-func appConfig(f file) (agentapp.Config, error) {
+// appConfig reads the agent's settings over the defaults. The photos go only to the
+// hosts of cloudURLs.
+func appConfig(f file, cloudURLs []string) (agentapp.Config, error) {
 	app := agentapp.DefaultConfig(f.Site)
+	app.Relay.CloudURLs = cloudURLs
 	if err := configfile.Duration("status_every", f.StatusEvery, &app.StatusEvery); err != nil {
 		return agentapp.Config{}, err
 	}

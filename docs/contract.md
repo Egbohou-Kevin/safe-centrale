@@ -655,6 +655,14 @@ jamais par MQTT.
   fichier en `PUT` (`Content-Type: image/jpeg`) avec `Authorization: Bearer <token>`.
   Le jeton ne vaut que pour cette photo et n'apparaît jamais dans un journal.
 - `photo.upload` est pour l'agent seul : il n'est jamais republié sur la centrale.
+- L'agent n'envoie une photo qu'au cloud : l'hôte de `url` doit être exactement celui
+  d'une des adresses du cloud (`cloud.urls` de l'agent), sans tenir compte de la casse
+  (un hôte qui finit pareil, `cloud.example.com.evil.net`, est étranger), sur le port
+  https (443, écrit ou non) ou sur le port qu'écrit une de ces adresses pour cet hôte.
+  Sinon (un autre hôte, une adresse du réseau du magasin, un autre port) il refuse le
+  `photo.upload` comme un ordre mal formé : rien n'est envoyé, le refus est journalisé
+  sans le jeton. Une adresse gardée qui ne passe plus la règle (un autre cloud
+  configuré depuis) n'est pas utilisée : l'agent répond `url_expired`.
 - `url_expired` : l'adresse a expiré avant l'envoi ou a été refusée (401, 403, 404,
   410). Un `photo.upload` déjà périmé à son arrivée est refusé par l'agent, sans
   réponse. Le cloud peut envoyer un nouveau `photo.upload`.

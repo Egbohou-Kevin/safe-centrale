@@ -27,17 +27,19 @@ import (
 
 const site = "tg-lom-0001"
 
-// writeConfig writes a configuration and its secret in a temporary folder.
-func writeConfig(t *testing.T, broker, cloudURL, caFile, state string) string {
+// writeConfig writes a configuration and its secret in a temporary folder. The
+// cloud's fallbacks follow cloudURL.
+func writeConfig(t *testing.T, broker, cloudURL, caFile, state string, fallbacks ...string) string {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "cloud.secret"), []byte("pw-of-the-site\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	urls, _ := json.Marshal(append([]string{cloudURL}, fallbacks...))
 	body := fmt.Sprintf(`{
   "site": %q, "broker_url": %q, "client_id": "agent-test-%d", "state_dir": %q, "log_level": "debug",
-  "cloud": {"urls": [%q], "password_file": "cloud.secret", "ca_file": %q}
-}`, site, broker, time.Now().UnixNano(), state, cloudURL, caFile)
+  "cloud": {"urls": %s, "password_file": "cloud.secret", "ca_file": %q}
+}`, site, broker, time.Now().UnixNano(), state, urls, caFile)
 	path := filepath.Join(dir, "agent.json")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -259,7 +261,11 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	cloudBroker := mqtttest.StartWith(t, mqtttest.Options{TLS: &files})
 	link := startInternet(t, strings.TrimPrefix(cloudBroker.TLSURL(), "mqtts://"))
 	state := t.TempDir()
-	cfg := writeConfig(t, hubBroker.URL(), link.url(), files.CA, state)
+	// A photo goes only to the cloud's hosts, on https's port or one its addresses name:
+	// the test's endpoint cannot listen on 443, so a fallback names its port (it is
+	// no broker: the agent never stays there).
+	endpoint := startPhotoEndpoint(t, files)
+	cfg := writeConfig(t, hubBroker.URL(), link.url(), files.CA, state, endpoint.fallback())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -300,7 +306,7 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	cloud.publish(contract.ConfigSetTopic(site), "cloud", contract.TypeConfigSet, contract.ConfigSetData{EntryDelayS: 30})
 	drivertest.WaitFor(t, "the bad configuration refused", func() bool { return strings.Contains(logs.String(), "refused a message from the cloud") })
 
-	sendAPhoto(t, files, state, hub, cloud, logs)
+	sendAPhoto(t, endpoint, state, hub, cloud, logs)
 
 	// The internet goes down: the hub hears it, and an alarm raised meanwhile waits on
 	// the disk until the cloud is back.
@@ -395,9 +401,8 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 
 // sendAPhoto plays a photo of the alarm: announced to the cloud, which says where to
 // send it; the agent sends the file over HTTPS, says so, and removes it.
-func sendAPhoto(t *testing.T, files mqtttest.TLSFiles, state string, hub, cloud *side, logs *drivertest.SyncBuffer) {
+func sendAPhoto(t *testing.T, endpoint *photoEndpoint, state string, hub, cloud *side, logs *drivertest.SyncBuffer) {
 	t.Helper()
-	endpoint := startPhotoEndpoint(t, files)
 	jpeg := []byte{0xFF, 0xD8, 'p', 'i', 'c', 0xFF, 0xD9}
 	os.MkdirAll(filepath.Join(state, "photos"), 0o700)
 	os.WriteFile(filepath.Join(state, "photos", "01JB8ZQ7V2T4X9H6N5R0WYCE00.jpg"), jpeg, 0o600)
@@ -430,6 +435,11 @@ type photoEndpoint struct {
 }
 
 func (e *photoEndpoint) received() []byte { e.mu.Lock(); defer e.mu.Unlock(); return e.body }
+
+// fallback names the endpoint's port in the cloud's addresses.
+func (e *photoEndpoint) fallback() string {
+	return strings.Replace(e.url, "https://", "wss://", 1) + "/mqtt"
+}
 
 func startPhotoEndpoint(t *testing.T, files mqtttest.TLSFiles) *photoEndpoint {
 	t.Helper()

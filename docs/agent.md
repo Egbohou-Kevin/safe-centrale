@@ -287,6 +287,9 @@ Les photos ne passent pas par MQTT, qui n'est pas fait pour des fichiers.
 - L'agent fait monter l'annonce comme un autre message. Le cloud répond avec une
   adresse d'envoi temporaire et un jeton (`photo.upload`), que l'agent garde pour
   lui : ils ne sont jamais republiés sur la centrale, ni écrits dans un journal.
+- L'adresse n'est acceptée que si son hôte est celui du cloud (`cloud.urls`), sur le
+  port https ou celui d'une de ces adresses : la photo et son jeton ne partent jamais
+  vers un autre hôte, ni vers le réseau du magasin (règle dans `contract.md`, photos).
 - L'agent envoie le fichier par HTTPS (`PUT`, jeton en `Authorization: Bearer`), une
   photo à la fois, et seulement quand plus aucun message d'alarme n'attend dans sa
   file : les photos suivent les événements d'alarme, jamais devant. Il dit ensuite
