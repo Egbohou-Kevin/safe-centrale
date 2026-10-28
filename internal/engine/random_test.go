@@ -367,9 +367,11 @@ func order(name string, kind opKind, c Command) randomOp {
 // And NTP setting the clock forward before the hub starts, a state kept from before the
 // clock went back given back: the class the time read at boot must not open (28
 // October 2026).
-// The shifted sequences, one more draw on each restart with the clock set back, reach
+// The shifted sequences, one more draw on each restart with the clock set back, reached
 // a restored engine that set aside a movement the live one never did (28 October 2026,
-// seed 169): see setAsideApart.
+// seed 169), until the live one set it aside as the clock went back behind the start of
+// the mode: what is left of that class is a restart with the clock set back, the boot
+// time unknown (see setAsideApart and TestTheSeed2019PartsOnAMovementSetAsideByTheRestoredEngine).
 func TestRandomSequencesKeepTheAlarmInvariants(t *testing.T) {
 	var all tally
 	for seed := range uint64(randomSeeds) {
@@ -391,23 +393,8 @@ func TestRandomSequencesKeepTheAlarmInvariants(t *testing.T) {
 	if all.retraced < 10 {
 		t.Errorf("%d restarts checked after a live step forward, the reboot not stepped, a state heard where the trace would date it", all.retraced)
 	}
-	if all.parted < 1 {
-		t.Errorf("no restored engine parted on a movement only it set aside")
-	}
 	t.Logf("checked: %d after the clock caught up, %d ordered by the boot time, %d after a step before the hub, %d after a live step the trace would take for one at boot; %d partings on a movement set aside by the restored engine only",
 		caughtUp, ordered, stepped, all.retraced, all.parted)
-}
-
-// The sequence where a restored engine first parted from the live one (28 October 2026):
-// a movement heard during an exit delay, set aside by the fork's Boot, then the clock set
-// back an hour while the engines ran, and two restarts. The live engine rings at the
-// second, for that movement, the restored one does nothing about it, and it is right;
-// every other action of that restart is the same (see parting). A new fork starts from
-// the live engine after it.
-func TestTheShiftedSeed169PartsOnAMovementSetAsideByTheRestoredEngine(t *testing.T) {
-	if got := runRandom(t, 169, true); got.parted < 1 {
-		t.Fatalf("seed 169 shifted: %d partings, want one at least", got.parted)
-	}
 }
 
 // runRandom plays the sequence of one seed, a fork restored from the saved state

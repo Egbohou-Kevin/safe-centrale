@@ -285,3 +285,46 @@ func TestARestartAfterALiveStepDoesNotRingAMovementHeardBefore(t *testing.T) {
 	}
 	second.mustBe(engine.ModeArmed)
 }
+
+// The clock set back an hour while the hub runs, the site armed, a movement heard live
+// during the exit delay and still active does not ring at the next restart. The broker
+// gives it back dated by the adapter (its since), a few milliseconds before the hub's
+// loop handed it over: the engine set it aside by the loop's time, and until the review
+// of 28 October 2026 recognized only that very time, so the hub rang (see
+// engine.liveLag).
+func TestARestartAfterTheClockWentBackLiveDoesNotRingAMovementHeardBefore(t *testing.T) {
+	const window = 50 * time.Millisecond
+	const up = 20 * time.Minute // the system's uptime at the hub's first start
+	first := newRigWith(t, t0, nil, func(d *Deps) {
+		d.Uptime = func() (time.Duration, bool) { return up, true }
+	})
+	first.start()
+	first.keypad(contract.ValArm, "")
+	first.mustBe(engine.ModeArming)
+	first.clock.Advance(10 * time.Second)
+	dated := first.clock.Now().Add(-7 * time.Millisecond) // by the adapter, before the hub heard it
+	first.device(devMotion, contract.CapMotion, "detected")
+	first.settle()
+	first.clock.Advance(2 * time.Minute)
+	first.mustBe(engine.ModeArmed)
+	first.clock.Set(first.clock.Now().Add(-time.Hour)) // the clock set back, live
+	first.clock.Advance(time.Minute)
+	first.device(devBack, contract.CapContact, "closed") // the engine is handed the clock as it is
+	first.settle()
+	first.mustBe(engine.ModeArmed)
+	first.stop()
+
+	ran := first.clock.Now().Sub(t0) + time.Hour // the time that really passed
+	second := newRigWith(t, first.clock.Now(), first.store, func(d *Deps) {
+		d.Uptime = func() (time.Duration, bool) { return up + ran, true }
+	}, func(c *Config) { c.BootWindow = window })
+	moved := event(devMotion, contract.CapMotion, "detected")
+	moved.Since = contract.TSPtr(dated)
+	second.send(contract.DeviceStateTopic(site, devMotion, contract.CapMotion), contract.TypeDeviceState, moved)
+	second.start()
+	second.settle()
+	if got := eventsOf(second, contract.TypeAlarmTriggered); len(got) != 0 {
+		t.Fatalf("the movement heard live before the clock went back rang: %d alarm.triggered", len(got))
+	}
+	second.mustBe(engine.ModeArmed)
+}

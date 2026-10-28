@@ -87,6 +87,7 @@ func (e *Engine) forget(id string) {
 	maps.DeleteFunc(e.s.Heard, ofDevice)
 	maps.DeleteFunc(e.s.HeardAhead, ofDevice)
 	maps.DeleteFunc(e.s.SetAside, ofDevice)
+	maps.DeleteFunc(e.s.Momentary, ofDevice)
 	e.dropWaiting(func(w Incident) bool { return w.Cause.DeviceID == id })
 	e.dropSounding(func(c Cause) bool { return c.DeviceID == id })
 }
