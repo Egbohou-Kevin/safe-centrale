@@ -638,6 +638,24 @@ lecture seule : le dossier de timesyncd (`/var/lib/systemd/timesync`) doit être
 (ext4) et `systemd-timesyncd` actif. La ligne `/data` du fstab n'a pas `nofail` : une carte dont
 `/data` ne monte pas s'arrête au démarrage (choix laissé à Kevin, 28 octobre 2026).
 
+**Paquet, unités, `cmdline.txt` et redémarrages vérifiés** (28 octobre 2026, étude de sécurité de
+la centrale, remarque 9). Un passage sain ne change pas ; chaque surprise arrête la phase :
+
+- la phase 2 calcule sur l'ordinateur, **avant** le `scp`, la somme `sha256` de chaque fichier du
+  paquet (`sha256sum`, ou `shasum -a 256` sur le Mac), la recalcule sur la centrale **après**, et
+  compare les deux listes : un fichier changé, perdu ou ajouté en route l'arrête avant
+  `install.sh`, en nommant les fichiers ; rien n'est remplacé ;
+- la sauvegarde des unités (`/data/maintenance/units-<date>.tgz`) doit réussir et l'archive se
+  relire (`tar -tzf`) avec `safehome-hub.service` dedans, sinon la phase 2 s'arrête avant même de
+  copier le paquet (son échec était ignoré jusque-là) ;
+- la phase 3 n'écrit jamais `cmdline.txt` en place : elle écrit `cmdline.txt.new` sur le même
+  `/boot`, le compare à la copie gardée, `sync`, puis le renomme par-dessus (`mv`) et `sync` encore.
+  Une coupure pendant l'écriture laisse l'ancien `cmdline.txt` entier, et la centrale démarre ;
+- les phases 1 et 3 lisent l'identifiant de démarrage (`/proc/sys/kernel/random/boot_id`) avant
+  `reboot`, et ne disent la centrale revenue que lorsqu'elle répond avec un autre : une centrale qui
+  n'a pas redémarré (son uptime peut être court, si elle avait démarré moins de cinq minutes avant)
+  arrête la phase au bout de quatre minutes, « same boot ».
+
 **Retour arrière des programmes** (28 octobre 2026). `install.sh` garde chaque programme qu'il
 remplace (`safehome-*` de `/usr/local/bin`) en `safehome-<programme>.prev`, à côté, quand l'ancien
 diffère du nouveau ; un programme identique ou neuf n'en laisse aucun, pas même un `.prev` d'une
@@ -737,7 +755,7 @@ plus un `.prev` par programme, 9 ; les 9 programmes du paquet `dist/maj-8b00128`
 5. **Copier le paquet après ce redémarrage** (pas avant : en lecture seule, il disparaîtrait), le
    faire **sans** `-s` quand la configuration du site est déjà sur la centrale (aucun secret dans le
    paquet), puis `sudo ./safehome/deploy/install.sh`. Garder d'abord une copie des unités systemd
-   en place : si une unité nouvelle empêche un service de démarrer, remettre la sienne seule,
+   en place, et vérifier qu'elle se relit (`tar -tzf`) : si une unité nouvelle empêche un service de démarrer, remettre la sienne seule,
    `systemctl daemon-reload`, puis redémarrer ce service. Si ce sont les nouveaux programmes qui
    ne tiennent pas, remettre les `.prev` gardés par `install.sh`, puis redémarrer les services
    activés parmi eux (pas d'autre, ni `safehome-boot-clock`) :
@@ -757,8 +775,9 @@ plus un `.prev` par programme, 9 ; les 9 programmes du paquet `dist/maj-8b00128`
    `ls ~` : rien ne doit rester. Le 26 octobre, un dossier `site/` avec des secrets restait d'un
    essai précédent.
 8. **Revenir en lecture seule** : `sudo raspi-config nonint enable_overlayfs`, puis **avant de
-   redémarrer** remettre `overlayroot=tmpfs:recurse=0` dans `cmdline.txt` (étape 12), comparer avec
-   la copie (`cmp`), vérifier que `systemd-remount-fs` est toujours masqué
+   redémarrer** remettre `overlayroot=tmpfs:recurse=0` dans `cmdline.txt` (étape 12) sans l'écrire
+   en place (`cmdline.txt.new` sur `/boot/firmware`, `sync`, puis `mv`), comparer avec la copie
+   (`cmp`), vérifier que `systemd-remount-fs` est toujours masqué
    (`systemctl is-enabled systemd-remount-fs` dit `masked`), et seulement alors `sudo reboot`.
 9. **Après le second redémarrage** : `/` en overlay, `/data` en ext4, les services actifs, l'alarme
    dans le même état qu'avant.
