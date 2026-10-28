@@ -371,6 +371,9 @@ Configuration (`config/agent.example.json`), stricte :
   `mqtts://` (MQTT sur TLS, port 8883) ou `wss://` (MQTT dans WebSocket sur TLS, port
   443) : une adresse non chiffrée est refusée, comme un identifiant écrit dans
   l'adresse.
+  Les photos ne partent que vers les hôtes de ces adresses (en https, port 443 ou
+  celui qu'elles écrivent) : un cloud dont les photos vivent sur un autre hôte doit
+  l'ajouter ici.
 - `cloud.username` (le site par défaut) et `cloud.password_file` : le fichier qui
   contient le secret du site (exemple : `config/cloud.secret.example`). Un chemin
   relatif part du dossier du fichier de configuration. Le secret n'apparaît ni dans

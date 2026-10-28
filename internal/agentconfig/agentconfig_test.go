@@ -38,12 +38,15 @@ func TestTheExampleIsValidAndRepeatsTheDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := agentapp.DefaultConfig("tg-lom-0001"); !reflect.DeepEqual(r.App, want) {
-		t.Fatalf("the example differs from the defaults:\n%+v\n%+v", r.App, want)
-	}
 	c := r.Cloud
 	if len(c.URLs) != 2 || !strings.HasPrefix(c.URLs[0], "mqtts://") || !strings.HasPrefix(c.URLs[1], "wss://") {
 		t.Fatalf("%v", c.URLs)
+	}
+	// The photos go only to the cloud's hosts: the relay knows them.
+	want := agentapp.DefaultConfig("tg-lom-0001")
+	want.Relay.CloudURLs = c.URLs
+	if !reflect.DeepEqual(r.App, want) {
+		t.Fatalf("the example differs from the defaults:\n%+v\n%+v", r.App, want)
 	}
 	if c.Password != "s3cret-of-the-site" || c.Username != "tg-lom-0001" || c.CAFile != "" {
 		t.Fatalf("%+v", c)
