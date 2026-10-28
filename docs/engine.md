@@ -540,7 +540,8 @@ repos, ou un mouvement dont le retour au repos n'était pas encore écrit. Le mo
 panique (`heard`), et écarte au démarrage l'état retenu qui n'est pas plus récent. Un capteur
 momentané (mouvement, vibration, bris de vitre) n'a pas cette heure, que chaque passant
 réécrirait : son état est écarté s'il a commencé avant le mode où est le moteur (ou
-avant la fin du délai de sortie en cours). Vivant, il a été entendu alors et a fait ce
+avant la fin du délai de sortie en cours ; pas pour un bouton panique jamais entendu,
+zone 24 h que ce délai ne concerne pas : seul le début du mode compte). Vivant, il a été entendu alors et a fait ce
 qu'il fait dans ce mode ; actif depuis, ce n'est pas un nouveau mouvement. Un état qui
 ne dit pas quand il a commencé, ou daté après maintenant (une horloge partie en avant),
 est pris tel quel. Un état changé pendant la fenêtre de démarrage est une nouvelle de
