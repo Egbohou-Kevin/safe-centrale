@@ -84,11 +84,14 @@ services_hold() {
 
 wait_services() { services_hold || die "the services do not hold"; }
 
-# The mark install.sh leaves while the programs in place are not yet confirmed.
+# The mark install.sh leaves while the programs in place are not yet confirmed; it names
+# the run that made it.
 unconfirmed=/usr/local/bin/.safehome-prev.unconfirmed
+mark() { pi "if [ -e $unconfirmed ]; then echo \"mark \$(cat $unconfirmed)\"; else echo none; fi"; }
 
 # roll_back: the programs install.sh replaced go back (it kept each one as X.prev,
-# docs/systeme.md, "Maintenance"), and the services of those enabled restart on them.
+# docs/systeme.md, "Maintenance"; an X.prev.new is a copy cut short, never put back),
+# and the services of those enabled restart on them.
 # Nothing is disarmed; the alarm's state (/var/lib/safehome) is not touched. Called
 # last after ||, where set -e still stops: each step that may fail is said here.
 roll_back() {
@@ -154,13 +157,19 @@ case "$phase" in
 	echo "== units kept in /data/maintenance/units-$stamp.tgz, copying the bundle"
 	pi 'rm -rf ~/safehome'
 	scp -q -r -i "$key" "$bundle" "$hub:safehome"
+	# A mark left by an earlier run cut short is not this run's: install.sh may fail
+	# before replacing anything, and those programs then stay as they are.
+	before=$(mark) || die "the mark of an unconfirmed install cannot be read"
 	echo "== installing"
 	if ! pi 'sudo -n ./safehome/deploy/install.sh' 2>&1 | tail -n 40; then
 		# Past the configuration check, install.sh has replaced the programs and left
-		# its mark: a restart that failed puts the previous ones back too.
-		if [ "$(pi "test -e $unconfirmed && echo yes || true")" = yes ]; then
+		# its mark, naming this run: a restart that failed puts the previous ones back too.
+		after=$(mark || true)
+		if [ "${after#mark }" != "$after" ] && [ "$after" != "$before" ]; then
 			roll_back "install.sh failed after replacing the programs"
 		fi
+		[ "$before" = none ] ||
+			die "install.sh failed before replacing the programs (it put the previous configuration back); the programs in place are still those of an earlier run, not confirmed"
 		die "install.sh failed before replacing the programs (it put the previous configuration back)"
 	fi
 	# From here the programs are the new ones: if they do not hold, the previous ones

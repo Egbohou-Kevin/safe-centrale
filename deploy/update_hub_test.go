@@ -41,7 +41,8 @@ func TestUpdateHubPhaseFourChecksTimesyncdsClockOnTheDataPartition(t *testing.T)
 // it. A command on /usr/local/bin really runs, by bash as the login shell would, on
 // $HUB/usr/local/bin (sudo and mv are stubs). A hub whose program says one of
 // $FAKE_CRASHING restarts in a loop (activating, never failed); one of $FAKE_MUTE cannot
-// even say its version; $FAKE_INSTALL and $FAKE_RESTART make install.sh and restarts fail.
+// even say its version; $FAKE_RESTART makes restarts fail. $FAKE_INSTALL makes install.sh
+// fail before it replaces anything ("before"), or after, its mark naming this run ("after").
 const fakeHub = `for cmd; do :; done
 printf '%s\n' "$cmd" >> "$LOG"
 hub=$(cat "$HUB/usr/local/bin/safehome-hub")
@@ -50,7 +51,9 @@ case "$cmd" in
 *"safehome-hub version")
 	if among "$FAKE_MUTE"; then exit 126; fi
 	echo "safehome-hub $hub" ;;
-*install.sh) [ -z "$FAKE_INSTALL" ] ;;
+*install.sh)
+	if [ "$FAKE_INSTALL" = after ]; then echo "run $$" > "$HUB/usr/local/bin/.safehome-prev.unconfirmed"; fi
+	[ -z "$FAKE_INSTALL" ] ;;
 *"systemctl restart"*) [ -z "$FAKE_RESTART" ] ;;
 */usr/local/bin*) bash -c "$(printf '%s' "$cmd" | sed "s#/usr/local/bin#$HUB/usr/local/bin#g")" ;;
 "findmnt -no FSTYPE /") echo ext4 ;;
@@ -105,10 +108,15 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 			want: []string{"the new programs do not hold, and the previous programs could not all be put back (back: safehome-hub);"}},
 		{name: "no previous program was kept", installed: "0.3.0", crashing: "0.3.0", noPrev: true, state: kept,
 			want: []string{"the new programs do not hold, and no previous program was kept: nothing to put back"}},
-		{name: "install.sh fails after replacing the programs", installed: "0.3.0", install: "fails", marked: true, state: back,
+		{name: "install.sh fails after replacing the programs", installed: "0.3.0", install: "after", state: back,
 			want: []string{"install.sh failed after replacing the programs; the previous programs are back and their services hold"}},
-		{name: "install.sh fails before replacing the programs", installed: "0.3.0", install: "fails", state: kept,
+		{name: "install.sh fails after replacing the programs, a mark left before", installed: "0.3.0", install: "after", marked: true, state: back,
+			want: []string{"install.sh failed after replacing the programs; the previous programs are back and their services hold"}},
+		{name: "install.sh fails before replacing the programs", installed: "0.3.0", install: "before", state: kept,
 			want: []string{"install.sh failed before replacing the programs"}},
+		// A phase 2 cut short left its mark: this run replaced nothing, nothing goes back.
+		{name: "install.sh fails before replacing the programs, a mark left before", installed: "0.3.0", install: "before", marked: true, state: kept,
+			want: []string{"install.sh failed before replacing the programs", "still those of an earlier run, not confirmed"}},
 		{name: "the new programs hold", installed: "0.3.0", marked: true, state: kept,
 			want: []string{"phase 2 done"}},
 	} {
@@ -126,8 +134,9 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 			if !c.noPrev {
 				files["safehome-hub.prev"], files["safehome-gsm.prev"] = "0.2.1", "old gsm"
 			}
+			files["safehome-video.prev.new"] = "a copy cut short" // never a way back
 			if c.marked {
-				files[strings.TrimPrefix(unconfirmed, "usr/local/bin/")] = ""
+				files[strings.TrimPrefix(unconfirmed, "usr/local/bin/")] = "run cut short"
 			}
 			for name, content := range files {
 				writeFile(t, filepath.Join(bin, name), content)
@@ -181,6 +190,9 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 				if put < 0 || reload < put || restart < reload {
 					t.Errorf("put back at %d, daemon-reload at %d, hub restarted at %d: want them in this order", put, reload, restart)
 				}
+			}
+			if _, err := os.Stat(filepath.Join(bin, "safehome-video")); err == nil {
+				t.Error("a .prev.new, a copy cut short, was put back")
 			}
 			if !maps.Equal(got, want) {
 				t.Errorf("programs = %v, want %v", got, want)

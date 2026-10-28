@@ -168,17 +168,17 @@ put() {
 
 # put_program SRC DEST: puts a program, keeping the one it replaces as DEST.prev when they
 # differ, for update-hub.sh to put back if the services do not hold (docs/systeme.md,
-# "Maintenance"). An unchanged or new program leaves no .prev: one left from an earlier
-# update would bring back a version older than the one running. While $UNCONFIRMED
-# exists, the programs in place are an install not yet confirmed (a run cut short, or
-# phase 2 run again): its .prev are the programs that held, kept as they are.
+# "Maintenance"). An unchanged or new program leaves no .prev (those of an earlier update
+# are gone before the mark, below). While $UNCONFIRMED exists, the programs in place are
+# an install not yet confirmed (a run cut short, or phase 2 run again): its .prev are the
+# programs that held, kept as they are. A .prev is whole or absent: copied to .prev.new
+# first, a copy cut short is never taken for the way back.
 put_program() {
 	if [ -n "$unconfirmed" ] && [ -e "$2.prev" ]; then
 		:
 	elif [ -f "$2" ] && ! cmp -s "$1" "$2"; then
-		cp -p "$2" "$2.prev"
-	elif [ -z "$unconfirmed" ]; then
-		rm -f "$2.prev"
+		cp -p "$2" "$2.prev.new"
+		mv -f "$2.prev.new" "$2.prev"
 	fi
 	put "$1" "$2" 755
 }
@@ -238,12 +238,20 @@ if has console; then
 fi
 
 # Made before the first program is replaced, removed by update-hub.sh once the new ones
-# hold (or by hand, step 6 of "Maintenance"); a run that keeps no .prev leaves none.
+# hold (or by hand, step 6 of "Maintenance"); a run that keeps no .prev leaves none. It
+# holds a token of this run: update-hub.sh tells it from a mark left by an earlier run
+# cut short, which does not mean this one replaced anything.
 UNCONFIRMED="$BIN/.safehome-prev.unconfirmed"
 unconfirmed=""
 [ ! -e "$UNCONFIRMED" ] || unconfirmed=yes
 mkdir -p "$BIN"
-: >"$UNCONFIRMED"
+rm -f "$BIN"/safehome-*.prev.new # copies cut short
+if [ -z "$unconfirmed" ]; then
+	# The programs in place held: a .prev of an earlier update is older than them. Gone
+	# before the mark, so that a run cut short never leaves one to be kept as the way back.
+	rm -f "$BIN"/safehome-*.prev
+fi
+head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$UNCONFIRMED"
 for p in $PROGRAMS $TOOLS; do
 	put_program "$BUNDLE/bin/safehome-$p" "$BIN/safehome-$p"
 done

@@ -639,9 +639,14 @@ lecture seule : le dossier de timesyncd (`/var/lib/systemd/timesync`) doit être
 **Retour arrière des programmes** (28 octobre 2026). `install.sh` garde chaque programme qu'il
 remplace (`safehome-*` de `/usr/local/bin`) en `safehome-<programme>.prev`, à côté, quand l'ancien
 diffère du nouveau ; un programme identique ou neuf n'en laisse aucun, pas même un `.prev` d'une
-mise à jour précédente (il ramènerait une version plus vieille que celle qui tourne). Avant de
-remplacer le premier programme, il pose la marque `/usr/local/bin/.safehome-prev.unconfirmed` (retirée
-s'il ne garde aucun `.prev`) : tant qu'elle est là, les programmes en place ne sont pas confirmés,
+mise à jour précédente (il ramènerait une version plus vieille que celle qui tourne) : ces anciens
+`.prev` sont effacés tous ensemble avant la marque, si bien qu'une installation coupée n'en laisse
+aucun pour un programme qu'elle n'avait pas encore atteint. Un `.prev` est entier ou absent : copié
+d'abord en `.prev.new`, puis renommé ; un `.prev.new` laissé par une coupure n'est jamais remis, et
+l'installation suivante l'efface (revue du 28 octobre 2026). Avant de remplacer le premier programme,
+il pose la marque `/usr/local/bin/.safehome-prev.unconfirmed` (retirée s'il ne garde aucun `.prev`),
+qui contient un jeton tiré au hasard pour cette exécution : tant qu'elle est là, les programmes en
+place ne sont pas confirmés,
 et une nouvelle installation (phase 2 relancée après une coupure, paquet refait entre-temps) garde
 les `.prev` existants, qui sont les programmes qui tenaient ; elle n'ajoute que ceux des programmes
 changés depuis. La phase 2 lit d'abord la version (sans attendre) : si elle n'est pas celle du
@@ -662,7 +667,11 @@ fichiers de `/etc/safehome`) : un changement de leur format entre deux versions 
 par la précédente, sinon le retour ne suffit pas. Quand `install.sh` échoue à la vérification de la
 configuration, rien n'a été remplacé : sa configuration revient, rien n'est redémarré, la phase 2
 s'arrête sans retour. Quand il échoue plus loin (un redémarrage de service), les programmes sont
-déjà les nouveaux et la marque est posée : la phase 2 fait alors le même retour.
+déjà les nouveaux et la marque est posée : la phase 2 fait alors le même retour. Elle les distingue
+par la marque lue avant `install.sh` : seule une marque nouvelle ou changée (le jeton de cette
+exécution) fait jouer le retour ; une marque laissée par une phase 2 coupée, inchangée, ne le fait
+pas, et la phase 2 s'arrête en disant que les programmes en place restent ceux d'une exécution non
+confirmée.
 Les `.prev` s'écrivent en maintenance (`/` en ext4 inscriptible) et restent sous l'overlay après le
 retour en lecture seule : c'est voulu, l'ancienne version reste à portée de main. Place prise : au
 plus un `.prev` par programme, 9 ; les 9 programmes du paquet `dist/maj-8b00128` font 66 788 Kio
