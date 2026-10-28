@@ -43,7 +43,9 @@ func (e *Engine) Boot(now time.Time, booted Booted, current []Signal) []Action {
 		ref.booted = time.Time{}
 	}
 	// No step forward, a wrong reading, or the trace a Boot of this system run already
-	// had: the rule without it.
+	// had, with or without a step: the rule without it. Kept even when it tells no step:
+	// NTP may set the clock forward while the hub runs, and the same trace, given again,
+	// would then look before the start.
 	if ref.booted.IsZero() || !ref.shown.Before(ref.booted) || booted.Shown.Equal(e.s.BootShown) {
 		ref.shown = time.Time{}
 	}
@@ -84,8 +86,9 @@ type Booted struct {
 	// uptime. The zero time when unknown.
 	At time.Time
 	// Shown is when the system started on the clock as it read early at boot, before
-	// NTP set it: before At when NTP set the clock forward since. The zero time when
-	// unknown.
+	// NTP set it: before At when NTP set the clock forward since. Given whatever it
+	// says, Boot keeps it (see Snapshot.BootShown) and takes it for a step only when
+	// before At. The zero time when unknown.
 	Shown time.Time
 }
 

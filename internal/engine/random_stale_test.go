@@ -21,11 +21,29 @@ func (r *rig) staleBehind() bool {
 
 // readBeforeStep tells whether a state dated at t may have been dated on the clock as
 // it read at boot, before NTP set it forward, as Boot takes it (see bootRef.stepped):
-// since shown, before the system's start on the clock set right, at most the uptime
-// after shown.
+// at the first Boot of a system run, in the trace's window (see traceWindow).
 func (r *rig) readBeforeStep(t time.Time) bool {
+	return r.firstOfRun && r.traceWindow(t)
+}
+
+// traceWindow tells whether t lies where the trace would date a state before a step at
+// boot: since shown, before the system's start on the clock set right, at most the
+// uptime after shown.
+func (r *rig) traceWindow(t time.Time) bool {
 	return r.bootKnown && !r.shown.IsZero() && r.shown.Before(r.bootAt) && !t.Before(r.shown) &&
 		t.Before(r.bootAt) && t.Before(r.shown.Add(r.now.Sub(r.bootAt)))
+}
+
+// heardInTraceWindow tells whether a state the engine heard lies in the trace's window
+// (see traceWindow): given again at a later Boot of the run, the trace would take it for
+// news.
+func (r *rig) heardInTraceWindow() bool {
+	for _, sig := range r.states {
+		if r.traceWindow(sig.Now) {
+			return true
+		}
+	}
+	return false
 }
 
 // staleStepped tells whether the broker gives back a state older than the one heard,

@@ -67,11 +67,13 @@ func TestAMovementFromBeforeTheModeNeverSetAsideRingsAfterTheClockWentBack(t *te
 // --- the trace of the step at boot, a live step forward since ---------------------
 
 // firstBoot plays the hub's first Boot of a system run where NTP set the clock forward
-// a minute before the hub started: it returns what Boot was given.
-func firstBoot(t *testing.T, h *harness) Booted {
+// by step before the hub started (none when zero: the trace then tells the start as it
+// is, and the hub gives it all the same): it returns what Boot was given.
+func firstBoot(t *testing.T, h *harness, step time.Duration) Booted {
 	t.Helper()
 	h.e = restart(t, h)
-	booted := Booted{At: h.now.Add(-30 * time.Second), Shown: h.now.Add(-90 * time.Second)}
+	booted := Booted{At: h.now.Add(-30 * time.Second)}
+	booted.Shown = booted.At.Add(-step)
 	if err := onlySiren(h.e.Boot(h.now, booted, nil)); err != nil {
 		t.Fatal(err)
 	}
@@ -79,23 +81,27 @@ func firstBoot(t *testing.T, h *harness) Booted {
 }
 
 // NTP sets the clock forward again while the hub runs (internet back hours after the
-// boot), then the hub restarts within the same system run: the trace of the step at
-// boot, read again, would take every state heard before the live step for one dated
-// before NTP set the clock at boot, news. A movement heard during the exit delay rang
-// then (28 October 2026, the shifted random sequences, seed 455). The trace serves the
-// first Boot of a run only.
+// boot), then the hub restarts within the same system run: the trace of the start,
+// read again, would take every state heard before the live step for one dated before
+// NTP set the clock at boot, news. A movement heard during the exit delay rang then (28
+// October 2026, the shifted random sequences, seed 455). The trace serves the first
+// Boot of a run only, a step at boot or none: the same day, a first Boot without a step
+// was given no trace by the hub, and the one read after the live step served
+// (relecture; the hub's witness is TestARestartAfterALiveStepDoesNotRingAMovementHeardBefore).
 func TestALiveStepForwardDoesNotMakeAMovementHeardNewsAgain(t *testing.T) {
-	h := newHarness(t)
-	booted := firstBoot(t, h)
-	sig, _ := movedBeforeTheMode(h)
-	h.e.Stepped(14 * time.Hour)
-	h.now, booted.At = h.now.Add(14*time.Hour), booted.At.Add(14*time.Hour)
-	noActions(t, h.e.Handle(Tick{Now: h.now}))
-	h.e = restart(t, h)
-	if err := onlySiren(h.e.Boot(h.now, booted, []Signal{sig})); err != nil {
-		t.Fatalf("the movement heard before the live step: %v", err)
+	for _, step := range []time.Duration{time.Minute, 0} {
+		h := newHarness(t)
+		booted := firstBoot(t, h, step)
+		sig, _ := movedBeforeTheMode(h)
+		h.e.Stepped(14 * time.Hour)
+		h.now, booted.At = h.now.Add(14*time.Hour), booted.At.Add(14*time.Hour)
+		noActions(t, h.e.Handle(Tick{Now: h.now}))
+		h.e = restart(t, h)
+		if err := onlySiren(h.e.Boot(h.now, booted, []Signal{sig})); err != nil {
+			t.Fatalf("a step of %v at boot, the movement heard before the live step: %v", step, err)
+		}
+		h.mustBe(ModeArmed)
 	}
-	h.mustBe(ModeArmed)
 }
 
 // The positive case: after a reboot, the new trace serves its run's first Boot. A door
@@ -103,7 +109,7 @@ func TestALiveStepForwardDoesNotMakeAMovementHeardNewsAgain(t *testing.T) {
 // before NTP set it forward, before the time the engine last heard it closed, is news.
 func TestANewSystemRunsTraceStillTellsAStateDatedBeforeTheStep(t *testing.T) {
 	h := newHarness(t)
-	firstBoot(t, h)
+	firstBoot(t, h, time.Minute)
 	h.armed()
 	h.advance(time.Minute)
 	h.close(door)

@@ -62,20 +62,25 @@ func (h *Hub) bootedAt(now time.Time) time.Time {
 }
 
 // booted is when the system started, for the engine: on the clock as it is now
-// (bootedAt), and on the clock as it read early at boot when NTP set it forward since,
-// before the hub started. The time read at boot unknown, or not before the start on
-// the clock as it is now (no step forward, or a wrong reading: after it, after now),
-// the engine keeps the rule of the start alone.
+// (bootedAt), and on the clock as it read early at boot (the trace StartShown reads),
+// whatever it says. Before the start on the clock as it is now, NTP set the clock
+// forward before the hub started; not before it (no step, or a wrong reading), the
+// engine keeps the rule of the start alone, and still keeps the trace: given again at a
+// later Boot of the same system run, after NTP set the clock forward while the hub ran,
+// it is no step at boot (see engine.Boot). Dropped there, a movement heard before that
+// live step rang again at the next restart (28 October 2026).
 func (h *Hub) booted(now time.Time) engine.Booted {
 	b := engine.Booted{At: h.bootedAt(now)}
-	if b.At.IsZero() || h.deps.StartShown == nil {
+	if h.deps.StartShown == nil {
 		return b
 	}
 	shown, ok := h.deps.StartShown()
-	if !ok || !shown.Before(b.At) {
+	if !ok {
 		return b
 	}
-	h.log.Info("the clock was set forward since the system started", "by", b.At.Sub(shown))
+	if !b.At.IsZero() && shown.Before(b.At) {
+		h.log.Info("the clock was set forward since the system started", "by", b.At.Sub(shown))
+	}
 	b.Shown = shown
 	return b
 }

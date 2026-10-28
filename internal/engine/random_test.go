@@ -57,10 +57,16 @@ type rig struct {
 	bootAt    time.Time
 	bootKnown bool
 	// shown is when the system started on the clock as it read at boot, before NTP set
-	// it forward: the zero time unless the last reboot was stepped (see restartBack).
-	// Read once at boot, the clock's later steps do not move it: one back may put it
-	// after bootAt, where Boot leaves it aside.
-	shown time.Time
+	// it forward: the trace of the last reboot, bootAt then unless that reboot was stepped
+	// (see restartBack), the zero time before the first. Read once at boot, the clock's
+	// later steps do not move it: one back may put it after bootAt, one forward before.
+	// It serves the first Boot of a system run only (firstOfRun): the engine keeps it,
+	// and given again it is no step at boot (see Boot).
+	shown      time.Time
+	firstOfRun bool
+	// stepAtBoot tells whether NTP set the clock forward before the hub at the last
+	// reboot.
+	stepAtBoot bool
 	// before and booted are the mode before the last restart, and what Boot did.
 	before Mode
 	booted []Action
@@ -76,6 +82,12 @@ type rig struct {
 	// hub started, the broker giving back a state kept from before the clock went back,
 	// dated before the time it went back to: the class the step must not open.
 	stepped int
+	// retraced counts the restarts checked within a system run whose reboot NTP did not
+	// step, the clock set forward while the engines ran since: the trace given again
+	// would take a state heard for one dated before a step at boot, news (see
+	// traceWindow). The class of 28 October 2026 (relecture), where a movement heard rang
+	// again.
+	retraced int
 	// blurred are the momentary sensors (a movement, glass breaking) whose state was
 	// taken before a clock set back. The engine keeps no time of theirs, which every
 	// passer-by would rewrite, and compares them with the start of the mode: once the
@@ -103,19 +115,6 @@ func newRig(t *testing.T) *rig {
 		prev: map[sensorRef]Signal{}, retained: map[sensorRef]Signal{}, apart: map[sensorRef]bool{},
 		triggered: map[string]bool{}, alerted: map[string]bool{}, cleared: map[string]bool{},
 	}
-}
-
-// fork is a rig whose engine restarts from r's saved state, Boot given the sensors as
-// they are now. It returns Boot's actions; the fork observes nothing.
-func (r *rig) fork() (*rig, []Action) {
-	h := &harness{t: r.t, e: r.e, now: r.now, ids: r.ids, cfg: r.cfg}
-	h.e = restart(r.t, h)
-	f := &rig{
-		harness: h, states: maps.Clone(r.states), blurred: maps.Clone(r.blurred),
-		prev: maps.Clone(r.prev), retained: maps.Clone(r.retained), apart: maps.Clone(r.apart),
-		reached: r.reached, bootAt: r.bootAt, bootKnown: r.bootKnown, shown: r.shown,
-	}
-	return f, f.boot()
 }
 
 func (r *rig) boot() []Action {
@@ -298,6 +297,9 @@ func (r *rig) restartAsIs() []Action {
 	if !r.unsure && r.staleCaughtUp() {
 		r.caughtUp++
 	}
+	if !r.unsure && !r.stepAtBoot && r.heardInTraceWindow() {
+		r.retraced++
+	}
 	r.booted = r.boot()
 	return r.booted
 }
@@ -325,11 +327,11 @@ func (r *rig) restartBack(d time.Duration, lost bool, ntp time.Duration) []Actio
 	r.e = restart(r.t, r.harness)
 	r.now = r.now.Add(-d)
 	r.bootAt = r.now
-	r.shown = time.Time{}
+	r.shown, r.firstOfRun, r.stepAtBoot = r.bootAt, true, false // the hub gives the trace, a step or none
 	if ntp > 0 && !r.momentaryActive() {
 		r.now = r.now.Add(ntp)
 		r.bootAt = r.now.Add(-30 * time.Second)
-		r.shown = r.bootAt.Add(-ntp)
+		r.shown, r.stepAtBoot = r.bootAt.Add(-ntp), true
 	}
 	if lost {
 		r.loseLastSave()
@@ -344,6 +346,7 @@ func (r *rig) restartBack(d time.Duration, lost bool, ntp time.Duration) []Actio
 	r.blur()
 	r.setApart()
 	r.booted = r.boot()
+	r.firstOfRun = false
 	return r.booted
 }
 
@@ -385,20 +388,25 @@ func TestRandomSequencesKeepTheAlarmInvariants(t *testing.T) {
 	if ordered < 10 {
 		t.Errorf("%d restarts checked on a state kept from before the clock went back, ordered by the boot time", ordered)
 	}
+	if all.retraced < 10 {
+		t.Errorf("%d restarts checked after a live step forward, the reboot not stepped, a state heard where the trace would date it", all.retraced)
+	}
 	if all.parted < 1 {
 		t.Errorf("no restored engine parted on a movement only it set aside")
 	}
-	t.Logf("checked: %d after the clock caught up, %d ordered by the boot time, %d after a step before the hub; %d comparisons ended on a movement set aside by one engine only",
-		caughtUp, ordered, stepped, all.parted)
+	t.Logf("checked: %d after the clock caught up, %d ordered by the boot time, %d after a step before the hub, %d after a live step the trace would take for one at boot; %d partings on a movement set aside by the restored engine only",
+		caughtUp, ordered, stepped, all.retraced, all.parted)
 }
 
 // The sequence where a restored engine first parted from the live one (28 October 2026):
 // a movement heard during an exit delay, set aside by the fork's Boot, then the clock set
 // back an hour while the engines ran, and two restarts. The live engine rings at the
-// second, the restored one does not, and it is right: the comparison ends at the first.
+// second, for that movement, the restored one does nothing about it, and it is right;
+// every other action of that restart is the same (see parting). A new fork starts from
+// the live engine after it.
 func TestTheShiftedSeed169PartsOnAMovementSetAsideByTheRestoredEngine(t *testing.T) {
-	if got := runRandom(t, 169, true); got.parted != 1 {
-		t.Fatalf("seed 169 shifted: %d comparisons ended, want 1", got.parted)
+	if got := runRandom(t, 169, true); got.parted < 1 {
+		t.Fatalf("seed 169 shifted: %d partings, want one at least", got.parted)
 	}
 }
 
@@ -428,7 +436,7 @@ func runRandom(t *testing.T, seed uint64, shifted bool) tally {
 	var twin *rig
 	parted := 0
 	for i, op := range ops {
-		if i >= at && twin == nil && parted == 0 && !r.blurredActive() && !r.staleBehind() && !r.staleStepped() {
+		if i >= at && twin == nil && !r.blurredActive() && !r.staleBehind() && !r.staleStepped() {
 			var booted []Action
 			twin, booted = r.fork()
 			if err := onlySiren(booted); err != nil {
@@ -439,13 +447,27 @@ func runRandom(t *testing.T, seed uint64, shifted bool) tally {
 		if twin != nil {
 			twin.reached = r.reached
 		}
-		apart := twin != nil && op.kind == opRestart && r.setAsideApart(twin)
-		as, err := r.step(op)
-		if apart && r.unsure {
-			twin, parted = nil, 1 // the two may part from here, both allowed
+		var p apartOn
+		var asIf *rig
+		if twin != nil && op.kind == opRestart {
+			if p = r.setAsideApart(twin); p.found {
+				asIf = r.asIf(twin)
+			}
 		}
+		as, err := r.step(op)
 		if err == nil && twin != nil {
-			err = sameActions(as, op.do(twin))
+			bs := op.do(twin)
+			if asIf != nil && r.unsure {
+				err = p.parting(as, bs, op.do(asIf))
+				if err == nil && describe(as) != describe(bs) {
+					// The two part from here, both allowed: the next fork starts from the
+					// live engine.
+					twin = nil
+					parted++
+				}
+			} else {
+				err = sameActions(as, bs)
+			}
 		}
 		if err != nil {
 			fail(i, err)
@@ -454,35 +476,16 @@ func runRandom(t *testing.T, seed uint64, shifted bool) tally {
 	if err := r.finish(); err != nil {
 		fail(len(ops)-1, err)
 	}
-	return tally{caughtUp: r.caughtUp, ordered: r.ordered, stepped: r.stepped, parted: parted}
+	return tally{caughtUp: r.caughtUp, ordered: r.ordered, stepped: r.stepped, retraced: r.retraced, parted: parted}
 }
 
 // tally counts, over the sequences, the restarts checked in the classes they must reach
 // (see rig.caughtUp, rig.ordered, rig.stepped) and the restored engines whose comparison
 // with the live one ended on a movement only one of them set aside (see setAsideApart).
-type tally struct{ caughtUp, ordered, stepped, parted int }
+type tally struct{ caughtUp, ordered, stepped, retraced, parted int }
 
 func (a tally) add(b tally) tally {
-	return tally{a.caughtUp + b.caughtUp, a.ordered + b.ordered, a.stepped + b.stepped, a.parted + b.parted}
-}
-
-// setAsideApart tells whether an active momentary sensor is set aside by one engine and
-// not the other: a Boot of the restored one set it aside, when the start of the mode
-// still told it from a movement dated since. At a restart the rig cannot check, the
-// other may take it for news and ring: the clock set back while the engines ran, the
-// start of the mode brought back no longer telling it (the limit written in
-// docs/engine.md, 28 October 2026), or set back at the restart, the boot time unknown or
-// the state dated since the system started (a state dated up to now is trusted). An
-// alarm too many, the restored engine right: from that restart on, the two may part.
-func (r *rig) setAsideApart(twin *rig) bool {
-	mine, theirs := r.e.Snapshot().SetAside, twin.e.Snapshot().SetAside
-	for s, sig := range r.states {
-		key := sensorKey(s.dev, s.sensor)
-		if !keepsTime(s.sensor) && sig.Active && mine[key].Equal(sig.Now) != theirs[key].Equal(sig.Now) {
-			return true
-		}
-	}
-	return false
+	return tally{a.caughtUp + b.caughtUp, a.ordered + b.ordered, a.stepped + b.stepped, a.retraced + b.retraced, a.parted + b.parted}
 }
 
 // step applies one input and checks what must hold after it.

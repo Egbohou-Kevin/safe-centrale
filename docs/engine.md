@@ -655,7 +655,18 @@ octobre 2026 (bout en bout par le hub : `internal/hub/clock_test.go`,
   saut paraissait daté avant celui du démarrage, donc nouveau : un mouvement ou un bris
   de vitre déjà entendu, encore actif, sonnait une seconde fois
   (`internal/engine/restart8_test.go`, et une nouvelle marche dont la trace sert
-  toujours).
+  toujours) ;
+- le hub donne la trace telle qu'elle est, même quand elle ne dit aucun saut (pas avant
+  le démarrage calculé), et le moteur la garde : `Boot` ne la prend pour un saut que
+  avant le démarrage, mais la même trace rendue plus tard reste celle d'un `Boot` déjà
+  fait. Corrigé le 28 octobre 2026 (relecture) : le hub ne la donnait qu'avec un saut au
+  démarrage. Un premier `Boot` sans saut ne gardait donc rien ; NTP avançant ensuite
+  l'horloge pendant la marche, la même trace, relue à un redémarrage du hub, tombait
+  avant le démarrage calculé et servait : un mouvement déjà entendu sonnait une seconde
+  fois (`internal/hub/clock_test.go`,
+  `TestARestartAfterALiveStepDoesNotRingAMovementHeardBefore` ; les séquences
+  aléatoires redémarrent dans une marche dont le redémarrage n'a pas sauté, après un
+  saut pendant la marche).
 
 Le prix accepté : un état gardé par le broker d'avant la coupure, daté moins d'un uptime
 après l'heure où l'horloge est repartie, est pris pour une nouvelle et peut donner une
@@ -723,10 +734,14 @@ mouvement avant le recul ne sonne pas, et il a raison ; le moteur qui ne l'avait
 inconnue (graine 2019, au-delà des 200 rejouées à chaque test) : tout état daté au plus
 maintenant est pris tel quel (voir plus haut). Aucune alerte n'est perdue ; la sonnerie
 de trop est celle de ces deux règles écrites.
-La comparaison des deux moteurs s'arrête donc à un redémarrage que les séquences ne
-vérifient pas, si un état momentané actif est écarté par un seul des deux
-(`setAsideApart`). Témoins : `internal/engine/restart8_test.go` (le mouvement écarté une
-fois ne sonne plus, celui jamais écarté sonne).
+À un redémarrage que les séquences ne vérifient pas, si un état momentané actif est
+écarté par un seul des deux moteurs (`setAsideApart`), la comparaison continue
+(`parting`, 28 octobre 2026, relecture) : seul le moteur restauré peut l'avoir écarté ;
+il doit faire tout ce que ferait le moteur vivant s'il gardait les mêmes états écartés,
+donc aucune autre alerte perdue ; et s'ils se séparent, le vivant envoie une alerte
+d'intrusion pour ce capteur et le restauré ne fait rien pour lui. Une nouvelle fourche
+part ensuite du moteur vivant. Témoins : `internal/engine/restart8_test.go` (le mouvement
+écarté une fois ne sonne plus, celui jamais écarté sonne) et la graine 169 décalée.
 
 Corrigé le 28 octobre 2026 : `pullBack` effaçait les heures entendues postérieures à
 maintenant, et un mode commencé après maintenant faisait prendre tel quel tout état
