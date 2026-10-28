@@ -527,3 +527,59 @@ func TestEveryProgramIsHardened(t *testing.T) {
 		})
 	}
 }
+
+// The clock at boot is taken after systemd-timesyncd set it forward to the last time it
+// saved, before any network (sysinit.target), so before NTP; once per boot. Its line,
+// the time then the uptime, is what the hub reads (sysclock.StartShown); the hub's
+// hardening leaves /run readable.
+func TestTheClockAtBootIsTakenBeforeNTP(t *testing.T) {
+	path := filepath.Join("system", "safehome-boot-clock.service")
+	u := readUnit(t, path)
+	if got := u.get(t, "Unit", "DefaultDependencies"); got != "no" {
+		t.Errorf("DefaultDependencies = %q: it would wait for sysinit.target, after which NTP may run", got)
+	}
+	if !slices.Contains(strings.Fields(u.get(t, "Unit", "After")), "systemd-timesyncd.service") {
+		t.Error("not after systemd-timesyncd.service, which sets the clock forward to the last time it saved")
+	}
+	if !slices.Contains(strings.Fields(u.get(t, "Unit", "Before")), "sysinit.target") {
+		t.Error("not before sysinit.target: the network, hence NTP, may come first")
+	}
+	if got := u.get(t, "Install", "WantedBy"); got != "sysinit.target" {
+		t.Errorf("WantedBy = %q", got)
+	}
+	if u.get(t, "Service", "Type") != "oneshot" || u.get(t, "Service", "RemainAfterExit") != "yes" {
+		t.Error("not a oneshot that stays: taken once per boot")
+	}
+	hub := readUnit(t, filepath.Join("systemd", "safehome-hub.service"))
+	for _, k := range []string{"InaccessiblePaths", "TemporaryFileSystem", "ProtectProc"} {
+		if v, ok := hub["Service"][k]; ok {
+			t.Errorf("the hub's unit sets %s=%q: check it still reads /run/safehome-boot-clock", k, v)
+		}
+	}
+
+	// The script, its paths and date replaced: it writes the time, then the uptime.
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "bin", "date"), "#!/bin/sh\n[ \"$1\" = +%s.%N ] && echo 1761644280.123456789\n")
+	if err := os.Chmod(filepath.Join(dir, "bin", "date"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "uptime"), "12.50 40.10\n")
+	run := u.get(t, "Service", "ExecStart")
+	script, ok := strings.CutPrefix(run, "/bin/sh -c '")
+	if !ok || !strings.HasSuffix(script, "'") {
+		t.Fatalf("ExecStart = %q, want /bin/sh -c '...'", run)
+	}
+	script = strings.NewReplacer("%%", "%", "/proc/uptime", filepath.Join(dir, "uptime"),
+		"/run/safehome-boot-clock", filepath.Join(dir, "boot-clock")).Replace(strings.TrimSuffix(script, "'"))
+	cmd := exec.Command("/bin/sh", "-c", script)
+	cmd.Env = append(os.Environ(), "PATH="+filepath.Join(dir, "bin")+":"+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "boot-clock")); err != nil || string(b) != "1761644280.123456789 12.50\n" {
+		t.Errorf("wrote %q (%v)", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "boot-clock.new")); err == nil {
+		t.Error("the file being written is left behind")
+	}
+}

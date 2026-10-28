@@ -190,10 +190,13 @@ done
 for u in "$BUNDLE"/deploy/systemd/*.service; do
 	put "$u" "$UNITS/$(basename "$u")" 644
 done
+# The clock as it reads at boot, before NTP (docs/engine.md): taken from the next boot on.
+put "$BUNDLE/deploy/system/safehome-boot-clock.service" "$UNITS/safehome-boot-clock.service" 644
 
 systemctl restart systemd-journald
 systemctl daemon-reexec # the hardware watchdog
 systemctl daemon-reload
+systemctl enable safehome-boot-clock
 systemctl enable mosquitto
 systemctl restart mosquitto
 

@@ -130,6 +130,7 @@ func TestInstallLaysEverythingAndStartsTheSite(t *testing.T) {
 		"etc/safehome/hub.json", "etc/safehome/cloud.secret", "etc/safehome/maint.json",
 		"etc/safehome/profiles/aqara-contact-mccgq11lm.json", "etc/safehome/maint.key",
 		"etc/systemd/system/safehome-hub.service", "etc/systemd/system/zigbee2mqtt.service",
+		"etc/systemd/system/safehome-boot-clock.service",
 		"etc/systemd/journald.conf.d/safehome.conf", "etc/systemd/system.conf.d/safehome-watchdog.conf",
 		"etc/mosquitto/mosquitto.conf",
 	} {
@@ -150,6 +151,7 @@ func TestInstallLaysEverythingAndStartsTheSite(t *testing.T) {
 		"bundle/safehome-hub check -config /etc/safehome/hub.json",
 		"bundle/safehome-maint check -config /etc/safehome/maint.json",
 		"systemctl daemon-reload",
+		"systemctl enable safehome-boot-clock",
 		"systemctl restart safehome-hub",
 		"systemctl restart safehome-agent",
 		"systemctl restart safehome-maint",

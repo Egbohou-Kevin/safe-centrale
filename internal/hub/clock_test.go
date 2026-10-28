@@ -173,3 +173,68 @@ func TestARestartWithTheClockSetBackTellsAStaleDoorByTheBootTime(t *testing.T) {
 		})
 	}
 }
+
+// A power cut while armed, NTP setting the clock forward before the hub starts: the
+// Pi started from back, five minutes behind, and the back door opened in its first
+// seconds, dated on that clock, rings (before 28 October 2026 it was dated before the
+// system's start on the clock set right and lost). Its state from before the power
+// cut, dated before back or more than the uptime after it, does not. The time read at
+// boot unknown, unreadable or not before the system's start (after it, after now), the
+// rule of the boot time alone holds: the stale door does not ring, one dated since the
+// system started does.
+func TestARestartAfterNTPSetTheClockForwardTellsADoorOpenedMeanwhile(t *testing.T) {
+	const window = 50 * time.Millisecond
+	back := t0.Add(5 * time.Minute) // after the opening, before the closing
+	known := func(at time.Time) func() (time.Time, bool) { return func() (time.Time, bool) { return at, true } }
+	cases := []struct {
+		name  string
+		shown func(start time.Time) func() (time.Time, bool)
+		since func(start time.Time) time.Time
+		rings bool
+	}{
+		{"opened before the step", func(time.Time) func() (time.Time, bool) { return known(back) },
+			func(time.Time) time.Time { return back.Add(5 * time.Second) }, true},
+		{"stale, before back", func(time.Time) func() (time.Time, bool) { return known(back) },
+			func(time.Time) time.Time { return t0 }, false},
+		{"stale, more than the uptime after back", func(time.Time) func() (time.Time, bool) { return known(back) },
+			func(time.Time) time.Time { return back.Add(time.Minute) }, false},
+		{"stale, unknown", func(time.Time) func() (time.Time, bool) { return nil },
+			func(time.Time) time.Time { return t0 }, false},
+		{"stale, unreadable", func(time.Time) func() (time.Time, bool) { return func() (time.Time, bool) { return back, false } },
+			func(time.Time) time.Time { return t0 }, false},
+		{"stale, read after the start", known, func(time.Time) time.Time { return t0 }, false},
+		{"stale, read after now", func(start time.Time) func() (time.Time, bool) { return known(start.Add(time.Hour)) },
+			func(time.Time) time.Time { return t0 }, false},
+		{"since the start, unknown", func(time.Time) func() (time.Time, bool) { return nil },
+			func(start time.Time) time.Time { return start.Add(-5 * time.Second) }, true},
+		{"since the start, read after now", func(start time.Time) func() (time.Time, bool) { return known(start.Add(time.Hour)) },
+			func(start time.Time) time.Time { return start.Add(-5 * time.Second) }, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			first := newRig(t, nil)
+			first.start()
+			first.device(devBack, contract.CapContact, "open")
+			first.clock.Advance(10 * time.Minute)
+			first.device(devBack, contract.CapContact, "closed")
+			first.keypad(contract.ValArm, "")
+			first.keypad(contract.ValArmNow, "")
+			first.mustBe(engine.ModeArmed)
+			first.stop()
+
+			start := first.clock.Now().Add(time.Minute) // the clock set right
+			second := newRigWith(t, start, first.store, func(d *Deps) {
+				d.Uptime = func() (time.Duration, bool) { return 20 * time.Second, true }
+				d.StartShown = c.shown(start)
+			}, func(c *Config) { c.BootWindow = window })
+			open := event(devBack, contract.CapContact, "open")
+			open.Since = contract.TSPtr(c.since(start))
+			second.send(contract.DeviceStateTopic(site, devBack, contract.CapContact), contract.TypeDeviceState, open)
+			second.start()
+			second.settle()
+			if got := len(eventsOf(second, contract.TypeAlarmTriggered)) == 1; got != c.rings {
+				t.Fatalf("alarm %v, want %v", got, c.rings)
+			}
+		})
+	}
+}

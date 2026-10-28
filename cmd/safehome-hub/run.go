@@ -160,6 +160,7 @@ func newHub(cfg hubconfig.Result, configPath string, deps hub.Deps) (*hub.Hub, e
 	deps.Clock = driver.SystemClock()
 	deps.ClockSynced = sysclock.Synced
 	deps.Uptime = sysclock.Uptime
+	deps.StartShown = sysclock.StartShown
 	deps.Contacts = func() ([]string, error) {
 		current, err := hubconfig.Load(configPath)
 		if err != nil {
