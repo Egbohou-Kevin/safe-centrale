@@ -583,3 +583,119 @@ func TestTheClockAtBootIsTakenBeforeNTP(t *testing.T) {
 		t.Error("the file being written is left behind")
 	}
 }
+
+// timesyncdClock is where systemd-timesyncd keeps its clock file (its StateDirectory=).
+const timesyncdClock = "/var/lib/systemd/timesync"
+
+// timesyncdBind returns the line of fstab-data that binds timesyncd's folder, or "".
+func timesyncdBind(t *testing.T) string {
+	t.Helper()
+	for _, l := range rawLines(t, filepath.Join("system", "fstab-data")) {
+		if f := strings.Fields(l); len(f) == 6 && !strings.HasPrefix(f[0], "#") && f[1] == timesyncdClock {
+			return l
+		}
+	}
+	return ""
+}
+
+func TestTimesyncdsClockFileIsKeptAcrossBoots(t *testing.T) {
+	// The system being read-only, timesyncd's clock file never moved from the day the
+	// system went read-only, and every boot started from that day (28 October 2026).
+	line := timesyncdBind(t)
+	if line == "" {
+		t.Fatalf("fstab-data binds nothing on %s: the clock starts from the day the system went read-only", timesyncdClock)
+	}
+	f := strings.Fields(line)
+	opts := strings.Split(f[3], ",")
+	if !strings.HasPrefix(f[0], "/data/") || f[2] != "none" || !slices.Contains(opts, "bind") {
+		t.Errorf("%q: want a bind from a folder of /data", line)
+	}
+	if !slices.Contains(opts, "nofail") {
+		t.Errorf("%q: without nofail, a missing folder would stop the boot", line)
+	}
+}
+
+// bindSources returns the source folders of the bind lines of fstab-data.
+func bindSources(t *testing.T) []string {
+	t.Helper()
+	var srcs []string
+	for _, l := range rawLines(t, filepath.Join("system", "fstab-data")) {
+		f := strings.Fields(l)
+		if len(f) == 6 && !strings.HasPrefix(f[0], "#") && slices.Contains(strings.Split(f[3], ","), "bind") {
+			srcs = append(srcs, f[0])
+		}
+	}
+	return srcs
+}
+
+// madeBefore reports whether a mkdir line of lines names dir before the first line that
+// starts with stop, and whether that line is there at all. "$ROOT" and quotes are ignored.
+func madeBefore(lines []string, dir, stop string) (made, stopped bool) {
+	for _, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), stop) {
+			return made, true
+		}
+		f := strings.Fields(strings.NewReplacer(`"`, "", "$ROOT", "").Replace(l))
+		if i := slices.Index(f, "mkdir"); i >= 0 && slices.Contains(f[i+1:], dir) {
+			made = true
+		}
+	}
+	return made, false
+}
+
+func TestMadeBeforeSeesAFolderMadeTooLate(t *testing.T) {
+	lines := []string{"mkdir -p /data/a", "# before mount -a", "mount -a", `mkdir -p "$ROOT/data/b"`}
+	if made, stopped := madeBefore(lines, "/data/a", "mount -a"); !made || !stopped {
+		t.Errorf("/data/a: made %v, stopped %v; want both", made, stopped)
+	}
+	if made, _ := madeBefore(lines, "/data/b", "mount -a"); made {
+		t.Error("/data/b is made after mount -a, yet seen as made before")
+	}
+	if made, _ := madeBefore([]string{`mkdir -p "$ROOT/data/b"`}, "/data/b", "mv"); !made {
+		t.Error(`"$ROOT/data/b" not seen as /data/b`)
+	}
+}
+
+func TestEveryBindSourceIsMadeBeforeItsLineIsMounted(t *testing.T) {
+	// A bind without its source fails; nofail keeps the boot going, but timesyncd requires
+	// the mounts of its StateDirectory= (systemd.exec(5)): the hub would run without NTP.
+	// On 28 October 2026 the virtual kit's prepare-pi.sh ran mount -a on the new line
+	// without its folder.
+	srcs := bindSources(t)
+	if len(srcs) < 4 {
+		t.Fatalf("fstab-data binds %v: want the three programs' folders and timesyncd's", srcs)
+	}
+	var docs []string
+	inStep2 := false
+	for _, l := range rawLines(t, filepath.Join("..", "docs", "systeme.md")) {
+		if strings.HasPrefix(l, "### ") {
+			inStep2 = strings.HasPrefix(l, "### 2. ")
+		}
+		if inStep2 {
+			docs = append(docs, l)
+		}
+	}
+	consumers := []struct {
+		name  string
+		lines []string
+		stop  string
+		srcs  []string
+	}{
+		{"vkit/prepare-pi.sh", rawLines(t, filepath.Join("..", "vkit", "prepare-pi.sh")), "mount -a", srcs},
+		{"docs/systeme.md, step 2", docs, "sudo mount -a", srcs},
+		// install.sh writes only timesyncd's line; it refuses to run without the others.
+		{"deploy/install.sh", rawLines(t, "install.sh"), `mv -f "$fstab.new" "$fstab"`, []string{"/data/timesync"}},
+	}
+	for _, c := range consumers {
+		for _, src := range c.srcs {
+			made, stopped := madeBefore(c.lines, src, c.stop)
+			if !stopped {
+				t.Errorf("%s: no line with %q", c.name, c.stop)
+				break
+			}
+			if !made {
+				t.Errorf("%s: %s is not made before %q", c.name, src, c.stop)
+			}
+		}
+	}
+}

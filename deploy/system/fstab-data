@@ -1,6 +1,10 @@
 # Lines to add to /etc/fstab: the third partition of the SD card holds everything that
 # must be written while the system itself stays read-only (docs/systeme.md).
-LABEL=safehome-data  /data                 ext4  defaults,noatime,commit=5  0  2
-/data/safehome       /var/lib/safehome     none  bind                       0  0
-/data/mosquitto      /var/lib/mosquitto    none  bind                       0  0
-/data/zigbee2mqtt    /var/lib/zigbee2mqtt  none  bind                       0  0
+LABEL=safehome-data  /data                      ext4  defaults,noatime,commit=5  0  2
+/data/safehome       /var/lib/safehome          none  bind                       0  0
+/data/mosquitto      /var/lib/mosquitto         none  bind                       0  0
+/data/zigbee2mqtt    /var/lib/zigbee2mqtt       none  bind                       0  0
+# The clock file of systemd-timesyncd, touched at each sync: the time it sets the clock
+# forward to at boot, before NTP. nofail: a bind that fails never stops the boot, the
+# clock then starts from the read-only layer's file (install.sh adds this line itself).
+/data/timesync       /var/lib/systemd/timesync  none  bind,nofail                0  0

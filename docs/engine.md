@@ -697,6 +697,12 @@ Limites connues (28 octobre 2026) :
   `sysinit.target`, `systemd-networkd` par exemple ; la vraie centrale utilise
   NetworkManager, qui démarre après), la perte d'avant tient : une intrusion dans les
   secondes après la mise sous tension, la porte refermée ensuite, n'alerte pas ;
+- l'heure lue au démarrage est en retard jusqu'à ce que NTP réponde (37 s mesurées) :
+  jusqu'au 28 octobre 2026, de tout le temps écoulé depuis le passage en lecture seule
+  (4 h 13 min mesurées ce jour-là, plus chaque jour) ; depuis, le fichier d'horloge de
+  `systemd-timesyncd` est gardé sur `/data` (`systeme.md`, étape 2) et le retard n'est
+  plus que l'écart depuis la dernière synchronisation (la durée de l'arrêt, plus une
+  minute au plus), une fois la mise à jour posée et la centrale redémarrée ;
 - une horloge avancée plusieurs fois après l'écriture de la trace, avant le hub (un
   second saut entre elle et NTP) : un état daté sur une horloge intermédiaire peut
   tomber au-delà d'un uptime après l'heure lue au démarrage, et se comparer encore à
