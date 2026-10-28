@@ -569,6 +569,18 @@ Le système étant en lecture seule, une mise à jour (sécurité, nouvelle vers
 programmes) se fait en **mode maintenance**. Procédure validée sur le Pi les 25 et 26 octobre 2026,
 en deux redémarrages :
 
+`deploy/update-hub.sh` la fait depuis l'ordinateur, en quatre phases (1 à 4 ci-dessous : sortir de la
+lecture seule, installer, y revenir, vérifier), avec un paquet fait **sans** `-s`. Mise à jour du
+28 octobre 2026 :
+
+```bash
+deploy/bundle.sh -v 0.2.1-601f598 dist/maj
+deploy/update-hub.sh 1
+deploy/update-hub.sh -v 0.2.1-601f598 2 dist/maj
+deploy/update-hub.sh 3
+deploy/update-hub.sh 4
+```
+
 1. **Avant tout**, garder une copie de `/boot/firmware/cmdline.txt` sur l'ordinateur, et noter
    l'état de l'alarme (armée ou non). Ne rien désarmer.
 2. **Sortir de la lecture seule.** `raspi-config nonint disable_overlayfs` ne reconnaît pas
