@@ -238,7 +238,7 @@ func TestDoWaitsAndDispatchesItsActions(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
 	err := r.loop.Do(r.ctx, func(now time.Time) []engine.Action {
-		return r.eng.Boot(now, []engine.Signal{{DeviceID: "dev_door", Sensor: engine.SensorContact, Active: true}})
+		return r.eng.Boot(now, time.Time{}, []engine.Signal{{DeviceID: "dev_door", Sensor: engine.SensorContact, Active: true}})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -373,7 +373,7 @@ func TestRestartRestoresTheStateAndTheScheduleKeepsRunning(t *testing.T) {
 		t.Fatalf("restored mode %s", second.eng.Mode())
 	}
 	second.start()
-	if err := second.loop.Do(second.ctx, func(now time.Time) []engine.Action { return second.eng.Boot(now, nil) }); err != nil {
+	if err := second.loop.Do(second.ctx, func(now time.Time) []engine.Action { return second.eng.Boot(now, time.Time{}, nil) }); err != nil {
 		t.Fatal(err)
 	}
 	second.clock.Advance(30 * time.Second) // the rest of the exit delay
@@ -412,7 +412,7 @@ func TestARestartDuringAnAlarmResumesTheSirenOnceThroughBoot(t *testing.T) {
 	if err := second.loop.Do(second.ctx, func(time.Time) []engine.Action { wake = second.eng.NextWake(); return nil }); err != nil || !wake.IsZero() {
 		t.Fatalf("a wake at %v before Boot (%v)", wake, err)
 	}
-	if err := second.loop.Do(second.ctx, func(now time.Time) []engine.Action { return second.eng.Boot(now, nil) }); err != nil {
+	if err := second.loop.Do(second.ctx, func(now time.Time) []engine.Action { return second.eng.Boot(now, time.Time{}, nil) }); err != nil {
 		t.Fatal(err)
 	}
 	var on []engine.SirenOn

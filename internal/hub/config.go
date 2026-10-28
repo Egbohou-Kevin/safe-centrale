@@ -127,6 +127,11 @@ type Deps struct {
 	// ClockSynced says whether the system clock is synchronised, for the heartbeat;
 	// known is false when it cannot tell. Nil leaves clock_ok out.
 	ClockSynced func() (synced, known bool)
+	// Uptime says how long the system has been up; ok is false when it cannot tell.
+	// The engine takes now less it for when the system started, to tell the device
+	// states the broker kept from before the clock went back (see engine.Boot). Nil, or
+	// unknown, keeps the rule without it.
+	Uptime func() (d time.Duration, ok bool)
 	// Contacts returns the ids of the site's contacts as saved now, which decide whose
 	// codes the hub takes. The configuration from the cloud may change them while the
 	// hub runs: during the installation mode it does not restart for it. Nil keeps the

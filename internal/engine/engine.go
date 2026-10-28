@@ -36,6 +36,11 @@ type Engine struct {
 	// Boot: applied to the saved state, that change may have been dropped there, and
 	// Boot must take it for this run's news (see learn).
 	early map[string]bool
+	// apartBefore are the sensors whose time was set apart (HeardAhead) when the state
+	// was restored: set apart by a run before, their time is on a clock older than the
+	// one the broker's states were dated on since, which the boot time cannot order
+	// (see older). Boot drops it.
+	apartBefore map[string]bool
 }
 
 // New creates a disarmed engine. newID produces incident identifiers (for example
@@ -72,6 +77,10 @@ func (e *Engine) Restore(s Snapshot) {
 	}
 	e.s = s
 	e.awaitingBoot = true
+	e.apartBefore = map[string]bool{}
+	for key := range s.HeardAhead {
+		e.apartBefore[key] = true
+	}
 }
 
 // Mode returns the current mode of the alarm.

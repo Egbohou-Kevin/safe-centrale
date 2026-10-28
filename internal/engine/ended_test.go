@@ -84,7 +84,7 @@ func TestADisarmEndsEveryAlarmOfItsArmingThatRanOut(t *testing.T) {
 	// Restarted in the middle, through the saved file: the memory of the first alarm
 	// is kept.
 	h.e = restart(t, h)
-	h.e.Boot(h.now, nil)
+	h.e.Boot(h.now, time.Time{}, nil)
 
 	as := h.cmd(CmdDisarm, goodCode("u_owner"))
 	h.mustBe(ModeDisarmed)
@@ -219,7 +219,7 @@ func TestArmedSinceStaysTheArmingThroughAnAlarm(t *testing.T) {
 	h.advance(15 * time.Second)
 	h.mustBe(ModeTriggered)
 	h.e = restart(t, h)
-	h.e.Boot(h.now, nil)
+	h.e.Boot(h.now, time.Time{}, nil)
 	for range 4 {
 		h.advance(25 * time.Second)
 	}
@@ -228,7 +228,7 @@ func TestArmedSinceStaysTheArmingThroughAnAlarm(t *testing.T) {
 		t.Fatalf("armed since %v, want the arming at %v", s.Since, armedAt)
 	}
 	h.e = restart(t, h)
-	h.e.Boot(h.now, nil)
+	h.e.Boot(h.now, time.Time{}, nil)
 	h.breakWindow()
 	h.advance(5 * time.Minute)
 	h.mustBe(ModeArmed)

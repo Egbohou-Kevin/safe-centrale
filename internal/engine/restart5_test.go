@@ -41,7 +41,7 @@ var heardBeforeTheRestart = []heardThenRestarted{
 	{"a movement that rang until the siren ran out", func(h *harness) Signal {
 		h.cfg.SirenCycle, h.cfg.SirenPause, h.cfg.SirenCycles = 20*time.Second, 10*time.Second, 2
 		h.e = restart(h.t, h)
-		h.e.Boot(h.now, nil)
+		h.e.Boot(h.now, time.Time{}, nil)
 		h.armed()
 		h.advance(30 * time.Second)
 		moved := h.now
@@ -61,8 +61,8 @@ var heardBeforeTheRestart = []heardThenRestarted{
 		return at(panic_, SensorPanic, true, pressed)
 	}},
 	// Opened a moment before it was closed, later than the clock went back to: a door
-	// opened before that cannot be told from one opened while the hub was starting, a
-	// limit written in docs/engine.md (28 October 2026).
+	// opened before that is told from one opened while the hub was starting by the boot
+	// time only, which these tests do not give (see restart6_test.go).
 	{"a door closed after the broker's last save", func(h *harness) Signal {
 		opened := h.now
 		h.open(back)
@@ -87,7 +87,7 @@ func TestARestartWithTheClockSetBackDoesNotActOnWhatItHeard(t *testing.T) {
 			mode := h.e.Mode()
 			h.e = restart(t, h)
 			h.now = h.now.Add(-d)
-			as := h.e.Boot(h.now, []Signal{sig})
+			as := h.e.Boot(h.now, time.Time{}, []Signal{sig})
 			if err := onlySiren(as); err != nil {
 				t.Errorf("%s, the clock %v back: %v", c.name, d, err)
 			}
@@ -100,7 +100,7 @@ func TestARestartWithTheClockSetBackDoesNotActOnWhatItHeard(t *testing.T) {
 			h.now = h.now.Add(d + time.Minute)
 			h.e.Handle(Tick{Now: h.now})
 			h.e = restart(t, h)
-			if err := onlySiren(h.e.Boot(h.now, []Signal{sig})); err != nil {
+			if err := onlySiren(h.e.Boot(h.now, time.Time{}, []Signal{sig})); err != nil {
 				t.Errorf("%s, the clock set right: %v", c.name, err)
 			}
 		}
@@ -118,7 +118,7 @@ func TestARestartWithTheClockSetBackActsOnWhatIsNew(t *testing.T) {
 			h.e = restart(t, h)
 			h.now = h.now.Add(-d)
 			sig.Now = h.now.Add(-5 * time.Second)
-			as := h.e.Boot(h.now, []Signal{sig})
+			as := h.e.Boot(h.now, time.Time{}, []Signal{sig})
 			if len(alerts(as)) == 0 && len(eventsOf[Triggered](as)) == 0 && len(eventsOf[EntryDelayStarted](as)) == 0 {
 				t.Errorf("%s again, the clock %v back: %v", c.name, d, as)
 			}
@@ -133,9 +133,9 @@ func TestARestartWithTheClockSetBackActsOnWhatIsNew(t *testing.T) {
 // back, and only as far as the last time the engine was handed plus the step: a clock
 // that ran on, or a hub quiet before the step, left them apart for good, and the stale state of a door rang at the next
 // restart. A step short of a time heard leaves it apart: the clock has not caught up.
-// A restart then, the state the broker kept now dated before the clock, is the limit
-// written in docs/engine.md: it cannot be told from a state dated while the hub was
-// starting, and is not checked here.
+// A restart then, the state the broker kept now dated before the clock, is told from a
+// state dated while the hub was starting by the boot time only, which these tests do
+// not give (see restart6_test.go): not checked here.
 func TestTimesHeardBeforeTheClockWentBackCountAgainOnceItCatchesUp(t *testing.T) {
 	type landing struct {
 		name string
@@ -153,7 +153,7 @@ func TestTimesHeardBeforeTheClockWentBackCountAgainOnceItCatchesUp(t *testing.T)
 					stop := h.now
 					h.e = restart(t, h)
 					h.now = h.now.Add(-d)
-					h.e.Boot(h.now, []Signal{sig})
+					h.e.Boot(h.now, time.Time{}, []Signal{sig})
 					key := sensorKey(sig.DeviceID, sig.Sensor)
 					ref, apart := h.e.Snapshot().HeardAhead[key]
 					if !apart {
@@ -174,7 +174,7 @@ func TestTimesHeardBeforeTheClockWentBackCountAgainOnceItCatchesUp(t *testing.T)
 						continue
 					}
 					h.e = restart(t, h)
-					if err := onlySiren(h.e.Boot(h.now, []Signal{sig})); err != nil {
+					if err := onlySiren(h.e.Boot(h.now, time.Time{}, []Signal{sig})); err != nil {
 						t.Errorf("%s: %v", name, err)
 					}
 					if h.e.Mode() != mode {

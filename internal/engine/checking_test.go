@@ -80,6 +80,6 @@ func TestTheCodeCheckHoldIsBounded(t *testing.T) {
 	h.codeTyped("cmd-lost")
 	h.e = restart(t, h)
 	h.now = end.Add(time.Second)
-	h.e.Boot(h.now, nil)
+	h.e.Boot(h.now, time.Time{}, nil)
 	h.mustBe(ModeTriggered)
 }

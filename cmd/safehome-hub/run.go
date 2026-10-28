@@ -159,6 +159,7 @@ func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr
 func newHub(cfg hubconfig.Result, configPath string, deps hub.Deps) (*hub.Hub, error) {
 	deps.Clock = driver.SystemClock()
 	deps.ClockSynced = sysclock.Synced
+	deps.Uptime = sysclock.Uptime
 	deps.Contacts = func() ([]string, error) {
 		current, err := hubconfig.Load(configPath)
 		if err != nil {
