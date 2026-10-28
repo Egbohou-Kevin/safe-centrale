@@ -728,8 +728,9 @@ Choix faits, à connaître :
 
 Pas encore codé :
 
-- Le canal application côté cloud : l'application n'existe pas encore. Le canal
-  WhatsApp, lui, est codé dans le cloud (dépôt `safeHome-cloud`), éteint tant que le
+- Le canal application côté cloud existe (l'application Android est en essai depuis le
+  28 octobre 2026). Le canal
+  WhatsApp est codé dans le cloud (dépôt `safeHome-cloud`), éteint tant que le
   compte Meta n'existe pas : le cloud répond alors `failed` et l'escalade passe au GSM.
 
 Les liens de `system.health` viennent chacun de leur programme : le GSM et les lignes
