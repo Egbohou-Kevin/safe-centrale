@@ -475,6 +475,46 @@ func TestRefusals(t *testing.T) {
 	}
 }
 
+// A version beyond what the cloud can number (a mistake, or a forged message) is
+// refused and never kept: kept, it would make every later configuration "older".
+func TestAHugeVersionIsRefusedAndTheNextOneStillTaken(t *testing.T) {
+	r := start(t, DefaultConfig(site, 3))
+	r.waitAnswer(1)
+	r.alarm(contract.StateTriggered) // not quiet: what is kept waits
+	r.config(phoneConfig(8))
+	r.config(phoneConfig(contract.MaxConfigVersion + 1))
+	if d := r.waitAnswer(2); d.Status != contract.ConfigRejected || d.Version != contract.MaxConfigVersion+1 ||
+		!strings.Contains(d.Reason, "version") {
+		t.Fatalf("%+v", d)
+	}
+	if !strings.Contains(r.logs.String(), "refused an invalid configuration") {
+		t.Fatalf("the refusal is logged:\n%s", r.logs.String())
+	}
+	r.config(phoneConfig(9))
+	r.sent()
+	if _, n := r.broker.last(); n != 2 {
+		t.Fatalf("version 9 is kept without a word, not refused as older: %d answers", n)
+	}
+	if len(r.saved) != 2 || r.saved[0].Version != 8 || r.saved[1].Version != 9 {
+		t.Fatalf("%+v", r.saved)
+	}
+}
+
+// The first configuration, nothing kept yet, is bounded as well.
+func TestAHugeFirstVersionIsRefused(t *testing.T) {
+	r := start(t, DefaultConfig(site, 0))
+	r.alarm(contract.StateTriggered)
+	r.config(phoneConfig(contract.MaxConfigVersion + 1))
+	if d := r.waitAnswer(1); d.Status != contract.ConfigRejected || d.Version != contract.MaxConfigVersion+1 {
+		t.Fatalf("%+v", d)
+	}
+	r.config(phoneConfig(contract.MaxConfigVersion))
+	r.sent()
+	if len(r.saved) != 1 || r.saved[0].Version != contract.MaxConfigVersion {
+		t.Fatalf("%+v", r.saved)
+	}
+}
+
 func TestAConfigurationThatCouldNotBeLoadedIsRefusedAtStart(t *testing.T) {
 	cfg := DefaultConfig(site, 0)
 	cfg.Refused, cfg.RefusedBecause = 4, "escalation: there must be an owner"

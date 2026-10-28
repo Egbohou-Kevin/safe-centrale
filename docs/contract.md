@@ -705,7 +705,7 @@ et en données mobiles son forfait vidéo. Le cloud envoie le tout à chaque cha
 
 | Type | Topic | Contenu |
 |---|---|---|
-| `config.set` | `config/set` | `version` (≥ 1, croît à chaque changement), et seulement ce que le cloud règle : `site_name`, `contacts` (`id`, `name`, `role`, `channels`, `phone`), `closing` (jour ou `daily` → `HH:MM` ou `off`), `exit_delay_s`, `entry_delay_s`, `video` (`quota_mb`, `max_s`) |
+| `config.set` | `config/set` | `version` (de 1 à 2 147 483 647, croît à chaque changement), et seulement ce que le cloud règle : `site_name`, `contacts` (`id`, `name`, `role`, `channels`, `phone`), `closing` (jour ou `daily` → `HH:MM` ou `off`), `exit_delay_s`, `entry_delay_s`, `video` (`quota_mb`, `max_s`) |
 | `config.applied` | `config/applied` (retenu) | `version`, `status` (`applied`, `rejected`), `reason` |
 
 ```json
@@ -735,6 +735,11 @@ et en données mobiles son forfait vidéo. Le cloud envoie le tout à chaque cha
   `manager`, `other`. `sms` et `call` demandent un numéro au format international
   (`+228...`). `quota_mb` de 0 à 8 388 608. `max_s` ne dépasse pas la plus longue
   session vidéo.
+- `version` : le cloud compte les secondes depuis le 1er janvier 2026 (au moins la
+  version précédente plus 1), dans un entier de 32 bits, ce qui tient jusqu'en 2094.
+  Une version au-delà de 2 147 483 647 est refusée (`rejected`, la raison le dit) et
+  n'est pas gardée : gardée, elle ferait refuser comme « plus ancienne » toute
+  configuration suivante. La centrale le note dans son journal.
 - `quota_mb` et `max_s` ne valent qu'en données mobiles ; en liaison fixe, le site les
   ignore.
 - La centrale vérifie la configuration avec ses fichiers, la garde, puis redémarre
