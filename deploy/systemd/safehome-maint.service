@@ -39,6 +39,15 @@ LockPersonality=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 CapabilityBoundingSet=
 MemoryDenyWriteExecute=yes
+# Common settings (security study, 28 October 2026): native system calls only, files
+# private to safehome (UMask; every reader of them runs as safehome or root), no other
+# user's process seen in /proc, the hostname never changed.
+SystemCallArchitectures=native
+UMask=0077
+ProtectProc=invisible
+ProtectHostname=yes
+# No ProcSubset: ssh runs under it, not yet tried that way on the Pi. No ProtectClock:
+# it would restrict /dev to a list.
 
 [Install]
 WantedBy=multi-user.target

@@ -64,8 +64,33 @@ personnalité, et seulement les sockets Unix, IP et netlink. Aucune n'a de capac
 la console (`CAP_NET_BIND_SERVICE`, pour sa page sur le port 80). Leur mémoire n'est
 jamais à la fois inscriptible et exécutable, sauf pour la vidéo (go2rtc et ffmpeg). La
 centrale, l'agent et l'adaptateur Zigbee, qui n'ouvrent aucun appareil, ont un `/dev`
-privé. `ProtectClock` et `PrivateDevices` ailleurs ne sont pas mis : ils fermeraient les
-ports série, les broches, le bus et la caméra (un test de `deploy` le vérifie).
+privé. `PrivateDevices` ailleurs n'est pas mis : il fermerait les ports série, les broches, le
+bus et la caméra (un test de `deploy` le vérifie).
+
+Réglages communs depuis l'étude de sécurité de la centrale (28 octobre 2026) : chaque unité
+`safehome-*` n'accepte que les appels système natifs (`SystemCallArchitectures=native`), crée ses
+fichiers privés (`UMask=0077` : tout ce qu'ils écrivent est lu par `safehome` ou `root`), ne voit pas
+les processus des autres utilisateurs (`ProtectProc=invisible`) et ne peut pas changer le nom de la
+machine (`ProtectHostname=yes`). Le reste dépend de ce que fait le code, et un test de `deploy`
+le lit dans le code (`go list` pour linux/arm64), pas dans une liste :
+
+| Réglage | Posé sur | Pas posé, et pourquoi |
+|---|---|---|
+| `ProcSubset=pid` (dans `/proc`, seulement les processus) | agent, GSM, Zigbee, batterie | centrale (`sysclock` lit `/proc/uptime`), console (le point d'accès lit `/proc/sys/net/ipv4/conf`), vidéo et maintenance (go2rtc, ffmpeg, ssh : pas encore essayé sur le Pi) |
+| `ProtectClock=yes` | agent, Zigbee (leur `/dev` est déjà privé) | centrale et vidéo (son filtre bloque `adjtimex`, que `sysclock` appelle pour savoir si NTP a réglé l'heure), GSM, batterie, console, maintenance (il implique `DeviceAllow=char-rtc r`, qui réduit `/dev` à une liste : port série, broches, bus fermés) ; `safehome-boot-clock` lit l'heure et ne la règle pas, et n'est pas un démon |
+| `IPAddressDeny=any`, `IPAddressAllow=localhost` | centrale, Zigbee, batterie (le seul broker local) | agent (le cloud), GSM, maintenance (le bastion), console (les téléphones), vidéo (les caméras) |
+
+Les deux unités qui font tourner du code tiers sont cloisonnées : `zigbee2mqtt.service` (Node) a
+`ProtectSystem=strict`, n'écrit que dans son dossier de données `/var/lib/zigbee2mqtt` (celui
+qu'`install.sh` donne à `safehome`) et ne voit ni `/etc/safehome` ni `/var/lib/safehome`
+(`InaccessiblePaths=`) ; son `/dev` reste entier pour la clé (ni `PrivateDevices`, ni
+`DevicePolicy`, ni `ProtectClock`). `safehome-video.service` (go2rtc, ffmpeg) ne voit de
+`/etc/safehome` que `video.json` : un dossier vide par-dessus (`TemporaryFileSystem=`), le fichier
+remonté en lecture seule (`BindReadOnlyPaths=`, qui demande un point de montage qu'un dossier
+`InaccessiblePaths=` ne peut pas tenir). Son `/var/lib/safehome` reste ouvert : le programme y
+verrouille `video.pid`, y écrit `photos/` pour l'agent et y lit `site-config.json`, réécrit par
+renommage (un fichier remonté resterait l'ancien). Le séparer des secrets de ce dossier (`code-key`,
+`access.json`) demande de déplacer ces fichiers : un lot à part.
 
 ## Disposition de la carte SD (32 Go)
 
@@ -815,6 +840,28 @@ pose : `findmnt /var/lib/systemd/timesync` (la partition 3),
 `systemctl show systemd-timesyncd -p After -p Requires` (le montage y est, par
 `StateDirectory=`), `systemctl is-active systemd-timesyncd` (`active`), `systemctl --failed`
 vide, et l'heure de `/run/safehome-boot-clock` proche de l'heure réelle après un redémarrage.
+
+À vérifier sur le Pi à la première mise à jour qui pose le durcissement des unités (28 octobre 2026,
+étude de sécurité de la centrale ; le retour arrière des unités remet les anciennes si un service
+ne tient pas) :
+
+1. `systemd-analyze verify /etc/systemd/system/safehome-*.service /etc/systemd/system/zigbee2mqtt.service`
+   ne dit rien (une option inconnue de cette version de systemd y apparaîtrait) ;
+2. `systemctl --failed` vide, et `systemctl is-active` de chaque service activé dit `active` ;
+3. `systemd-analyze security safehome-hub zigbee2mqtt safehome-video` : noter le score de chacun
+   avant et après, dans ce document ;
+4. Zigbee2MQTT voit la clé : `journalctl -u zigbee2mqtt -b` sans erreur de port série, un capteur
+   déclenché arrive à la centrale (`journalctl -u safehome-hub -f`), et
+   `sudo -u safehome ls /var/lib/zigbee2mqtt` montre `database.db` mis à jour ;
+5. Zigbee2MQTT ne voit plus nos secrets : `sudo nsenter -t $(systemctl show -p MainPID --value zigbee2mqtt) -m ls /etc/safehome /var/lib/safehome`
+   refuse les deux ;
+6. la vidéo : une photo d'alarme prise et envoyée (`journalctl -u safehome-video -u safehome-agent -b`),
+   et `nsenter … -m ls /etc/safehome` sur son PID ne montre que `video.json` ;
+7. la centrale lit toujours l'état de l'heure : une fois `timedatectl` à
+   `System clock synchronized: yes`, son battement de cœur porte `clock_ok: true` (un champ absent
+   veut dire que `adjtimex` lui est refusé) ;
+8. la batterie (si posée) : `journalctl -u safehome-power -b` lit le module (secteur, charge), la
+   GSM (si posée) envoie un SMS d'essai, la maintenance ouvre son tunnel sur demande.
 
 Conséquence : **pas de mises à jour automatiques** (elles seraient effacées au
 redémarrage). La centrale n'est pas joignable depuis internet (derrière la box ou
