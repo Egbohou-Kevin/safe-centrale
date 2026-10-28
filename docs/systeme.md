@@ -587,6 +587,20 @@ en deux redémarrages :
 4. **Vérifier l'heure** (`timedatectl`) : le 26 octobre, le Pi n'avait ni DNS ni heure juste dans ce
    mode, et `apt` ou TLS échouent avec une heure fausse. Tout est revenu après le second
    redémarrage. Sans heure juste, ne lancer ni `apt` ni l'installation.
+   Cause trouvée le 28 octobre 2026 : `/` étant encore en lecture seule au démarrage, NetworkManager
+   n'écrit pas `/etc/resolv.conf` (il reste sans `nameserver`) ; il a pourtant le DNS de la box
+   dans `/run/NetworkManager/resolv.conf`. Après le remontage en écriture :
+
+   ```bash
+   sudo cp /run/NetworkManager/resolv.conf /etc/resolv.conf
+   sudo systemctl restart systemd-timesyncd   # synchronisée en quelques secondes
+   ```
+
+   Ce fichier reste ensuite sur le disque : la maintenance suivante n'en a plus besoin.
+   **Un changement de `/etc/safehome` fait hors maintenance est perdu au redémarrage** (il n'est
+   que dans la mémoire de l'overlay) : le 28 octobre, la bascule de l'agent vers le cloud du
+   serveur (`agent.json`, faite à 02:22 en lecture seule) a disparu au premier redémarrage et
+   l'agent est revenu au cloud du Mac ; refaite en maintenance, elle tient.
 5. **Copier le paquet après ce redémarrage** (pas avant : en lecture seule, il disparaîtrait), le
    faire **sans** `-s` quand la configuration du site est déjà sur la centrale (aucun secret dans le
    paquet), puis `sudo ./safehome/deploy/install.sh`. Garder d'abord une copie des unités systemd
