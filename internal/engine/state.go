@@ -112,6 +112,12 @@ type Snapshot struct {
 	// the clock did since (a mode's start brought back by a clock set back no longer
 	// tells them, see older). Hearing the sensor drops its entry.
 	SetAside map[string]time.Time `json:"set_aside,omitempty"`
+	// BootShown is the Shown the last Boot was given (see Booted), zero when unknown: the
+	// trace of the system's start, written once per system run to the nanosecond. Given
+	// again, the hub restarted within the same run, after a Boot that already took the
+	// states dated before NTP set the clock forward; NTP may have set it forward again
+	// since, live, which the trace would take for that first step (see Boot).
+	BootShown time.Time `json:"boot_shown,omitzero"`
 
 	// Memory of the last alarm, kept after the system goes back to armed.
 	LastTrigger   *Cause    `json:"last_trigger,omitempty"`

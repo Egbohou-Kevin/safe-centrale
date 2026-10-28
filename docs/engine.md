@@ -644,7 +644,29 @@ octobre 2026 (bout en bout par le hub : `internal/hub/clock_test.go`,
   ou après maintenant (posée avant le recul) ne s'ordonne pas avec un tel état ;
 - la trace absente (unité pas encore posée, ou pas encore de redémarrage depuis),
   illisible, ou qui n'est pas avant le démarrage calculé (pas de saut, ou une lecture
-  fausse : après lui, après maintenant), la règle de l'heure de démarrage seule tient.
+  fausse : après lui, après maintenant), la règle de l'heure de démarrage seule tient ;
+- la trace ne sert qu'au premier `Boot` d'une marche du système : la sauvegarde garde
+  celle du dernier `Boot` (`boot_shown`, à la nanoseconde), et la même trace rendue de
+  nouveau dit un hub redémarré dans la même marche, dont un `Boot` a déjà pris les états
+  datés avant le saut. Corrigé le 28 octobre 2026, trouvé par les séquences aléatoires
+  décalées (graine 455) : NTP avançant l'horloge pendant la marche (internet revenu des
+  heures après le démarrage), le démarrage calculé avançait avec elle, pas l'heure
+  affichée au démarrage. À un redémarrage du hub ensuite, tout état entendu avant ce
+  saut paraissait daté avant celui du démarrage, donc nouveau : un mouvement ou un bris
+  de vitre déjà entendu, encore actif, sonnait une seconde fois
+  (`internal/engine/restart8_test.go`, et une nouvelle marche dont la trace sert
+  toujours) ;
+- le hub donne la trace telle qu'elle est, même quand elle ne dit aucun saut (pas avant
+  le démarrage calculé), et le moteur la garde : `Boot` ne la prend pour un saut que
+  avant le démarrage, mais la même trace rendue plus tard reste celle d'un `Boot` déjà
+  fait. Corrigé le 28 octobre 2026 (relecture) : le hub ne la donnait qu'avec un saut au
+  démarrage. Un premier `Boot` sans saut ne gardait donc rien ; NTP avançant ensuite
+  l'horloge pendant la marche, la même trace, relue à un redémarrage du hub, tombait
+  avant le démarrage calculé et servait : un mouvement déjà entendu sonnait une seconde
+  fois (`internal/hub/clock_test.go`,
+  `TestARestartAfterALiveStepDoesNotRingAMovementHeardBefore` ; les séquences
+  aléatoires redémarrent dans une marche dont le redémarrage n'a pas sauté, après un
+  saut pendant la marche).
 
 Le prix accepté : un état gardé par le broker d'avant la coupure, daté moins d'un uptime
 après l'heure où l'horloge est repartie, est pris pour une nouvelle et peut donner une
@@ -704,6 +726,22 @@ mouvement commencé avant le mode sur l'ancienne horloge, toujours actif et que 
 n'a donc jamais écarté, est pris pour nouveau au redémarrage suivant, avant que
 l'horloge ne rattrape le début du mode : une alarme de trop, plutôt qu'un vrai
 mouvement perdu.
+
+Les séquences aléatoires l'atteignent (28 octobre 2026, `internal/engine/random_test.go`,
+graine 169 des séquences décalées) : un moteur restauré dont un `Boot` avait écarté le
+mouvement avant le recul ne sonne pas, et il a raison ; le moteur qui ne l'avait jamais
+écarté sonne. De même pour un redémarrage à horloge reculée, l'heure de démarrage
+inconnue (graine 2019, au-delà des 200 rejouées à chaque test) : tout état daté au plus
+maintenant est pris tel quel (voir plus haut). Aucune alerte n'est perdue ; la sonnerie
+de trop est celle de ces deux règles écrites.
+À un redémarrage que les séquences ne vérifient pas, si un état momentané actif est
+écarté par un seul des deux moteurs (`setAsideApart`), la comparaison continue
+(`parting`, 28 octobre 2026, relecture) : seul le moteur restauré peut l'avoir écarté ;
+il doit faire tout ce que ferait le moteur vivant s'il gardait les mêmes états écartés,
+donc aucune autre alerte perdue ; et s'ils se séparent, le vivant envoie une alerte
+d'intrusion pour ce capteur et le restauré ne fait rien pour lui. Une nouvelle fourche
+part ensuite du moteur vivant. Témoins : `internal/engine/restart8_test.go` (le mouvement
+écarté une fois ne sonne plus, celui jamais écarté sonne) et la graine 169 décalée.
 
 Corrigé le 28 octobre 2026 : `pullBack` effaçait les heures entendues postérieures à
 maintenant, et un mode commencé après maintenant faisait prendre tel quel tout état

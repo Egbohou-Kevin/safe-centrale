@@ -238,3 +238,50 @@ func TestARestartAfterNTPSetTheClockForwardTellsADoorOpenedMeanwhile(t *testing.
 		})
 	}
 }
+
+// The hub restarts within a system run that NTP set forward 14 h while the hub ran
+// (internet back hours after the boot), the trace of the start telling no step at boot:
+// the movement heard during the exit delay, still active and kept by the broker, does
+// not ring again. Before 28 October 2026 the hub gave the trace only when it told a
+// step: the first Boot kept none, and the same trace, read again after the live step,
+// took every state heard before it for one dated before NTP set the clock at boot.
+// The positive case, a new system run whose trace tells a step, is
+// TestARestartAfterNTPSetTheClockForwardTellsADoorOpenedMeanwhile.
+func TestARestartAfterALiveStepDoesNotRingAMovementHeardBefore(t *testing.T) {
+	const window = 50 * time.Millisecond
+	const up = 20 * time.Minute // the system's uptime at the hub's first start
+	trace := func() (time.Time, bool) { return t0.Add(-up), true }
+	first := newRigWith(t, t0, nil, func(d *Deps) {
+		d.Uptime = func() (time.Duration, bool) { return up, true }
+		d.StartShown = trace
+	})
+	first.start()
+	first.keypad(contract.ValArm, "")
+	first.mustBe(engine.ModeArming)
+	first.clock.Advance(10 * time.Second)
+	heard := first.clock.Now()
+	first.device(devMotion, contract.CapMotion, "detected")
+	first.settle()
+	first.clock.Advance(2 * time.Minute)
+	first.mustBe(engine.ModeArmed)
+	first.clock.Set(first.clock.Now().Add(14 * time.Hour)) // NTP, live
+	first.clock.Advance(time.Minute)
+	first.settle()
+	first.mustBe(engine.ModeArmed)
+	first.stop()
+
+	ran := first.clock.Now().Sub(t0) - 14*time.Hour // the time that really passed
+	second := newRigWith(t, first.clock.Now(), first.store, func(d *Deps) {
+		d.Uptime = func() (time.Duration, bool) { return up + ran, true }
+		d.StartShown = trace
+	}, func(c *Config) { c.BootWindow = window })
+	moved := event(devMotion, contract.CapMotion, "detected")
+	moved.Since = contract.TSPtr(heard)
+	second.send(contract.DeviceStateTopic(site, devMotion, contract.CapMotion), contract.TypeDeviceState, moved)
+	second.start()
+	second.settle()
+	if got := eventsOf(second, contract.TypeAlarmTriggered); len(got) != 0 {
+		t.Fatalf("the movement heard before the live step rang again: %d alarm.triggered", len(got))
+	}
+	second.mustBe(engine.ModeArmed)
+}
