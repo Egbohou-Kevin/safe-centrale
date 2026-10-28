@@ -78,12 +78,14 @@ func TestTheConfigNeverShowsPhones(t *testing.T) {
 }
 
 func TestConfigAppliedValidate(t *testing.T) {
-	for _, ok := range []ConfigAppliedData{{Version: 3, Status: ConfigApplied}, {Version: 0, Status: ConfigRejected, Reason: "x"}} {
+	for _, ok := range []ConfigAppliedData{{Version: 3, Status: ConfigApplied}, {Version: 0, Status: ConfigRejected, Reason: "x"},
+		{Version: MaxConfigVersion, Status: ConfigApplied}} {
 		if err := ok.Validate(); err != nil {
 			t.Errorf("%+v: %v", ok, err)
 		}
 	}
-	for _, bad := range []ConfigAppliedData{{Version: 3, Status: "maybe"}, {Version: 3, Status: ConfigRejected}, {Version: -1, Status: ConfigApplied}} {
+	for _, bad := range []ConfigAppliedData{{Version: 3, Status: "maybe"}, {Version: 3, Status: ConfigRejected}, {Version: -1, Status: ConfigApplied},
+		{Version: MaxConfigVersion + 1, Status: ConfigRejected, Reason: "x"}} {
 		if bad.Validate() == nil {
 			t.Errorf("%+v accepted", bad)
 		}

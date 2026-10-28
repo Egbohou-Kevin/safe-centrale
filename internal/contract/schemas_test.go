@@ -381,6 +381,8 @@ func TestSchemasRejectInvalidMessages(t *testing.T) {
 		{"config with a bad closing time", "config-set.json", `{"version":2,"closing":{"mon":"25:00"}}`},
 		{"config with an unknown day", "config-set.json", `{"version":2,"closing":{"someday":"20:00"}}`},
 		{"applied with an unknown status", "config-applied.json", `{"version":2,"status":"maybe"}`},
+		{"applied with a version beyond 32 bits", "config-applied.json", `{"version":2147483648,"status":"applied"}`},
+		{"config with a version beyond 32 bits", "config-set.json", `{"version":2147483648}`},
 		{"unknown capability", "device-event.json", `{"device_id":"d","capability":"unknown","value":"x"}`},
 		{"value not allowed for the capability", "device-event.json", `{"device_id":"d","capability":"contact","value":"ajar"}`},
 		{"enumerated capability with a number", "device-event.json", `{"device_id":"d","capability":"contact","value":1}`},

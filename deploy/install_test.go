@@ -322,6 +322,44 @@ func TestARunAgainBeforeConfirmationKeepsThePreviousPrograms(t *testing.T) {
 	}
 }
 
+// A run cut short while it keeps a .prev leaves no .prev cut short, nor one left from an
+// earlier update for a program it had not reached yet: the next run, which keeps the .prev
+// it finds, would put back a broken program, or one older than the program that held.
+func TestARunCutShortLeavesNoBadWayBack(t *testing.T) {
+	r := newRig(t)
+	r.minimalSite()
+	r.mustRun()
+	bin := "usr/local/bin/"
+	held := must(os.ReadFile(r.path(bin + "safehome-hub")))
+	writeFile(t, r.path(bin+"safehome-power.prev"), "left from an earlier, confirmed update")
+	writeScript(t, filepath.Join(r.bundle, "bin", "safehome-hub"), "# the new hub\n"+fakeProgram)
+	cut := filepath.Join(filepath.Dir(r.root), "stubs", "cp")
+	writeScript(t, cut, `case "$*" in *safehome-hub.prev*) for a; do :; done; head -c 3 "$2" > "$a"; exit 1 ;; esac; exec /bin/cp "$@"`)
+	if out, _, err := r.run(); err == nil {
+		t.Fatalf("install.sh went on after its copy was cut:\n%s", out)
+	}
+	if err := os.Remove(cut); err != nil {
+		t.Fatal(err)
+	}
+	first, err := os.ReadFile(r.path(unconfirmed))
+	if err != nil || len(first) == 0 {
+		t.Fatalf("the run cut short left no mark naming it: %q (%v)", first, err)
+	}
+
+	r.mustRun() // phase 2 run again
+	if b, err := os.ReadFile(r.path(bin + "safehome-hub.prev")); err != nil || string(b) != string(held) {
+		t.Errorf("safehome-hub.prev = %q (%v), want the program that held", b, err)
+	}
+	for _, p := range []string{"safehome-power.prev", "safehome-hub.prev.new"} {
+		if r.exists(bin + p) {
+			t.Errorf("%s left: never a way back", p)
+		}
+	}
+	if again, _ := os.ReadFile(r.path(unconfirmed)); len(again) == 0 || string(again) == string(first) {
+		t.Errorf("mark %q after %q: each run names itself", again, first)
+	}
+}
+
 func TestABadProfileWithoutSiteFolderPutsThePreviousOnesBack(t *testing.T) {
 	r := newRig(t)
 	r.minimalSite()

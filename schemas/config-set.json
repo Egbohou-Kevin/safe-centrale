@@ -8,6 +8,7 @@
     "version": {
       "type": "integer",
       "minimum": 1,
+      "maximum": 2147483647,
       "description": "Croissante : le site refuse une version plus ancienne que celle appliquée"
     },
     "site_name": {

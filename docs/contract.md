@@ -739,7 +739,11 @@ et en données mobiles son forfait vidéo. Le cloud envoie le tout à chaque cha
   version précédente plus 1), dans un entier de 32 bits, ce qui tient jusqu'en 2094.
   Une version au-delà de 2 147 483 647 est refusée (`rejected`, la raison le dit) et
   n'est pas gardée : gardée, elle ferait refuser comme « plus ancienne » toute
-  configuration suivante. La centrale le note dans son journal.
+  configuration suivante. La centrale le note dans son journal. Son `config.applied`
+  porte alors la version 0, jamais celle reçue : le cloud lit `version` dans un entier
+  de 32 bits, où une version énorme pourrait retomber sur une vraie et la marquer
+  refusée ; 0 n'en nomme aucune (le cloud numérote à partir de 1). La version de
+  `config.applied` va de 0 à 2 147 483 647 (28 octobre 2026).
   Ce plafond ne ferme pas tout : une version forgée sous 2 147 483 647 mais loin
   devant l'horloge (par exemple 2 000 000 000) est encore gardée, et la centrale
   refuse ensuite toute vraie configuration jusqu'à ce que le cloud la rattrape
