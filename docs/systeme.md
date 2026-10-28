@@ -105,7 +105,10 @@ fichier remonté resterait l'ancien. Les secrets n'ont pas bougé : c'est la vid
 du cloud qui ont pris chacune un dossier. `install.sh` crée les trois (`safehome`, 0700) sur un
 site avec caméras ; à la première mise à jour il arrête la vidéo, copie dans `video/` l'état
 qu'elle gardait à la racine (`video.json`, `video_seq.json` et leurs `.prev`) et laisse les
-originaux pour un retour arrière ; il recopie dans `site/` une configuration de la racine plus
+originaux pour un retour arrière ; il refait cette copie quand la consommation de la racine est
+plus récente que celle de `video/` (la vidéo remise par un retour arrière l'a écrite depuis). La
+copie se fait à côté puis est renommée d'un coup : interrompue, elle laisse `video/` tel qu'il
+était, et le passage suivant la refait. Il recopie dans `site/` une configuration de la racine plus
 récente et différente (écrite seule par une centrale remise par un retour arrière). Un test de
 `deploy` lit ces dossiers dans le code (`videoconfig`, `siteconfig`) et rougit si la vidéo voit
 `code-key` ou `access.json`.

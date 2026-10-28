@@ -443,8 +443,10 @@ safehome-video run   -config /etc/safehome/video.json
   les premiers octets partent ; `stall_after` (30 s) : silence qui termine une session ;
   `probe_every` (5 min) : test des caméras.
 
-Il garde la consommation du mois dans le même dossier d'état (fichiers `video.json`,
-`video_seq.json` et leur copie `.prev`) et son propre fichier de pid (`video.pid`).
+Il garde la consommation du mois (fichiers `video.json`, `video_seq.json` et leur copie
+`.prev`) et son propre fichier de pid (`video.pid`) dans son dossier `video/` du dossier
+d'état ; à la racine, les copies d'avant le 28 octobre 2026 ne servent qu'au retour
+arrière (voir `systeme.md`, durcissement).
 Chaque go2rtc travaille dans un dossier privé de `/tmp`, effacé à la fin de la
 session.
 

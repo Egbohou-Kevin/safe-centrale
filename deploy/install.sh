@@ -297,17 +297,24 @@ fi
 # The video service's view of /var/lib/safehome (28 October 2026): its own state in
 # video/, the photos, and site/ with the configuration from the cloud; its unit binds
 # these three, nothing else (code key, access codes). The state it kept at the top
-# before is copied into video/ once, the service stopped first so that nothing it
-# writes meanwhile is lost; the top copies stay for a rollback (update-hub.sh), which
-# runs the earlier service on them.
+# before is copied into video/, the service stopped first so that nothing it writes
+# meanwhile is lost; the top copies stay for a rollback (update-hub.sh), which runs
+# the earlier service on them. So the copy is made again when the top usage is newer
+# than video/'s: a rolled back video wrote it since, and video/ is older. The copy is
+# built aside and renamed in whole: one cut short leaves video/ as it was (or absent),
+# and the next run makes it again.
 STATE="$ROOT/var/lib/safehome"
 if has video; then
-	if [ ! -d "$STATE/video" ]; then
+	if [ ! -d "$STATE/video" ] || { [ -f "$STATE/video.json" ] && [ "$STATE/video.json" -nt "$STATE/video/video.json" ]; }; then
 		! systemctl is-active -q safehome-video || systemctl stop safehome-video
-		mkdir "$STATE/video"
+		rm -rf "$STATE/video.new" "$STATE/video.old"
+		mkdir "$STATE/video.new"
 		for f in video.json video.json.prev video_seq.json video_seq.json.prev; do
-			[ ! -f "$STATE/$f" ] || cp -p "$STATE/$f" "$STATE/video/$f"
+			[ ! -f "$STATE/$f" ] || cp -p "$STATE/$f" "$STATE/video.new/$f"
 		done
+		[ ! -d "$STATE/video" ] || mv "$STATE/video" "$STATE/video.old"
+		mv "$STATE/video.new" "$STATE/video"
+		rm -rf "$STATE/video.old"
 	fi
 	mkdir -p "$STATE/photos" "$STATE/site"
 	# The hub writes both copies; a top one newer and different was written alone, by
