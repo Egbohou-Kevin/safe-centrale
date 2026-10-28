@@ -40,6 +40,22 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 CapabilityBoundingSet=
 # go2rtc and its children use little memory; a runaway one must not starve the alarm.
 MemoryMax=200M
+# Common settings (security study, 28 October 2026): native system calls only, files
+# private to safehome (UMask; every reader of them runs as safehome or root), no other
+# user's process seen in /proc, the hostname never changed.
+SystemCallArchitectures=native
+UMask=0077
+ProtectProc=invisible
+ProtectHostname=yes
+# No ProcSubset: go2rtc and ffmpeg run under it, not yet tried that way on the Pi. No
+# ProtectClock: its filter blocks adjtimex (sysclock), and it would restrict /dev to a
+# list (a camera). go2rtc and ffmpeg see none of /etc/safehome but video.json: an
+# empty folder over it, the file bound back read-only (a bind needs its mount point,
+# which an InaccessiblePaths= folder cannot hold). /var/lib/safehome stays open: the
+# program locks video.pid there, writes photos/ for the agent and reads
+# site-config.json (rewritten by rename, so a bound file would go stale).
+TemporaryFileSystem=/etc/safehome:ro
+BindReadOnlyPaths=/etc/safehome/video.json
 
 [Install]
 WantedBy=multi-user.target

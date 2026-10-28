@@ -492,9 +492,10 @@ func TestTheConsolesNetworkRoutesNothing(t *testing.T) {
 	}
 }
 
-// Every unit of ours closes what the programs never need. ProtectClock and, where a
+// Every unit of ours closes what the programs never need. DeviceAllow and, where a
 // device is opened, PrivateDevices are left out: they restrict /dev to a list, which
-// would close the serial ports, the battery module's lines and bus, and the camera.
+// would close the serial ports, the battery module's lines and bus, and the camera
+// (ProtectClock, which implies a DeviceAllow, has its own test below).
 func TestEveryProgramIsHardened(t *testing.T) {
 	devices := []string{"gsm", "power", "video", "console", "maint"}
 	for _, p := range programs(t) {
@@ -517,7 +518,7 @@ func TestEveryProgramIsHardened(t *testing.T) {
 				t.Error("MemoryDenyWriteExecute is for every Go program (not go2rtc and ffmpeg)")
 			}
 			for _, line := range rawLines(t, path) {
-				if strings.HasPrefix(line, "ProtectClock=") || strings.HasPrefix(line, "DeviceAllow=") {
+				if strings.HasPrefix(line, "DeviceAllow=") || strings.HasPrefix(line, "DevicePolicy=") {
 					t.Errorf("%s restricts /dev to a list", line)
 				}
 				if line == "PrivateDevices=yes" && slices.Contains(devices, p) {
@@ -551,7 +552,8 @@ func TestTheClockAtBootIsTakenBeforeNTP(t *testing.T) {
 		t.Error("not a oneshot that stays: taken once per boot")
 	}
 	hub := readUnit(t, filepath.Join("systemd", "safehome-hub.service"))
-	for _, k := range []string{"InaccessiblePaths", "TemporaryFileSystem", "ProtectProc"} {
+	// ProtectProc and ProcSubset touch /proc only, not /run.
+	for _, k := range []string{"InaccessiblePaths", "TemporaryFileSystem"} {
 		if v, ok := hub["Service"][k]; ok {
 			t.Errorf("the hub's unit sets %s=%q: check it still reads /run/safehome-boot-clock", k, v)
 		}

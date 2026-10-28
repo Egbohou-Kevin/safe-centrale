@@ -385,6 +385,12 @@ Si une centrale est détruite ou volée :
   SSH sortant vers notre bastion, sur demande, une heure au plus, visible du
   propriétaire ; les clés des administrateurs ne sont jamais dans le cloud
   (`maintenance.md`).
+- **Cloisonnement des services de la centrale** (28 octobre 2026) : Zigbee2MQTT (Node) et
+  go2rtc, du code tiers, ne lisent pas le secret du cloud ni la clé de maintenance
+  (`/etc/safehome`) ; Zigbee2MQTT ne lit pas non plus la clé des codes ni les codes d'accès
+  (`/var/lib/safehome`), la vidéo encore (elle y garde ses photos : lot à part). Les services
+  qui ne parlent qu'au broker local (centrale, Zigbee, batterie) n'ont aucune adresse IP hors de
+  la centrale. Détail, réglage par réglage et vérifications sur le Pi : `systeme.md`.
 
 ## Contrat
 

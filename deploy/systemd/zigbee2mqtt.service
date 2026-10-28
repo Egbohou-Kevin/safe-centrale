@@ -21,6 +21,13 @@ TimeoutStopSec=20
 NoNewPrivileges=yes
 ProtectHome=yes
 PrivateTmp=yes
+# Hardening (security study, 28 October 2026): a third-party Node program writes only
+# its data folder (ZIGBEE2MQTT_DATA above) and never sees our secrets. /dev stays whole
+# for the stick (no PrivateDevices, DevicePolicy, DeviceAllow nor ProtectClock): deaf
+# sensors are an alarm that does not ring.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/zigbee2mqtt
+InaccessiblePaths=/etc/safehome /var/lib/safehome
 
 [Install]
 WantedBy=multi-user.target
