@@ -25,17 +25,44 @@ func setBackLive(t *testing.T, h *harness, booted time.Time, d time.Duration) ti
 // longer told it from a movement dated since. The engine now sets it aside (SetAside) the
 // moment it brings that start back, by the time it began: given back with that very
 // time, it is the same movement.
+//
+// On the hub the broker gives it back dated by the adapter (its since), a few
+// milliseconds before the hub's loop handed it over live: up to liveLag, it is the same
+// movement (setAside). Only the equal times were tried until the review of 28 October
+// 2026, and the hub still rang.
 func TestAMovementFromBeforeTheModeDoesNotRingAfterTheClockWentBackLive(t *testing.T) {
+	for _, lag := range adapterLags {
+		h := newHarness(t)
+		sig, booted := movedBeforeTheMode(h)
+		sig.Now = sig.Now.Add(-lag)
+		booted = setBackLive(t, h, booted, time.Hour)
+		for i := range 2 {
+			h.e = restart(t, h)
+			if err := onlySiren(h.e.Boot(h.now, Booted{At: booted}, []Signal{sig})); err != nil {
+				t.Fatalf("dated %v before it was heard, restart %d after the clock went back: %v", lag, i+1, err)
+			}
+			h.mustBe(ModeArmed)
+			h.advance(time.Minute)
+		}
+	}
+}
+
+// adapterLags are how long before the hub's loop heard a movement live the adapter
+// dated it, as the broker gives it back: none (the harness), a few milliseconds (the
+// hub), the bound.
+var adapterLags = []time.Duration{0, 7 * time.Millisecond, liveLag}
+
+// Dated by the adapter longer than liveLag before the hub heard it live (its messages
+// waited at the broker), the movement is no longer recognized: it rings, an alert too
+// many rather than a real movement lost.
+func TestAMovementDatedLongBeforeItWasHeardRingsAfterTheClockWentBackLive(t *testing.T) {
 	h := newHarness(t)
 	sig, booted := movedBeforeTheMode(h)
+	sig.Now = sig.Now.Add(-liveLag - time.Millisecond)
 	booted = setBackLive(t, h, booted, time.Hour)
-	for i := range 2 {
-		h.e = restart(t, h)
-		if err := onlySiren(h.e.Boot(h.now, Booted{At: booted}, []Signal{sig})); err != nil {
-			t.Fatalf("restart %d after the clock went back: %v", i+1, err)
-		}
-		h.mustBe(ModeArmed)
-		h.advance(time.Minute)
+	h.e = restart(t, h)
+	if as := h.e.Boot(h.now, Booted{At: booted}, []Signal{sig}); !acted(as) {
+		t.Fatalf("dated more than liveLag before it was heard: %v", as)
 	}
 }
 
@@ -48,7 +75,7 @@ func TestAMovementDuringTheExitDelayDoesNotRingAfterTheClockWentBackLive(t *test
 		booted := h.now.Add(-20 * time.Minute)
 		h.arm()
 		h.advance(10 * time.Second)
-		sig := at(motion, SensorMotion, true, h.now)
+		sig := at(motion, SensorMotion, true, h.now.Add(-7*time.Millisecond)) // as the adapter dated it
 		h.moves()
 		h.advance(10 * time.Second)
 		booted = setBackLive(t, h, booted, time.Hour)
@@ -107,10 +134,10 @@ func TestAMovementSetAsideThenHeardAgainRings(t *testing.T) {
 	}
 }
 
-// A save written before the engine kept the momentary sensors' states (no "moving") is
+// A save written before the engine kept the momentary sensors' states (no "momentary") is
 // read without error: its Boot sets the movement from before the mode aside and keeps
 // it, so the clock set back while the engine runs after it does not make it ring.
-func TestASaveWithoutMovingStatesIsRead(t *testing.T) {
+func TestASaveWithoutMomentaryStatesIsRead(t *testing.T) {
 	h := newHarness(t)
 	sig, booted := movedBeforeTheMode(h)
 	b, err := json.Marshal(h.e.Snapshot())
@@ -121,10 +148,10 @@ func TestASaveWithoutMovingStatesIsRead(t *testing.T) {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := raw["moving"]; !ok {
-		t.Fatal(`the save has no "moving"`)
+	if _, ok := raw["momentary"]; !ok {
+		t.Fatal(`the save has no "momentary"`)
 	}
-	delete(raw, "moving")
+	delete(raw, "momentary")
 	if b, err = json.Marshal(raw); err != nil {
 		t.Fatal(err)
 	}

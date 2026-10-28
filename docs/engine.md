@@ -725,25 +725,38 @@ L'horloge reculée pendant la marche (et non au démarrage) : corrigé le 28 oct
 2026. Un mouvement commencé avant le mode sur l'ancienne horloge, toujours actif et que
 `Boot` n'avait donc jamais écarté, était pris pour nouveau au redémarrage suivant, avant
 que l'horloge ne rattrape le début du mode : une alarme de trop. Le moteur garde
-désormais l'état actif de chaque capteur momentané entendu (`moving`, par l'heure où il
-a commencé, telle que le broker la garde ; le retour au repos l'efface). Au moment où
-l'horloge recule derrière le début du mode pendant la marche, avant de le ramener, il
-met à part (`set_aside`) ceux que `Boot` aurait écartés : commencés au plus au début du
-mode, ou pendant le délai de sortie en cours jusqu'à la dernière heure vue. Rendus par
-le broker avec cette heure-là, ce sont les mêmes états, écartés sans regarder l'horloge.
-Rien d'autre ne change : un vrai mouvement pendant l'arrêt du hub porte une autre heure
-et sonne, même daté avant l'ancien début du mode ; un mouvement mis à part, entendu au
-repos puis de nouveau actif (front montant), sonne, en marche comme pendant l'arrêt.
-Pas au `Boot` : le début du mode tel que la marche précédente l'a laissé y suffit (voir
-plus haut). Une sauvegarde d'avant, sans `moving`, se lit sans erreur ; son `Boot`
-garde l'état rendu par le broker. Le moteur écarte ainsi exactement ce qu'il aurait
-écarté sans recul de l'horloge : un broker qui perd sa dernière sauvegarde et rend le
-mouvement mis à part, le hub arrêté pendant qu'un nouveau avait lieu, a perdu ce
-nouveau avant le hub, recul ou pas.
-Témoins : `internal/engine/restart9_test.go` (le mouvement d'avant le mode, celui du
-délai de sortie, armé en marche ou au redémarrage ; cas positifs : le vrai mouvement
-pendant l'arrêt, le front montant ; la sauvegarde sans `moving`). Il remplace le test
-qui figeait la limite (`TestAMovementFromBeforeTheModeNeverSetAsideRingsAfterTheClockWentBack`).
+désormais l'état actif de chaque capteur momentané (`momentary` ; le retour au repos
+l'efface), par l'heure où il a commencé. Cette heure n'a pas la même source selon le
+chemin. Pour un état rendu par le broker au `Boot`, c'est son `since`, l'heure où
+l'adaptateur l'a daté. Pour un état entendu en marche, l'événement `device.event` ne
+porte pas de `since` : c'est l'heure où la boucle du hub l'a reçu, quelques
+millisecondes après que l'adaptateur, un autre processus, a daté l'état retenu.
+Au moment où l'horloge recule derrière le début du mode pendant la marche, avant de le
+ramener, le moteur met à part (`set_aside`) ceux que `Boot` aurait écartés : commencés au
+plus au début du mode, ou pendant le délai de sortie en cours jusqu'à la dernière heure
+vue. Au redémarrage, l'état rendu par le broker est le même s'il est daté à l'heure mise
+à part ou au plus 2 secondes avant (`liveLag`, le retard de l'adaptateur au hub), jamais
+après : il est écarté sans regarder l'horloge. Un retard plus long (des messages de
+l'adaptateur gardés par le broker, l'horloge déplacée entre les deux lectures) fait
+sonner : une alerte de trop, pas une perdue. Le prix, à la marge : un nouveau mouvement
+pendant l'arrêt du hub, daté sur l'horloge reculée dans ces 2 secondes avant l'heure mise
+à part, serait pris pour l'ancien. Rien d'autre ne change : un vrai mouvement pendant
+l'arrêt porte une autre heure et sonne, même daté avant l'ancien début du mode ; un
+mouvement mis à part, entendu au repos puis de nouveau actif (front montant), sonne, en
+marche comme pendant l'arrêt. Pas au `Boot` : le début du mode tel que la marche
+précédente l'a laissé y suffit (voir plus haut). Une sauvegarde d'avant, sans
+`momentary`, se lit sans erreur ; son `Boot` garde l'état rendu par le broker.
+Un broker qui perd sa dernière sauvegarde ne change rien à cette règle : s'il rend le
+mouvement mis à part alors qu'un nouveau a eu lieu pendant l'arrêt du hub, ce nouveau
+était déjà perdu par le broker, que l'horloge ait reculé ou non.
+Témoins : `internal/engine/restart9_test.go` (le mouvement d'avant le mode, rendu à la
+même heure, 7 ms ou 2 s avant, celui du délai de sortie, armé en marche ou au
+redémarrage ; cas positifs : daté plus de 2 s avant, il sonne ; le vrai mouvement pendant
+l'arrêt, le front montant ; la sauvegarde sans `momentary`) et, au niveau du hub,
+`TestARestartAfterTheClockWentBackLiveDoesNotRingAMovementHeardBefore`
+(`internal/hub/clock_test.go`, l'état retenu daté 7 ms avant la réception : il sonnait
+avec la seule égalité, relecture du 28 octobre 2026). Ils remplacent le test qui figeait
+la limite (`TestAMovementFromBeforeTheModeNeverSetAsideRingsAfterTheClockWentBack`).
 
 Les séquences aléatoires l'atteignaient (`internal/engine/random_test.go`, graine 169 des
 séquences décalées) : un moteur restauré dont un `Boot` avait écarté le mouvement avant

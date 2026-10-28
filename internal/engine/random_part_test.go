@@ -56,7 +56,7 @@ type apartOn struct {
 // it for news and ring: the clock set back at the restart, the boot time unknown or the
 // state dated since the system started (a state dated up to now is trusted). An alarm too
 // many, the restored engine right (see parting). The clock set back while the engines
-// ran, the live one sets it aside too since 28 October 2026 (see setMovingAside).
+// ran, the live one sets it aside too since 28 October 2026 (see setMomentaryAside).
 func (r *rig) setAsideApart(twin *rig) apartOn {
 	mine, theirs := r.e.Snapshot().SetAside, twin.e.Snapshot().SetAside
 	for _, s := range randomSensors {
@@ -176,7 +176,7 @@ func TestPartingSeesItsDefects(t *testing.T) {
 // back an hour while the engines ran, and two restarts. The live engine rang at the
 // second, for that movement, the restored one did nothing about it, and was right. The
 // live engine now sets the movement aside as the clock goes back behind the start of the
-// mode (see setMovingAside): the two no longer part.
+// mode (see setMomentaryAside): the two no longer part.
 func TestTheShiftedSeed169NoLongerParts(t *testing.T) {
 	if got := runRandom(t, 169, true); got.parted != 0 {
 		t.Fatalf("seed 169 shifted: %d partings, want none", got.parted)

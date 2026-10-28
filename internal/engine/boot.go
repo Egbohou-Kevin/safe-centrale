@@ -66,7 +66,7 @@ func (e *Engine) Boot(now time.Time, booted Booted, current []Signal) []Action {
 		began := sig.Now
 		sig.Now = now
 		out = append(out, e.signal(sig)...)
-		if key := sensorKey(sig.DeviceID, sig.Sensor); e.s.Moving[key].Equal(now) {
+		if key := sensorKey(sig.DeviceID, sig.Sensor); e.s.Momentary[key].Equal(now) {
 			e.move(key, Signal{Active: true, Now: began}) // as the broker keeps it
 		}
 	}
@@ -155,7 +155,7 @@ func (e *Engine) learn(ref bootRef, current []Signal) []Signal {
 		if !early && e.watches(sig) {
 			e.move(key, sig) // the broker's state, the time it began included
 		}
-		again := sig.Active && !sig.Now.IsZero() && sig.Now.Equal(before[key])
+		again := sig.Active && setAside(sig.Now, before[key])
 		if !early && (again || e.older(ref, sig)) {
 			if sig.Active && !sig.Now.IsZero() {
 				if e.s.SetAside == nil {
@@ -308,7 +308,7 @@ func lasting(s SensorKind) bool {
 }
 
 // momentary tells whether a sensor's state is a moment that keeps no time in the engine
-// but its active one (Moving): a movement, a vibration, glass breaking. A panic button
+// but its active one (Momentary): a movement, a vibration, glass breaking. A panic button
 // keeps Heard instead.
 func momentary(s SensorKind) bool { return !lasting(s) && s != SensorPanic }
 
@@ -319,17 +319,37 @@ func (e *Engine) watches(sig Signal) bool {
 	return momentary(sig.Sensor) && known && Accepts(zone.Kind, sig.Sensor)
 }
 
-// move records the state of a momentary sensor (Moving): active, by the time it began;
+// move records the state of a momentary sensor (Momentary): active, by the time it began;
 // at rest, or not saying when it began, it is dropped.
 func (e *Engine) move(key string, sig Signal) {
 	if !sig.Active || sig.Now.IsZero() {
-		delete(e.s.Moving, key)
+		delete(e.s.Momentary, key)
 		return
 	}
-	if e.s.Moving == nil {
-		e.s.Moving = map[string]time.Time{}
+	if e.s.Momentary == nil {
+		e.s.Momentary = map[string]time.Time{}
 	}
-	e.s.Moving[key] = sig.Now
+	e.s.Momentary[key] = sig.Now
+}
+
+// liveLag bounds how long before the hub's loop handed a momentary state over live the
+// adapter dated it (its since, the time the broker keeps): the same Pi's clock, read by
+// two processes a few milliseconds apart, plus a message across the local broker. The
+// state the engine heard live is recorded at the loop's time (see Snapshot.Momentary);
+// given back by the broker at the next Boot, it bears that since. Longer (an adapter
+// whose messages waited at the broker, the clock stepped in between), the state is no
+// longer recognized: an alert too many, never one lost.
+const liveLag = 2 * time.Second
+
+// setAside tells whether an active state given at Boot, begun at began, is the one set
+// aside at at (SetAside): the very time for a state a Boot set aside, as the broker
+// keeps it; up to liveLag before it for one heard live and set aside as the clock went
+// back (see setMomentaryAside); never after it, the adapter dating a state before the
+// hub hears it. The price: a new movement while the hub was off, dated on the clock set
+// back within liveLag before the time set aside, is taken for it (docs/engine.md,
+// 28 October 2026).
+func setAside(began, at time.Time) bool {
+	return !began.IsZero() && !at.IsZero() && !began.After(at) && at.Sub(began) <= liveLag
 }
 
 func sensorKey(deviceID string, s SensorKind) string { return deviceID + "/" + string(s) }

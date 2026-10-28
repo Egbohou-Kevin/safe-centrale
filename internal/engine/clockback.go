@@ -74,14 +74,14 @@ func (e *Engine) pullBack(now time.Time) {
 // a real movement dated on the clock as it is, after the time it went back to the first
 // time, for one older than the mode, and drop it. Brought back while the engine runs,
 // the start no longer tells the movements that began before it: they are set aside
-// first (see setMovingAside).
+// first (see setMomentaryAside).
 func (e *Engine) pullSinceBack(now time.Time) {
 	if a := e.s.SinceAhead; !a.IsZero() && !a.After(now) {
 		e.s.Since, e.s.SinceAhead = a, time.Time{}
 	}
 	if e.s.Since.After(now) {
 		if now.Before(e.seen) {
-			e.setMovingAside()
+			e.setMomentaryAside()
 		}
 		if e.s.SinceAhead.IsZero() {
 			e.s.SinceAhead = e.s.Since
@@ -90,17 +90,18 @@ func (e *Engine) pullSinceBack(now time.Time) {
 	}
 }
 
-// setMovingAside sets aside (SetAside) the active momentary states the engine heard
+// setMomentaryAside sets aside (SetAside) the active momentary states the engine heard
 // that a Boot would take for no news (see older): begun before the mode, or during the
 // exit delay under way, up to the latest time the engine was handed. Called as the clock
 // goes back behind the start of the mode while the engine runs: brought back to the
 // time the clock went back to, that start would make them news at the next restart, an
 // intrusion alerted for a movement under way before the site armed (the limit written
-// in docs/engine.md until 28 October 2026). Given back by the broker with the very time
-// they began, they are the same states (see learn); a real movement bears another time,
-// and a rising edge, its rest heard, drops the entry (see hear). Not at Boot: there the
-// broker's states are compared with the start as the run before left it.
-func (e *Engine) setMovingAside() {
+// in docs/engine.md until 28 October 2026). Given back by the broker with the time
+// they began, they are the same states (see setAside: up to liveLag earlier for one
+// heard live, which the hub's loop dated after the adapter); a real movement bears
+// another time, and a rising edge, its rest heard, drops the entry (see hear). Not at
+// Boot: there the broker's states are compared with the start as the run before left it.
+func (e *Engine) setMomentaryAside() {
 	from := e.s.Since
 	if e.s.Mode == ModeArming {
 		end := e.s.Deadline
@@ -109,7 +110,7 @@ func (e *Engine) setMovingAside() {
 		}
 		from = later(from, end)
 	}
-	for key, began := range e.s.Moving {
+	for key, began := range e.s.Momentary {
 		if began.After(from) {
 			continue
 		}
