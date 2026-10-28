@@ -29,8 +29,12 @@ func TestConfigSetValidate(t *testing.T) {
 	if err := (ConfigSetData{Version: 1}).Validate(); err != nil {
 		t.Fatalf("only the version is required: %v", err)
 	}
+	if err := (ConfigSetData{Version: MaxConfigVersion}).Validate(); err != nil {
+		t.Fatalf("the highest version the cloud can number: %v", err)
+	}
 	for name, mutate := range map[string]func(*ConfigSetData){
 		"no version":        func(d *ConfigSetData) { d.Version = 0 },
+		"huge version":      func(d *ConfigSetData) { d.Version = MaxConfigVersion + 1 },
 		"short exit delay":  func(d *ConfigSetData) { d.ExitDelayS = 5 },
 		"long exit delay":   func(d *ConfigSetData) { d.ExitDelayS = MaxExitDelayS + 1 },
 		"long entry delay":  func(d *ConfigSetData) { d.EntryDelayS = MaxEntryDelayS + 1 },

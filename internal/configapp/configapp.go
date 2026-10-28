@@ -295,6 +295,7 @@ func (a *App) configSet(ctx context.Context, m inbox.Message) {
 		return // kept already, waiting for a quiet moment
 	}
 	if err := d.Validate(); err != nil {
+		a.log.Warn("refused an invalid configuration from the cloud", "version", d.Version, "err", err) // no phone in it
 		a.answer(now, d.Version, err.Error())
 		return
 	}

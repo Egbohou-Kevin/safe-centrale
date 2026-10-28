@@ -3,6 +3,7 @@ package contract
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"regexp"
 	"slices"
 )
@@ -34,6 +35,12 @@ const (
 // MaxQuotaMB bounds the monthly video allowance far above any client's (8 TB), so
 // that it never overflows once in bytes. The video refuses more as well.
 const MaxQuotaMB = 1 << 23
+
+// MaxConfigVersion is the highest version the cloud can number: it counts the seconds
+// from 2026-01-01 in a 32-bit int (enough until 2094). A higher one is a mistake or a
+// forgery, and once kept it would make every later configuration "older": refused.
+// A forged one below it, far ahead of the clock, is still kept: open, Kevin's choice.
+const MaxConfigVersion = math.MaxInt32
 
 // ConfigContact is a person to alert. Phone, in international form (+22890000001),
 // is for the GSM channels; without it, the person gets only the app and WhatsApp.
@@ -114,6 +121,8 @@ func (d ConfigSetData) Validate() error {
 	switch {
 	case d.Version < 1:
 		return fmt.Errorf("%w: version must be at least 1", ErrInvalid)
+	case d.Version > MaxConfigVersion:
+		return fmt.Errorf("%w: version beyond %d, which the cloud never numbers", ErrInvalid, MaxConfigVersion)
 	case d.Contacts != nil && len(d.Contacts) == 0:
 		// A list sent replaces the hub's: an empty one would leave every alarm unheard.
 		return fmt.Errorf("%w: a site keeps at least one contact", ErrInvalid)
