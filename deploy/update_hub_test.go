@@ -16,12 +16,16 @@ import (
 // it. A command on /usr/local/bin really runs, by bash as the login shell would, on
 // $HUB/usr/local/bin (sudo and mv are stubs). A hub whose program says one of
 // $FAKE_CRASHING restarts in a loop (activating, never failed); one of $FAKE_FLAPPING
-// crashes a moment after it says it is ready (active, but since half a second); one of
-// $FAKE_STOPPED is not running (not listed); one of $FAKE_MUTE cannot even say its
-// version; $FAKE_RESTART makes restarts fail. $FAKE_INSTALL makes install.sh
-// fail before it replaces anything ("before"), or after, its mark naming this run ("after").
-// $FAKE_ROOT_FS, $FAKE_TIMESYNC_FS, $FAKE_TIMESYNCD and $FAKE_MODE are what / and
-// timesyncd's folder are mounted as, timesyncd's state and the alarm's mode.
+// crashes a moment after it says it is ready (active, but since half a second, or since
+// $FAKE_FLAP_AGE seconds); one of $FAKE_RACING is active when listed but no longer when
+// its start is read; one of $FAKE_AT_EMPTY has no start time; one of $FAKE_STOPPED is
+// not running (not listed); one of $FAKE_MUTE cannot even say its version;
+// $FAKE_RESTART makes restarts fail; $FAKE_SHOW_FAILS makes the start times unreadable.
+// $FAKE_INSTALL makes install.sh fail before it replaces anything ("before"), or after,
+// its mark naming this run ("after"). $FAKE_ROOT_FS, $FAKE_DATA_FS, $FAKE_TIMESYNC_FS,
+// $FAKE_TIMESYNCD and $FAKE_MODE are what /, /data and timesyncd's folder are mounted
+// as, timesyncd's state and the alarm's mode; $FAKE_NO_CLOUD, an agent that never
+// reached the cloud.
 const fakeHub = `for cmd; do :; done
 printf '%s\n' "$cmd" >> "$LOG"
 hub=$(cat "$HUB/usr/local/bin/safehome-hub")
@@ -36,11 +40,13 @@ case "$cmd" in
 *"systemctl restart"*) [ -z "$FAKE_RESTART" ] ;;
 */usr/local/bin*) bash -c "$(printf '%s' "$cmd" | sed "s#/usr/local/bin#$HUB/usr/local/bin#g")" ;;
 "findmnt -no FSTYPE /") echo "${FAKE_ROOT_FS:-ext4}" ;;
-"findmnt -no FSTYPE /data") echo ext4 ;;
+"findmnt -no FSTYPE /data") echo "${FAKE_DATA_FS:-ext4}" ;;
 "findmnt -no FSTYPE /var/lib/systemd/timesync") echo "${FAKE_TIMESYNC_FS:-ext4}" ;;
 *"is-active systemd-timesyncd"*) echo "${FAKE_TIMESYNCD:-active}" ;;
 *engine.json*) echo "${FAKE_MODE:-armed_home}" ;;
-*journalctl*) echo "connected to the cloud" ;;
+*journalctl*)
+	if [ -n "$FAKE_NO_CLOUD" ]; then exit 1; fi
+	echo "connected to the cloud" ;;
 *nameserver*) echo 1 ;;
 *NTPSynchronized*) echo yes ;;
 "date +%s") date +%s ;;
@@ -53,9 +59,14 @@ case "$cmd" in
 	echo "safehome-agent.service loaded active running safeHome agent"
 	echo "mosquitto.service loaded active running Mosquitto" ;;
 *ActiveEnterTimestampMonotonic*)
+	if [ -n "$FAKE_SHOW_FAILS" ]; then exit 1; fi
 	state=active at=100000000
-	if among "$FAKE_CRASHING"; then state=activating; fi
-	if among "$FAKE_FLAPPING"; then at=999500000; fi
+	if among "$FAKE_CRASHING" || among "$FAKE_RACING"; then state=activating; fi
+	if among "$FAKE_FLAPPING"; then
+		at=999500000
+		if [ -n "$FAKE_FLAP_AGE" ]; then at=$(( (1000 - FAKE_FLAP_AGE) * 1000000 )); fi
+	fi
+	if among "$FAKE_AT_EMPTY"; then at=; fi
 	printf '1000.00 3000.00\n\n'
 	printf 'Id=safehome-hub.service\nActiveState=%s\nActiveEnterTimestampMonotonic=%s\n\n' "$state" "$at"
 	printf 'ActiveEnterTimestampMonotonic=100000000\nActiveState=active\nId=safehome-agent.service\n\n'
@@ -78,15 +89,22 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 		partial = "partial" // the hub back, the gateway's .prev stuck
 	)
 	for _, c := range []struct {
-		name, installed, crashing, flapping, stopped, mute, install, mvFails, restart string
-		noPrev, marked                                                                bool
-		state                                                                         string
-		want                                                                          []string
+		name, installed, crashing, flapping, flapAge, stopped, mute, install, mvFails, restart string
+		noPrev, marked                                                                         bool
+		state                                                                                  string
+		want                                                                                   []string
 	}{
 		{name: "the new hub crashes at start", installed: "0.3.0", crashing: "0.3.0", marked: true, state: back,
 			want: []string{"the new programs do not hold; the previous programs are back and their services hold"}},
 		{name: "the new hub crashes a moment after it is ready", installed: "0.3.0", flapping: "0.3.0", marked: true, state: back,
 			want: []string{"the new programs do not hold; the previous programs are back and their services hold"}},
+		// After install.sh's blocking restarts a unit that held is two minutes old: 100 s.
+		{name: "the new hub restarted 90 s ago", installed: "0.3.0", flapping: "0.3.0", flapAge: "90", marked: true, state: back,
+			want: []string{"!! not active for the last 100 s: safehome-hub.service (active, since 90 s)", "the new programs do not hold; the previous programs are back and their services hold"}},
+		{name: "the new hub restarted 99 s ago", installed: "0.3.0", flapping: "0.3.0", flapAge: "99", marked: true, state: back,
+			want: []string{"!! not active for the last 100 s", "the new programs do not hold; the previous programs are back and their services hold"}},
+		{name: "the new hub restarted 101 s ago", installed: "0.3.0", flapping: "0.3.0", flapAge: "101", marked: true, state: kept,
+			want: []string{"phase 2 done"}},
 		{name: "the new hub is not running", installed: "0.3.0", stopped: "0.3.0", marked: true, state: back,
 			want: []string{"!! safehome-hub.service is not running", "the new programs do not hold; the previous programs are back"}},
 		{name: "the hub says another version", installed: "0.2.9", marked: true, state: back,
@@ -127,7 +145,7 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 				files[strings.TrimPrefix(unconfirmed, "usr/local/bin/")] = "run cut short"
 			}
 			cmd, log := updateHub(t, dir, files, "-v", "0.3.0", "2", bundle)
-			cmd.Env = append(cmd.Env, "FAKE_CRASHING="+c.crashing, "FAKE_FLAPPING="+c.flapping, "FAKE_STOPPED="+c.stopped,
+			cmd.Env = append(cmd.Env, "FAKE_CRASHING="+c.crashing, "FAKE_FLAPPING="+c.flapping, "FAKE_FLAP_AGE="+c.flapAge, "FAKE_STOPPED="+c.stopped,
 				"FAKE_MUTE="+c.mute, "FAKE_INSTALL="+c.install, "FAKE_RESTART="+c.restart, "FAKE_MV_FAILS="+c.mvFails)
 			b, err := cmd.CombinedOutput()
 			out := string(b)
@@ -225,9 +243,21 @@ func TestUpdateHubPhaseFourChecksTheHubBackInReadOnlyMode(t *testing.T) {
 		{"/ is not an overlay", []string{"FAKE_ROOT_FS=ext4"}, "/ is not an overlay", false},
 		{"timesyncd's folder is not on the data partition", []string{"FAKE_TIMESYNC_FS=overlay"},
 			"timesyncd's folder is not bound on /data", false},
+		{"/data is not ext4", []string{"FAKE_DATA_FS=overlay"}, "/data is not ext4", false},
 		{"timesyncd is not running", []string{"FAKE_TIMESYNCD=inactive"}, "systemd-timesyncd is not active", false},
 		{"the hub crashes a moment after it is ready", []string{"FAKE_FLAPPING=0.3.0"}, "the services do not hold", true},
+		// After a boot the start is not timed: the first minute is left to it.
+		{"the hub restarted 59 s ago", []string{"FAKE_FLAPPING=0.3.0", "FAKE_FLAP_AGE=59"},
+			"!! not active for the last 60 s: safehome-hub.service (active, since 59 s)", true},
+		{"the hub restarted 61 s ago", []string{"FAKE_FLAPPING=0.3.0", "FAKE_FLAP_AGE=61"}, "phase 4 done", true},
+		{"the hub restarted 70 s ago", []string{"FAKE_FLAPPING=0.3.0", "FAKE_FLAP_AGE=70"}, "phase 4 done", true},
+		{"the hub is active when listed, no longer when its start is read", []string{"FAKE_RACING=0.3.0"},
+			"!! not active for the last 60 s: safehome-hub.service (activating", true},
+		{"the hub has no start time", []string{"FAKE_AT_EMPTY=0.3.0"},
+			"!! not active for the last 60 s: safehome-hub.service (active", true},
+		{"the start times cannot be read", []string{"FAKE_SHOW_FAILS=1"}, "!! the services' start times cannot be read", true},
 		{"the alarm mode changed", []string{"FAKE_MODE=disarmed"}, "the alarm mode changed", true},
+		{"the agent has not reached the cloud", []string{"FAKE_NO_CLOUD=1"}, "the agent has not reached the cloud", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()

@@ -61,14 +61,17 @@ wait_back() {
 	die "the hub did not come back after 4 minutes"
 }
 
-# services_hold: after two minutes, safehome-hub.service running, every unit active for
-# the last minute at least, none failed. A program that crashes at start never reaches
-# failed (Restart=always, no start limit): it stays activating, so anything but active
-# counts. One that crashes a moment after it says it is ready (RestartSec=2) is active
-# most of the time: its last start (ActiveEnterTimestampMonotonic, against /proc/uptime)
-# must be a minute old, which leaves the first minute for a start (Type=notify). A unit
+# services_hold SECONDS: after two minutes, safehome-hub.service running, every unit
+# active for the last SECONDS at least, none failed. A program that crashes at start never
+# reaches failed (Restart=always, no start limit): it stays activating, so anything but
+# active counts. One that crashes a moment after it says it is ready (RestartSec=2) is
+# active most of the time: its last start (ActiveEnterTimestampMonotonic, against
+# /proc/uptime) must be SECONDS old. After install.sh or roll_back, each restart blocks
+# until the unit is ready (Type=notify), so a unit that held is two minutes old: 100 s
+# then. After a boot the start is not timed: 60 s, the first minute left to it. A unit
 # that is not running at all is not listed: the hub must be.
 services_hold() {
+	held=$1
 	echo "== services for two minutes"
 	sleep 120
 	# Called after ||, where set -e does not stop: each failure is said here.
@@ -92,7 +95,7 @@ services_hold() {
 		return 1
 	fi
 	# One block per unit, its lines in systemd's order, not the order asked.
-	recent=$(printf '%s\n' "$since" | awk 'BEGIN {RS = ""; FS = "\n"}
+	recent=$(printf '%s\n' "$since" | awk -v held="$held" 'BEGIN {RS = ""; FS = "\n"}
 		NR == 1 {split($1, u, " "); now = u[1] * 1000000; next}
 		{
 			id = state = at = ""
@@ -103,18 +106,18 @@ services_hold() {
 				else if (k == "ActiveState") state = v
 				else if (k == "ActiveEnterTimestampMonotonic") at = v
 			}
-			if (state != "active" || at == "" || now - at < 60000000)
+			if (state != "active" || at == "" || now - at < held * 1000000)
 				printf "%s (%s, since %d s) ", id, state, (now - at) / 1000000
 		}')
 	if [ -n "$recent" ]; then
-		echo "!! not active for the last minute: $recent" >&2
+		echo "!! not active for the last $held s: $recent" >&2
 		return 1
 	fi
 	echo "   failed units:"
 	pi 'systemctl --failed --no-legend --plain' | sed 's/^/     /'
 }
 
-wait_services() { services_hold || die "the services do not hold"; }
+wait_services() { services_hold 60 || die "the services do not hold"; }
 
 # The mark install.sh leaves while the programs in place are not yet confirmed; it names
 # the run that made it.
@@ -143,7 +146,7 @@ roll_back() {
 		fi
 	done
 	echo "   $(pi '/usr/local/bin/safehome-hub version' || echo 'hub version not readable')"
-	services_hold || die "$1; the previous programs are back but the services still do not hold"
+	services_hold 100 || die "$1; the previous programs are back but the services still do not hold"
 	die "$1; the previous programs are back and their services hold"
 }
 
@@ -209,7 +212,7 @@ case "$phase" in
 	got=$(pi '/usr/local/bin/safehome-hub version') || got="(version not readable)"
 	[ "$got" = "safehome-hub $version" ] || roll_back "the hub says $got"
 	echo "   $got"
-	services_hold || roll_back "the new programs do not hold"
+	services_hold 100 || roll_back "the new programs do not hold"
 	pi "sudo -n rm -f $unconfirmed"
 	echo "== the new programs hold: the previous ones stay as .prev, no longer pending"
 	pi 'rm -rf ~/safehome'

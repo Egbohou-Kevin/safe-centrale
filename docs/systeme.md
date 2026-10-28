@@ -656,13 +656,16 @@ paquet, ou si le programme ne sait même pas la dire, le retour joue tout de sui
 attend deux minutes, et si une unité n'est pas `active` (un programme qui plante au démarrage n'est
 jamais `failed` : `Restart=always` sans limite le laisse `activating`), si `safehome-hub.service`
 ne tourne pas du tout (une unité arrêtée n'est pas listée), ou si une unité n'est pas active
-depuis au moins une minute, le retour joue aussi. Ce dernier point attrape un programme qui plante
+depuis au moins 100 s, le retour joue aussi. Ce dernier point attrape un programme qui plante
 juste après s'être dit prêt (`RestartSec=2`) : il paraît `active` la plupart du temps, mais son
-dernier démarrage (`ActiveEnterTimestampMonotonic`, comparé à `/proc/uptime`) est récent ; la
-première minute reste au démarrage (`Type=notify`). `NRestarts` n'a pas été retenu : les unités
+dernier démarrage (`ActiveEnterTimestampMonotonic`, comparé à `/proc/uptime`) est récent. Le seuil
+est de 100 s après `install.sh` et après le retour : chaque `systemctl restart` y attend que l'unité
+se dise prête (`Type=notify`), puis viennent les deux minutes d'attente, donc une unité qui tient a
+au moins deux minutes. Après un redémarrage de la centrale (phase 4), la durée du démarrage n'est
+pas mesurée : le seuil y est de 60 s, la première minute lui reste. `NRestarts` n'a pas été retenu : les unités
 qu'`install.sh` ne redémarre pas gardent leur compte depuis le démarrage de la centrale, et sa
 remise à zéro par un `systemctl restart` n'a pas pu être vérifiée sans toucher la centrale (revue
-du 28 octobre 2026). La phase 4 attend les services de la même façon. Le
+du 28 octobre 2026). La phase 4 attend les services de la même façon, avec le seuil de 60 s. Le
 retour remet chaque `.prev` à sa place (`mv`, d'un coup ; un seul `mv` raté arrête tout en nommant
 ceux déjà revenus), `systemctl daemon-reload`, redémarre les services activés parmi eux (un
 redémarrage raté est dit, la suite continue), attend encore deux minutes, puis s'arrête en disant
@@ -734,7 +737,7 @@ plus un `.prev` par programme, 9 ; les 9 programmes du paquet `dist/maj-8b00128`
    sudo systemctl daemon-reload
    for p in $back; do systemctl is-enabled -q "$p" && sudo systemctl restart "$p"; done
    ```
-6. **Vérifier** : chaque service `active` pendant deux minutes (et depuis au moins une minute :
+6. **Vérifier** : chaque service `active` pendant deux minutes (et depuis au moins 100 s :
    `systemctl show -p ActiveEnterTimestamp <unité>`), `safehome-hub version`,
    `systemctl --failed` vide. Puis confirmer les nouveaux programmes :
    `sudo rm -f /usr/local/bin/.safehome-prev.unconfirmed` (la phase 2 le fait elle-même).
