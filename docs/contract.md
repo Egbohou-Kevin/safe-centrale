@@ -741,7 +741,9 @@ et en données mobiles son forfait vidéo. Le cloud envoie le tout à chaque cha
   pour l'appliquer, **jamais pendant un délai ni une alarme** : elle attend que
   l'alarme soit désarmée ou armée. Elle répond `applied` une fois qu'elle tourne avec,
   ou `rejected` tout de suite, avec la raison (version plus ancienne que celle en
-  service, valeur hors limites, pas de propriétaire…).
+  service, valeur hors limites, pas de propriétaire…). Une centrale trop occupée pour
+  la prendre (trop de messages en attente) la refuse aussi (`the hub is busy: send it
+  again`) : le cloud peut renvoyer le même message, il n'est pas pris pour un doublon.
 - Le cloud peut renvoyer la même version : la centrale répond de nouveau `applied` si
   c'est celle en service, et ne fait rien si elle attend déjà le moment calme.
 - Les numéros de téléphone n'apparaissent jamais dans un journal ni dans

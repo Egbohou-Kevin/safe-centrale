@@ -297,6 +297,36 @@ func TestAConfigurationIsHandledOffTheBrokersGoroutine(t *testing.T) {
 	}
 }
 
+// A configuration the broker acknowledged is never lost in silence: when too many
+// messages wait, the cloud is told it was refused, and may send it again.
+func TestAConfigurationDroppedByAFullQueueIsRefused(t *testing.T) {
+	r := start(t, DefaultConfig(site, 0))
+	release := make(chan struct{})
+	var once sync.Once
+	free := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(free) // before the stop: a failure must not hold the worker
+	held := make(chan struct{})
+	r.app.work <- func(context.Context) { close(held); <-release }
+	<-held
+	for range queueSize {
+		r.app.HandleMessage(r.message(contract.AlarmStateTopic(site), contract.TypeAlarmState,
+			contract.AlarmStateData{State: contract.StateTriggered, Since: contract.TS(r.clock.Now())}))
+	}
+	m := r.message(contract.ConfigSetTopic(site), contract.TypeConfigSet, phoneConfig(2))
+	r.app.HandleMessage(m)
+	d := r.waitAnswer(1)
+	if d.Version != 2 || d.Status != contract.ConfigRejected || d.Reason == "" {
+		t.Fatalf("a refusal for version 2: %+v", d)
+	}
+	free()
+	r.settle()
+	r.app.HandleMessage(m) // the same message again: not taken for a duplicate
+	r.settle()
+	if len(r.saved) != 1 || r.saved[0].Version != 2 {
+		t.Fatalf("sent again, it is kept: %+v", r.saved)
+	}
+}
+
 // New zones or sirens are loaded at the latest during the exit delay: an arming made
 // on the old zones never saw the new devices, and a restart once armed would take a
 // window of a new zone left open for an opening (a siren the moment the shop arms),

@@ -215,7 +215,24 @@ func (a *App) HandleMessage(m inbox.Message) {
 	case a.work <- func(ctx context.Context) { do(ctx, m) }:
 	default:
 		a.log.Warn("too many messages waiting: one is dropped", "topic", m.Topic)
+		if m.Topic == contract.ConfigSetTopic(a.cfg.Site) {
+			a.refuseBusy(m)
+		}
 	}
+}
+
+// refuseBusy tells the cloud that a configuration the broker acknowledged was dropped:
+// never lost in silence. Its id is not marked seen, so the cloud may send it again.
+func (a *App) refuseBusy(m inbox.Message) {
+	env, err := inbox.Envelope(m, a.cfg.Site, contract.TypeConfigSet)
+	if err != nil {
+		return
+	}
+	d, err := contract.DecodeData[contract.ConfigSetData](env)
+	if err != nil {
+		return
+	}
+	a.answer(a.deps.Clock.Now(), d.Version, "the hub is busy: send it again")
 }
 
 // alarmState follows the alarm's state. A retained state comes again at each
