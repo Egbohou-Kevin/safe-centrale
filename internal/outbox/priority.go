@@ -29,10 +29,22 @@ var priorities = map[string]priority{
 	"agent/status":     priorityState,
 }
 
-// priorityOf is the priority of a message on topic. A topic outside the contract is a
-// request to another program (Zigbee2MQTT: a siren to sound, a device to pair): rare,
+// priorityOf is the priority of a queued message: that of its topic, except that a
+// clear of a retained message (retained, no data) is never noise. It removes what the
+// broker would otherwise keep: a removed door's retained "open" would block every
+// arming, so it goes no sooner than the events.
+func priorityOf(it *Item) priority {
+	p := topicPriority(it.Topic)
+	if it.Retain && len(it.Data) == 0 && p < priorityNormal {
+		return priorityNormal
+	}
+	return p
+}
+
+// topicPriority is the priority of a message on topic. A topic outside the contract is
+// a request to another program (Zigbee2MQTT: a siren to sound, a device to pair): rare,
 // and never dropped before the noise.
-func priorityOf(topic string) priority {
+func topicPriority(topic string) priority {
 	_, parts, ok := contract.ParseTopic(topic)
 	if !ok {
 		return priorityAlarm

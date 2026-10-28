@@ -138,7 +138,7 @@ func (o *Outbox) Put(it *Item) {
 		old := o.queue[i]
 		o.queue = slices.Delete(o.queue, i, i+1)
 		o.dropped++
-		if priorityOf(old.Topic) == priorityAlarm {
+		if priorityOf(old) == priorityAlarm {
 			o.log.Error("outbox full of only alarm messages, dropping the oldest", "topic", old.Topic, "type", old.Type, "dropped", o.dropped)
 		} else {
 			o.log.Error("outbox full, dropping the oldest of the least important messages", "topic", old.Topic, "type", old.Type, "dropped", o.dropped)
@@ -171,12 +171,12 @@ func (o *Outbox) SendWithCode(src, topic, typ string, data any, ts time.Time) st
 // victim is the index of the message a full queue drops: the oldest of the lowest
 // priority. It runs under the lock.
 func (o *Outbox) victim() int {
-	best, prio := 0, priorityOf(o.queue[0].Topic)
+	best, prio := 0, priorityOf(o.queue[0])
 	for i, it := range o.queue {
 		if prio == priorityState {
 			break
 		}
-		if p := priorityOf(it.Topic); p < prio {
+		if p := priorityOf(it); p < prio {
 			best, prio = i, p
 		}
 	}

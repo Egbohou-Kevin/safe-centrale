@@ -436,8 +436,43 @@ func TestPriorityOfEachTopic(t *testing.T) {
 		contract.AgentStatusTopic(site):                    priorityState,
 	}
 	for topic, want := range cases {
-		if got := priorityOf(topic); got != want {
+		if got := topicPriority(topic); got != want {
 			t.Errorf("%s: priority %d, want %d", topic, got, want)
+		}
+	}
+}
+
+// A retained message with no data clears the broker's copy (a removed door's "open"
+// state, which would block every arming): a full queue drops the heartbeat first.
+func TestAFullQueueKeepsTheClearOfARetainedState(t *testing.T) {
+	b := &broker{}
+	o, _ := newBox(t, b, 2)
+	clear := &Item{Topic: contract.DeviceStateTopic(site, "door", "contact"), QoS: 1, Retain: true, Raw: true}
+	o.Put(clear)
+	o.Put(item(contract.HeartbeatTopic(site), false))
+	o.Put(item(contract.DeviceEventTopic(site, "pir"), false))
+	stop := run(t, o)
+	defer stop()
+	drivertest.WaitFor(t, "two messages", func() bool { return len(b.got()) == 2 })
+	if g := b.got(); g[0].topic != clear.Topic || g[1].topic != contract.DeviceEventTopic(site, "pir") {
+		t.Fatalf("the clear stays, the heartbeat goes: %+v", g)
+	}
+}
+
+func TestPriorityOfAClearIsNeverNoise(t *testing.T) {
+	state := contract.DeviceStateTopic(site, "door", "contact")
+	cases := []struct {
+		it   *Item
+		want priority
+	}{
+		{&Item{Topic: state, Retain: true, Raw: true}, priorityNormal},
+		{&Item{Topic: state, Retain: true, Data: []byte(`{"contact":false}`)}, priorityState},
+		{&Item{Topic: state, Data: nil}, priorityState},
+		{&Item{Topic: contract.AlarmStateTopic(site), Retain: true, Raw: true}, priorityAlarm},
+	}
+	for i, c := range cases {
+		if got := priorityOf(c.it); got != c.want {
+			t.Errorf("case %d (%s): priority %d, want %d", i, c.it.Topic, got, c.want)
 		}
 	}
 }

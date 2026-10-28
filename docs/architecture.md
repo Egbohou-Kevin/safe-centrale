@@ -158,7 +158,10 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   états périodiques (`device/+/state`, `system/heartbeat`, `system/health`,
   `system/devices`, `registry/devices`, `gsm/status`, `zigbee/status`, `video/status`,
   `agent/status`). Normale : le reste (événements des appareils, sessions, autres
-  ordres, `system/contacts`, `config/applied`, `install/mode`). Si elle ne tient que
+  ordres, `system/contacts`, `config/applied`, `install/mode`). Un message retenu vide,
+  qui efface l'état gardé par le broker (celui d'un appareil retiré : une porte restée
+  « ouverte » bloquerait toute mise en marche), est au moins normal, même sur
+  `device/+/state`. Si elle ne tient que
   des messages de priorité haute, elle jette le plus ancien et le dit au journal
   (« only alarm messages »). Les tests des
   couches application partagent son faux broker (`outboxtest.Broker`). La porte
