@@ -91,6 +91,12 @@ func newRig(t *testing.T, store *drivertest.MemStore, mutate ...func(*Config)) *
 // newRigAt is newRig with its clock set at start.
 func newRigAt(t *testing.T, start time.Time, store *drivertest.MemStore, mutate ...func(*Config)) *rig {
 	t.Helper()
+	return newRigWith(t, start, store, nil, mutate...)
+}
+
+// newRigWith is newRigAt with what deps changes in the hub's dependencies (nil: none).
+func newRigWith(t *testing.T, start time.Time, store *drivertest.MemStore, deps func(*Deps), mutate ...func(*Config)) *rig {
+	t.Helper()
 	r := &rig{t: t, clock: drivertest.NewFakeClock(start), store: store, broker: &outboxtest.Broker{}, logs: drivertest.Logs(t)}
 	if store == nil {
 		r.store = drivertest.NewMemStore()
@@ -100,10 +106,14 @@ func newRigAt(t *testing.T, start time.Time, store *drivertest.MemStore, mutate 
 		m(&cfg)
 	}
 	r.ids = contract.NewIDGeneratorWith(r.clock.Now, &entropy{n: byte(rigCount.Add(1) * 37)})
-	h, err := New(cfg, Deps{
+	d := Deps{
 		Clock: r.clock, Store: r.store, Publisher: r.broker, NewID: r.ids.New,
 		Logger: slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
-	})
+	}
+	if deps != nil {
+		deps(&d)
+	}
+	h, err := New(cfg, d)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -36,6 +36,11 @@ type Engine struct {
 	// Boot: applied to the saved state, that change may have been dropped there, and
 	// Boot must take it for this run's news (see learn).
 	early map[string]bool
+	// apartBefore are the sensors whose time was set apart (HeardAhead) when the state
+	// was restored: set apart by a run before, their time is on a clock older than the
+	// one the broker's states were dated on since, which the boot time cannot order
+	// (see older). Boot drops it.
+	apartBefore map[string]bool
 }
 
 // New creates a disarmed engine. newID produces incident identifiers (for example
@@ -72,6 +77,10 @@ func (e *Engine) Restore(s Snapshot) {
 	}
 	e.s = s
 	e.awaitingBoot = true
+	e.apartBefore = map[string]bool{}
+	for key := range s.HeardAhead {
+		e.apartBefore[key] = true
+	}
 }
 
 // Mode returns the current mode of the alarm.
@@ -88,13 +97,14 @@ func (e *Engine) NextWake() time.Time {
 
 // State returns the public summary of the engine at time now.
 func (e *Engine) State(now time.Time) State {
-	st := State{Mode: e.s.Mode, Since: e.s.Since}
+	// The mode's start as it was taken, not where a clock set back brought it.
+	st := State{Mode: e.s.Mode, Since: later(e.s.Since, e.s.SinceAhead)}
 	switch e.s.Mode {
 	case ModeArmed:
 		// Armed since the arming, through the alarms that left the site armed (trial
 		// of 26 October 2026: "armed since 10:33" for an arming at 10:30). One later
 		// than the mode's own start comes from a clock set back since: not said.
-		if a := e.s.ArmedSince; !a.IsZero() && a.Before(e.s.Since) {
+		if a := e.s.ArmedSince; !a.IsZero() && a.Before(st.Since) {
 			st.Since = a
 		}
 	case ModeArming, ModeEntryDelay:
@@ -160,10 +170,15 @@ func (e *Engine) Handle(in Input) []Action {
 // already heard would look new at Boot, and alert again (see older). They are Heard
 // again once now reaches them, the clock having caught up with the one they were taken
 // on, by a step of NTP or simply running on: a state dated before them then compares
-// with them, as a door that came back open from the broker's last save.
+// with them, as a door that came back open from the broker's last save. So is the start
+// of the mode (Since, SinceAhead), but not before Boot: Boot compares the states the
+// broker kept with it as the run before left it.
 func (e *Engine) pullBack(now time.Time) {
 	if now.Before(e.seen) && e.s.Mode == ModeDisarmed && !e.awaitingBoot {
 		e.checkPlan(now)
+	}
+	if !e.awaitingBoot {
+		e.pullSinceBack(now)
 	}
 	e.seen = later(e.seen, now)
 	for i, at := range e.s.Failures {
@@ -202,6 +217,23 @@ func (e *Engine) pullBack(now time.Time) {
 	}
 	if latest := now.Add(e.cfg.EntryDelay); e.s.EntryEnds.After(latest) {
 		e.s.EntryEnds = latest
+	}
+}
+
+// pullSinceBack brings the start of the mode back to now when the clock went back
+// behind it, keeping it apart (SinceAhead), and puts it back once the clock catches up
+// with it. Left after now, a further restart with the clock set back again would take
+// a real movement dated on the clock as it is, after the time it went back to the first
+// time, for one older than the mode, and drop it.
+func (e *Engine) pullSinceBack(now time.Time) {
+	if a := e.s.SinceAhead; !a.IsZero() && !a.After(now) {
+		e.s.Since, e.s.SinceAhead = a, time.Time{}
+	}
+	if e.s.Since.After(now) {
+		if e.s.SinceAhead.IsZero() {
+			e.s.SinceAhead = e.s.Since
+		}
+		e.s.Since = now
 	}
 }
 
@@ -333,7 +365,7 @@ func isSirenOn(a Action) bool { _, on := a.(SirenOn); return on }
 // leaving it drops the plan.
 func (e *Engine) setMode(m Mode, at time.Time) {
 	e.s.Mode = m
-	e.s.Since = at
+	e.s.Since, e.s.SinceAhead = at, time.Time{}
 	if m == ModeDisarmed || m == ModeArming {
 		e.s.ArmedSince = time.Time{}
 	}

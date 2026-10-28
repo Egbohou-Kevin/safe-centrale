@@ -34,7 +34,7 @@ func TestRestartWhileArmedStaysArmed(t *testing.T) {
 	h.armed()
 	h.now = h.now.Add(time.Minute)
 	h.e = restart(t, h)
-	noActions(t, h.e.Boot(h.now, nil))
+	noActions(t, h.e.Boot(h.now, time.Time{}, nil))
 	h.mustBe(ModeArmed)
 	h.open(back)
 	h.mustBe(ModeTriggered)
@@ -45,7 +45,7 @@ func TestRestartWhileArmingKeepsRemainingDelay(t *testing.T) {
 	h.arm()
 	h.now = h.now.Add(30 * time.Second)
 	h.e = restart(t, h)
-	noActions(t, h.e.Boot(h.now, nil))
+	noActions(t, h.e.Boot(h.now, time.Time{}, nil))
 	h.mustBe(ModeArming)
 	h.advance(90 * time.Second) // 2 min since arming
 	h.mustBe(ModeArmed)
@@ -57,7 +57,7 @@ func TestRestartAfterDelayElapsedFinishesArming(t *testing.T) {
 	restarted := restart(t, h)
 	h.now = h.now.Add(10 * time.Minute) // the hub stayed off
 	h.e = restarted
-	as := h.e.Boot(h.now, nil)
+	as := h.e.Boot(h.now, time.Time{}, nil)
 	h.mustBe(ModeArmed)
 	onlyEvent[Armed](t, as)
 }
@@ -69,7 +69,7 @@ func TestRestartWhileTriggeredResumesSiren(t *testing.T) {
 	h.now = h.now.Add(time.Minute)
 	h.e = restart(t, h)
 
-	as := h.e.Boot(h.now, nil)
+	as := h.e.Boot(h.now, time.Time{}, nil)
 	h.mustBe(ModeTriggered)
 	var on []SirenOn
 	for _, a := range as {
@@ -94,7 +94,7 @@ func TestRestartAcrossACycleStartResumesTheSirenOnce(t *testing.T) {
 	// cycle 2 started at 7 and ends at 12.
 	h.e = restart(t, h)
 	h.now = h.now.Add(8 * time.Minute)
-	as := h.e.Boot(h.now, nil)
+	as := h.e.Boot(h.now, time.Time{}, nil)
 	var on []SirenOn
 	for _, a := range as {
 		if s, ok := a.(SirenOn); ok {
@@ -118,7 +118,7 @@ func TestRestartDuringSirenPauseDoesNotResumeSiren(t *testing.T) {
 	h.breakWindow()
 	h.advance(6 * time.Minute) // pause between cycles 1 and 2
 	h.e = restart(t, h)
-	if count[SirenOn](h.e.Boot(h.now, nil)) != 0 {
+	if count[SirenOn](h.e.Boot(h.now, time.Time{}, nil)) != 0 {
 		t.Fatal("no siren during the pause")
 	}
 }
@@ -148,7 +148,7 @@ func TestRestartKeepsTheSirenScheduleInTheState(t *testing.T) {
 			h.e.Handle(Tick{Now: h.now})
 			h.e = restart(t, h)
 			h.now = start.Add(c.back)
-			h.e.Boot(h.now, nil)
+			h.e.Boot(h.now, time.Time{}, nil)
 			h.mustRing(inc, start, c.want)
 		})
 	}
@@ -159,7 +159,7 @@ func TestRestartKeepsTheSirenScheduleInTheState(t *testing.T) {
 	h.breakWindow()
 	h.e = restart(t, h)
 	h.now = h.now.Add(20 * time.Minute)
-	h.e.Boot(h.now, nil)
+	h.e.Boot(h.now, time.Time{}, nil)
 	if s := h.e.State(h.now); s.Mode != ModeArmed || s.Incident != "" || s.SirenOn || !s.EndsAt.IsZero() {
 		t.Fatalf("after the cycles ran out: %+v", s)
 	}
@@ -169,7 +169,7 @@ func TestBootTriggersOnZonesAlreadyInAlarm(t *testing.T) {
 	h := newHarness(t)
 	h.armed()
 	h.e = restart(t, h)
-	as := h.e.Boot(h.now, []Signal{
+	as := h.e.Boot(h.now, time.Time{}, []Signal{
 		{DeviceID: back, Sensor: SensorContact, Active: true},
 		{DeviceID: door, Sensor: SensorContact, Active: false},
 	})
@@ -182,7 +182,7 @@ func TestBootTriggersOnZonesAlreadyInAlarm(t *testing.T) {
 func TestBootDisarmedLearnsOpenDoors(t *testing.T) {
 	h := newHarness(t)
 	h.e = restart(t, h)
-	noActions(t, h.e.Boot(h.now, []Signal{{DeviceID: back, Sensor: SensorContact, Active: true}}))
+	noActions(t, h.e.Boot(h.now, time.Time{}, []Signal{{DeviceID: back, Sensor: SensorContact, Active: true}}))
 	r := replyOf(t, h.arm())
 	if r.Reason != ReasonZoneOpen {
 		t.Fatalf("a door known open at boot must block arming: %+v", r)
@@ -235,7 +235,7 @@ func TestRestartAfterTheExitDelayUsesTheDoorsAsTheyAreNow(t *testing.T) {
 			h.open(dev) // during the exit delay: nothing happens yet
 			h.e = restart(t, h)
 			h.now = h.now.Add(10 * time.Minute)
-			as := h.e.Boot(h.now, []Signal{{DeviceID: dev, Sensor: SensorContact, Active: false}})
+			as := h.e.Boot(h.now, time.Time{}, []Signal{{DeviceID: dev, Sensor: SensorContact, Active: false}})
 			h.mustBe(ModeArmed)
 			onlyEvent[Armed](t, as)
 			if len(alerts(as)) != 0 || h.e.Snapshot().Bypassed[dev] || h.e.Snapshot().Open[dev] {
@@ -256,7 +256,7 @@ func TestRestartAfterTheExitDelayWithDoorsStillOpen(t *testing.T) {
 	h.open(back)
 	h.e = restart(t, h)
 	h.now = h.now.Add(10 * time.Minute)
-	as := h.e.Boot(h.now, []Signal{{DeviceID: back, Sensor: SensorContact, Active: true}})
+	as := h.e.Boot(h.now, time.Time{}, []Signal{{DeviceID: back, Sensor: SensorContact, Active: true}})
 	h.mustBe(ModeArmed)
 	if al := alerts(as); len(al) != 1 || al[0].Kind != AlertArmingBypassed || !h.e.Snapshot().Bypassed[back] {
 		t.Fatalf("a window still open is bypassed and reported once: %v", as)
@@ -267,7 +267,7 @@ func TestRestartAfterTheExitDelayWithDoorsStillOpen(t *testing.T) {
 	h.open(door)
 	h.e = restart(t, h)
 	h.now = h.now.Add(10 * time.Minute)
-	as = h.e.Boot(h.now, []Signal{{DeviceID: door, Sensor: SensorContact, Active: true}})
+	as = h.e.Boot(h.now, time.Time{}, []Signal{{DeviceID: door, Sensor: SensorContact, Active: true}})
 	h.mustBe(ModeTriggered)
 	if al := alerts(as); len(al) != 1 || al[0].Kind != AlertIntrusion || count[SirenOn](as) != 1 {
 		t.Fatalf("an entry door open since the exit delay ends in one alarm: %v", as)
@@ -284,7 +284,7 @@ func TestNoDeadlineIsReplayedBeforeBoot(t *testing.T) {
 	h.now = h.now.Add(10 * time.Minute)
 	noActions(t, h.close(door)) // arrives during the boot window
 	h.mustBe(ModeArming)
-	as := h.e.Boot(h.now, nil)
+	as := h.e.Boot(h.now, time.Time{}, nil)
 	h.mustBe(ModeArmed)
 	onlyEvent[Armed](t, as)
 }
@@ -302,7 +302,7 @@ func TestBootReportsOnlyNewTampers(t *testing.T) {
 		{DeviceID: keypad, Sensor: SensorTamper, Active: true},
 		{DeviceID: smoke, Sensor: SensorTamper, Active: true}, // new
 	}
-	as := h.e.Boot(h.now, tampered)
+	as := h.e.Boot(h.now, time.Time{}, tampered)
 	al := alerts(as)
 	if len(al) != 1 || al[0].Kind != AlertTamper || al[0].Cause.DeviceID != smoke {
 		t.Fatalf("only the new tamper is reported: %v", as)
@@ -311,13 +311,13 @@ func TestBootReportsOnlyNewTampers(t *testing.T) {
 
 	// Both are now known: a second restart reports nothing.
 	h.e = restart(t, h)
-	noActions(t, h.e.Boot(h.now, tampered))
+	noActions(t, h.e.Boot(h.now, time.Time{}, tampered))
 
 	// A tamper that ended while the hub was off is forgotten: the next one is new.
 	h.e = restart(t, h)
-	h.e.Boot(h.now, []Signal{{DeviceID: keypad, Sensor: SensorTamper, Active: false}})
+	h.e.Boot(h.now, time.Time{}, []Signal{{DeviceID: keypad, Sensor: SensorTamper, Active: false}})
 	h.e = restart(t, h)
-	if al := alerts(h.e.Boot(h.now, tampered[:1])); len(al) != 1 {
+	if al := alerts(h.e.Boot(h.now, time.Time{}, tampered[:1])); len(al) != 1 {
 		t.Fatalf("a tamper back after it ended is new: %v", al)
 	}
 }

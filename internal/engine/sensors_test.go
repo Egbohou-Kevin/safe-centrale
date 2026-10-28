@@ -243,7 +243,7 @@ func TestNoWakeBeforeBootAfterARestore(t *testing.T) {
 		t.Fatalf("NextWake before Boot: %v", h.e.NextWake())
 	}
 	h.now = h.now.Add(8 * time.Minute)
-	h.e.Boot(h.now, nil)
+	h.e.Boot(h.now, time.Time{}, nil)
 	if want := t0.Add(2*time.Minute + 12*time.Minute); !h.e.NextWake().Equal(want) {
 		t.Fatalf("NextWake after Boot %v, want %v", h.e.NextWake(), want)
 	}

@@ -25,11 +25,22 @@ import (
 //
 // Momentary sensors (motion) must therefore publish their return to rest, or a
 // stale "active" state would trigger an alarm on restart.
-func (e *Engine) Boot(now time.Time, current []Signal) []Action {
+//
+// booted is when the system started, on the clock as it is now (now less the
+// system's uptime), the zero time when unknown: a Pi that keeps no time starts from an
+// old one, and a state dated before booted was dated before the clock went back, on
+// the clock of the engine's own times (see behind). Unknown, or after now (a wrong
+// reading), the states dated up to now are trusted as before.
+func (e *Engine) Boot(now, booted time.Time, current []Signal) []Action {
 	e.awaitingBoot = false
 	e.s.Checking = nil // the checks under way did not survive the restart
-	e.pullBack(now)
-	alarms := e.learn(now, current)
+	ref := bootRef{now: now, booted: booted, since: e.s.Since}
+	if booted.After(now) {
+		ref.booted = time.Time{}
+	}
+	e.pullBack(now) // brings Since back if the clock went back behind it: ref keeps it
+	alarms := e.learn(ref, current)
+	e.apartBefore = nil
 	if e.s.Mode == ModeDisarmed {
 		e.checkPlan(now)
 	}
@@ -46,18 +57,37 @@ func (e *Engine) Boot(now time.Time, current []Signal) []Action {
 	return out
 }
 
+// bootRef is what Boot compares the devices' states with: now, when the system started
+// (zero when unknown) and the start of the mode as the run before left it, on its
+// clock: brought back to the time its clock went back to if that run found it after
+// its now (see pullSinceBack), as Boot found it otherwise.
+type bootRef struct {
+	now, booted, since time.Time
+}
+
 // learn records the devices' states given at Boot: which contacts are open, which
 // tampers have ended, which detectors no longer hold the fire that rings. It returns
 // the signals still to act on: every active one but the tampers already reported
 // before the restart, the contacts already known open and the states older than what
 // the engine knows. A state changed between Restore and Boot is this run's own news
 // (see early): applied to the saved state, it may have been dropped there, as the
-// alarm already ringing when the hub stopped.
-func (e *Engine) learn(now time.Time, current []Signal) []Signal {
+// alarm already ringing when the hub stopped. The active states set aside are kept
+// (SetAside), and so are those the last Boot set aside, given back again.
+func (e *Engine) learn(ref bootRef, current []Signal) []Signal {
 	var alarms []Signal
+	before := e.s.SetAside
+	e.s.SetAside = nil
 	for _, sig := range current {
-		early := e.early[sensorKey(sig.DeviceID, sig.Sensor)]
-		if !early && e.older(now, sig) {
+		key := sensorKey(sig.DeviceID, sig.Sensor)
+		early := e.early[key]
+		again := sig.Active && !sig.Now.IsZero() && sig.Now.Equal(before[key])
+		if !early && (again || e.older(ref, sig)) {
+			if sig.Active && !sig.Now.IsZero() {
+				if e.s.SetAside == nil {
+					e.s.SetAside = map[string]time.Time{}
+				}
+				e.s.SetAside[key] = sig.Now
+			}
 			continue
 		}
 		if sig.Sensor == SensorTamper {
@@ -99,8 +129,12 @@ func (e *Engine) learn(now time.Time, current []Signal) []Signal {
 // A time of the engine's after now was set before the clock went back behind it: a Pi
 // that keeps no time restarts from an old one, days behind the saved state, until NTP
 // sets it right (see behind). The times heard then are kept apart (HeardAhead, see
-// pullBack).
-func (e *Engine) older(now time.Time, sig Signal) bool {
+// pullBack). The system's start, when known, tells a state dated before the clock went
+// back from one dated since; not for a time set apart by a run before this one
+// (apartBefore), the broker's state may be dated on that run's clock. The start of the
+// mode is the one the run before left (bootRef.since), on its own clock.
+func (e *Engine) older(ref bootRef, sig Signal) bool {
+	now, booted := ref.now, ref.booted
 	if sig.Now.IsZero() {
 		return false
 	}
@@ -108,13 +142,19 @@ func (e *Engine) older(now time.Time, sig Signal) bool {
 	if heard, ok := e.s.Heard[key]; ok {
 		return !sig.Now.After(heard)
 	}
-	if ahead, ok := e.s.HeardAhead[key]; ok && behind(sig.Now, ahead, now) {
-		return true
+	if ahead, ok := e.s.HeardAhead[key]; ok {
+		before := booted
+		if e.apartBefore[key] {
+			before = time.Time{}
+		}
+		if behind(sig.Now, ahead, now, before) {
+			return true
+		}
 	}
 	if lasting(sig.Sensor) || !sig.Active {
 		return false
 	}
-	from := e.s.Since
+	from := ref.since
 	if e.s.Mode == ModeArming && sig.Sensor != SensorPanic {
 		// The exit delay under way, as far as now while it still runs: its end after
 		// now is no clock ahead, and must not make every state trusted. A panic button,
@@ -126,22 +166,22 @@ func (e *Engine) older(now time.Time, sig Signal) bool {
 		from = later(from, end)
 	}
 	if from.After(now) {
-		return behind(sig.Now, from, now)
+		return behind(sig.Now, from, now, booted)
 	}
 	return !sig.Now.After(from)
 }
 
 // behind tells whether a state that began at began is no later than ref, a time the
-// engine set before the clock went back behind it. A state dated after now was dated
-// before the clock went back too, on the same clock as ref: the two compare. One dated
-// up to now may have been dated since, on the clock as it is now, and be news: it is
-// trusted, unless it bears ref itself, the very state the engine heard. A real
-// intrusion after the restart must ring; a state dated before the time the clock went
-// back to cannot be told from it here, the engine not knowing that time: a door closed
-// after the broker's last save, open longer than the clock went back, comes back open
-// and is taken (see docs/engine.md, 28 October 2026).
-func behind(began, ref, now time.Time) bool {
-	return !began.After(ref) && (began.After(now) || began.Equal(ref))
+// engine set before the clock went back behind it. A state dated after now, or before
+// booted (the system's start, zero when unknown), was dated before the clock went back,
+// on the same clock as ref: the two compare. One dated since the system started, up to
+// now, is news: it is trusted, unless it bears ref itself, the very state the engine
+// heard. A real intrusion while the hub was starting must ring. The boot time unknown,
+// every state dated up to now is trusted: a door closed after the broker's last save,
+// open longer than the clock went back, comes back open and rings (see docs/engine.md,
+// 28 October 2026).
+func behind(began, ref, now, booted time.Time) bool {
+	return !began.After(ref) && (began.After(now) || began.Before(booted) || began.Equal(ref))
 }
 
 // hear records when the engine took the state of a sensor that keeps one in every
@@ -151,6 +191,7 @@ func behind(began, ref, now time.Time) bool {
 // change is marked as this run's own (early).
 func (e *Engine) hear(sig Signal) {
 	key := sensorKey(sig.DeviceID, sig.Sensor)
+	delete(e.s.SetAside, key) // the broker's state is this one now
 	if e.awaitingBoot {
 		if e.early == nil {
 			e.early = map[string]bool{}

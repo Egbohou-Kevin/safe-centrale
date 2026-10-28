@@ -14,7 +14,7 @@ func TestARestartPlansAgainForChangedClosingTimes(t *testing.T) {
 	h := newHarness(t, closes22)
 	h.cfg.Closing = nil
 	h.e = restart(t, h)
-	h.e.Boot(h.now, nil)
+	h.e.Boot(h.now, time.Time{}, nil)
 	h.mustPlan(time.Time{})
 	h.advance(61 * time.Minute) // 22:01
 	h.mustBe(ModeDisarmed)
@@ -23,7 +23,7 @@ func TestARestartPlansAgainForChangedClosingTimes(t *testing.T) {
 	h = newHarness(t, closes22)
 	h.cfg.Closing = allWeek(21, 30)
 	h.e = restart(t, h)
-	h.e.Boot(h.now, nil)
+	h.e.Boot(h.now, time.Time{}, nil)
 	h.mustPlan(t0.Add(30 * time.Minute))
 	h.advance(31 * time.Minute) // 21:31
 	h.mustBe(ModeArming)
@@ -34,7 +34,7 @@ func TestARestartPlansAgainForChangedClosingTimes(t *testing.T) {
 	h.postpone() // 23:00
 	h.cfg.AutoArmLimit = 30 * time.Minute
 	h.e = restart(t, h)
-	h.e.Boot(h.now, nil)
+	h.e.Boot(h.now, time.Time{}, nil)
 	h.mustPlan(closing.Add(30 * time.Minute))
 	if s := h.e.Snapshot().Schedule; s.Postponed != 2 || !s.Limit.Equal(closing.Add(30*time.Minute)) {
 		t.Fatalf("the plan keeps its postponements under the new limit: %+v", s)
@@ -49,7 +49,7 @@ func TestARestartKeepsAnOldPlanWithoutItsClosing(t *testing.T) {
 	snap.Schedule.Closing = time.Time{}
 	h.e, _ = New(h.cfg, func() string { return "inc" }, h.now)
 	h.e.Restore(snap)
-	h.e.Boot(h.now, nil)
+	h.e.Boot(h.now, time.Time{}, nil)
 	h.mustPlan(closing.Add(30 * time.Minute))
 }
 
@@ -60,7 +60,7 @@ func TestARestartDoesNotTakeAContactKnownOpenForAnOpening(t *testing.T) {
 	h.open("dev_office")
 	h.armed()
 	h.e = restart(t, h)
-	noActions(t, h.e.Boot(h.now, []Signal{{DeviceID: "dev_office", Sensor: SensorContact, Active: true}}))
+	noActions(t, h.e.Boot(h.now, time.Time{}, []Signal{{DeviceID: "dev_office", Sensor: SensorContact, Active: true}}))
 	h.mustBe(ModeArmed)
 
 	// The entry door forced, the siren silenced with a code: armed again, the door
@@ -72,7 +72,7 @@ func TestARestartDoesNotTakeAContactKnownOpenForAnOpening(t *testing.T) {
 	h.cmd(CmdSilence, goodCode("u_1"))
 	h.mustBe(ModeArmed)
 	h.e = restart(t, h)
-	noActions(t, h.e.Boot(h.now, []Signal{{DeviceID: door, Sensor: SensorContact, Active: true}}))
+	noActions(t, h.e.Boot(h.now, time.Time{}, []Signal{{DeviceID: door, Sensor: SensorContact, Active: true}}))
 	h.mustBe(ModeArmed)
 	h.advance(time.Minute)
 	h.mustBe(ModeArmed)
@@ -88,7 +88,7 @@ func TestALongOutageAfterTheExitDelayEndsInOneAlarm(t *testing.T) {
 		h.open(door)
 		h.e = restart(t, h)
 		h.now = h.now.Add(off)
-		as := h.e.Boot(h.now, []Signal{{DeviceID: door, Sensor: SensorContact, Active: true}})
+		as := h.e.Boot(h.now, time.Time{}, []Signal{{DeviceID: door, Sensor: SensorContact, Active: true}})
 		as = append(as, h.advance(5*time.Minute)...)
 		if n := len(eventsOf[Triggered](as)); n != 1 {
 			t.Fatalf("off %v: %d alarms, want 1: %v", off, n, as)
@@ -108,7 +108,7 @@ func TestARestartPullsBackDeadlinesSetByAClockAhead(t *testing.T) {
 	h.breakWindow()
 	h.e = restart(t, h)
 	h.now = h.now.Add(-time.Hour) // corrected
-	as := h.e.Boot(h.now, nil)
+	as := h.e.Boot(h.now, time.Time{}, nil)
 	for _, a := range as {
 		if on, ok := a.(SirenOn); ok && on.Duration > h.cfg.SirenCycle {
 			t.Fatalf("the siren told to sound %v, more than a cycle", on.Duration)
@@ -123,7 +123,7 @@ func TestARestartPullsBackDeadlinesSetByAClockAhead(t *testing.T) {
 	h.arm()
 	h.e = restart(t, h)
 	h.now = h.now.Add(-time.Hour)
-	h.e.Boot(h.now, nil)
+	h.e.Boot(h.now, time.Time{}, nil)
 	h.advance(h.cfg.ExitDelay)
 	h.mustBe(ModeArmed)
 }

@@ -567,9 +567,22 @@ le début du mode) a donc été posée avant le recul :
 
 - un état daté après maintenant a été daté avant le recul, sur la même horloge : il se
   compare à elle comme d'habitude (plus ancien ou égal, il est écarté) ;
-- un état daté au plus maintenant a pu l'être après le recul, pendant le démarrage :
-  c'est peut-être une vraie intrusion, il est pris tel quel, sauf s'il porte exactement
-  l'heure que le moteur a gardée de ce capteur (c'est le même état).
+- un état daté avant le démarrage du système, sur l'horloge telle qu'elle est
+  maintenant, l'a été avant le recul (sauf un saut de NTP avant le démarrage du hub,
+  voir les limites connues) : il se compare de même. Le hub donne à `Boot` cette heure
+  de démarrage, maintenant moins `/proc/uptime` (`sysclock.Uptime`, port `Deps.Uptime`) ;
+- un état daté depuis le démarrage du système, au plus maintenant, l'a été après le
+  recul, pendant le démarrage : c'est peut-être une vraie intrusion, il est pris tel
+  quel, sauf s'il porte exactement l'heure que le moteur a gardée de ce capteur (c'est
+  le même état).
+
+L'heure de démarrage inconnue (`/proc/uptime` illisible, ou pas un nombre positif de
+secondes), ou fausse (après maintenant, ou après le démarrage du hub lui-même), le
+moteur fait sans : tout état daté au plus maintenant est pris tel quel, une alerte de
+trop plutôt qu'une perdue. Elle ne sert pas non plus pour une heure mise à part par une
+marche précédente (déjà postérieure à l'horloge de cette marche) : l'état gardé par le
+broker a pu être daté sur l'horloge de cette marche-là, que l'heure de démarrage
+n'ordonne pas avec elle ; il est pris tel quel s'il est daté au plus maintenant.
 
 Les heures entendues ainsi dépassées sont mises à part (`heard_ahead` dans la
 sauvegarde) au lieu d'être effacées : elles ne servent plus qu'à reconnaître le même
@@ -580,29 +593,65 @@ saut de NTP ou en marchant simplement (pas d'internet, ou un recul de quelques
 minutes), elles redeviennent des heures entendues ordinaires, l'horloge ayant
 rattrapé celle qui les a posées.
 
-Limites connues (28 octobre 2026), le moteur ne sachant pas à quelle heure l'horloge
-est repartie : un état daté avant cette heure ne se distingue pas d'un état daté
-pendant le démarrage, et il est pris tel quel. Ainsi :
+Corrigé le 28 octobre 2026, le moteur sachant depuis l'heure de démarrage du système
+(`internal/engine/restart6_test.go`, `internal/hub/clock_test.go`) : avant, un état daté
+avant l'heure où l'horloge est repartie ne se distinguait pas d'un état daté pendant le
+démarrage, et il était pris tel quel. Ainsi :
 
 - une porte (ou un détecteur de fumée, un sabotage) refermée après la dernière
-  écriture du broker, mais ouverte depuis plus longtemps que le recul, revient
-  ouverte et déclenche l'intrusion au retour du courant, le cas corrigé le 25 octobre ;
-  le Pi sans module d'horloge recule à chaque coupure, ce cas reste donc probable ;
+  écriture du broker, mais ouverte depuis plus longtemps que le recul, revenait
+  ouverte et déclenchait l'intrusion au retour du courant ;
 - un bouton panique pressé deux fois, le broker n'ayant gardé que le premier appui,
-  plus ancien que le recul, alerte de nouveau ;
+  plus ancien que le recul, alertait de nouveau ;
 - un état momentané (mouvement, bris de vitre) commencé avant cette heure et toujours
-  actif peut déclencher si le mode a commencé après lui ;
+  actif déclenchait si le mode avait commencé après lui.
+
+Le même état daté depuis le démarrage du système déclenche (le cas positif) ; sans
+heure de démarrage, la règle d'avant tient. Les séquences aléatoires redémarrent avec
+ou sans elle, le broker rendant un état antérieur au recul.
+
+Limites connues (28 octobre 2026) :
+
 - un état gardé par le broker daté d'avant un recul de l'horloge pendant la marche,
   plus tard donc que l'état entendu ensuite, est pris tel quel : les deux dates ne
-  s'ordonnent pas.
+  s'ordonnent pas. L'heure de démarrage n'y peut rien, le système n'ayant pas
+  redémarré ;
+- une heure mise à part par une marche précédente ne s'ordonne pas par l'heure de
+  démarrage (voir plus haut) : une porte refermée après la dernière écriture du broker
+  pendant cette marche, ouverte plus longtemps que le nouveau recul, peut encore
+  déclencher ;
+- une horloge avancée par NTP entre le démarrage du système et celui du hub (le hub
+  ne voit que les sauts postérieurs à son propre démarrage) : l'heure de démarrage se
+  calcule alors sur l'horloge corrigée, et un état daté pendant ce temps sur l'horloge
+  encore reculée paraît antérieur au démarrage du système. Il est écarté s'il n'est
+  pas plus récent que l'heure entendue, puis mis à part (`set_aside`), donc écarté
+  aussi aux démarrages suivants : c'est une alerte perdue, rare (une intrusion dans
+  les quelques secondes après la mise sous tension, la porte refermée ensuite). Cette
+  perte existait avant le lot ; la corriger est un autre lot, à décider par Kevin.
 
-Les trois premiers cas se corrigent si le hub donne à `Boot` l'heure de démarrage du
-système (maintenant moins `/proc/uptime`) : un état daté avant elle l'a été avant le
-recul, et se compare aux heures du moteur. C'est à décider par Kevin, hors du moteur.
-Autre défaut voisin laissé de côté : `pullBack` ne ramène pas le début du mode
-(`since`) posé avant un recul ; à un redémarrage suivant où l'horloge recule encore,
-un vrai mouvement pendant l'arrêt, daté après la nouvelle heure mais avant ce début,
-serait pris pour ancien.
+Le début du mode suit la même règle. Trouvé postérieur à maintenant, il est mis à
+part (`since_ahead`, que l'état publié dit toujours) et ramené à maintenant (`since`),
+le plus tard où le mode a pu commencer sur l'horloge telle qu'elle est : les états
+momentanés datés sur elle s'y comparent. L'horloge qui le rattrape le remet en place.
+Pas avant `Boot` : `Boot` compare les états gardés par le broker au début du mode tel
+que la marche précédente l'a laissé. Corrigé le 28 octobre 2026 : le début du mode
+restait postérieur ; à un redémarrage suivant où l'horloge reculait encore, un vrai
+mouvement pendant l'arrêt du hub, daté après la nouvelle heure mais avant ce début,
+était pris pour ancien et écarté.
+
+Ramené, le début du mode ne reconnaît plus un mouvement gardé par le broker d'avant
+le mode, sur l'ancienne horloge, toujours actif : il lui paraîtrait nouveau au
+redémarrage suivant. `Boot` garde donc les états actifs qu'il écarte, chacun par l'heure
+où il a commencé (`set_aside`) : rendu de nouveau par le broker, avec cette heure-là,
+c'est le même état, écarté sans regarder l'horloge. Entendre le capteur efface son
+entrée. Les dates du contrat sont à la milliseconde : un autre état du même capteur
+portant la même heure n'arrive pas en pratique.
+
+Reste une limite : l'horloge reculée pendant la marche (et non au démarrage), un
+mouvement commencé avant le mode sur l'ancienne horloge, toujours actif et que `Boot`
+n'a donc jamais écarté, est pris pour nouveau au redémarrage suivant, avant que
+l'horloge ne rattrape le début du mode : une alarme de trop, plutôt qu'un vrai
+mouvement perdu.
 
 Corrigé le 28 octobre 2026 : `pullBack` effaçait les heures entendues postérieures à
 maintenant, et un mode commencé après maintenant faisait prendre tel quel tout état

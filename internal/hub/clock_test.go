@@ -125,3 +125,51 @@ func TestAClockSetForwardSendsNoWaveEarly(t *testing.T) {
 	}
 	r.validateAll()
 }
+
+// A power cut while armed: the Pi starts again from the last time it saved, minutes
+// behind, and the broker gives back the back door open, its closing lost with its last
+// save. Opened longer ago than the clock went back, that state is dated before the
+// system started: no intrusion. One dated since, while the hub was starting, rings.
+// The uptime unknown, or putting the system's start after the hub's (a wrong reading),
+// the hub keeps the rule without it: the stale door rings, an alarm too many rather
+// than one lost.
+func TestARestartWithTheClockSetBackTellsAStaleDoorByTheBootTime(t *testing.T) {
+	const window = 50 * time.Millisecond
+	cases := []struct {
+		name   string
+		uptime func() (time.Duration, bool)
+		since  time.Duration // from when the clock went back to
+		rings  bool
+	}{
+		{"stale, the uptime known", func() (time.Duration, bool) { return 20 * time.Second, true }, -5 * time.Minute, false},
+		{"opened while the hub was starting", func() (time.Duration, bool) { return 20 * time.Second, true }, -5 * time.Second, true},
+		{"stale, the uptime unknown", func() (time.Duration, bool) { return 0, false }, -5 * time.Minute, true},
+		{"stale, no uptime", nil, -5 * time.Minute, true},
+		{"stale, an uptime shorter than the hub's run", func() (time.Duration, bool) { return window / 2, true }, -5 * time.Minute, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			first := newRig(t, nil)
+			first.start()
+			first.device(devBack, contract.CapContact, "open")
+			first.clock.Advance(10 * time.Minute)
+			first.device(devBack, contract.CapContact, "closed")
+			first.keypad(contract.ValArm, "")
+			first.keypad(contract.ValArmNow, "")
+			first.mustBe(engine.ModeArmed)
+			first.stop()
+
+			back := t0.Add(5 * time.Minute) // after the opening, before the closing
+			second := newRigWith(t, back, first.store, func(d *Deps) { d.Uptime = c.uptime },
+				func(c *Config) { c.BootWindow = window })
+			open := event(devBack, contract.CapContact, "open")
+			open.Since = contract.TSPtr(back.Add(c.since))
+			second.send(contract.DeviceStateTopic(site, devBack, contract.CapContact), contract.TypeDeviceState, open)
+			second.start()
+			second.settle()
+			if got := len(eventsOf(second, contract.TypeAlarmTriggered)) == 1; got != c.rings {
+				t.Fatalf("alarm %v, want %v", got, c.rings)
+			}
+		})
+	}
+}
