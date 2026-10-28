@@ -26,6 +26,9 @@ func TestConfig(t *testing.T) {
 		"journal": func(c *Config) { c.JournalItems = 0 },
 		"jbytes":  func(c *Config) { c.JournalBytes = 10 },
 		"economy": func(c *Config) { c.Economy = -time.Second },
+		// A photo may go only to a cloud host: an address without one names none.
+		"cloud no host":  func(c *Config) { c.CloudURLs = []string{"wss://cloud.example.com/mqtt", "wss:///mqtt"} },
+		"cloud unparsed": func(c *Config) { c.CloudURLs = []string{"://"} },
 	} {
 		c := DefaultConfig(site)
 		edit(&c)
