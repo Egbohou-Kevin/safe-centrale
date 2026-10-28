@@ -363,3 +363,36 @@ func TestANewTunnelWaitsForThePreviousToStop(t *testing.T) {
 	close(r.tun.last().up)
 	r.steps("opening", "open", "closed/stopped", "opening", "open")
 }
+
+// TestATunnelClosedWhileWaitingStillHoldsTheNext: a session closed while its tunnel
+// waits for the previous one must not let a third tunnel start before that one stopped.
+func TestATunnelClosedWhileWaitingStillHoldsTheNext(t *testing.T) {
+	r := start(t, nil, nil)
+	release := make(chan struct{})
+	r.tun.mu.Lock()
+	r.tun.hold = release
+	r.tun.mu.Unlock()
+	r.open("m1")
+	drivertest.WaitFor(t, "the tunnel", func() bool { return r.tun.count() == 1 })
+	close(r.tun.last().up)
+	r.steps("opening", "open")
+	r.send(contract.TypeMaintClose, contract.MaintCloseData{Session: "m1"})
+	drivertest.WaitFor(t, "the first tunnel stopping", r.tun.last().isStopped)
+	waits := func() int { return strings.Count(r.logs.String(), "waiting for the previous tunnel") }
+	r.open("m2")
+	drivertest.WaitFor(t, "the second tunnel waiting", func() bool { return waits() == 1 })
+	r.send(contract.TypeMaintClose, contract.MaintCloseData{Session: "m2"})
+	r.steps("opening", "open", "closed/stopped", "opening", "closed/stopped")
+	r.open("m3")
+	drivertest.WaitFor(t, "the third tunnel, or its wait", func() bool { return r.tun.count() == 2 || waits() == 2 })
+	close(release)
+	drivertest.WaitFor(t, "the third tunnel", func() bool { return r.tun.count() == 2 })
+	r.tun.mu.Lock()
+	overlap := r.tun.overlap
+	r.tun.mu.Unlock()
+	if overlap {
+		t.Fatal("the third ssh started before the first stopped")
+	}
+	close(r.tun.last().up)
+	r.steps("opening", "open", "closed/stopped", "opening", "closed/stopped", "opening", "open")
+}
