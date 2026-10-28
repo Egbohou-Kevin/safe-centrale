@@ -43,7 +43,8 @@ Réglages système : `system/journald-safehome.conf` (journaux),
 `system/watchdog-safehome.conf` (chien de garde), `system/safehome-boot-clock.service`
 (l'heure lue tôt au démarrage, avant NTP, dans `/run/safehome-boot-clock` : le hub
 s'en sert au redémarrage, voir `engine.md`), `system/fstab-data` (partition de
-données), `system/polkit-safehome-console.rules` (la console peut créer, lever,
+données), `system/timesyncd-safehome.conf` (`systemd-timesyncd` attend le dossier de son
+horloge, gardé sur `/data`, voir l'étape 2), `system/polkit-safehome-console.rules` (la console peut créer, lever,
 baisser et supprimer les connexions de NetworkManager, sans éteindre la radio ; la
 règle vaut pour tout programme lancé sous `safehome`, voir la limite dans
 `security-install.md`), `system/nm-dispatcher-safehome-console` (le réseau de la
@@ -73,10 +74,11 @@ ports série, les broches, le bus et la caméra (un test de `deploy` le vérifie
 |---|---|---|---|
 | 1 `bootfs` | celle de l'image | démarrage | lecture seule |
 | 2 `rootfs` | 8 Go | le système et nos programmes | lecture seule (couche en mémoire) |
-| 3 `safehome-data` | le reste | `/data` : `safehome/`, `mosquitto/`, `zigbee2mqtt/` | lecture-écriture |
+| 3 `safehome-data` | le reste | `/data` : `safehome/`, `mosquitto/`, `zigbee2mqtt/`, `timesync/` | lecture-écriture |
 
-Les trois dossiers de `/data` sont « attachés » (bind) à leur place habituelle :
-`/var/lib/safehome`, `/var/lib/mosquitto`, `/var/lib/zigbee2mqtt`. Les programmes ne
+Les quatre dossiers de `/data` sont « attachés » (bind) à leur place habituelle :
+`/var/lib/safehome`, `/var/lib/mosquitto`, `/var/lib/zigbee2mqtt`, et
+`/var/lib/systemd/timesync` (l'heure de la dernière synchronisation, étape 2). Les programmes ne
 savent pas qu'ils écrivent sur une autre partition.
 
 ## Installation pas à pas
@@ -134,13 +136,46 @@ sudo mkfs.ext4 -L safehome-data /dev/mmcblk0p3
 sudo mkdir -p /data /var/lib/safehome /var/lib/mosquitto /var/lib/zigbee2mqtt
 # ajouter à /etc/fstab les lignes de deploy/system/fstab-data, puis :
 sudo mount /data
-sudo mkdir -p /data/safehome /data/mosquitto /data/zigbee2mqtt
+sudo mkdir -p /data/safehome /data/mosquitto /data/zigbee2mqtt /data/timesync
+sudo cp -p /var/lib/systemd/timesync/clock /data/timesync/ 2>/dev/null   # sa date, s'il existe
+sudo chown -R systemd-timesync:systemd-timesync /data/timesync
 sudo mount -a
 ```
 
 `commit=5` dans `fstab` : les données sont écrites sur la carte au plus tard 5 s
 après le changement (au lieu de 30). L'état de l'alarme survit ainsi à une coupure qui
 suit de près un armement.
+
+**L'heure au démarrage** (28 octobre 2026). Sans horloge à pile, `systemd-timesyncd` remet
+l'horloge, tôt au démarrage et avant NTP, à la date de son fichier
+`/var/lib/systemd/timesync/clock`, qu'il touche à chaque synchronisation (puis toutes les
+60 s). En lecture seule, ce fichier restait celui de la couche basse : la centrale repartait
+chaque fois du jour du passage en lecture seule (le 28/10 à 13:52, 4 h 13 min de retard
+jusqu'à ce que NTP réponde, 37 s après le démarrage). Son dossier est donc attaché à
+`/data/timesync` : l'horloge repart de la dernière synchronisation, le retard n'est plus que
+la durée de l'arrêt (plus une minute au plus).
+
+- **Ordre** : le drop-in `system/timesyncd-safehome.conf`
+  (`WantsMountsFor=/var/lib/systemd/timesync`) fait démarrer `systemd-timesyncd` après ce
+  montage, lui-même après `/data` (un bind suit le montage de sa source). Aucun cycle : ces
+  montages ne viennent qu'après `local-fs-pre.target` et la carte, jamais après
+  `sysinit.target`, avant laquelle `systemd-timesyncd` démarre ; `safehome-boot-clock` reste
+  après lui et avant `sysinit.target`, donc avant le réseau. `WantsMountsFor` (systemd 256 et
+  plus ; Debian 13 a la 257) plutôt que `RequiresMountsFor` : la ligne n'ajoute aucun échec.
+- **`nofail`** : un bind qui échoue n'arrête pas le démarrage (`local-fs.target` ne l'exige
+  pas). `StateDirectory=` de l'unité peut déjà exiger ce montage (dépendances implicites,
+  `systemd.exec(5)`) : un dossier `/data/timesync` absent empêcherait alors
+  `systemd-timesyncd` de démarrer (plus de NTP, visible dans `systemctl --failed`) ; d'où le
+  dossier créé avant la ligne, ici comme par le script. La ligne de `/data` elle-même n'a
+  pas `nofail` (déjà avant ce changement) : sans la partition, le démarrage finit en mode de
+  secours.
+- **Propriétaire** : `systemd-timesync`, l'utilisateur système de l'unité (`User=`, pas
+  `DynamicUser=` : le fichier est bien dans `/var/lib/systemd/timesync`, pas sous
+  `/var/lib/private`). systemd le remet de lui-même à chaque démarrage du service
+  (`StateDirectory=`).
+- **Mise à jour** : le script d'installation pose le dossier, la ligne et le drop-in s'ils
+  manquent ; une centrale installée avant le 28/10 les reçoit à sa mise à jour
+  (`deploy/update-hub.sh`, phase 2), sans geste à la main.
 
 ### 3. Système de base
 
@@ -366,6 +401,7 @@ coupés (moins de mémoire, rien d'exposé). Le `base_topic` doit être le même
 
 ```bash
 sudo cp deploy/systemd/*.service deploy/system/safehome-boot-clock.service /etc/systemd/system/
+sudo install -D -m 644 deploy/system/timesyncd-safehome.conf /etc/systemd/system/systemd-timesyncd.service.d/safehome.conf
 sudo systemctl daemon-reload
 sudo systemctl enable safehome-boot-clock   # prise au prochain démarrage, avant NTP
 sudo systemctl enable --now zigbee2mqtt safehome-zigbee safehome-gsm safehome-hub safehome-agent
@@ -455,7 +491,8 @@ démarrage reste inscriptible, donc on peut corriger à distance).
 
 Avec `recurse=0`, vérifié : `/` en overlay, `/data` et les trois dossiers en ext4
 lecture-écriture sur la partition 3, un fichier écrit dans `/data` survit au redémarrage, un
-fichier écrit dans `/etc` disparaît.
+fichier écrit dans `/etc` disparaît. Le quatrième dossier (`/var/lib/systemd/timesync`, 28 octobre
+2026) suit la même règle : pas encore vérifié sur le Pi.
 
 `systemd-remount-fs` échoue alors (il remonte `/` avec les options de `fstab`, qu'un overlay
 refuse) et `systemctl --failed` n'est plus vide. Le masquer **avant** d'activer l'overlay :
@@ -517,14 +554,19 @@ Avant de changer quoi que ce soit, le script refuse de tourner si :
 - Zigbee2MQTT est installé mais `/usr/bin/node` manque ou n'est pas une version 22 ou
   24 de Node.js (étape 8) ;
 - le système est en lecture seule ;
-- `/data` et ses trois dossiers ne sont pas montés ;
+- `/data` et ses trois dossiers ne sont pas montés (pas le quatrième,
+  `/var/lib/systemd/timesync` : le script pose lui-même sa ligne, prise au prochain démarrage) ;
 - une configuration obligatoire manque ;
 - `video.json` est là sans go2rtc.
 
 Ensuite, dans l'ordre :
 
 1. Il installe Mosquitto, et ffmpeg s'il y a des caméras.
-2. Il crée l'utilisateur `safehome` et règle les droits de `/var/lib`.
+2. Il crée l'utilisateur `safehome` et règle les droits de `/var/lib`. Il garde le fichier
+   d'horloge de `systemd-timesyncd` sur `/data` (étape 2, 28 octobre 2026) : le dossier
+   `/data/timesync`, le fichier tel qu'il est (avec sa date, pas l'heure du moment, qui peut
+   être fausse à la première installation), puis la ligne de `fstab` si elle manque ; le
+   tout est pris au prochain démarrage.
 3. Il pose la configuration du site dans `/etc/safehome`, avec les profils des
    appareils. Il crée `maint.key` s'il n'existe pas encore et que la maintenance est
    configurée.
@@ -553,7 +595,9 @@ Ce que le script ne touche pas à la relance :
   `site/profiles` ;
 - `maint.key` n'est jamais refaite : le bastion connaît déjà l'ancienne ;
 - le fichier de Zigbee2MQTT n'est posé que la première fois. Ensuite il contient la
-  clé du réseau Zigbee.
+  clé du réseau Zigbee ;
+- la ligne de `/etc/fstab` pour `/var/lib/systemd/timesync`, une fois là (même écrite autrement),
+  et le fichier d'horloge de `/data/timesync`, une fois copié (28 octobre 2026).
 
 Zigbee2MQTT n'est activé et démarré que lorsque le port de la clé est réglé (plus de
 `CHANGE-ME` dans son fichier). Sinon il redémarrerait toutes les 5 s. Le script dit
@@ -564,7 +608,8 @@ SSH, Bluetooth), les codes d'accès, les appareils (étape 10) et le passage en 
 seule (étape 12).
 
 `go test ./deploy` fait tourner le script sur un faux système : fichiers posés,
-relance, mauvaise configuration, refus, caméras, Zigbee2MQTT et sa version de Node.js.
+relance, mauvaise configuration, refus, caméras, Zigbee2MQTT et sa version de Node.js,
+le fichier d'horloge gardé sur `/data` (une seule fois, même relancé).
 
 ## Maintenance
 
@@ -632,6 +677,14 @@ deploy/update-hub.sh 4
    (`systemctl is-enabled systemd-remount-fs` dit `masked`), et seulement alors `sudo reboot`.
 9. **Après le second redémarrage** : `/` en overlay, `/data` en ext4, les services actifs, l'alarme
    dans le même état qu'avant.
+
+Depuis le 28 octobre 2026, la phase 2 (`install.sh`) garde aussi le fichier d'horloge de
+`systemd-timesyncd` sur `/data` (étape 2), sans geste à la main ; il est pris au redémarrage de la
+phase 3. Ce premier démarrage repart de l'heure de l'installation (quelques minutes de retard), les
+suivants de la dernière synchronisation. À vérifier sur le Pi après la première mise à jour qui le
+pose : `findmnt /var/lib/systemd/timesync` (la partition 3),
+`systemctl show systemd-timesyncd -p After -p Requires` (le montage y est), `systemctl --failed`
+vide, et l'heure de `/run/safehome-boot-clock` proche de l'heure réelle après un redémarrage.
 
 Conséquence : **pas de mises à jour automatiques** (elles seraient effacées au
 redémarrage). La centrale n'est pas joignable depuis internet (derrière la box ou
