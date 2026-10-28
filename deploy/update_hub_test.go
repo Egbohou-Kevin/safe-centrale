@@ -31,8 +31,9 @@ import (
 // reached the cloud. The units' archive really is made, of $HUB/etc/systemd/system, in
 // $HUB/data/maintenance; $FAKE_TAR makes tar fail making it ("fails") or reading it back
 // ("unreadable"). The bundle scp copies lands in $HUB/home, where its sums are computed; /boot/firmware is $HUB/boot/firmware. The
-// boot id changes once the hub is asked to reboot, unless $FAKE_NO_REBOOT; its uptime
-// is always short.
+// boot id changes once the hub is asked to reboot, unless $FAKE_NO_REBOOT; it cannot be
+// read when $FAKE_NO_BOOTID is "fails", reads empty when it is "empty"; its uptime is
+// always short.
 const fakeHub = `for cmd; do :; done
 printf '%s\n' "$cmd" >> "$LOG"
 hub=$(cat "$HUB/usr/local/bin/safehome-hub")
@@ -55,7 +56,10 @@ case "$cmd" in
 */usr/local/bin*) bash -c "$(printf '%s' "$cmd" | sed "s#/usr/local/bin#$HUB/usr/local/bin#g")" ;;
 */data/maintenance*) bash -c "$(printf '%s' "$cmd" | sed -e "s#/data/maintenance#$HUB/data/maintenance#g" -e "s#cd / #cd $HUB/ #")" ;;
 *"cd ~/safehome"*) HOME="$HUB/home" bash -c "$cmd" ;;
-*boot_id*) if [ -e "$HUB/rebooted" ]; then echo new-boot; else echo old-boot; fi ;;
+*boot_id*)
+	if [ "$FAKE_NO_BOOTID" = fails ]; then exit 1; fi
+	if [ "$FAKE_NO_BOOTID" = empty ]; then exit 0; fi
+	if [ -e "$HUB/rebooted" ]; then echo new-boot; else echo old-boot; fi ;;
 "sudo -n reboot") [ -n "$FAKE_NO_REBOOT" ] || touch "$HUB/rebooted" ;;
 */proc/uptime) echo 100 ;;
 *"sed -i 's/overlayroot"*)
@@ -277,8 +281,10 @@ exec /usr/bin/tar "$@"`)
 	for _, unit := range []string{"safehome-hub.service", "safehome-agent.service", "zigbee2mqtt.service"} {
 		writeFile(t, filepath.Join(hub, "etc", "systemd", "system", unit), "[Unit]")
 	}
-	// $FAKE_CUT: the power is cut while tee writes, its file left half written.
+	// $FAKE_CUT: the power is cut while tee writes, its file left half written;
+	// $FAKE_GARBLE: tee says it wrote, but its file is not what it was given.
 	writeScript(t, filepath.Join(stubs, "tee"), `if [ -n "$FAKE_CUT" ]; then for a; do :; done; head -c 12 > "$a"; exit 1; fi
+if [ -n "$FAKE_GARBLE" ]; then for a; do :; done; { /bin/cat; echo garbled; } > "$a"; exit 0; fi
 exec /usr/bin/tee "$@"`)
 	writeScript(t, filepath.Join(stubs, "sleep"), "exit 0")
 	writeScript(t, filepath.Join(stubs, "sudo"), `[ "$1" != -n ] || shift; SUDO=1 exec "$@"`)
@@ -430,9 +436,10 @@ func TestUpdateHubPhaseTwoInstallsNothingUncheckedOrWithoutTheUnitsSaved(t *test
 }
 
 // Phases 1 and 3 reboot the hub and wait for it: it is back once it answers from
-// another boot (its boot id), never because its uptime is short. Phase 3 never writes
-// cmdline.txt in place: a cut while it is written leaves the one in place whole, and
-// nothing reboots.
+// another boot (its boot id), never because its uptime is short, and a hub whose boot id
+// cannot be read is not rebooted at all. Phase 3 never writes cmdline.txt in place: a
+// cut while cmdline.txt.new is written, a cmdline.txt.new that is not the saved one, or
+// a rename that fails leaves the one in place whole, and nothing reboots.
 func TestUpdateHubRebootsForRealAndNeverWritesCmdlineInPlace(t *testing.T) {
 	const (
 		readOnly = "console=serial0,115200 root=PARTUUID=1-02 overlayroot=tmpfs:recurse=0 rootwait\n"
@@ -450,6 +457,16 @@ func TestUpdateHubRebootsForRealAndNeverWritesCmdlineInPlace(t *testing.T) {
 			"the hub has not restarted after 4 minutes: it still answers from the same boot", readOnly, []string{"FAKE_NO_REBOOT=1"}},
 		{"phase 3, a cut while cmdline.txt is written", "3",
 			"cmdline.txt.new could not be written: cmdline.txt left as it was", writable, []string{"FAKE_CUT=1"}},
+		{"phase 3, cmdline.txt.new is not what was sent", "3",
+			"cmdline.txt.new differs from the saved one: cmdline.txt left as it was", writable, []string{"FAKE_GARBLE=1"}},
+		{"phase 3, cmdline.txt.new cannot be renamed", "3",
+			"cmdline.txt could not be replaced by cmdline.txt.new", writable, []string{"FAKE_MV_FAILS=cmdline.txt.new"}},
+		{"phase 1, the boot id cannot be read", "1",
+			"the hub's boot id cannot be read: not rebooting", writable, []string{"FAKE_NO_BOOTID=fails"}},
+		{"phase 1, the boot id reads empty", "1",
+			"the hub's boot id cannot be read: not rebooting", writable, []string{"FAKE_NO_BOOTID=empty"}},
+		{"phase 3, the boot id cannot be read", "3",
+			"the hub's boot id cannot be read: not rebooting", readOnly, []string{"FAKE_NO_BOOTID=fails"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -461,7 +478,12 @@ func TestUpdateHubRebootsForRealAndNeverWritesCmdlineInPlace(t *testing.T) {
 				writeFile(t, filepath.Join(dir, "work", "cmdline.txt"), readOnly)
 			}
 			cmd, log := updateHub(t, dir, map[string]string{"safehome-hub": "0.3.0"}, c.phase)
-			cmd.Env = append(cmd.Env, c.env...)
+			for _, e := range c.env {
+				if e == "FAKE_MV_FAILS=cmdline.txt.new" { // the mv stub compares its source, in full
+					e = "FAKE_MV_FAILS=" + onHub + ".new"
+				}
+				cmd.Env = append(cmd.Env, e)
+			}
 			b, err := cmd.CombinedOutput()
 			out := string(b)
 			holds := c.want == "phase "+c.phase+" done"
@@ -478,9 +500,10 @@ func TestUpdateHubRebootsForRealAndNeverWritesCmdlineInPlace(t *testing.T) {
 				t.Error("cmdline.txt.new left beside cmdline.txt")
 			}
 			cmds := strings.Split(string(must(os.ReadFile(log))), "\n")
+			// Asked to reboot only once cmdline.txt is in place and the boot id read.
 			rebooted := slices.Contains(cmds, "sudo -n reboot")
-			if cut := slices.Contains(c.env, "FAKE_CUT=1"); rebooted == cut {
-				t.Errorf("rebooted: %v, want %v", rebooted, !cut)
+			if want := holds || strings.Contains(c.want, "has not restarted"); rebooted != want {
+				t.Errorf("rebooted: %v, want %v", rebooted, want)
 			}
 			for _, l := range cmds {
 				if strings.Contains(l, "tee /boot/firmware/cmdline.txt ") || (strings.Contains(l, "engine.json") && c.phase == "3") {
