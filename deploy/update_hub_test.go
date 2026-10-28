@@ -28,9 +28,9 @@ import (
 // install"). $FAKE_ROOT_FS, $FAKE_DATA_FS, $FAKE_TIMESYNC_FS,
 // $FAKE_TIMESYNCD and $FAKE_MODE are what /, /data and timesyncd's folder are mounted
 // as, timesyncd's state and the alarm's mode; $FAKE_NO_CLOUD, an agent that never
-// reached the cloud. $FAKE_TAR makes the units' archive fail ("fails"), unreadable
-// ("unreadable") or without the hub's unit ("empty"). The bundle scp copies lands in
-// $HUB/home, where its sums are computed; /boot/firmware is $HUB/boot/firmware. The
+// reached the cloud. The units' archive really is made, of $HUB/etc/systemd/system, in
+// $HUB/data/maintenance; $FAKE_TAR makes tar fail making it ("fails") or reading it back
+// ("unreadable"). The bundle scp copies lands in $HUB/home, where its sums are computed; /boot/firmware is $HUB/boot/firmware. The
 // boot id changes once the hub is asked to reboot, unless $FAKE_NO_REBOOT; its uptime
 // is always short.
 const fakeHub = `for cmd; do :; done
@@ -53,10 +53,7 @@ case "$cmd" in
 	[ -z "$FAKE_INSTALL" ] ;;
 *"systemctl restart"*) [ -z "$FAKE_RESTART" ] ;;
 */usr/local/bin*) bash -c "$(printf '%s' "$cmd" | sed "s#/usr/local/bin#$HUB/usr/local/bin#g")" ;;
-*"tar -czf"*) [ "$FAKE_TAR" != fails ] ;;
-*"tar -tzf"*)
-	if [ "$FAKE_TAR" = unreadable ]; then echo "gzip: stdin: unexpected end of file" >&2; exit 2; fi
-	if [ "$FAKE_TAR" != empty ]; then printf 'etc/systemd/system/\netc/systemd/system/safehome-hub.service\n'; fi ;;
+*/data/maintenance*) bash -c "$(printf '%s' "$cmd" | sed -e "s#/data/maintenance#$HUB/data/maintenance#g" -e "s#cd / #cd $HUB/ #")" ;;
 *"cd ~/safehome"*) HOME="$HUB/home" bash -c "$cmd" ;;
 *boot_id*) if [ -e "$HUB/rebooted" ]; then echo new-boot; else echo old-boot; fi ;;
 "sudo -n reboot") [ -n "$FAKE_NO_REBOOT" ] || touch "$HUB/rebooted" ;;
@@ -272,6 +269,14 @@ for a; do src=$dst; dst=$a; done
 mkdir -p "$HUB/home" && cp -R "$src" "$HUB/home/${dst#*:}"
 if [ -n "$FAKE_ALTER" ]; then echo altered >> "$HUB/home/safehome/$FAKE_ALTER"; fi
 if [ -n "$FAKE_DROP" ]; then rm "$HUB/home/safehome/$FAKE_DROP"; fi`)
+	writeScript(t, filepath.Join(stubs, "tar"), `case " $* " in
+*" -czf "*) if [ "$FAKE_TAR" = fails ]; then echo "tar: write error" >&2; exit 2; fi ;;
+*" -tzf "*) if [ "$FAKE_TAR" = unreadable ]; then echo "gzip: stdin: unexpected end of file" >&2; exit 2; fi ;;
+esac
+exec /usr/bin/tar "$@"`)
+	for _, unit := range []string{"safehome-hub.service", "safehome-agent.service", "zigbee2mqtt.service"} {
+		writeFile(t, filepath.Join(hub, "etc", "systemd", "system", unit), "[Unit]")
+	}
 	// $FAKE_CUT: the power is cut while tee writes, its file left half written.
 	writeScript(t, filepath.Join(stubs, "tee"), `if [ -n "$FAKE_CUT" ]; then for a; do :; done; head -c 12 > "$a"; exit 1; fi
 exec /usr/bin/tee "$@"`)
@@ -360,15 +365,16 @@ func TestUpdateHubPhaseTwoInstallsNothingUncheckedOrWithoutTheUnitsSaved(t *test
 		name, want string
 		env        []string
 		copied     bool // the bundle was copied and its sums computed on the hub
+		noHubUnit  bool // safehome-hub.service is not in /etc/systemd/system
 	}{
-		{"the bundle arrives whole", "phase 2 done", nil, true},
+		{"the bundle arrives whole", "phase 2 done", nil, true, false},
 		{"a file is changed on the way", "the bundle on the hub differs from this one (./deploy/install.sh ): nothing installed",
-			[]string{"FAKE_ALTER=deploy/install.sh"}, true},
+			[]string{"FAKE_ALTER=deploy/install.sh"}, true, false},
 		{"a file is lost on the way", "the bundle on the hub differs from this one (./config/hub.example.json ): nothing installed",
-			[]string{"FAKE_DROP=config/hub.example.json"}, true},
-		{"the units cannot be saved", "the units could not be saved in /data/maintenance/units-", []string{"FAKE_TAR=fails"}, false},
-		{"the units' archive cannot be read back", ".tgz cannot be read back: nothing installed", []string{"FAKE_TAR=unreadable"}, false},
-		{"the units' archive lacks the hub's unit", ".tgz does not hold safehome-hub.service: nothing installed", []string{"FAKE_TAR=empty"}, false},
+			[]string{"FAKE_DROP=config/hub.example.json"}, true, false},
+		{"the units cannot be saved", "the units could not be saved in /data/maintenance/units-", []string{"FAKE_TAR=fails"}, false, false},
+		{"the units' archive cannot be read back", ".tgz cannot be read back: nothing installed", []string{"FAKE_TAR=unreadable"}, false, false},
+		{"the units' archive lacks the hub's unit", ".tgz does not hold safehome-hub.service: nothing installed", nil, false, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -378,6 +384,11 @@ func TestUpdateHubPhaseTwoInstallsNothingUncheckedOrWithoutTheUnitsSaved(t *test
 			files := map[string]string{"safehome-hub": "0.3.0", "safehome-hub.prev": "0.2.1"}
 			cmd, log := updateHub(t, dir, files, "-v", "0.3.0", "2", bundle)
 			cmd.Env = append(cmd.Env, c.env...)
+			if c.noHubUnit {
+				if err := os.Remove(filepath.Join(dir, "hub", "etc", "systemd", "system", "safehome-hub.service")); err != nil {
+					t.Fatal(err)
+				}
+			}
 			b, err := cmd.CombinedOutput()
 			out := string(b)
 			holds := c.want == "phase 2 done"
@@ -405,6 +416,9 @@ func TestUpdateHubPhaseTwoInstallsNothingUncheckedOrWithoutTheUnitsSaved(t *test
 				if strings.Contains(l, ".prev") || strings.Contains(l, "systemctl restart") || strings.Contains(l, "disarm") {
 					t.Errorf("ran %q: nothing is put back, restarted or disarmed", l)
 				}
+			}
+			if archives, _ := filepath.Glob(filepath.Join(dir, "hub", "data", "maintenance", "units-*.tgz")); holds && len(archives) != 1 {
+				t.Errorf("units' archives: %v, want one", archives)
 			}
 			for name, want := range files {
 				if got := string(must(os.ReadFile(filepath.Join(dir, "hub", "usr", "local", "bin", name)))); got != want {
