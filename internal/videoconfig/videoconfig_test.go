@@ -146,11 +146,14 @@ func TestTheClientsVideoSettingsFromTheCloud(t *testing.T) {
 	if err := siteconfig.Write(state, contract.ConfigSetData{Version: 11, Video: &contract.ConfigVideo{QuotaMB: &huge}}); err == nil {
 		t.Fatal("the contract lets a huge allowance through")
 	}
-	os.WriteFile(filepath.Join(state, siteconfig.FileName), fmt.Appendf(nil, `{"version": 11, "video": {"quota_mb": %d}}`, huge), 0o600)
+	// The video service sees the cloud's folder alone (its unit).
+	os.Remove(filepath.Join(state, siteconfig.FileName))
+	inDir := filepath.Join(state, siteconfig.Dir, siteconfig.FileName)
+	os.WriteFile(inDir, fmt.Appendf(nil, `{"version": 11, "video": {"quota_mb": %d}}`, huge), 0o600)
 	if r, err := Load(write(t, body("mobile"))); err != nil || r.SiteErr == nil || r.App.Video.Quota != video.MobileQuota {
 		t.Fatalf("a huge allowance from the cloud is refused, the file's kept: %v %v %d", err, r.SiteErr, r.App.Video.Quota)
 	}
-	os.WriteFile(filepath.Join(state, siteconfig.FileName), []byte("{"), 0o600)
+	os.WriteFile(inDir, []byte("{"), 0o600)
 	if r, err := Load(write(t, body("mobile"))); err != nil || r.SiteErr == nil {
 		t.Fatalf("%v", err)
 	}
@@ -161,8 +164,9 @@ func TestPhotos(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.App.Video.Photos != video.FixedPhotos || r.FFmpeg != "/usr/bin/ffmpeg" || filepath.Base(r.PhotoDir) != "photos" || filepath.Dir(r.PhotoDir) != r.StateDir {
-		t.Fatalf("%+v %s %s", r.App.Video.Photos, r.FFmpeg, r.PhotoDir)
+	if r.App.Video.Photos != video.FixedPhotos || r.FFmpeg != "/usr/bin/ffmpeg" || filepath.Base(r.PhotoDir) != "photos" || filepath.Dir(r.PhotoDir) != r.StateDir ||
+		r.VideoDir != filepath.Join(r.StateDir, "video") {
+		t.Fatalf("%+v %s %s %s", r.App.Video.Photos, r.FFmpeg, r.PhotoDir, r.VideoDir)
 	}
 	if r, _ := Load(write(t, cfg(`, "uplink": "mobile", "ffmpeg": "/opt/ffmpeg"`))); r.App.Video.Photos != video.EconomyPhotos || r.FFmpeg != "/opt/ffmpeg" {
 		t.Fatalf("economy on mobile data: %+v", r.App.Video.Photos)

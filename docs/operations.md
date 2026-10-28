@@ -225,9 +225,11 @@ délais et, en données mobiles, son forfait vidéo (`config.set`, voir `contrac
    lisibles). Une liste vide envoyée (aucun contact, aucun horaire) est une liste :
    elle remplace celle du fichier, et le reste après le redémarrage. Refusée, elle
    répond tout de suite `config.applied` `rejected`, avec la raison ; rien ne change.
-2. Acceptée, elle la garde dans `site-config.json`, dans le dossier d'état
+2. Acceptée, elle la garde dans `site/site-config.json`, dans le dossier d'état
    (`/var/lib/safehome`, lisible par le service seul : le fichier contient les
-   numéros). `/etc/safehome` reste en lecture seule.
+   numéros), avec une copie à la racine de l'état pour les programmes d'avant le
+   28 octobre 2026 (un retour arrière ; voir `systeme.md`, durcissement de la vidéo).
+   `/etc/safehome` reste en lecture seule.
 3. Elle redémarre pour l'appliquer, **jamais pendant un délai, une alarme ni le mode
    installation** : elle attend que l'alarme soit désarmée ou armée et le mode fermé.
    Le moteur le confirme lui-même au moment de redémarrer : un délai commencé à
@@ -441,8 +443,10 @@ safehome-video run   -config /etc/safehome/video.json
   les premiers octets partent ; `stall_after` (30 s) : silence qui termine une session ;
   `probe_every` (5 min) : test des caméras.
 
-Il garde la consommation du mois dans le même dossier d'état (fichiers `video.json`,
-`video_seq.json` et leur copie `.prev`) et son propre fichier de pid (`video.pid`).
+Il garde la consommation du mois (fichiers `video.json`, `video_seq.json` et leur copie
+`.prev`) et son propre fichier de pid (`video.pid`) dans son dossier `video/` du dossier
+d'état ; à la racine, les copies d'avant le 28 octobre 2026 ne servent qu'au retour
+arrière (voir `systeme.md`, durcissement).
 Chaque go2rtc travaille dans un dossier privé de `/tmp`, effacé à la fin de la
 session.
 

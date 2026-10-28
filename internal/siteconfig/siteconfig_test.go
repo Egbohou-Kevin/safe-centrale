@@ -2,6 +2,7 @@ package siteconfig
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -29,9 +30,14 @@ func TestWriteThenRead(t *testing.T) {
 	if err != nil || !ok || !reflect.DeepEqual(got, d) {
 		t.Fatalf("%+v %v %v", got, ok, err)
 	}
-	fi, _ := os.Stat(filepath.Join(dir, FileName))
-	if fi.Mode().Perm() != 0o600 {
-		t.Fatalf("the file holds phone numbers: %v", fi.Mode())
+	for _, path := range []string{filepath.Join(dir, Dir, FileName), filepath.Join(dir, FileName)} {
+		fi, err := os.Stat(path)
+		if err != nil || fi.Mode().Perm() != 0o600 {
+			t.Fatalf("%s holds phone numbers: %v %v", path, fi, err)
+		}
+	}
+	if fi, _ := os.Stat(filepath.Join(dir, Dir)); fi.Mode().Perm() != 0o700 {
+		t.Fatalf("%s/: %v", Dir, fi.Mode())
 	}
 	d.Version = 4
 	if err := Write(dir, d); err != nil {
@@ -40,9 +46,57 @@ func TestWriteThenRead(t *testing.T) {
 	if got, _, _ := Read(dir); got.Version != 4 {
 		t.Fatal("replaced")
 	}
-	entries, _ := os.ReadDir(dir)
-	if len(entries) != 1 {
-		t.Fatalf("no temporary file left: %v", entries)
+	// The video service sees Dir alone: the latest version is there.
+	if got, _, _ := readFile(filepath.Join(dir, Dir, FileName)); got.Version != 4 {
+		t.Fatalf("%s/ holds version %d", Dir, got.Version)
+	}
+	for _, d := range []string{dir, filepath.Join(dir, Dir)} {
+		if entries, _ := os.ReadDir(d); len(entries) != 2 && d == dir || len(entries) != 1 && d != dir {
+			t.Fatalf("no temporary file left in %s: %v", d, entries)
+		}
+	}
+}
+
+// A program put back by a rollback writes the top copy alone; a hub updated before its
+// first configuration holds no other; the video service sees Dir's alone.
+func TestTheHigherCopyWins(t *testing.T) {
+	put := func(t *testing.T, path string, version int) {
+		t.Helper()
+		os.MkdirAll(filepath.Dir(path), 0o700)
+		if err := os.WriteFile(path, fmt.Appendf(nil, `{"version":%d,"entry_delay_s":30}`, version), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		name         string
+		inDir, atTop int // 0: no file
+		want         int
+	}{
+		{"rolled back, then updated", 3, 4, 4},
+		{"written by this version", 4, 4, 4},
+		{"top one left from before", 5, 4, 5},
+		{"updated, no configuration since", 0, 4, 4},
+		{"the video's view", 4, 0, 4},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if c.inDir > 0 {
+				put(t, filepath.Join(dir, Dir, FileName), c.inDir)
+			}
+			if c.atTop > 0 {
+				put(t, filepath.Join(dir, FileName), c.atTop)
+			}
+			if got, found, err := Read(dir); err != nil || !found || got.Version != c.want {
+				t.Fatalf("version %d %v %v, want %d", got.Version, found, err, c.want)
+			}
+		})
+	}
+	dir := t.TempDir()
+	put(t, filepath.Join(dir, FileName), 4)
+	os.Mkdir(filepath.Join(dir, Dir), 0o700)
+	os.WriteFile(filepath.Join(dir, Dir, FileName), []byte("{"), 0o600)
+	if got, _, err := Read(dir); err != nil || got.Version != 4 {
+		t.Fatalf("a damaged copy in %s/ hid the top one: %d %v", Dir, got.Version, err)
 	}
 }
 
@@ -101,6 +155,7 @@ func TestChanged(t *testing.T) {
 			t.Errorf("%s: restart", name)
 		}
 	}
+	os.WriteFile(filepath.Join(dir, Dir, FileName), []byte("{"), 0o600)
 	os.WriteFile(filepath.Join(dir, FileName), []byte("{"), 0o600)
 	if _, ok := Changed(dir, site, 0, appliedMsg(t, site, 3, contract.ConfigApplied)); ok {
 		t.Fatal("a damaged file would restart the program forever")

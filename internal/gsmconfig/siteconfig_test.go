@@ -55,6 +55,7 @@ func TestTheCloudsPhoneNumbersReplaceTheFiles(t *testing.T) {
 
 	// A damaged file is left aside, with the reason.
 	os.WriteFile(filepath.Join(state, siteconfig.FileName), []byte("{"), 0o600)
+	os.WriteFile(filepath.Join(state, siteconfig.Dir, siteconfig.FileName), []byte("{"), 0o600)
 	if r, err := Load(path); err != nil || r.SiteErr == nil || len(r.Gateway.GSM.Contacts) != 4 {
 		t.Fatalf("%v %v", err, r.SiteErr)
 	}

@@ -21,13 +21,12 @@ RestartSec=2
 TimeoutStopSec=15
 KillMode=control-group
 
-# Hardening: the program writes only its state directory, and go2rtc's sockets in a
-# private /tmp.
+# Hardening: the program writes only its own state and the photos (below), and
+# go2rtc's sockets in a private /tmp.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/var/lib/safehome
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 ProtectKernelModules=yes
@@ -49,13 +48,16 @@ ProtectProc=invisible
 ProtectHostname=yes
 # No ProcSubset: go2rtc and ffmpeg run under it, not yet tried that way on the Pi. No
 # ProtectClock: its filter blocks adjtimex (sysclock), and it would restrict /dev to a
-# list (a camera). go2rtc and ffmpeg see none of /etc/safehome but video.json: an
-# empty folder over it, the file bound back read-only (a bind needs its mount point,
-# which an InaccessiblePaths= folder cannot hold). /var/lib/safehome stays open: the
-# program locks video.pid there, writes photos/ for the agent and reads
-# site-config.json (rewritten by rename, so a bound file would go stale).
-TemporaryFileSystem=/etc/safehome:ro
-BindReadOnlyPaths=/etc/safehome/video.json
+# list (a camera). go2rtc and ffmpeg see none of /etc/safehome but video.json, and
+# none of /var/lib/safehome (code key, access codes) but three folders: an empty
+# folder over each, what the program needs bound back (a bind needs its mount point,
+# which an InaccessiblePaths= folder cannot hold). video/, its own state (pid file,
+# month's usage, outbox), and photos/, which it writes for the agent; site/, the
+# configuration from the cloud, read-only: a folder, as the hub replaces the file by
+# rename and a bound file would stay the old one. install.sh makes the three.
+TemporaryFileSystem=/etc/safehome:ro /var/lib/safehome:ro
+BindReadOnlyPaths=/etc/safehome/video.json /var/lib/safehome/site
+BindPaths=/var/lib/safehome/video /var/lib/safehome/photos
 
 [Install]
 WantedBy=multi-user.target

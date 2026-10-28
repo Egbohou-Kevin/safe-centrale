@@ -8,6 +8,7 @@ package deploy
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"io"
@@ -21,6 +22,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"safehome/internal/siteconfig"
+	"safehome/internal/videoconfig"
 )
 
 // goPackage is what go list says of a package.
@@ -331,10 +335,90 @@ func TestTheEdgeUnitsSeeNoneOfOurSecrets(t *testing.T) {
 	if i < 0 || i+1 >= len(args) {
 		t.Fatalf("the video's ExecStart has no -config: %v", args)
 	}
-	if got := video.value(t, "BindReadOnlyPaths"); got != args[i+1] {
-		t.Errorf("BindReadOnlyPaths = %q, want its configuration %s alone", got, args[i+1])
-	}
 	if got := video.value(t, "ProtectSystem"); got != "strict" {
 		t.Errorf("video: ProtectSystem = %q, want strict", got)
+	}
+	// What the code uses, read from the example as the program reads it.
+	cfg, err := videoconfig.Load(filepath.Join("..", "config", "video.example.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	site := filepath.Join(cfg.StateDir, siteconfig.Dir)
+	if got, want := fields(video["Service"]["BindReadOnlyPaths"]), []string{args[i+1], site}; !slices.Equal(got, want) {
+		t.Errorf("BindReadOnlyPaths = %q, want its configuration and the cloud's folder %q alone", got, want)
+	}
+	if got, want := fields(video["Service"]["BindPaths"]), []string{cfg.VideoDir, cfg.PhotoDir}; !slices.Equal(got, want) {
+		t.Errorf("BindPaths = %q, want its own state and the photos %q alone", got, want)
+	}
+	for _, secret := range []string{"code-key", "access.json"} {
+		if video.sees(filepath.Join(cfg.StateDir, secret)) {
+			t.Errorf("the video service sees %s in %s", secret, cfg.StateDir)
+		}
+	}
+	for _, need := range []string{cfg.VideoDir + "/video.pid", cfg.PhotoDir, filepath.Join(site, siteconfig.FileName)} {
+		if !video.sees(need) {
+			t.Errorf("the video service does not see %s", need)
+		}
+	}
+}
+
+// fields returns the space-separated values of a unit's lines.
+func fields(lines []string) []string {
+	var all []string
+	for _, l := range lines {
+		all = append(all, strings.Fields(l)...)
+	}
+	return all
+}
+
+// sees says whether the unit leaves path visible: the deepest of its mounts above path
+// decides, an empty folder (TemporaryFileSystem=) or InaccessiblePaths= hiding it, a
+// bind or a ReadWritePaths= showing it; under none, it is seen.
+func (u unit) sees(path string) bool {
+	best, seen := "", true
+	consider := func(p string, shows bool) {
+		p = strings.TrimPrefix(p, "-")
+		if (p == path || strings.HasPrefix(path, p+"/")) && len(p) >= len(best) {
+			best, seen = p, shows
+		}
+	}
+	for _, f := range fields(u["Service"]["InaccessiblePaths"]) {
+		consider(f, false)
+	}
+	for _, f := range fields(u["Service"]["TemporaryFileSystem"]) {
+		p, _, _ := strings.Cut(f, ":")
+		consider(p, false)
+	}
+	for _, key := range []string{"BindPaths", "BindReadOnlyPaths"} {
+		for _, f := range fields(u["Service"][key]) {
+			src, rest, _ := strings.Cut(f, ":")
+			dest, _, _ := strings.Cut(rest, ":")
+			consider(cmp.Or(dest, src), true)
+		}
+	}
+	for _, key := range []string{"ReadWritePaths", "ReadOnlyPaths"} {
+		for _, f := range fields(u["Service"][key]) {
+			consider(f, true)
+		}
+	}
+	return seen
+}
+
+// The witness of sees: the video's unit before 28 October 2026, and one that binds the
+// whole state folder back, both show the code key.
+func TestSeesTellsAStateFolderLeftOpen(t *testing.T) {
+	key := "/var/lib/safehome/code-key"
+	for name, u := range map[string]unit{
+		"before":        {"Service": {"ReadWritePaths": {"/var/lib/safehome"}, "TemporaryFileSystem": {"/etc/safehome:ro"}}},
+		"bound back":    {"Service": {"TemporaryFileSystem": {"/var/lib/safehome:ro"}, "BindPaths": {"/var/lib/safehome"}}},
+		"bound by name": {"Service": {"TemporaryFileSystem": {"/var/lib/safehome:ro"}, "BindReadOnlyPaths": {"-/data/x:/var/lib/safehome:rbind"}}},
+	} {
+		if !u.sees(key) {
+			t.Errorf("%s: the code key is not seen", name)
+		}
+	}
+	shut := unit{"Service": {"TemporaryFileSystem": {"/var/lib/safehome:ro"}, "BindPaths": {"/var/lib/safehome/video /var/lib/safehome/videos"}}}
+	if shut.sees(key) || shut.sees("/var/lib/safehome/video.json") || !shut.sees("/var/lib/safehome/video/video.json") {
+		t.Error("sees reads a folder as a prefix of the names")
 	}
 }

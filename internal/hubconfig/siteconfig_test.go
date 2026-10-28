@@ -106,6 +106,7 @@ func TestACloudConfigurationThatDoesNotFitNeverStopsTheHub(t *testing.T) {
 	}
 	// A damaged file too.
 	os.WriteFile(filepath.Join(state, siteconfig.FileName), []byte("{"), 0o600)
+	os.WriteFile(filepath.Join(state, siteconfig.Dir, siteconfig.FileName), []byte("{"), 0o600)
 	if r, err := Load(path); err != nil || r.SiteErr == nil || r.SiteVersion != 0 {
 		t.Fatalf("%v %v", err, r.SiteErr)
 	}
