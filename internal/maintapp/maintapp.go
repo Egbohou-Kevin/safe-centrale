@@ -93,6 +93,7 @@ type App struct {
 	seen *inbox.RecentIDs
 
 	cancel  context.CancelFunc // stops the tunnel under way; owned by the loop's goroutine
+	ended   chan struct{}      // closed once the latest tunnel stopped; owned likewise
 	tunnels sync.WaitGroup
 
 	// life ends with Run: the loop and the tunnel run on it, and work handed to the
@@ -224,6 +225,8 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []maint.Action)
 }
 
 // startTunnel opens the tunnel away from the loop. It runs on the loop's goroutine.
+// The new tunnel waits until the previous one stopped: ssh takes a moment to exit, and
+// meanwhile holds the bastion's port, which the new ssh would fail to get.
 func (a *App) startTunnel(session string) {
 	if a.life.Err() != nil {
 		return
@@ -232,13 +235,37 @@ func (a *App) startTunnel(session string) {
 		a.cancel()
 	}
 	ctx, cancel := context.WithCancel(a.life)
-	a.cancel = cancel
+	prev, ended := a.ended, make(chan struct{})
+	a.cancel, a.ended = cancel, ended
 	a.tunnels.Add(1)
 	go func() {
 		defer a.tunnels.Done()
+		defer close(ended)
 		defer cancel()
-		a.runTunnel(ctx, session)
+		if a.previousStopped(ctx, prev, session) {
+			a.runTunnel(ctx, session)
+		}
 	}()
+}
+
+// previousStopped waits until the previous tunnel (prev, nil if none) stopped. False
+// when ctx ends first: the new tunnel was closed before it started.
+func (a *App) previousStopped(ctx context.Context, prev <-chan struct{}, session string) bool {
+	if prev == nil {
+		return true
+	}
+	select {
+	case <-prev:
+		return true
+	default:
+	}
+	a.log.Info("waiting for the previous tunnel to stop", "session", session)
+	select {
+	case <-prev:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // runTunnel opens the tunnel and tells the core when it is up and when it stopped

@@ -106,6 +106,9 @@ entrer la centrale).
   (refus de connexion, clé refusée, clé d'hôte inconnue…).
 - S'il tombe une fois ouvert (internet coupé) : il est rouvert 10 s plus tard, tant
   que la session dure, sans nouveau message.
+- Un nouveau tunnel attend que le précédent soit arrêté (`ssh` met quelques secondes à
+  sortir et garde jusque-là le port du bastion) : une session fermée puis une autre
+  ouverte aussitôt échouait en `unreachable` (corrigé le 28 octobre 2026 après une revue).
 - Si le service redémarre pendant une session, elle reprend jusqu'à son heure de fin
   (elle est gardée dans le dossier d'état, fichier `maint.json` et sa copie `.prev`).
   Une horloge qui saute en avant (NTP qui corrige au démarrage le Pi sans module

@@ -58,6 +58,7 @@ func (b *broker) steps() []string {
 
 type fakeTunnel struct {
 	up, done chan struct{}
+	hold     chan struct{} // Stop waits for it, as ssh takes a moment to exit
 	once     sync.Once
 	stopped  bool
 	mu       sync.Mutex
@@ -69,6 +70,9 @@ func (t *fakeTunnel) Stop() {
 	t.mu.Lock()
 	t.stopped = true
 	t.mu.Unlock()
+	if t.hold != nil {
+		<-t.hold
+	}
 	t.once.Do(func() { close(t.done) })
 }
 func (t *fakeTunnel) isStopped() bool { t.mu.Lock(); defer t.mu.Unlock(); return t.stopped }
@@ -79,7 +83,9 @@ func (t *fakeTunnel) breaks() { t.once.Do(func() { close(t.done) }) }
 type fakeTunneler struct {
 	mu      sync.Mutex
 	err     error
-	flash   bool // the tunnels it opens are up and already down
+	flash   bool          // the tunnels it opens are up and already down
+	hold    chan struct{} // given to the tunnels it opens (see fakeTunnel)
+	overlap bool          // a tunnel was opened while another had not stopped
 	tunnels []*fakeTunnel
 }
 
@@ -89,7 +95,14 @@ func (f *fakeTunneler) Open(context.Context) (Tunnel, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	t := &fakeTunnel{up: make(chan struct{}), done: make(chan struct{})}
+	for _, old := range f.tunnels {
+		select {
+		case <-old.done:
+		default:
+			f.overlap = true
+		}
+	}
+	t := &fakeTunnel{up: make(chan struct{}), done: make(chan struct{}), hold: f.hold}
 	if f.flash {
 		close(t.up)
 		t.breaks()
@@ -318,4 +331,35 @@ func TestMessagesDuringShutdownAreGivenUpQuietly(t *testing.T) {
 	if strings.Contains(r.logs.String(), "level=ERROR") {
 		t.Fatal("an error was logged for a message given up at shutdown")
 	}
+}
+
+// TestANewTunnelWaitsForThePreviousToStop: a session closed then another opened at
+// once must not start a second ssh while the first still holds the bastion's port:
+// with ExitOnForwardFailure the new one would fail, and the session with it.
+func TestANewTunnelWaitsForThePreviousToStop(t *testing.T) {
+	r := start(t, nil, nil)
+	release := make(chan struct{})
+	r.tun.mu.Lock()
+	r.tun.hold = release
+	r.tun.mu.Unlock()
+	r.open("m1")
+	drivertest.WaitFor(t, "the tunnel", func() bool { return r.tun.count() == 1 })
+	close(r.tun.last().up)
+	r.steps("opening", "open")
+	r.send(contract.TypeMaintClose, contract.MaintCloseData{Session: "m1"})
+	drivertest.WaitFor(t, "the first tunnel stopping", r.tun.last().isStopped)
+	r.open("m2")
+	drivertest.WaitFor(t, "the second tunnel, or its wait", func() bool {
+		return r.tun.count() == 2 || strings.Contains(r.logs.String(), "waiting for the previous tunnel")
+	})
+	close(release)
+	drivertest.WaitFor(t, "the second tunnel", func() bool { return r.tun.count() == 2 })
+	r.tun.mu.Lock()
+	overlap := r.tun.overlap
+	r.tun.mu.Unlock()
+	if overlap {
+		t.Fatal("the second ssh started before the first stopped")
+	}
+	close(r.tun.last().up)
+	r.steps("opening", "open", "closed/stopped", "opening", "open")
 }
