@@ -1,7 +1,7 @@
 // Package sysclock tells whether the system clock is synchronised, how long the
-// system has been up, and when it started on the clock as it read at boot. A Raspberry Pi has no clock that survives a power cut: until NTP
-// sets it, the time is wrong, and so are the times in the messages. It uses the
-// standard library only.
+// system has been up, and when it started on the clock as it read at boot. A
+// Raspberry Pi has no clock that survives a power cut: until NTP sets it, the time
+// is wrong, and so are the times in the messages. It uses the standard library only.
 package sysclock
 
 import (

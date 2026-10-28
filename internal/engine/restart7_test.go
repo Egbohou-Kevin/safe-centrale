@@ -126,3 +126,32 @@ func TestAWrongTimeReadAtBootKeepsTheRuleOfTheBootTime(t *testing.T) {
 		}
 	}
 }
+
+// An exit delay that ended while the system started ends on the clock set right, though
+// set before the power cut: a movement dated before NTP set the clock forward is brought
+// onto that clock to compare with it. One after the end of the exit delay sets the alarm
+// off; one before it is still no news. Before 28 October 2026 both compared as dated,
+// before the end, and the intrusion was lost.
+func TestAMovementAfterTheExitDelayDatedBeforeNTPSetTheClockForwardAlerts(t *testing.T) {
+	for _, c := range []struct {
+		after time.Duration // after the system started, on the clock as it read then
+		news  bool
+	}{{105 * time.Second, true}, {95 * time.Second, false}} {
+		h := newHarness(t)
+		armedAt := h.now
+		h.arm()
+		h.advance(10 * time.Second)
+		h.e = restart(t, h)
+		started := armedAt.Add(20 * time.Second) // the exit delay ends 100 s after
+		h.now = armedAt.Add(150 * time.Second)
+		shown := started.Add(-time.Hour)
+		booted := Booted{At: started, Shown: shown}
+		as := h.e.Boot(h.now, booted, []Signal{at(motion, SensorMotion, true, shown.Add(c.after))})
+		if acted(as) != c.news {
+			t.Errorf("a movement %v after the system started, news %v: %v", c.after, c.news, as)
+		}
+		if armed := h.e.Mode() == ModeArmed; armed == c.news {
+			t.Errorf("a movement %v after the system started: mode %s", c.after, h.e.Mode())
+		}
+	}
+}

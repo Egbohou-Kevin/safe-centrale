@@ -617,8 +617,9 @@ ouverte dans les secondes après la mise sous tension, datée sur l'horloge enco
 reculée, paraît antérieure au démarrage du système. Comparée à l'heure entendue avant
 la coupure, elle paraissait plus ancienne : écartée, puis mise à part (`set_aside`),
 donc écartée aussi aux démarrages suivants, l'alerte était perdue. Corrigé le 28
-octobre 2026 (`internal/engine/restart7_test.go`,
-`TestARestartAfterNTPSetTheClockForwardTellsADoorOpenedMeanwhile`) :
+octobre 2026 (bout en bout par le hub : `internal/hub/clock_test.go`,
+`TestARestartAfterNTPSetTheClockForwardTellsADoorOpenedMeanwhile` ; moteur :
+`internal/engine/restart7_test.go`) :
 
 - l'unité `safehome-boot-clock.service` (`deploy/system/`, posée et activée par
   `install.sh`) écrit tôt au démarrage, après `systemd-timesyncd` (qui avance d'abord
@@ -633,10 +634,14 @@ octobre 2026 (`internal/engine/restart7_test.go`,
   affichée au démarrage, et moins d'un uptime après elle (il a été daté avant le saut,
   donc avant maintenant), est une nouvelle de ce démarrage : pris tel quel, sauf s'il
   porte exactement l'heure entendue (c'est le même état) ;
-- une heure du moteur posée depuis le démarrage, au plus maintenant, l'a été après le
-  saut, plus tard que toute heure lue avant : elle se compare comme d'habitude. Une
-  heure d'avant le démarrage (entendue avant la coupure) ou après maintenant (posée
-  avant le recul) ne s'ordonne pas avec un tel état ;
+- une heure du moteur comprise entre le démarrage et maintenant est sur l'horloge
+  corrigée, mais n'a pas toujours été posée après le saut : la fin d'un délai de sortie,
+  posée avant la coupure comme une heure à venir, peut y tomber. Un tel état se ramène
+  donc sur l'horloge corrigée (le démarrage plus son écart à l'heure affichée au
+  démarrage) avant de s'y comparer : un mouvement juste après la fin d'un délai de
+  sortie écoulé pendant le démarrage, daté avant le saut, déclenche (corrigé le 28
+  octobre 2026, relecture). Une heure d'avant le démarrage (entendue avant la coupure)
+  ou après maintenant (posée avant le recul) ne s'ordonne pas avec un tel état ;
 - la trace absente (unité pas encore posée, ou pas encore de redémarrage depuis),
   illisible, ou qui n'est pas avant le démarrage calculé (pas de saut, ou une lecture
   fausse : après lui, après maintenant), la règle de l'heure de démarrage seule tient.
