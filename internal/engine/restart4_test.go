@@ -54,17 +54,21 @@ func TestARestartDoesNotPressThePanicAgain(t *testing.T) {
 
 // A panic button pressed while the hub was off, during an exit delay, is news even
 // when the engine never heard that button: the exit delay concerns no panic button,
-// a 24-hour zone, and must not make its press look old.
+// a 24-hour zone, and must not make its press look old. So too when the exit delay
+// also ended while the hub was off.
 func TestAPanicPressedWhileOffDuringTheExitDelayAlerts(t *testing.T) {
-	for _, siren := range []bool{false, true} {
-		h := newHarness(t, func(c *Config) { c.PanicSiren = siren })
-		h.arm()
-		h.advance(30 * time.Second)
-		h.e = restart(t, h)
-		h.now = h.now.Add(20 * time.Second)
-		as := h.e.Boot(h.now, []Signal{at(panic_, SensorPanic, true, h.now.Add(-5*time.Second))})
-		if len(alerts(as)) != 1 {
-			t.Fatalf("siren %v, a press while the hub was off: %v", siren, as)
+	for _, bootAfter := range []time.Duration{20 * time.Second, 10 * time.Minute} {
+		for _, siren := range []bool{false, true} {
+			h := newHarness(t, func(c *Config) { c.PanicSiren = siren })
+			h.arm()
+			h.advance(30 * time.Second)
+			h.e = restart(t, h)
+			pressed := h.now.Add(15 * time.Second)
+			h.now = h.now.Add(bootAfter)
+			as := h.e.Boot(h.now, []Signal{at(panic_, SensorPanic, true, pressed)})
+			if len(alerts(as)) != 1 {
+				t.Errorf("boot after %v, siren %v, a press while the hub was off: %v", bootAfter, siren, as)
+			}
 		}
 	}
 }

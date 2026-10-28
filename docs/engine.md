@@ -538,10 +538,10 @@ repos, ou un mouvement dont le retour au repos n'était pas encore écrit. Le mo
 écrit son état à chaque changement. Il garde donc, dans son état, l'heure du dernier
 état qu'il a pris de chaque porte, fenêtre, détecteur de fumée, sabotage et bouton
 panique (`heard`), et écarte au démarrage l'état retenu qui n'est pas plus récent. Un capteur
-momentané (mouvement, vibration, bris de vitre) n'a pas cette heure, que chaque passant
-réécrirait : son état est écarté s'il a commencé avant le mode où est le moteur (ou
-avant la fin du délai de sortie en cours ; pas pour un bouton panique jamais entendu,
-zone 24 h que ce délai ne concerne pas : seul le début du mode compte). Vivant, il a été entendu alors et a fait ce
+momentané (mouvement, vibration, bris de vitre, et un bouton panique jamais entendu) n'a
+pas cette heure, que chaque passant réécrirait : son état est écarté s'il a commencé avant
+le mode où est le moteur (ou avant la fin du délai de sortie en cours, sauf pour le bouton
+panique, zone 24 h que ce délai ne concerne pas). Vivant, il a été entendu alors et a fait ce
 qu'il fait dans ce mode ; actif depuis, ce n'est pas un nouveau mouvement. Un état qui
 ne dit pas quand il a commencé est pris tel quel ; un état daté après maintenant suit la
 règle de l'horloge reculée ci-dessous. Un état changé pendant la fenêtre de démarrage est une nouvelle de
@@ -552,7 +552,11 @@ aléatoires (`internal/engine/random_test.go`) : pendant un délai de sortie enc
 cours, sa fin, après maintenant, faisait prendre tel quel tout état momentané (un bouton
 panique pressé avant l'armement donnait une seconde alerte au redémarrage, une sirène
 avec `PanicSiren`) ; et un bouton panique pressé dans le mode en cours, sans heure
-gardée, donnait une nouvelle alerte à chaque redémarrage.
+gardée, donnait une nouvelle alerte à chaque redémarrage. Le premier correctif, en
+ramenant cette fin à maintenant, écartait un bouton panique jamais entendu pressé
+pendant l'arrêt dans le délai de sortie : l'alerte était perdue. Corrigé le même jour
+(`TestAPanicPressedWhileOffDuringTheExitDelayAlerts`, délai encore en cours ou fini
+pendant l'arrêt).
 
 Une horloge reculée au démarrage ne fait pas reprendre pour neuf ce que le moteur a
 déjà entendu. Le Pi sans module d'horloge repart de la dernière heure qu'il a pu
