@@ -414,8 +414,6 @@ func TestAnInstallation(t *testing.T) {
 	}
 }
 
-// The removal went out without an answer: the adapter may still carry it out, so the
-// configuration stops using the device, and the tool says so and fails.
 // A room goes with the zone, by the name's rule; the zone given again without one
 // has none.
 func TestAZoneTakesARoom(t *testing.T) {
@@ -440,12 +438,20 @@ func TestAZoneTakesARoom(t *testing.T) {
 	if code, out, _ := cli(ctx, "check", "-config", path); code != 0 || !strings.Contains(out, "OK: 7 zone(s)") {
 		t.Fatalf("check with a room: %d %q", code, out)
 	}
+	if code, out, _ := cli(ctx, "devices", "-config", path); code != 0 || !strings.Contains(out, `zone "Entree" (entry, room "Salon")`) {
+		t.Fatalf("devices with a room: %d %q", code, out)
+	}
 	code, out, _ = cli(ctx, "zone", "dev_door", "-config", path, "-name", "Entree", "-kind", "entry")
 	if code != 0 || !strings.Contains(out, `is now "Entree" (entry)`) || readSite(t, path).Zones["dev_door"].Room != "" {
 		t.Fatalf("zone without a room: %d %q", code, out)
 	}
+	if code, out, _ := cli(ctx, "devices", "-config", path); code != 0 || !strings.Contains(out, `zone "Entree" (entry)`) || strings.Contains(out, "room") {
+		t.Fatalf("devices without a room: %d %q", code, out)
+	}
 }
 
+// The removal went out without an answer: the adapter may still carry it out, so the
+// configuration stops using the device, and the tool says so and fails.
 func TestAnUnconfirmedRemovalLeavesTheConfiguration(t *testing.T) {
 	broker := mqtttest.Start(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

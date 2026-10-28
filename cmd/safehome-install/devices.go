@@ -55,7 +55,11 @@ func statusLine(st *contract.ZigbeeStatusData) string {
 func use(site install.Site, d contract.RegistryDevice) string {
 	var uses []string
 	if z, ok := site.Zones[d.DeviceID]; ok {
-		uses = append(uses, fmt.Sprintf("zone %q (%s)", z.Name, z.Kind))
+		if z.Room == "" {
+			uses = append(uses, fmt.Sprintf("zone %q (%s)", z.Name, z.Kind))
+		} else {
+			uses = append(uses, fmt.Sprintf("zone %q (%s, room %q)", z.Name, z.Kind, z.Room))
+		}
 	}
 	if slices.Contains(site.SirenIDs, d.DeviceID) {
 		uses = append(uses, fmt.Sprintf("siren %q", site.SirenName(d.DeviceID)))
