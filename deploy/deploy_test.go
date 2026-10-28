@@ -699,3 +699,28 @@ func TestEveryBindSourceIsMadeBeforeItsLineIsMounted(t *testing.T) {
 		}
 	}
 }
+
+// Phase 4 of update-hub.sh refuses a hub whose clock would start from the day the system
+// went read-only: timesyncd's folder bound on the data partition, timesyncd running.
+func TestUpdateHubPhaseFourChecksTimesyncdsClockOnTheDataPartition(t *testing.T) {
+	var phase4 []string
+	in := false
+	for _, l := range rawLines(t, "update-hub.sh") {
+		switch strings.TrimSpace(l) {
+		case "4)":
+			in = true
+			continue
+		case ";;":
+			in = false
+		}
+		if in {
+			phase4 = append(phase4, l)
+		}
+	}
+	body := strings.Join(phase4, "\n")
+	for _, want := range []string{"findmnt -no FSTYPE " + timesyncdClock + "')\" = ext4", "systemctl is-active systemd-timesyncd"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("phase 4 does not check %q", want)
+		}
+	}
+}

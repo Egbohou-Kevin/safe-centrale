@@ -5,7 +5,7 @@
 #   deploy/update-hub.sh 1                     save cmdline.txt and the alarm's mode, leave read-only, reboot
 #   deploy/update-hub.sh -v VERSION 2 BUNDLE   write access, DNS and clock, install, check, clean up
 #   deploy/update-hub.sh 3                     back to read-only (cmdline.txt as saved), reboot
-#   deploy/update-hub.sh 4                     overlay, services, same alarm mode, cloud reached
+#   deploy/update-hub.sh 4                     overlay, timesyncd's clock on /data, services, same alarm mode, cloud reached
 #
 #   -H HOST     the hub (default admin@safe-centrale.local)
 #   -k KEY      its SSH key (default ~/.ssh/safehome_ed25519)
@@ -137,7 +137,10 @@ case "$phase" in
 4)
 	[ "$(pi 'findmnt -no FSTYPE /')" = overlay ] || die "/ is not an overlay"
 	[ "$(pi 'findmnt -no FSTYPE /data')" = ext4 ] || die "/data is not ext4"
-	echo "== / overlay, /data ext4"
+	[ "$(pi 'findmnt -no FSTYPE /var/lib/systemd/timesync')" = ext4 ] ||
+		die "timesyncd's folder is not bound on /data: the clock at boot would start from the day the system went read-only"
+	[ "$(pi 'systemctl is-active systemd-timesyncd || true')" = active ] || die "systemd-timesyncd is not active"
+	echo "== / overlay, /data ext4, timesyncd active, its clock file on /data"
 	wait_services
 	now=$(mode)
 	echo "== alarm mode: before $(cat "$work/mode"), now $now"

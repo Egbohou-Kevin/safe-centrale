@@ -629,6 +629,11 @@ deploy/update-hub.sh 3
 deploy/update-hub.sh 4
 ```
 
+La phase 4 refuse aussi une centrale dont l'heure au démarrage repartirait du jour du passage en
+lecture seule : le dossier de timesyncd (`/var/lib/systemd/timesync`) doit être monté depuis `/data`
+(ext4) et `systemd-timesyncd` actif. La ligne `/data` du fstab n'a pas `nofail` : une carte dont
+`/data` ne monte pas s'arrête au démarrage (choix laissé à Kevin, 28 octobre 2026).
+
 1. **Avant tout**, garder une copie de `/boot/firmware/cmdline.txt` sur l'ordinateur, et noter
    l'état de l'alarme (armée ou non). Ne rien désarmer.
 2. **Sortir de la lecture seule.** `raspi-config nonint disable_overlayfs` ne reconnaît pas
