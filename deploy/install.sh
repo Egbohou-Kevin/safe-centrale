@@ -252,6 +252,7 @@ if [ -z "$unconfirmed" ]; then
 	rm -f "$BIN"/safehome-*.prev
 fi
 head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$UNCONFIRMED"
+chmod 644 "$UNCONFIRMED" # an earlier mark keeps its mode through >
 for p in $PROGRAMS $TOOLS; do
 	put_program "$BUNDLE/bin/safehome-$p" "$BIN/safehome-$p"
 done

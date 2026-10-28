@@ -120,9 +120,10 @@ services_hold() {
 wait_services() { services_hold 60 || die "the services do not hold"; }
 
 # The mark install.sh leaves while the programs in place are not yet confirmed; it names
-# the run that made it.
+# the run that made it. mark says none, mark TOKEN (empty for a mark made before tokens),
+# or unreadable: a mark that cannot be read never reads as one that can.
 unconfirmed=/usr/local/bin/.safehome-prev.unconfirmed
-mark() { pi "if [ -e $unconfirmed ]; then echo \"mark \$(cat $unconfirmed)\"; else echo none; fi"; }
+mark() { pi "if [ ! -e $unconfirmed ]; then echo none; elif t=\$(sudo -n cat $unconfirmed); then echo \"mark \$t\"; else echo unreadable; fi"; }
 
 # roll_back: the programs install.sh replaced go back (it kept each one as X.prev,
 # docs/systeme.md, "Maintenance"; an X.prev.new is a copy cut short, never put back),
@@ -194,15 +195,26 @@ case "$phase" in
 	scp -q -r -i "$key" "$bundle" "$hub:safehome"
 	# A mark left by an earlier run cut short is not this run's: install.sh may fail
 	# before replacing anything, and those programs then stay as they are.
-	before=$(mark) || die "the mark of an unconfirmed install cannot be read"
+	before=$(mark) && [ "$before" != unreadable ] || die "the mark of an unconfirmed install cannot be read"
 	echo "== installing"
 	if ! pi 'sudo -n ./safehome/deploy/install.sh' 2>&1 | tail -n 40; then
 		# Past the configuration check, install.sh has replaced the programs and left
 		# its mark, naming this run: a restart that failed puts the previous ones back too.
-		after=$(mark || true)
-		if [ "${after#mark }" != "$after" ] && [ "$after" != "$before" ]; then
-			roll_back "install.sh failed after replacing the programs"
-		fi
+		# Read again a few times: a connection lost here must not pass for "nothing replaced".
+		after=""
+		for i in $(seq 1 6); do
+			after=$(mark) && break
+			after=""
+			[ "$i" = 6 ] || sleep 10
+		done
+		case "$after" in
+		"$before") ;;
+		"mark "*) roll_back "install.sh failed after replacing the programs" ;;
+		# There, but unreadable: made by this run, or left by one whose .prev are the
+		# programs that held (install.sh keeps them while a mark is there). Back to them.
+		unreadable) roll_back "install.sh failed and its mark cannot be read" ;;
+		"") die "install.sh failed and the hub no longer answers: whether it replaced the programs is unknown, nothing was put back; check them by hand (docs/systeme.md, \"Maintenance\", steps 5 and 6)" ;;
+		esac
 		[ "$before" = none ] ||
 			die "install.sh failed before replacing the programs (it put the previous configuration back); the programs in place are still those of an earlier run, not confirmed"
 		die "install.sh failed before replacing the programs (it put the previous configuration back)"

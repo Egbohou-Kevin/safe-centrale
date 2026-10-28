@@ -22,7 +22,10 @@ import (
 // not running (not listed); one of $FAKE_MUTE cannot even say its version;
 // $FAKE_RESTART makes restarts fail; $FAKE_SHOW_FAILS makes the start times unreadable.
 // $FAKE_INSTALL makes install.sh fail before it replaces anything ("before"), or after,
-// its mark naming this run ("after"). $FAKE_ROOT_FS, $FAKE_DATA_FS, $FAKE_TIMESYNC_FS,
+// its mark naming this run ("after"); after it, the mark's reading fails $FAKE_MARK_FAILS
+// times (a connection lost). $FAKE_MARK is how the cat stub reads the mark: only through
+// sudo ("0600"), never ("unreadable"), or not once install.sh ran ("unreadable after
+// install"). $FAKE_ROOT_FS, $FAKE_DATA_FS, $FAKE_TIMESYNC_FS,
 // $FAKE_TIMESYNCD and $FAKE_MODE are what /, /data and timesyncd's folder are mounted
 // as, timesyncd's state and the alarm's mode; $FAKE_NO_CLOUD, an agent that never
 // reached the cloud.
@@ -31,10 +34,17 @@ printf '%s\n' "$cmd" >> "$LOG"
 hub=$(cat "$HUB/usr/local/bin/safehome-hub")
 among() { case " $1 " in *" $hub "*) return 0 ;; esac; return 1; }
 case "$cmd" in
+*"-e /usr/local/bin/.safehome-prev.unconfirmed"*)
+	n=$(cat "$HUB/mark-fails" 2>/dev/null || echo 0)
+	if [ "$n" -gt 0 ]; then echo $((n - 1)) > "$HUB/mark-fails"; exit 255; fi ;;
+esac
+case "$cmd" in
 *"safehome-hub version")
 	if among "$FAKE_MUTE"; then exit 126; fi
 	echo "safehome-hub $hub" ;;
 *install.sh)
+	touch "$HUB/installed"
+	echo "${FAKE_MARK_FAILS:-0}" > "$HUB/mark-fails"
 	if [ "$FAKE_INSTALL" = after ]; then echo "run $$" > "$HUB/usr/local/bin/.safehome-prev.unconfirmed"; fi
 	[ -z "$FAKE_INSTALL" ] ;;
 *"systemctl restart"*) [ -z "$FAKE_RESTART" ] ;;
@@ -89,10 +99,10 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 		partial = "partial" // the hub back, the gateway's .prev stuck
 	)
 	for _, c := range []struct {
-		name, installed, crashing, flapping, flapAge, stopped, mute, install, mvFails, restart string
-		noPrev, marked                                                                         bool
-		state                                                                                  string
-		want                                                                                   []string
+		name, installed, crashing, flapping, flapAge, stopped, mute, install, mvFails, restart, markFails, markMode string
+		noPrev, marked                                                                                              bool
+		state                                                                                                       string
+		want                                                                                                        []string
 	}{
 		{name: "the new hub crashes at start", installed: "0.3.0", crashing: "0.3.0", marked: true, state: back,
 			want: []string{"the new programs do not hold; the previous programs are back and their services hold"}},
@@ -126,6 +136,20 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 			want: []string{"install.sh failed after replacing the programs; the previous programs are back and their services hold"}},
 		{name: "install.sh fails after replacing the programs, a mark left before", installed: "0.3.0", install: "after", marked: true, state: back,
 			want: []string{"install.sh failed after replacing the programs; the previous programs are back and their services hold"}},
+		// A connection lost while the mark is read again does not pass for "nothing replaced".
+		{name: "the mark cannot be read at once after install.sh replaced the programs", installed: "0.3.0", install: "after", markFails: "5", state: back,
+			want: []string{"install.sh failed after replacing the programs; the previous programs are back and their services hold"}},
+		{name: "the hub no longer answers after install.sh failed", installed: "0.3.0", install: "after", markFails: "6", state: kept,
+			want: []string{"install.sh failed and the hub no longer answers: whether it replaced the programs is unknown, nothing was put back"}},
+		// Only root reads the mark: read through sudo, never as an empty token on both sides.
+		{name: "install.sh fails after replacing the programs, a mark only root can read", installed: "0.3.0", install: "after", marked: true, markMode: "0600", state: back,
+			want: []string{"install.sh failed after replacing the programs; the previous programs are back and their services hold"}},
+		{name: "the new programs hold, a mark only root can read", installed: "0.3.0", marked: true, markMode: "0600", state: kept,
+			want: []string{"phase 2 done"}},
+		{name: "the mark cannot be read before install.sh", installed: "0.3.0", marked: true, markMode: "unreadable", state: kept,
+			want: []string{"the mark of an unconfirmed install cannot be read"}},
+		{name: "the mark cannot be read after install.sh failed", installed: "0.3.0", install: "after", markMode: "unreadable after install", state: back,
+			want: []string{"install.sh failed and its mark cannot be read; the previous programs are back and their services hold"}},
 		{name: "install.sh fails before replacing the programs", installed: "0.3.0", install: "before", state: kept,
 			want: []string{"install.sh failed before replacing the programs"}},
 		// A phase 2 cut short left its mark: this run replaced nothing, nothing goes back.
@@ -149,7 +173,8 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 			}
 			cmd, log := updateHub(t, dir, files, "-v", "0.3.0", "2", bundle)
 			cmd.Env = append(cmd.Env, "FAKE_CRASHING="+c.crashing, "FAKE_FLAPPING="+c.flapping, "FAKE_FLAP_AGE="+c.flapAge, "FAKE_STOPPED="+c.stopped,
-				"FAKE_MUTE="+c.mute, "FAKE_INSTALL="+c.install, "FAKE_RESTART="+c.restart, "FAKE_MV_FAILS="+c.mvFails)
+				"FAKE_MUTE="+c.mute, "FAKE_INSTALL="+c.install, "FAKE_RESTART="+c.restart, "FAKE_MV_FAILS="+c.mvFails,
+				"FAKE_MARK_FAILS="+c.markFails, "FAKE_MARK="+c.markMode)
 			b, err := cmd.CombinedOutput()
 			out := string(b)
 			holds := c.want[0] == "phase 2 done"
@@ -165,6 +190,10 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 			put := slices.IndexFunc(cmds, func(l string) bool { return strings.Contains(l, "safehome-*.prev") })
 			reload := slices.Index(cmds, "sudo -n systemctl daemon-reload")
 			restart := slices.Index(cmds, "sudo -n systemctl restart safehome-hub.service")
+			ran := slices.ContainsFunc(cmds, func(l string) bool { return strings.HasSuffix(l, "install.sh") })
+			if ran != (c.markMode != "unreadable") {
+				t.Errorf("install.sh run: %v, want it run only once the mark is read", ran)
+			}
 			for _, l := range cmds {
 				if strings.Contains(l, "engine.json") || strings.Contains(l, "disarm") ||
 					strings.Contains(l, "restart safehome-gsm") {
@@ -202,7 +231,8 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 			}
 			// Gone once nothing is pending: the new programs held, or every .prev is back.
 			_, err = os.Stat(filepath.Join(dir, "hub", unconfirmed))
-			if pending := err == nil; pending != (c.marked && (c.state == partial || (c.state == kept && !holds))) {
+			left := c.marked || c.install == "after"
+			if pending := err == nil; pending != (left && (c.state == partial || (c.state == kept && !holds))) {
 				t.Errorf("mark %s left: %v", unconfirmed, pending)
 			}
 		})
@@ -220,7 +250,13 @@ func updateHub(t *testing.T, dir string, files map[string]string, args ...string
 	writeScript(t, filepath.Join(stubs, "ssh"), fakeHub)
 	writeScript(t, filepath.Join(stubs, "scp"), "exit 0")
 	writeScript(t, filepath.Join(stubs, "sleep"), "exit 0")
-	writeScript(t, filepath.Join(stubs, "sudo"), `[ "$1" != -n ] || shift; exec "$@"`)
+	writeScript(t, filepath.Join(stubs, "sudo"), `[ "$1" != -n ] || shift; SUDO=1 exec "$@"`)
+	writeScript(t, filepath.Join(stubs, "cat"), `for a; do :; done
+case "$a" in *.safehome-prev.unconfirmed)
+	if [ "$FAKE_MARK" = unreadable ] || { [ "$FAKE_MARK" = "unreadable after install" ] && [ -e "$HUB/installed" ]; } ||
+		{ [ "$FAKE_MARK" = 0600 ] && [ -z "$SUDO" ]; }; then echo "cat: $a: Permission denied" >&2; exit 1; fi ;;
+esac
+exec /bin/cat "$@"`)
 	writeScript(t, filepath.Join(stubs, "mv"), `if [ -n "$FAKE_MV_FAILS" ] && [ "$2" = "$FAKE_MV_FAILS" ]; then exit 1; fi; exec /bin/mv "$@"`)
 	for name, content := range files {
 		writeFile(t, filepath.Join(hub, "usr", "local", "bin", name), content)
