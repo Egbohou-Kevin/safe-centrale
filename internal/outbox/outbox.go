@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -119,8 +120,9 @@ func New(pub Publisher, seq *Sequencer, site string, s Settings, newID func() st
 
 // Put queues a message. A retained message replaces an older retained message for
 // the same topic that has not left yet: only the last state matters. When the queue
-// is full the oldest message is dropped, because a hub with a dead broker for hours
-// must not eat its memory.
+// is full a message is dropped, because a hub with a dead broker for hours must not
+// eat its memory: the oldest of the least important (see priorityOf), so an alarm
+// goes only when nothing else is left. The others keep their order.
 func (o *Outbox) Put(it *Item) {
 	o.mu.Lock()
 	if it.Retain {
@@ -132,10 +134,15 @@ func (o *Outbox) Put(it *Item) {
 		}
 	}
 	if len(o.queue) >= o.max {
-		old := o.queue[0]
-		o.queue = o.queue[1:]
+		i := o.victim()
+		old := o.queue[i]
+		o.queue = slices.Delete(o.queue, i, i+1)
 		o.dropped++
-		o.log.Error("outbox full, dropping the oldest message", "topic", old.Topic, "type", old.Type, "dropped", o.dropped)
+		if priorityOf(old.Topic) == priorityAlarm {
+			o.log.Error("outbox full of only alarm messages, dropping the oldest", "topic", old.Topic, "type", old.Type, "dropped", o.dropped)
+		} else {
+			o.log.Error("outbox full, dropping the oldest of the least important messages", "topic", old.Topic, "type", old.Type, "dropped", o.dropped)
+		}
 	}
 	o.queue = append(o.queue, it)
 	o.mu.Unlock()
@@ -159,6 +166,21 @@ func (o *Outbox) Send(src, topic, typ string, data any, retain bool, ts time.Tim
 // (Mosquitto keeps QoS 0 messages for no one unless queue_qos0_messages is set).
 func (o *Outbox) SendWithCode(src, topic, typ string, data any, ts time.Time) string {
 	return o.send(&Item{Topic: topic, Src: src, Type: typ, QoS: 0, TS: ts}, data)
+}
+
+// victim is the index of the message a full queue drops: the oldest of the lowest
+// priority. It runs under the lock.
+func (o *Outbox) victim() int {
+	best, prio := 0, priorityOf(o.queue[0].Topic)
+	for i, it := range o.queue {
+		if prio == priorityState {
+			break
+		}
+		if p := priorityOf(it.Topic); p < prio {
+			best, prio = i, p
+		}
+	}
+	return best
 }
 
 // send encodes data into it, gives it an id and queues it.

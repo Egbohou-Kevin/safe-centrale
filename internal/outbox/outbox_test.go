@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -332,5 +334,110 @@ func TestOpenNumbersWithTheCounterSavedUnderItsKey(t *testing.T) {
 	store.Save("broken", []byte(`{`))
 	if _, err := Open(store, b, "broken", "tg-lom-0001", DefaultSettings(10), contract.NewIDGenerator().New, nil); err == nil {
 		t.Fatal("a damaged counter must stop the start")
+	}
+}
+
+const site = "tg-lom-0001"
+
+func TestAFullQueueDropsTheOldestOfTheLeastImportantFirst(t *testing.T) {
+	b := &broker{}
+	o, _ := newBox(t, b, 3)
+	alarm := item(contract.AlarmEventTopic(site), false)
+	o.Put(alarm)
+	o.Put(item(contract.DeviceEventTopic(site, "door"), false))
+	o.Put(item(contract.HeartbeatTopic(site), false)) // the least important, though not the oldest
+	o.Put(item(contract.DeviceEventTopic(site, "pir"), false))
+	stop := run(t, o)
+	defer stop()
+	drivertest.WaitFor(t, "three messages", func() bool { return len(b.got()) == 3 })
+	want := []string{contract.AlarmEventTopic(site), contract.DeviceEventTopic(site, "door"), contract.DeviceEventTopic(site, "pir")}
+	for i, g := range b.got() {
+		if g.topic != want[i] {
+			t.Fatalf("message %d on %s, want %s (the alarm stays, the heartbeat goes, the order holds): %+v", i, g.topic, want[i], b.got())
+		}
+	}
+}
+
+func TestAFullQueueOfNoiseKeepsAnOldAlarm(t *testing.T) {
+	b := &broker{}
+	o, _ := newBox(t, b, 4)
+	request := item(contract.AlertRequestTopic(site), false)
+	o.Put(request)
+	for _, d := range []string{"a", "b", "c", "d"} {
+		o.Put(item(contract.DeviceEventTopic(site, d), false))
+	}
+	stop := run(t, o)
+	defer stop()
+	drivertest.WaitFor(t, "four messages", func() bool { return len(b.got()) == 4 })
+	want := []string{contract.AlertRequestTopic(site), contract.DeviceEventTopic(site, "b"),
+		contract.DeviceEventTopic(site, "c"), contract.DeviceEventTopic(site, "d")}
+	for i, g := range b.got() {
+		if g.topic != want[i] {
+			t.Fatalf("message %d on %s, want %s: %+v", i, g.topic, want[i], b.got())
+		}
+	}
+}
+
+func TestAFullQueueOfAlarmsDropsTheOldestAndSaysSo(t *testing.T) {
+	b := &broker{}
+	var logs strings.Builder
+	store := drivertest.NewMemStore()
+	seq, err := NewSequencer(store, "seq", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := New(b, seq, site, Settings{Size: 2, RetryMin: time.Millisecond, RetryMax: 4 * time.Millisecond},
+		contract.NewIDGenerator().New, slog.New(slog.NewTextHandler(&logs, nil)))
+	o.Put(item(contract.AlarmEventTopic(site), false))
+	o.Put(item(contract.AlertRequestTopic(site), false))
+	o.Put(item(contract.AlarmAckTopic(site), false))
+	if !strings.Contains(logs.String(), "only alarm messages") || !strings.Contains(logs.String(), contract.AlarmEventTopic(site)) {
+		t.Fatalf("an alarm message dropped must be logged as such: %q", logs.String())
+	}
+	stop := run(t, o)
+	defer stop()
+	drivertest.WaitFor(t, "two messages", func() bool { return len(b.got()) == 2 })
+	if g := b.got(); g[0].topic != contract.AlertRequestTopic(site) || g[1].topic != contract.AlarmAckTopic(site) {
+		t.Fatalf("%+v", g)
+	}
+}
+
+func TestPriorityOfEachTopic(t *testing.T) {
+	cases := map[string]priority{
+		contract.AlarmEventTopic(site):                     priorityAlarm,
+		contract.AlarmStateTopic(site):                     priorityAlarm,
+		contract.AlarmCmdTopic(site):                       priorityAlarm,
+		contract.AlarmAckTopic(site):                       priorityAlarm,
+		contract.AlertRequestTopic(site):                   priorityAlarm,
+		contract.AlertResultTopic(site):                    priorityAlarm,
+		contract.AlertAckTopic(site):                       priorityAlarm,
+		contract.AlertSeenTopic(site):                      priorityAlarm,
+		contract.DeviceCmdTopic(site, "siren"):             priorityAlarm,
+		contract.DeviceAckTopic(site, "siren"):             priorityAlarm,
+		"zigbee2mqtt/siren/set":                            priorityAlarm,
+		contract.DeviceEventTopic(site, "door"):            priorityNormal,
+		contract.RegistryEventTopic(site):                  priorityNormal,
+		contract.VideoSessionTopic(site):                   priorityNormal,
+		contract.PhotoTakenTopic(site):                     priorityNormal,
+		contract.MaintSessionTopic(site):                   priorityNormal,
+		contract.ConfigAppliedTopic(site):                  priorityNormal,
+		contract.ConfigSetTopic(site):                      priorityNormal,
+		contract.InstallModeTopic(site):                    priorityNormal,
+		contract.ContactsTopic(site):                       priorityNormal,
+		contract.AgentReplayedTopic(site):                  priorityNormal,
+		contract.DeviceStateTopic(site, "door", "contact"): priorityState,
+		contract.HeartbeatTopic(site):                      priorityState,
+		contract.HealthTopic(site):                         priorityState,
+		contract.DevicesTopic(site):                        priorityState,
+		contract.RegistryDevicesTopic(site):                priorityState,
+		contract.GSMStatusTopic(site):                      priorityState,
+		contract.ZigbeeStatusTopic(site):                   priorityState,
+		contract.VideoStatusTopic(site):                    priorityState,
+		contract.AgentStatusTopic(site):                    priorityState,
+	}
+	for topic, want := range cases {
+		if got := priorityOf(topic); got != want {
+			t.Errorf("%s: priority %d, want %d", topic, got, want)
+		}
 	}
 }
