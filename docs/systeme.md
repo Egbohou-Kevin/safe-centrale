@@ -650,10 +650,14 @@ Pas de modem ni de module batterie à ce stade : `safehome-gsm` journalise l'abs
    `/etc/safehome` (les délais d'entrée et de sortie, par exemple) disparaît. Le changer dans le
    dossier du site, puis refaire le paquet.
 
-**Le cloud de l'essai** tourne sur le Mac, et son broker n'écoute que sur `127.0.0.1` : la centrale
-le joint par un tunnel SSH inverse lancé depuis le Mac (`safeHome-cloud/README.md`, « Une vraie
-centrale sur ce cloud »). Pour que le téléphone sonne, le cloud doit avoir Firebase allumé (même
-README) ; sans lui, chaque alerte pour l'application échoue avec `no_app`.
+**Le cloud de l'essai** est, depuis le 28 octobre 2026, le cloud en production sur le serveur de
+Kevin, `safecloud.mewini.com`, derrière le Tunnel Cloudflare (`safeHome-cloud/deploy/README.md`) :
+dans `/etc/safehome/agent.json`, `cloud.urls` vaut `["wss://safecloud.mewini.com:443/mqtt"]` et
+`cloud.ca_file` est vide (les autorités du système : le TLS s'arrête chez Cloudflare, et 8883 ne
+passe pas par le Tunnel). Firebase y est allumé ; sans lui, chaque alerte pour l'application
+échouerait avec `no_app`. Avant, le cloud tournait sur le Mac et la centrale le joignait par un
+tunnel SSH inverse (`safeHome-cloud/README.md`, « Une vraie centrale sur ce cloud ») ; l'ancienne
+configuration reste dans `/etc/safehome/agent.json.mac`.
 
 **Lecture seule et recette partielle faites le 25 octobre 2026** (étape 12 ci-dessus, avec
 `recurse=0`) : `kill -9` de la centrale, relancée en 3 s ; centrale gelée (`kill -STOP`), relancée par le

@@ -82,6 +82,10 @@ func walkSources(t *testing.T, check func(rel string, f *ast.File)) {
 		if err != nil {
 			return err
 		}
+		// a session's worktree under .claude/ is a copy of the module, not its sources
+		if d.IsDir() && path != base && d.Name() == ".claude" {
+			return filepath.SkipDir
+		}
 		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
