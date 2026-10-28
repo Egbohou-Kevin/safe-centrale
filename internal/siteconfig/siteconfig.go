@@ -6,6 +6,13 @@
 //
 // The file holds phone numbers: it is written for the service's user only, and
 // nothing here prints it.
+//
+// It lives in a folder of its own, site/ (28 October 2026): the video service, which
+// runs third-party code, sees that folder and not the rest of the state (code key,
+// access codes). A folder, not the file alone: the file is replaced by rename, and a
+// file bound into a service's view would stay the old one. A copy is still kept at the
+// state folder's top, where the programs before that date read it: a program put back
+// by update-hub.sh's rollback runs on the latest configuration too.
 package siteconfig
 
 import (
@@ -20,15 +27,35 @@ import (
 	"safehome/internal/contract"
 )
 
-// FileName is the file in the state folder.
+// FileName is the file, in Dir and, for the programs before 28 October 2026, at the
+// state folder's top.
 const FileName = "site-config.json"
+
+// Dir is the file's folder in the state folder; the video service sees it alone.
+const Dir = "site"
 
 // Read returns the configuration set from the cloud, if any. A file that reads but no
 // longer fits the contract (an update made it stricter) comes back with its version
 // alone, found, and the error: the hub refuses that version to the cloud by its
 // number, instead of leaving the cloud believing it applied.
+//
+// Of the two copies the higher version wins, Dir's on a tie: a program put back by a
+// rollback wrote the top one alone, and a hub updated before its first configuration
+// holds no other. The video service sees Dir's alone (install.sh fills it).
 func Read(dir string) (contract.ConfigSetData, bool, error) {
-	data, err := os.ReadFile(filepath.Join(dir, FileName))
+	d, found, err := readFile(filepath.Join(dir, Dir, FileName))
+	top, topFound, topErr := readFile(filepath.Join(dir, FileName))
+	if !topFound && topErr == nil {
+		return d, found, err
+	}
+	if (found || err != nil) && d.Version >= top.Version {
+		return d, found, err
+	}
+	return top, topFound, topErr
+}
+
+func readFile(path string) (contract.ConfigSetData, bool, error) {
+	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return contract.ConfigSetData{}, false, nil
 	}
@@ -45,9 +72,9 @@ func Read(dir string) (contract.ConfigSetData, bool, error) {
 	return d, true, nil
 }
 
-// Write replaces the configuration, atomically: after a power cut the file is the
-// old one or the new one, never half of each. Only the state folder's owner may read
-// it.
+// Write replaces the configuration, atomically: after a power cut each copy is the
+// old one or the new one, never half of each. Dir's first, then the top one. Only the
+// state folder's owner may read them; a missing state folder is an error.
 func Write(dir string, d contract.ConfigSetData) error {
 	if err := d.Validate(); err != nil {
 		return fmt.Errorf("siteconfig: %w", err)
@@ -56,8 +83,13 @@ func Write(dir string, d contract.ConfigSetData) error {
 	if err != nil {
 		return fmt.Errorf("siteconfig: %w", err)
 	}
-	if err := configfile.WriteAtomic(filepath.Join(dir, FileName), data, 0o600); err != nil {
+	if err := os.Mkdir(filepath.Join(dir, Dir), 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("siteconfig: %w", err)
+	}
+	for _, path := range []string{filepath.Join(dir, Dir, FileName), filepath.Join(dir, FileName)} {
+		if err := configfile.WriteAtomic(path, data, 0o600); err != nil {
+			return fmt.Errorf("siteconfig: %w", err)
+		}
 	}
 	return nil
 }

@@ -59,7 +59,7 @@ func check(cfg videoconfig.Result, stdout io.Writer) {
 		uplink = fmt.Sprintf("mobile data, %d MB a month, sessions of %v at most", v.Quota>>20, v.MaxLength)
 	}
 	fmt.Fprintf(stdout, "configuration OK: site %s, %d camera(s), %s, go2rtc %s, state in %s\n",
-		cfg.App.Site, len(v.Cameras), uplink, cfg.Go2rtc, cfg.StateDir)
+		cfg.App.Site, len(v.Cameras), uplink, cfg.Go2rtc, cfg.VideoDir)
 	if p := v.Photos; p.Count > 0 {
 		fmt.Fprintf(stdout, "photos at an alarm: %d per camera, %d px wide\n", p.Count, p.Width)
 		if fi, err := os.Stat(cfg.FFmpeg); err != nil || fi.IsDir() {
@@ -106,7 +106,7 @@ func (p photographer) Open(ctx context.Context) (videoapp.Shooter, error) {
 
 func runService(ctx context.Context, cfg videoconfig.Result, stderr io.Writer) int {
 	log := service.Logger(stderr, cfg.LogLevel)
-	store, release, err := service.OpenState(name, cfg.StateDir, pidName, log)
+	store, release, err := service.OpenState(name, cfg.VideoDir, pidName, log)
 	if err != nil {
 		log.Error("cannot start", "err", err)
 		return 1

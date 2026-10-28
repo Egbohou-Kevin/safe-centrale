@@ -29,6 +29,11 @@ type Result struct {
 	Go2rtc   string            // the go2rtc executable
 	FFmpeg   string            // decodes the photos' pictures
 	PhotoDir string            // where the photos wait for the link agent
+	// VideoDir is the service's own state: its pid file, the month's usage, its
+	// outbox. A folder of its own (28 October 2026): its unit shows it that folder,
+	// the photos and the configuration from the cloud, nothing else of the state
+	// folder (code key, access codes).
+	VideoDir string
 
 	// SiteVersion is the version of the configuration set from the cloud found in
 	// the state folder (0: none); SiteErr says why it was not applied, SiteNote what
@@ -40,7 +45,7 @@ type Result struct {
 
 // String hides the cameras' addresses.
 func (r Result) String() string {
-	return fmt.Sprintf("{site:%s cameras:%d go2rtc:%s broker:%s state:%s}", r.App.Site, len(r.Sources), r.Go2rtc, r.BrokerURL, r.StateDir)
+	return fmt.Sprintf("{site:%s cameras:%d go2rtc:%s broker:%s state:%s}", r.App.Site, len(r.Sources), r.Go2rtc, r.BrokerURL, r.VideoDir)
 }
 
 // GoString hides them for %#v.
@@ -127,6 +132,7 @@ func build(f file) (Result, error) {
 		Go2rtc:   cmp.Or(f.Go2rtc, "/usr/local/bin/go2rtc"),
 		FFmpeg:   cmp.Or(f.FFmpeg, "/usr/bin/ffmpeg"),
 		PhotoDir: filepath.Join(f.StateDir, "photos"),
+		VideoDir: filepath.Join(f.StateDir, "video"),
 	}
 	var cams []video.Camera
 	if r.Sources, cams, err = parseCameras(f.Cameras); err != nil {

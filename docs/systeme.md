@@ -53,8 +53,11 @@ sans lui, la console ne lève pas son réseau).
 Nos programmes tournent sous l'utilisateur `safehome`, sans droits
 d'administration, et ne peuvent écrire que dans `/var/lib/safehome`
 (`ProtectSystem=strict`). La configuration réglée depuis l'application y est gardée
-(`site-config.json`, mode 0600 : elle contient les numéros des contacts), puisque
-`/etc/safehome` est en lecture seule (voir `operations.md`). La passerelle GSM et Zigbee2MQTT ont en plus accès aux ports
+(`site/site-config.json`, mode 0600 : elle contient les numéros des contacts), puisque
+`/etc/safehome` est en lecture seule (voir `operations.md`). Depuis le 28 octobre 2026 elle est
+dans son propre dossier `site/`, que la vidéo voit seul ; la centrale en garde aussi une copie à la
+racine de l'état, là où la lisent les programmes d'avant cette date (un retour arrière), et la
+plus haute version des deux l'emporte. La passerelle GSM et Zigbee2MQTT ont en plus accès aux ports
 série (groupe `dialout`), le programme du module batterie à ses broches et à son bus
 (groupes `gpio` et `i2c`).
 
@@ -87,10 +90,25 @@ qu'`install.sh` donne à `safehome`) et ne voit ni `/etc/safehome` ni `/var/lib/
 `DevicePolicy`, ni `ProtectClock`). `safehome-video.service` (go2rtc, ffmpeg) ne voit de
 `/etc/safehome` que `video.json` : un dossier vide par-dessus (`TemporaryFileSystem=`), le fichier
 remonté en lecture seule (`BindReadOnlyPaths=`, qui demande un point de montage qu'un dossier
-`InaccessiblePaths=` ne peut pas tenir). Son `/var/lib/safehome` reste ouvert : le programme y
-verrouille `video.pid`, y écrit `photos/` pour l'agent et y lit `site-config.json`, réécrit par
-renommage (un fichier remonté resterait l'ancien). Le séparer des secrets de ce dossier (`code-key`,
-`access.json`) demande de déplacer ces fichiers : un lot à part.
+`InaccessiblePaths=` ne peut pas tenir). De `/var/lib/safehome` (`code-key`, `access.json` : les
+empreintes des codes, cassables hors ligne) elle ne voit, depuis le 28 octobre 2026, que trois
+dossiers, remontés de même sur un dossier vide :
+
+| Dossier | Pour | Monté |
+|---|---|---|
+| `video/` | son état à elle : verrou `video.pid`, consommation du mois, messages en attente | lecture-écriture (`BindPaths=`) |
+| `photos/` | les photos d'alarme qu'elle écrit et que l'agent envoie (même chemin qu'avant) | lecture-écriture (`BindPaths=`) |
+| `site/` | la configuration réglée depuis l'application (forfait, durée des sessions) | lecture seule (`BindReadOnlyPaths=`) |
+
+Un dossier et non le fichier pour la configuration : la centrale la réécrit par renommage, et un
+fichier remonté resterait l'ancien. Les secrets n'ont pas bougé : c'est la vidéo et la configuration
+du cloud qui ont pris chacune un dossier. `install.sh` crée les trois (`safehome`, 0700) sur un
+site avec caméras ; à la première mise à jour il arrête la vidéo, copie dans `video/` l'état
+qu'elle gardait à la racine (`video.json`, `video_seq.json` et leurs `.prev`) et laisse les
+originaux pour un retour arrière ; il recopie dans `site/` une configuration de la racine plus
+récente et différente (écrite seule par une centrale remise par un retour arrière). Un test de
+`deploy` lit ces dossiers dans le code (`videoconfig`, `siteconfig`) et rougit si la vidéo voit
+`code-key` ou `access.json`.
 
 ## Disposition de la carte SD (32 Go)
 
@@ -856,7 +874,12 @@ ne tient pas) :
 5. Zigbee2MQTT ne voit plus nos secrets : `sudo nsenter -t $(systemctl show -p MainPID --value zigbee2mqtt) -m ls /etc/safehome /var/lib/safehome`
    refuse les deux ;
 6. la vidéo : une photo d'alarme prise et envoyée (`journalctl -u safehome-video -u safehome-agent -b`),
-   et `nsenter … -m ls /etc/safehome` sur son PID ne montre que `video.json` ;
+   et `nsenter … -m ls /etc/safehome` sur son PID ne montre que `video.json` ; depuis le 28 octobre
+   2026, sur le PID de go2rtc (`pgrep -u safehome go2rtc`) :
+   `sudo nsenter -t <pid> -m ls /var/lib/safehome` ne montre que `photos site video`,
+   `sudo nsenter -t <pid> -m cat /var/lib/safehome/code-key` échoue (fichier absent),
+   `/var/lib/safehome/video/` tient `video.pid` et `video.json`, la consommation du mois (statut
+   vidéo dans l'application) n'est pas repartie de zéro, et une photo d'alarme part encore ;
 7. la centrale lit toujours l'état de l'heure : une fois `timedatectl` à
    `System clock synchronized: yes`, son battement de cœur porte `clock_ok: true` (un champ absent
    veut dire que `adjtimex` lui est refusé) ;

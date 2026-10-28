@@ -294,6 +294,33 @@ fi
 
 # --- Start ----------------------------------------------------------------------
 
+# The video service's view of /var/lib/safehome (28 October 2026): its own state in
+# video/, the photos, and site/ with the configuration from the cloud; its unit binds
+# these three, nothing else (code key, access codes). The state it kept at the top
+# before is copied into video/ once, the service stopped first so that nothing it
+# writes meanwhile is lost; the top copies stay for a rollback (update-hub.sh), which
+# runs the earlier service on them.
+STATE="$ROOT/var/lib/safehome"
+if has video; then
+	if [ ! -d "$STATE/video" ]; then
+		! systemctl is-active -q safehome-video || systemctl stop safehome-video
+		mkdir "$STATE/video"
+		for f in video.json video.json.prev video_seq.json video_seq.json.prev; do
+			[ ! -f "$STATE/$f" ] || cp -p "$STATE/$f" "$STATE/video/$f"
+		done
+	fi
+	mkdir -p "$STATE/photos" "$STATE/site"
+	# The hub writes both copies; a top one newer and different was written alone, by
+	# a hub from before this date (a rollback). The video sees site/'s alone.
+	top="$STATE/site-config.json"
+	if [ -f "$top" ] && [ "$top" -nt "$STATE/site/site-config.json" ] && ! cmp -s "$top" "$STATE/site/site-config.json"; then
+		cp -p "$top" "$STATE/site/.site-config.json.new"
+		mv "$STATE/site/.site-config.json.new" "$STATE/site/site-config.json"
+	fi
+	chown safehome:safehome "$STATE/video" "$STATE/photos" "$STATE/site"
+	chmod 700 "$STATE/video" "$STATE/photos" "$STATE/site"
+fi
+
 for p in $enabled; do
 	systemctl enable "safehome-$p"
 	systemctl restart "safehome-$p"

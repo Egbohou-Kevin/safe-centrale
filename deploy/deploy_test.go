@@ -188,7 +188,8 @@ func TestEveryProgramHasAUnitThatRunsItWithItsConfig(t *testing.T) {
 				t.Errorf("no example configuration for %s: %v", p, err)
 			}
 			cfg := readExample(t, p)
-			if !slices.Contains(strings.Fields(u.get(t, "Service", "ReadWritePaths")), cfg.StateDir) {
+			// The video service binds its own folders of the state alone (hardening_test.go).
+			if p != "video" && !slices.Contains(strings.Fields(u.get(t, "Service", "ReadWritePaths")), cfg.StateDir) {
 				t.Errorf("ReadWritePaths does not cover state_dir %q", cfg.StateDir)
 			}
 			if got := u.get(t, "Service", "User"); got != "safehome" {

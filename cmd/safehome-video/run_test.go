@@ -90,7 +90,8 @@ func TestTheConfigExampleChecks(t *testing.T) {
 func TestASecondServiceOnTheSameStateIsRefused(t *testing.T) {
 	state := t.TempDir()
 	cfg := writeConfig(t, "mqtt://127.0.0.1:1", os.Args[0], state, "")
-	running, err := pidfile.Lock(state, pidName) // a copy that runs holds the pid file
+	os.Mkdir(filepath.Join(state, "video"), 0o700)
+	running, err := pidfile.Lock(filepath.Join(state, "video"), pidName) // a copy that runs holds the pid file
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,8 +261,15 @@ func TestTheServiceEndToEndWithASimulatedGo2rtc(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the service did not stop")
 	}
-	if _, err := os.Stat(filepath.Join(state, pidName)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(state, "video", pidName)); !os.IsNotExist(err) {
 		t.Fatal("the pid file must be removed")
+	}
+	// Its state is in its own folder, the only one its unit binds besides the photos.
+	if _, err := os.Stat(filepath.Join(state, "video", "video_seq.json")); err != nil {
+		t.Fatalf("no outbox in video/: %v", err)
+	}
+	if top, _ := filepath.Glob(filepath.Join(state, "video*")); len(top) != 1 {
+		t.Fatalf("state left at the top: %v", top)
 	}
 	if l := logs.String(); strings.Contains(l, "secret") || strings.Contains(l, "camPW") || !strings.Contains(l, "url=***") {
 		t.Fatalf("logs:\n%s", l)
