@@ -147,7 +147,23 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   par toutes les couches application des programmes de la centrale ; elle connaît le
   contrat et le pilote, et aucun domaine. `Send` encode un message tout de suite et le
   met en file, avec un identifiant tiré de la fonction donnée à `Open` ; un message
-  qu'on ne peut pas encoder est écrit au journal et laissé de côté. Les tests des
+  qu'on ne peut pas encoder est écrit au journal et laissé de côté. La file est en
+  mémoire et bornée (`Settings.Size` : 2000 messages pour le hub, 1000 pour l'agent et
+  Zigbee, 500 pour le GSM, 200 pour la vidéo, 50 pour les autres) :
+  un redémarrage perd ce qu'elle tenait. Pleine, elle jette le plus ancien message de
+  la plus basse priorité, déduite du topic (`priorityOf`, même règle que la file de
+  l'agent vers le cloud) ; les autres partent dans leur ordre. Haute : `alarm/*`,
+  `alert/*`, `device/+/cmd` et `device/+/ack` (la sirène et sa réponse), et tout topic
+  hors contrat (une demande à Zigbee2MQTT : une sirène à faire sonner). Basse : les
+  états périodiques (`device/+/state`, `system/heartbeat`, `system/health`,
+  `system/devices`, `registry/devices`, `gsm/status`, `zigbee/status`, `video/status`,
+  `agent/status`). Normale : le reste (événements des appareils, sessions, autres
+  ordres, `system/contacts`, `config/applied`, `install/mode`). Un message retenu vide,
+  qui efface l'état gardé par le broker (celui d'un appareil retiré : une porte restée
+  « ouverte » bloquerait toute mise en marche), est au moins normal, même sur
+  `device/+/state`. Si elle ne tient que
+  des messages de priorité haute, elle jette le plus ancien et le dit au journal
+  (« only alarm messages »). Les tests des
   couches application partagent son faux broker (`outboxtest.Broker`). La porte
   d'entrée (`internal/inbox`) aussi :
   le message reçu, les abonnements, la vérification d'un message contre le contrat
