@@ -29,8 +29,12 @@ import (
 // $FAKE_TIMESYNCD and $FAKE_MODE are what /, /data and timesyncd's folder are mounted
 // as, timesyncd's state and the alarm's mode; $FAKE_NO_CLOUD, an agent that never
 // reached the cloud. The units' archive really is made, of $HUB/etc/systemd/system, in
-// $HUB/data/maintenance; $FAKE_TAR makes tar fail making it ("fails") or reading it back
-// ("unreadable"). The bundle scp copies lands in $HUB/home, where its sums are computed; /boot/firmware is $HUB/boot/firmware. The
+// $HUB/data/maintenance; $FAKE_TAR makes tar fail making it ("fails"), reading it back
+// ("unreadable") or extracting it ("unreadable at rollback"). install.sh writes
+// $FAKE_NEW_UNIT as safehome-hub.service, writes $FAKE_CHANGED_AS in each unit of
+// $FAKE_CHANGED_UNITS, and adds $FAKE_EXTRA_UNIT, enabled; the hub restarts in a loop
+// while one unit says $FAKE_TIGHT. safehome-boot-clock.service is a oneshot, every other
+// unit a daemon. The bundle scp copies lands in $HUB/home, where its sums are computed; /boot/firmware is $HUB/boot/firmware. The
 // boot id changes once the hub is asked to reboot, unless $FAKE_NO_REBOOT; it cannot be
 // read when $FAKE_NO_BOOTID is "fails", reads empty when it is "empty"; its uptime is
 // always short.
@@ -38,6 +42,8 @@ const fakeHub = `for cmd; do :; done
 printf '%s\n' "$cmd" >> "$LOG"
 hub=$(cat "$HUB/usr/local/bin/safehome-hub")
 among() { case " $1 " in *" $hub "*) return 0 ;; esac; return 1; }
+units="$HUB/etc/systemd/system"
+crashing() { among "$FAKE_CRASHING" || { [ -n "$FAKE_TIGHT" ] && grep -qsxF "$FAKE_TIGHT" "$units"/*; }; }
 case "$cmd" in
 *"-e /usr/local/bin/.safehome-prev.unconfirmed"*)
 	n=$(cat "$HUB/mark-fails" 2>/dev/null || echo 0)
@@ -49,6 +55,12 @@ case "$cmd" in
 	echo "safehome-hub $hub" ;;
 *install.sh)
 	touch "$HUB/installed"
+	if [ -n "$FAKE_NEW_UNIT" ]; then printf '%s\n' "$FAKE_NEW_UNIT" > "$units/safehome-hub.service"; fi
+	for u in $FAKE_CHANGED_UNITS; do printf '%s\n' "$FAKE_CHANGED_AS" > "$units/$u"; done
+	if [ -n "$FAKE_EXTRA_UNIT" ]; then
+		echo "[Unit] new" > "$units/$FAKE_EXTRA_UNIT"
+		mkdir -p "$units/multi-user.target.wants" && ln -sf "../$FAKE_EXTRA_UNIT" "$units/multi-user.target.wants/$FAKE_EXTRA_UNIT"
+	fi
 	echo "${FAKE_MARK_FAILS:-0}" > "$HUB/mark-fails"
 	if [ "$FAKE_INSTALL" = after ]; then echo "run $$" > "$HUB/usr/local/bin/.safehome-prev.unconfirmed"; fi
 	[ -z "$FAKE_INSTALL" ] ;;
@@ -78,7 +90,7 @@ case "$cmd" in
 *NTPSynchronized*) echo yes ;;
 "date +%s") date +%s ;;
 *list-units*)
-	if among "$FAKE_CRASHING"; then
+	if crashing; then
 		echo "safehome-hub.service loaded activating auto-restart safeHome hub"
 	elif ! among "$FAKE_STOPPED"; then
 		echo "safehome-hub.service loaded active running safeHome hub"
@@ -88,7 +100,7 @@ case "$cmd" in
 *ActiveEnterTimestampMonotonic*)
 	if [ -n "$FAKE_SHOW_FAILS" ]; then exit 1; fi
 	state=active at=100000000
-	if among "$FAKE_CRASHING" || among "$FAKE_RACING"; then state=activating; fi
+	if crashing || among "$FAKE_RACING"; then state=activating; fi
 	if among "$FAKE_FLAPPING"; then
 		at=999500000
 		if [ -n "$FAKE_FLAP_AGE" ]; then at=$(( (1000 - FAKE_FLAP_AGE) * 1000000 )); fi
@@ -100,7 +112,10 @@ case "$cmd" in
 	printf 'Id=mosquitto.service\nActiveEnterTimestampMonotonic=90000000\nActiveState=active\n' ;;
 *"is-enabled systemd-remount-fs"*) echo masked ;;
 *"is-enabled safehome-hub.service"* | *"is-enabled safehome-agent.service"*) echo enabled ;;
+*"is-enabled zigbee2mqtt.service"* | *"is-enabled safehome-boot-clock.service"*) echo enabled ;;
 *is-enabled*) echo disabled ;;
+*"-p Type --value safehome-boot-clock.service"*) echo oneshot ;;
+*"-p Type --value"*) echo notify ;;
 esac`
 
 // unconfirmed is the mark install.sh leaves while the programs in place are not yet
@@ -257,6 +272,153 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 	}
 }
 
+// Phase 2 of update-hub.sh puts the units back too when it rolls back: those saved before
+// install.sh by this run (never an older archive) replace the new ones, a unit the archive
+// did not hold is removed with its link and stopped, systemd reloads, then the services
+// restart. A unit alone changed, the programs the same, is rolled back as well, even when
+// install.sh fails on it. An archive that cannot be read then is said, naming it.
+func TestUpdateHubPhaseTwoPutsTheSavedUnitsBack(t *testing.T) {
+	const tight = "[Unit] ProtectSystem=strict"
+	for _, c := range []struct {
+		name, newUnit, extra, tar, install, hubUnit string
+		changed, changedAs                          string
+		noPrev, extraLeft, hubStays                 bool
+		want                                        []string
+	}{
+		{name: "a new unit makes the hub fail", newUnit: tight, hubUnit: "[Unit]",
+			want: []string{"   unit safehome-hub.service put back as it was",
+				"the new programs do not hold; the previous programs and units are back and their services hold"}},
+		{name: "a new unit alone, the programs the same, makes the hub fail", newUnit: tight, noPrev: true, hubUnit: "[Unit]",
+			want: []string{"the new programs do not hold; the previous units are back and their services hold"}},
+		{name: "install.sh fails on a new unit, the programs the same", newUnit: tight, noPrev: true, install: "before", hubUnit: "[Unit]",
+			want: []string{"install.sh failed; the previous units are back and their services hold"}},
+		{name: "a unit in excess is removed", newUnit: tight, extra: "safehome-extra.service", hubUnit: "[Unit]",
+			want: []string{"   unit safehome-extra.service removed: it was not there before",
+				"the previous programs and units are back and their services hold"}},
+		{name: "the archive cannot be read at the rollback", newUnit: tight, tar: "unreadable at rollback", hubUnit: tight, extraLeft: true,
+			extra: "safehome-extra.service",
+			want: []string{"!! the units could not all be put back from /data/maintenance/units-",
+				"the new programs do not hold; the previous programs are back but the services still do not hold; the units could not all be put back from /data/maintenance/units-"}},
+		{name: "units other than the hub's that differ come back, only the daemons restart", newUnit: tight, hubUnit: "[Unit]",
+			changed: "zigbee2mqtt.service safehome-boot-clock.service", changedAs: "[Unit] changed",
+			want: []string{"   unit zigbee2mqtt.service put back as it was", "   unit safehome-boot-clock.service put back as it was",
+				"   safehome-boot-clock back, not restarted: its type is oneshot, not a daemon's",
+				"the previous programs and units are back and their services hold"}},
+		{name: "a new unit other than the hub's alone makes the services fail", noPrev: true, hubUnit: "[Unit]", hubStays: true,
+			changed: "zigbee2mqtt.service", changedAs: tight,
+			want: []string{"   unit zigbee2mqtt.service put back as it was",
+				"the new programs do not hold; the previous units are back and their services hold"}},
+		{name: "a new unit that holds stays", newUnit: "[Unit] new", extra: "safehome-extra.service", hubUnit: "[Unit] new", extraLeft: true,
+			want: []string{"phase 2 done"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			bundle := filepath.Join(dir, "bundle")
+			writeScript(t, filepath.Join(bundle, "deploy", "install.sh"), "exit 0")
+			files := map[string]string{"safehome-hub": "0.3.0"}
+			if !c.noPrev {
+				files["safehome-hub.prev"] = "0.2.1"
+			}
+			cmd, log := updateHub(t, dir, files, "-v", "0.3.0", "2", bundle)
+			units := filepath.Join(dir, "hub", "etc", "systemd", "system")
+			// An older run's archive, never the way back for this one.
+			old := filepath.Join(dir, "old")
+			writeFile(t, filepath.Join(old, "etc", "systemd", "system", "safehome-hub.service"), "[Unit] old")
+			writeFile(t, filepath.Join(dir, "hub", "data", "maintenance", ".keep"), "")
+			if b, err := exec.Command("tar", "-czf", filepath.Join(dir, "hub", "data", "maintenance", "units-20260101-0000.tgz"),
+				"-C", old, "etc/systemd/system/safehome-hub.service").CombinedOutput(); err != nil {
+				t.Fatalf("old archive: %v %s", err, b)
+			}
+			wants := filepath.Join(units, "multi-user.target.wants")
+			if err := os.MkdirAll(wants, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("../safehome-hub.service", filepath.Join(wants, "safehome-hub.service")); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(units, "safehome-boot-clock.service"), "[Unit]")
+			cmd.Env = append(cmd.Env, "FAKE_NEW_UNIT="+c.newUnit, "FAKE_TIGHT="+tight, "FAKE_EXTRA_UNIT="+c.extra,
+				"FAKE_TAR="+c.tar, "FAKE_INSTALL="+c.install, "FAKE_CHANGED_UNITS="+c.changed, "FAKE_CHANGED_AS="+c.changedAs)
+			b, err := cmd.CombinedOutput()
+			out := string(b)
+			holds := c.want[0] == "phase 2 done"
+			if (err == nil) != holds {
+				t.Fatalf("err = %v, want an error: %v, in:\n%s", err, !holds, out)
+			}
+			for _, w := range c.want {
+				if !strings.Contains(out, w) {
+					t.Errorf("%q not in:\n%s", w, out)
+				}
+			}
+			if got := strings.TrimSpace(string(must(os.ReadFile(filepath.Join(units, "safehome-hub.service"))))); got != c.hubUnit {
+				t.Errorf("safehome-hub.service = %q, want %q", got, c.hubUnit)
+			}
+			for _, unit := range []string{"safehome-agent.service", "zigbee2mqtt.service", "safehome-boot-clock.service"} {
+				if got := strings.TrimSpace(string(must(os.ReadFile(filepath.Join(units, unit))))); got != "[Unit]" {
+					t.Errorf("%s = %q, want it as it was", unit, got)
+				}
+			}
+			if _, err := os.Lstat(filepath.Join(wants, "safehome-hub.service")); err != nil {
+				t.Errorf("the hub's link in multi-user.target.wants is gone: %v", err)
+			}
+			if c.extra != "" {
+				_, unitErr := os.Stat(filepath.Join(units, c.extra))
+				_, linkErr := os.Lstat(filepath.Join(wants, c.extra))
+				if left := unitErr == nil; left != c.extraLeft || (linkErr == nil) != c.extraLeft {
+					t.Errorf("%s left: unit %v, link %v, want %v", c.extra, left, linkErr == nil, c.extraLeft)
+				}
+			}
+			cmds := strings.Split(string(must(os.ReadFile(log))), "\n")
+			install := slices.IndexFunc(cmds, func(l string) bool { return strings.HasSuffix(l, "install.sh") })
+			restore := slices.IndexFunc(cmds, func(l string) bool { return strings.Contains(l, "tar -xzf") })
+			reload := slices.Index(cmds, "sudo -n systemctl daemon-reload")
+			stop := slices.Index(cmds, "sudo -n systemctl stop "+c.extra)
+			// Each service whose program or unit came back restarts once; an identical
+			// unit, or one that is not a daemon (safehome-boot-clock), never.
+			restarted := map[string]int{}
+			for _, unit := range []string{"safehome-hub", "safehome-agent", "zigbee2mqtt", "safehome-boot-clock"} {
+				want := 0
+				if !holds && ((unit == "safehome-hub" && !c.hubStays) ||
+					(unit == "zigbee2mqtt" && strings.Contains(c.changed, "zigbee2mqtt.service"))) {
+					want = 1
+				}
+				line := "sudo -n systemctl restart " + unit + ".service"
+				if got := strings.Count("\n"+strings.Join(cmds, "\n")+"\n", "\n"+line+"\n"); got != want {
+					t.Errorf("%s restarted %d times, want %d", unit, got, want)
+				}
+				if want == 1 {
+					restarted[unit] = slices.Index(cmds, line)
+				}
+			}
+			restart := -1
+			for _, i := range restarted {
+				if restart < 0 || i < restart {
+					restart = i
+				}
+			}
+			if holds {
+				if restore >= 0 || reload >= 0 {
+					t.Errorf("units put back at %d, daemon-reload at %d: the healthy path puts nothing back", restore, reload)
+				}
+			} else if restore < install || reload < restore || restart < reload {
+				t.Errorf("install.sh at %d, units put back at %d, daemon-reload at %d, first restart at %d: want them in this order",
+					install, restore, reload, restart)
+			}
+			if wantStop := c.extra != "" && !c.extraLeft; (stop >= 0) != wantStop || (wantStop && stop < reload) {
+				t.Errorf("%s stopped at %d, daemon-reload at %d: want it stopped after, only once removed", c.extra, stop, reload)
+			}
+			if !strings.Contains(strings.Join(cmds, "\n"), "units-2026") || strings.Contains(strings.Join(cmds, "\n"), "units-20260101-0000") {
+				t.Error("the units came from an older archive than this run's")
+			}
+			for _, l := range cmds {
+				if strings.Contains(l, "engine.json") || strings.Contains(l, "disarm") {
+					t.Errorf("ran %q: the alarm is left alone", l)
+				}
+			}
+		})
+	}
+}
+
 // updateHub prepares update-hub.sh against fakeHub in dir, on a hub holding files in
 // /usr/local/bin, and returns the command with args and the log of the commands it ran.
 func updateHub(t *testing.T, dir string, files map[string]string, args ...string) (*exec.Cmd, string) {
@@ -276,6 +438,7 @@ if [ -n "$FAKE_DROP" ]; then rm "$HUB/home/safehome/$FAKE_DROP"; fi`)
 	writeScript(t, filepath.Join(stubs, "tar"), `case " $* " in
 *" -czf "*) if [ "$FAKE_TAR" = fails ]; then echo "tar: write error" >&2; exit 2; fi ;;
 *" -tzf "*) if [ "$FAKE_TAR" = unreadable ]; then echo "gzip: stdin: unexpected end of file" >&2; exit 2; fi ;;
+*" -xzf "*) if [ "$FAKE_TAR" = "unreadable at rollback" ]; then echo "gzip: stdin: unexpected end of file" >&2; exit 2; fi ;;
 esac
 exec /usr/bin/tar "$@"`)
 	for _, unit := range []string{"safehome-hub.service", "safehome-agent.service", "zigbee2mqtt.service"} {

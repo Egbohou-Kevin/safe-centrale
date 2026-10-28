@@ -691,9 +691,33 @@ redémarrage raté est dit, la suite continue), attend encore deux minutes, puis
 que l'ancienne version est revenue, et si ses services tiennent. Quand les nouveaux programmes
 tiennent, la phase 2 retire la marque : les `.prev` restent, mais la mise à jour suivante repart
 d'eux comme d'une installation ordinaire. Rien n'est désarmé ; l'état de l'alarme
-(`/var/lib/safehome`) n'est pas touché. Ni la configuration (déjà vérifiée par les nouveaux
-programmes), ni les unités ne reviennent : les unités d'avant sont dans
-`/data/maintenance/units-<date>.tgz`, à remettre à la main si besoin (étape 5). **L'ancien
+(`/var/lib/safehome`) n'est pas touché. La configuration ne revient pas (déjà vérifiée par les
+nouveaux programmes).
+
+**Retour arrière des unités** (28 octobre 2026, préalable au durcissement systemd de l'étude de
+sécurité de la centrale). Le retour remet aussi les unités, après les programmes et avant
+`daemon-reload`, depuis l'archive `/data/maintenance/units-<date>.tgz` de **cette** exécution de la
+phase 2 (jamais une plus ancienne) : l'archive est extraite à part (`/data/maintenance/restore.*`,
+effacé ensuite), chaque unité `safehome*` ou `zigbee2mqtt*` qui diffère de la sienne (`diff -r`) est
+remise telle quelle, chaque unité que l'archive n'avait pas (une unité neuve du paquet) est retirée
+avec ses liens dans `*.wants`, puis arrêtée après `daemon-reload`. Les services activés parmi les
+programmes revenus et les unités remises redémarrent, chacun une fois ; une unité identique n'est
+ni touchée ni redémarrée, et une unité remise qui n'est pas un démon (son `Type` lu par
+`systemctl show` n'est ni `simple`, `exec`, `notify`, `notify-reload`, `forking` ni `dbus`) est remise
+sans redémarrer : `safehome-boot-clock`, un `oneshot`, réécrirait sinon l'heure lue au démarrage,
+avant NTP, par une heure d'après (« not restarted: its type is oneshot, not a daemon's »). Le message final dit ce qui est revenu : « the previous programs », « the
+previous units » ou « the previous programs and units ». Une restauration ratée (archive illisible,
+copie refusée) est dite en nommant l'archive (« the units could not all be put back from
+/data/maintenance/units-… »), la suite continue comme pour un redémarrage raté, et le message final
+le répète ; un `mv` de programme raté arrête tout avant les unités, en nommant l'archive. Une unité
+seule changée, programmes identiques (aucun `.prev`, aucune marque), fait aussi jouer le retour :
+`services_hold` regarde l'état des unités, pas la version des programmes, et le retour remet alors
+les seules unités. Si `install.sh` échoue sur une telle unité (un `systemctl restart` refusé par une
+unité trop serrée), la marque est inchangée, mais les unités qui diffèrent de l'archive reviennent
+quand même avant l'arrêt (« install.sh failed; the previous units are back… ») ; quand aucune ne
+diffère, la phase 2 s'arrête comme avant. Ainsi une unité neuve trop serrée (`ProtectSystem=strict`,
+`InaccessiblePaths`…) qui empêche Zigbee2MQTT ou le hub de démarrer ne laisse pas de capteurs sourds :
+le durcissement peut s'essayer par une mise à jour ordinaire. **L'ancien
 programme repart sur l'état et la configuration que le nouveau a déjà utilisés** (`engine.json`,
 fichiers de `/etc/safehome`) : un changement de leur format entre deux versions doit rester lisible
 par la précédente, sinon le retour ne suffit pas. Quand `install.sh` échoue à la vérification de la
@@ -756,7 +780,8 @@ plus un `.prev` par programme, 9 ; les 9 programmes du paquet `dist/maj-8b00128`
    faire **sans** `-s` quand la configuration du site est déjà sur la centrale (aucun secret dans le
    paquet), puis `sudo ./safehome/deploy/install.sh`. Garder d'abord une copie des unités systemd
    en place, et vérifier qu'elle se relit (`tar -tzf`) : si une unité nouvelle empêche un service de démarrer, remettre la sienne seule,
-   `systemctl daemon-reload`, puis redémarrer ce service. Si ce sont les nouveaux programmes qui
+   `systemctl daemon-reload`, puis redémarrer ce service (la phase 2 d'`update-hub.sh` le fait
+   seule, « Retour arrière des unités » ci-dessus ; ce geste reste pour une installation à la main). Si ce sont les nouveaux programmes qui
    ne tiennent pas, remettre les `.prev` gardés par `install.sh`, puis redémarrer les services
    activés parmi eux (pas d'autre, ni `safehome-boot-clock`) :
 

@@ -5,7 +5,7 @@
 #   deploy/update-hub.sh 1                     save cmdline.txt and the alarm's mode, leave read-only, reboot
 #   deploy/update-hub.sh -v VERSION 2 BUNDLE   write access, DNS and clock, units saved, bundle copied
 #                                              and its sums compared, install, check, clean up;
-#                                              the previous programs back if the new ones do not hold
+#                                              the previous programs and units back if the new ones do not hold
 #   deploy/update-hub.sh 3                     back to read-only (cmdline.txt as saved), reboot
 #   deploy/update-hub.sh 4                     overlay, timesyncd's clock on /data, services, same alarm mode, cloud reached
 #
@@ -136,30 +136,96 @@ wait_services() { services_hold 60 || die "the services do not hold"; }
 unconfirmed=/usr/local/bin/.safehome-prev.unconfirmed
 mark() { pi "if [ ! -e $unconfirmed ]; then echo none; elif t=\$(sudo -n cat $unconfirmed); then echo \"mark \$t\"; else echo unreadable; fi"; }
 
-# roll_back: the programs install.sh replaced go back (it kept each one as X.prev,
-# docs/systeme.md, "Maintenance"; an X.prev.new is a copy cut short, never put back),
-# and the services of those enabled restart on them.
+# restore_units: the units go back as this run saved them in $units_tgz before
+# install.sh (never an older archive): each one that differs is put back, each one the
+# archive did not hold is removed, with its links in *.wants. Sets changed and removed
+# (unit names); units_note says a restoration that failed, naming the archive, and the
+# caller goes on as for a restart that failed. Nothing is reloaded or restarted here.
+restore_units() {
+	changed="" removed="" units_note=""
+	echo "== putting the units back from $units_tgz"
+	sys=etc/systemd/system
+	# Called where set -e still stops: a failure is said, what was done still read.
+	if ! did=$(pi "sudo -n sh -c 'cd / && t=\$(mktemp -d /data/maintenance/restore.XXXXXX) || exit 1; trap \"rm -rf \$t\" EXIT; tar -xzf $units_tgz -C \$t || exit 1; rc=0; for f in $sys/safehome* $sys/zigbee2mqtt*; do { [ -e \"\$f\" ] || [ -L \"\$f\" ]; } || continue; { [ -e \"\$t/\$f\" ] || [ -L \"\$t/\$f\" ]; } && continue; n=\${f##*/}; if rm -rf \"\$f\" $sys/*.wants/\"\$n\"; then echo \"removed \$n\"; else rc=1; fi; done; for f in \$t/$sys/*; do { [ -e \"\$f\" ] || [ -L \"\$f\" ]; } || continue; n=\${f##*/}; diff -r \"\$f\" $sys/\"\$n\" >/dev/null 2>&1 && continue; if rm -rf $sys/\"\$n\" && cp -Rp \"\$f\" $sys/\"\$n\"; then echo \"restored \$n\"; else rc=1; fi; done; exit \$rc'"); then
+		units_note="the units could not all be put back from $units_tgz: compare them with it by hand"
+		echo "!! $units_note" >&2
+	fi
+	changed=$(printf '%s\n' "${did:-}" | awk '$1 == "restored" {print $2}')
+	removed=$(printf '%s\n' "${did:-}" | awk '$1 == "removed" {print $2}')
+	for n in $changed; do echo "   unit $n put back as it was"; done
+	for n in $removed; do echo "   unit $n removed: it was not there before"; done
+}
+
+# roll_back REASON [units]: the programs install.sh replaced go back (it kept each one as
+# X.prev, docs/systeme.md, "Maintenance"; an X.prev.new is a copy cut short, never put
+# back), then the units as saved before install.sh (restore_units); with "units", only
+# the units, and nothing to put back is no stop. systemd reloads, the units removed stop,
+# and the services of those enabled among the programs and units back restart on them,
+# but a unit that is not a daemon (a oneshot, safehome-boot-clock) never restarts.
 # Nothing is disarmed; the alarm's state (/var/lib/safehome) is not touched. Called
 # last after ||, where set -e still stops: each step that may fail is said here.
 roll_back() {
-	echo "== putting the previous programs back"
-	if ! back=$(pi "sudo -n sh -c 'cd /usr/local/bin && rc=0 && for f in safehome-*.prev; do [ -e \"\$f\" ] || continue; if mv -f \"\$f\" \"\${f%.prev}\"; then echo \"\${f%.prev}\"; else rc=1; fi; done; [ \$rc != 0 ] || rm -f $unconfirmed; exit \$rc'"); then
-		die "$1, and the previous programs could not all be put back (back: $(printf '%s' "${back:-none}" | tr '\n' ' ')); the others are still safehome-*.prev in /usr/local/bin"
+	back=""
+	if [ "${2:-}" != units ]; then
+		echo "== putting the previous programs back"
+		if ! back=$(pi "sudo -n sh -c 'cd /usr/local/bin && rc=0 && for f in safehome-*.prev; do [ -e \"\$f\" ] || continue; if mv -f \"\$f\" \"\${f%.prev}\"; then echo \"\${f%.prev}\"; else rc=1; fi; done; [ \$rc != 0 ] || rm -f $unconfirmed; exit \$rc'"); then
+			die "$1, and the previous programs could not all be put back (back: $(printf '%s' "${back:-none}" | tr '\n' ' ')); the others are still safehome-*.prev in /usr/local/bin; the units were not put back either, they are in $units_tgz"
+		fi
 	fi
-	[ -n "$back" ] || die "$1, and no previous program was kept: nothing to put back"
+	restore_units
+	if [ -z "$back$changed$removed" ]; then
+		if [ "${2:-}" = units ]; then
+			[ -z "$units_note" ] || die "$1, and $units_note"
+			return 0
+		fi
+		die "$1, and no previous program was kept: nothing to put back${units_note:+; $units_note}"
+	fi
+	what="the previous programs"
+	if [ -z "$back" ]; then
+		what="the previous units"
+	elif [ -n "$changed$removed" ]; then
+		what="the previous programs and units"
+	fi
 	pi 'sudo -n systemctl daemon-reload' || echo "!! systemctl daemon-reload failed" >&2
-	for p in $back; do
+	for n in $removed; do
+		pi "sudo -n systemctl stop $n" || echo "!! $n could not be stopped" >&2
+	done
+	# program:NAME or unit:NAME, each name once, a program first (a for loop: ssh
+	# would read a while loop's input).
+	again=$({
+		for p in $back; do echo "program:$p"; done
+		for n in $changed; do
+			[ "${n%.service}" = "$n" ] || echo "unit:${n%.service}"
+		done
+	} | awk -F: '!seen[$2]++')
+	for e in $again; do
+		kind=${e%%:*} p=${e#*:}
 		if [ "$(pi "systemctl is-enabled $p.service 2>/dev/null || true")" != enabled ]; then
 			echo "   $p back"
-		elif pi "sudo -n systemctl restart $p.service"; then
+			continue
+		fi
+		# A unit put back restarts only if it runs a daemon: a oneshot such as
+		# safehome-boot-clock runs at boot only, and a restart would replace what it
+		# read then (docs/systeme.md, "Maintenance"). A program's service always does.
+		if [ "$kind" = unit ]; then
+			kind=$(pi "systemctl show -p Type --value $p.service" || true)
+			case "$kind" in
+			simple | exec | notify | notify-reload | forking | dbus) ;;
+			*)
+				echo "   $p back, not restarted: its type is ${kind:-unreadable}, not a daemon's"
+				continue
+				;;
+			esac
+		fi
+		if pi "sudo -n systemctl restart $p.service"; then
 			echo "   $p back, restarted"
 		else
 			echo "!! $p back, but its restart failed" >&2
 		fi
 	done
 	echo "   $(pi '/usr/local/bin/safehome-hub version' || echo 'hub version not readable')"
-	services_hold 100 || die "$1; the previous programs are back but the services still do not hold"
-	die "$1; the previous programs are back and their services hold"
+	services_hold 100 || die "$1; $what are back but the services still do not hold${units_note:+; $units_note}"
+	die "$1; $what are back and their services hold${units_note:+; $units_note}"
 }
 
 # Out of read-only mode, / is still read-only at boot: NetworkManager cannot write
@@ -236,7 +302,9 @@ case "$phase" in
 			[ "$i" = 6 ] || sleep 10
 		done
 		case "$after" in
-		"$before") ;;
+		# Programs all the same keep no .prev and leave no mark, yet install.sh has put
+		# its units: those that differ from the saved ones go back.
+		"$before") roll_back "install.sh failed" units ;;
 		"mark "*) roll_back "install.sh failed after replacing the programs" ;;
 		# There, but unreadable: made by this run, or left by one whose .prev are the
 		# programs that held (install.sh keeps them while a mark is there). Back to them.
