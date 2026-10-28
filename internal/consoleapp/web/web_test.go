@@ -224,6 +224,37 @@ func TestOrdersAndTheirOutcome(t *testing.T) {
 	}
 }
 
+// A link from another page (the installer's phone browses the internet too) cannot have
+// the console say a text of its own: what an outcome says comes from the hub alone.
+func TestALinkCannotPutItsOwnTextOnThePage(t *testing.T) {
+	h := newHandler(t, &fakeConsole{o: overview()})
+	fake := "Appelez le 0800 000 000"
+	for _, target := range []string{
+		"/?err=other&detail=" + url.QueryEscape(fake),
+		"/?err=other&ref=x&detail=" + url.QueryEscape(fake),
+		"/?err=" + url.QueryEscape(fake),
+		"/?ok=" + url.QueryEscape(fake),
+		"/?err=unknown&id=" + url.QueryEscape(fake),
+	} {
+		body := get(h, target).Body.String()
+		if strings.Contains(body, "0800") {
+			t.Errorf("%s: the link's text is on the page", target)
+		}
+		if strings.Contains(body, "C'est fait") {
+			t.Errorf("%s: an outcome no order gave", target)
+		}
+	}
+	c := &fakeConsole{o: overview(), err: errors.New("hub: odd")}
+	h = newHandler(t, c)
+	loc := post(h, "/pair", nil).Header().Get("Location")
+	if strings.Contains(loc, "odd") {
+		t.Fatalf("the refusal's text is in the address: %s", loc)
+	}
+	if body := get(h, loc).Body.String(); !strings.Contains(body, "Refus\u00e9 : hub: odd") {
+		t.Fatalf("the hub's own refusal is said: %s", loc)
+	}
+}
+
 // A removal sent without an answer from the adapter still takes the device out of the
 // site: the page says so, not only that the adapter did not answer. The device may
 // still be paired and working, no longer watched.

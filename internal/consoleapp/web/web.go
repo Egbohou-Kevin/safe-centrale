@@ -8,13 +8,16 @@ package web
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
 	"errors"
 	"html/template"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"safehome/internal/consoleapp"
@@ -50,7 +53,15 @@ type Handler struct {
 	pages   *template.Template
 	mux     *http.ServeMux
 	csrf    *http.CrossOriginProtection
+	orders  map[string]bool // the codes of the orders, for an outcome that says one
+
+	mu   sync.Mutex
+	last refused // the last unknown refusal: its text stays on the hub
 }
+
+// refused is an unknown refusal's text, kept by the hub and named in the address by a
+// random reference: a link from another page cannot have its own text said.
+type refused struct{ ref, text string }
 
 // New builds the page for the console, answering only requests made to host (the
 // hub's address, with its port unless 80): a page reached under another name is
@@ -63,7 +74,8 @@ func New(c Console, host string, clients netip.Prefix, loc *time.Location) (*Han
 	if !clients.IsValid() {
 		return nil, errors.New("web: the hub's own network is required")
 	}
-	h := &Handler{c: c, host: host, clients: clients, loc: loc, mux: http.NewServeMux(), csrf: http.NewCrossOriginProtection()}
+	h := &Handler{c: c, host: host, clients: clients, loc: loc, mux: http.NewServeMux(), csrf: http.NewCrossOriginProtection(),
+		orders: map[string]bool{}}
 	funcs := template.FuncMap{
 		"clock": func(t time.Time) string { return t.In(h.loc).Format("15:04:05") },
 		"hour":  func(t time.Time) string { return t.In(h.loc).Format("15:04") },
@@ -129,7 +141,7 @@ type Outcome struct {
 	Code   string // the order when OK ("zone"...), the refusal otherwise ("busy"...)
 	ID     string // the device, if any
 	On     bool   // for "siren": made one, or stopped
-	Detail string // an unknown refusal's own text, for the installer to pass on
+	Detail string // an unknown refusal's own text, from the hub, for the installer to pass on
 }
 
 type page struct {
@@ -148,16 +160,61 @@ func (h *Handler) render(w http.ResponseWriter, name string, p page) {
 func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	o := h.c.Overview()
 	p := page{Overview: o}
-	q := r.URL.Query()
-	if code := q.Get("ok"); code != "" {
-		p.Outcome = &Outcome{OK: true, Code: code, ID: q.Get("id"), On: q.Get("on") == "1"}
-	} else if code := q.Get("err"); code != "" {
-		p.Outcome = &Outcome{Code: code, ID: q.Get("id"), Detail: q.Get("detail")}
-	}
+	p.Outcome = h.outcome(r.URL.Query())
 	if o.Pairing != nil && o.Pairing.Active {
 		p.Refresh = 3 // the devices appear as they join
 	}
 	h.render(w, "home.html", p)
+}
+
+// outcome reads the last order's outcome from the address, which any page can link to:
+// only the codes the hub knows are said, an id only if it looks like one, and an unknown
+// refusal's text only from the hub, by its reference.
+func (h *Handler) outcome(q url.Values) *Outcome {
+	id := q.Get("id")
+	if !idPattern.MatchString(id) {
+		id = ""
+	}
+	if code := q.Get("ok"); h.orders[code] {
+		return &Outcome{OK: true, Code: code, ID: id, On: q.Get("on") == "1"}
+	}
+	code := q.Get("err")
+	if code == "" {
+		return nil
+	}
+	if !knownRefusal(code) {
+		code = "other"
+	}
+	o := &Outcome{Code: code, ID: id}
+	if ref := q.Get("ref"); code == "other" && ref != "" {
+		h.mu.Lock()
+		if ref == h.last.ref {
+			o.Detail = h.last.text
+		}
+		h.mu.Unlock()
+	}
+	return o
+}
+
+// idPattern is what a device's or a contact's id looks like: no words, no spaces.
+var idPattern = regexp.MustCompile(`^[A-Za-z0-9_.:-]{0,64}$`)
+
+func knownRefusal(code string) bool {
+	for _, r := range refusals {
+		if r.code == code {
+			return true
+		}
+	}
+	return false
+}
+
+// keep keeps an unknown refusal's text on the hub and returns its reference.
+func (h *Handler) keep(text string) string {
+	ref := rand.Text()
+	h.mu.Lock()
+	h.last = refused{ref: ref, text: text}
+	h.mu.Unlock()
+	return ref
 }
 
 func (h *Handler) tests(w http.ResponseWriter, r *http.Request) {
@@ -166,6 +223,7 @@ func (h *Handler) tests(w http.ResponseWriter, r *http.Request) {
 
 // act runs a form's order, then shows the page again with what happened.
 func (h *Handler) act(code string, do func(r *http.Request, id string) error) http.HandlerFunc {
+	h.orders[code] = true
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad form", http.StatusBadRequest)
@@ -180,7 +238,7 @@ func (h *Handler) act(code string, do func(r *http.Request, id string) error) ht
 			refusal, detail := Refusal(err)
 			q.Set("err", refusal)
 			if detail != "" {
-				q.Set("detail", detail)
+				q.Set("ref", h.keep(detail))
 			}
 		} else {
 			q.Set("ok", code)
@@ -223,7 +281,7 @@ var refusals = []struct {
 }
 
 // Refusal names a known refusal for the templates; an unknown one is "other", with
-// its own text.
+// its own text, which the page keeps on the hub (never in the address).
 func Refusal(err error) (code, detail string) {
 	for _, r := range refusals {
 		if errors.Is(err, r.err) {
