@@ -88,9 +88,10 @@ type Snapshot struct {
 	// report it again.
 	Tampered map[string]bool `json:"tampered"`
 	// Heard is, per sensor ("dev_door/contact"), when the engine took the last state of
-	// a door or a window, a smoke detector or a tamper: Boot gives no credit to a
-	// retained state older than that, which the broker may give back after an unclean
-	// stop (see older). Its Open and Tampered move with each change anyway.
+	// a door or a window, a smoke detector, a tamper or a panic button: Boot gives no
+	// credit to a retained state older than that, which the broker may give back after
+	// an unclean stop (see older). Open and Tampered move with each change anyway; a
+	// panic button has neither, Heard is its only memory across a restart.
 	Heard map[string]time.Time `json:"heard,omitempty"`
 
 	// Memory of the last alarm, kept after the system goes back to armed.

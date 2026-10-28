@@ -93,7 +93,7 @@ func (e *Engine) learn(now time.Time, current []Signal) []Signal {
 // last state the engine took from it (Heard). A momentary sensor (a movement, a
 // vibration, glass breaking) keeps no such time, which every passer-by would rewrite: its state is
 // older when it began before the mode the engine is in, or during the exit delay under
-// way. Live, it was heard then, and did what it does in that mode; active since, it is
+// way (not a panic button, which that delay does not concern). Live, it was heard then, and did what it does in that mode; active since, it is
 // no new movement. A state that does not say when it began is trusted, as is one dated
 // after now, the engine's times then being of no use: a clock that ran ahead.
 func (e *Engine) older(now time.Time, sig Signal) bool {
@@ -107,9 +107,10 @@ func (e *Engine) older(now time.Time, sig Signal) bool {
 		return false
 	}
 	from := e.s.Since
-	if e.s.Mode == ModeArming {
+	if e.s.Mode == ModeArming && sig.Sensor != SensorPanic {
 		// The exit delay under way, as far as now while it still runs: its end after
-		// now is no clock ahead, and must not make every state trusted.
+		// now is no clock ahead, and must not make every state trusted. A panic button,
+		// a 24-hour zone, owes nothing to the exit delay: pressed during it, it is news.
 		end := e.s.Deadline
 		if end.After(now) {
 			end = now
