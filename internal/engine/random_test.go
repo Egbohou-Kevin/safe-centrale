@@ -56,7 +56,8 @@ type rig struct {
 	bootKnown bool
 	// shown is when the system started on the clock as it read at boot, before NTP set
 	// it forward: the zero time unless the last reboot was stepped (see restartBack).
-	// Read once at boot, the clock's later steps do not move it.
+	// Read once at boot, the clock's later steps do not move it: one back may put it
+	// after bootAt, where Boot leaves it aside.
 	shown time.Time
 	// before and booted are the mode before the last restart, and what Boot did.
 	before Mode
@@ -308,8 +309,8 @@ func (r *rig) catchUp() []Action {
 
 // restartBack restarts with the clock set back by d, the broker's last save lost or
 // not: the system restarts then. ntp, when not zero, is how far NTP sets the clock
-// forward before the hub starts: the system's start moves with it, the time the clock
-// read then does not. Not while a momentary sensor is active: dated since the time the
+// forward before the hub starts, the system up for 30 s: its start on the clock set
+// right moves with the step, the time the clock read then does not. Not while a momentary sensor is active: dated since the time the
 // clock went back to, its state is news to an engine that never restarted, and no news
 // to one restored by a Boot that set it aside (SetAside): the two may part, both
 // right, an alert too many being the price accepted on 28 October 2026.
@@ -320,9 +321,9 @@ func (r *rig) restartBack(d time.Duration, lost bool, ntp time.Duration) []Actio
 	r.bootAt = r.now
 	r.shown = time.Time{}
 	if ntp > 0 && !r.momentaryActive() {
-		r.shown = r.now
 		r.now = r.now.Add(ntp)
-		r.bootAt = r.now
+		r.bootAt = r.now.Add(-30 * time.Second)
+		r.shown = r.bootAt.Add(-ntp)
 	}
 	if lost {
 		r.loseLastSave()

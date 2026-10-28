@@ -19,35 +19,50 @@ func steppedBoot(h *harness, back time.Time) Booted {
 // A state dated in the seconds after the system started, on the clock as it read
 // before NTP set it forward, is news: a door opened then, a press, a movement alerts or
 // rings. Before 28 October 2026 it was dated before the system's start on the clock
-// set right, compared with what the engine heard before the power cut, and lost.
+// set right, compared with what the engine heard before the power cut, and lost. So
+// too when the clock, set forward, is still behind what the engine heard (a time kept
+// apart, set on a clock ahead).
 func TestARestartActsOnAStateDatedBeforeNTPSetTheClockForward(t *testing.T) {
 	for _, c := range keptFromBeforeTheSetBack {
-		h := newHarness(t)
-		sig, back := c.kept(h)
-		h.e = restart(t, h)
-		booted := steppedBoot(h, back)
-		sig.Now = back.Add(time.Second)
-		if as := h.e.Boot(h.now, booted, []Signal{sig}); !acted(as) {
-			t.Errorf("%s, dated before NTP set the clock forward: %v", c.name, as)
+		for _, behind := range []bool{false, true} {
+			h := newHarness(t)
+			sig, back := c.kept(h)
+			h.e = restart(t, h)
+			booted := steppedBoot(h, back)
+			if behind {
+				h.now = back.Add(time.Minute)
+				booted.At = h.now.Add(-30 * time.Second)
+			}
+			sig.Now = back.Add(time.Second)
+			if as := h.e.Boot(h.now, booted, []Signal{sig}); !acted(as) {
+				t.Errorf("%s, dated before NTP set the clock forward, still behind %v: %v", c.name, behind, as)
+			}
 		}
 	}
 }
 
 // The state the broker kept from before the power cut, dated before the time the clock
-// went back to, is still no news (the correction of 28 October 2026 holds); nor is the
-// same state given again by the broker, bearing the very time the engine heard.
+// went back to, is still no news (the correction of 28 October 2026 holds); so is one
+// dated more than the uptime after it, which the clock as it read at boot had not
+// reached when the hub started. Nor is the same state given again by the broker,
+// bearing the very time the engine heard.
 func TestASteppedClockStillTellsAStateKeptFromBeforeTheSetBack(t *testing.T) {
 	for _, c := range keptFromBeforeTheSetBack {
-		h := newHarness(t)
-		sig, back := c.kept(h)
-		mode := h.e.Mode()
-		h.e = restart(t, h)
-		booted := steppedBoot(h, back)
-		if err := onlySiren(h.e.Boot(h.now, booted, []Signal{sig})); err != nil {
-			t.Errorf("%s: %v", c.name, err)
-		}
-		if h.e.Mode() != mode {
-			t.Errorf("%s: %s became %s", c.name, mode, h.e.Mode())
+		for _, past := range []time.Duration{0, 31 * time.Second} {
+			h := newHarness(t)
+			sig, back := c.kept(h)
+			mode := h.e.Mode()
+			h.e = restart(t, h)
+			booted := steppedBoot(h, back)
+			if past > 0 {
+				sig.Now = back.Add(past)
+			}
+			if err := onlySiren(h.e.Boot(h.now, booted, []Signal{sig})); err != nil {
+				t.Errorf("%s, %v past the time the clock went back to: %v", c.name, past, err)
+			}
+			if h.e.Mode() != mode {
+				t.Errorf("%s, %v past: %s became %s", c.name, past, mode, h.e.Mode())
+			}
 		}
 	}
 	h := newHarness(t)

@@ -66,8 +66,8 @@ func (e *Engine) Boot(now time.Time, booted Booted, current []Signal) []Action {
 // its now (see pullSinceBack), as Boot found it otherwise.
 type bootRef struct {
 	now, booted, since time.Time
-	// shown is when the system started on the clock as it read then, before NTP set
-	// it forward: before booted, the zero time otherwise (see stepped).
+	// shown is when the system started on the clock as it read early at boot, before
+	// NTP set it forward: before booted, the zero time otherwise (see stepped).
 	shown time.Time
 }
 
@@ -83,28 +83,27 @@ type Booted struct {
 }
 
 // stepped tells whether a state dated at t may be dated on the clock the system
-// started with, before NTP set it forward, while ref, a time of the engine's, was set
-// before the system started: the two do not compare. NTP may set the clock forward
-// before the hub starts (the services that date the devices' states start before it):
-// booted, taken on the clock set right, is then later than the time the clock read at
-// boot (shown), and a door opened in the seconds after the power came back is dated
-// before booted, on the clock as it read then. Compared with a time heard before the
-// power cut, it would look older and be lost. A state dated since shown, before booted,
-// is therefore news unless it bears ref itself. A time of the engine's since booted was
-// set after the clock was set forward, later than any time it read before: the two
-// compare. The price: a state the broker kept from before the power cut, dated since
-// the time the clock went back to, rings again (docs/engine.md, 28 October 2026).
+// started with, before NTP set it forward, while ref, a time of the engine's, was not
+// set on the clock as it is since: the two do not compare.
+//
+// NTP may set the clock forward before the hub starts (the services that date the
+// devices' states start before it): booted, taken on the clock set right, is then later
+// than shown, the time the clock read at boot, and a door opened in the seconds after
+// the power came back is dated before booted, on the clock as it read then. Compared
+// with a time heard before the power cut, it would look older and be lost. It was read
+// before the step, before now: at most the uptime (now less booted) after shown. Such a
+// state is therefore news unless it bears ref itself.
+//
+// A time of the engine's since booted, up to now, was set after the step, later than
+// any time read before it: the two compare. One before booted (heard before the power
+// cut) or after now (set before the clock went back) does not. The price: a state the
+// broker kept from before the power cut, dated less than the uptime after the time the
+// clock went back to, rings again (docs/engine.md, 28 October 2026).
 func (r bootRef) stepped(t, ref time.Time) bool {
-	return !r.shown.IsZero() && !t.Before(r.shown) && t.Before(r.booted) && ref.Before(r.booted)
-}
-
-// earliest is the earliest time the clock read since the system started: shown when
-// the clock was set forward since, booted otherwise.
-func (r bootRef) earliest() time.Time {
-	if !r.shown.IsZero() {
-		return r.shown
+	if r.shown.IsZero() || t.Before(r.shown) || !t.Before(r.booted) || !t.Before(r.shown.Add(r.now.Sub(r.booted))) {
+		return false
 	}
-	return r.booted
+	return ref.Before(r.booted) || ref.After(r.now)
 }
 
 // learn records the devices' states given at Boot: which contacts are open, which
@@ -178,7 +177,7 @@ func (e *Engine) learn(ref bootRef, current []Signal) []Signal {
 // forward by NTP before the hub started, a state dated on the clock as it read at boot
 // is news (see bootRef.stepped).
 func (e *Engine) older(ref bootRef, sig Signal) bool {
-	now := ref.now
+	now, booted := ref.now, ref.booted
 	if sig.Now.IsZero() {
 		return false
 	}
@@ -190,11 +189,15 @@ func (e *Engine) older(ref bootRef, sig Signal) bool {
 		return !sig.Now.After(heard)
 	}
 	if ahead, ok := e.s.HeardAhead[key]; ok {
-		before := ref.earliest()
+		before := booted
 		if e.apartBefore[key] {
 			before = time.Time{}
 		}
-		if behind(sig.Now, ahead, now, before) {
+		if ref.stepped(sig.Now, ahead) {
+			if sig.Now.Equal(ahead) {
+				return true
+			}
+		} else if behind(sig.Now, ahead, now, before) {
 			return true
 		}
 	}
@@ -212,11 +215,11 @@ func (e *Engine) older(ref bootRef, sig Signal) bool {
 		}
 		from = later(from, end)
 	}
-	if from.After(now) {
-		return behind(sig.Now, from, now, ref.earliest())
-	}
 	if ref.stepped(sig.Now, from) {
 		return sig.Now.Equal(from)
+	}
+	if from.After(now) {
+		return behind(sig.Now, from, now, booted)
 	}
 	return !sig.Now.After(from)
 }
