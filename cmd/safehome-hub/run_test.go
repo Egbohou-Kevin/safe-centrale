@@ -116,6 +116,21 @@ func TestTheCheckFailsWhenTheDevicesFileIsLeftAside(t *testing.T) {
 	}
 }
 
+// A room the hub clears passes the check with a warning: its zone is watched all the
+// same, and the installation script goes on (28 October 2026).
+func TestTheCheckWarnsOfARoomLeftAside(t *testing.T) {
+	state := t.TempDir()
+	path := writeConfig(t, "mqtt://127.0.0.1:1883", state, "")
+	devices := `{"zones": {"dev_door": {"name": "Entrance", "kind": "entry", "room": "` + strings.Repeat("x", 40) + `"}}, "siren_ids": ["dev_siren1"]}`
+	if err := os.WriteFile(filepath.Join(state, hubconfig.DevicesFile), []byte(devices), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errb := cli(t, "", "check", "-config", path)
+	if code != 0 || !strings.Contains(out, "1 zone(s)") || !strings.Contains(out, `warning: zone "dev_door" has no room`) || strings.Contains(out, "xxxxx") {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errb)
+	}
+}
+
 // A site without a siren, by choice (26 October 2026), passes the check, which says it:
 // the installation script goes on.
 func TestTheCheckAcceptsASiteWithoutASiren(t *testing.T) {

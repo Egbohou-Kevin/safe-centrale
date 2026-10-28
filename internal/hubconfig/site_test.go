@@ -213,7 +213,6 @@ func TestADamagedDevicesFileNeverStopsTheHub(t *testing.T) {
 		"stray brace":    `{"zones": {}, "siren_ids": ["dev_siren1"]} }`,
 		"not an object":  `[]`,
 		"empty siren id": `{"zones": {}, "siren_ids": [""]}`,
-		"room too long":  `{"zones": {"dev_door": {"name": "A", "kind": "entry", "room": "` + strings.Repeat("x", 33) + `"}}, "siren_ids": ["dev_siren1"]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			path, stateDir := copyExample(t)
@@ -254,5 +253,62 @@ func TestWriteSiteRefusesBrokenInput(t *testing.T) {
 	}
 	if err := WriteSite(filepath.Join(t.TempDir(), "missing.json"), install.Site{}); err == nil {
 		t.Error("a missing file was accepted")
+	}
+}
+
+// A room is optional: one the hub would refuse costs only itself (28 October 2026).
+// The zone keeps its name and kind and stays watched with every other zone of the
+// file; the reason never quotes the room. Before, the whole file was left aside and
+// the hub watched only the configuration file's zones.
+func TestABadRoomInTheDevicesFileCostsOnlyItself(t *testing.T) {
+	path, stateDir := copyExample(t)
+	content := `{"zones": {
+		"dev_door": {"name": "Entrance", "kind": "entry", "room": "` + strings.Repeat("x", 40) + `"},
+		"dev_bell": {"name": "Bell", "kind": "instant", "room": "Hall\u0007\u001b[2J"},
+		"dev_back": {"name": "Back", "kind": "24h_fire", "room": "   "},
+		"dev_pir": {"name": "Living room", "kind": "interior", "room": "Salon"}
+	}, "siren_ids": ["dev_siren1"]}`
+	if err := os.WriteFile(filepath.Join(stateDir, DevicesFile), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.DevicesErr != nil || r.DevicesSum == "" {
+		t.Fatalf("the devices file was left aside for a room: %v", r.DevicesErr)
+	}
+	zones := r.Hub.Engine.Zones
+	if len(zones) != 4 {
+		t.Fatalf("%d zone(s) watched, want the file's 4: %v", len(zones), zones)
+	}
+	for id, want := range map[string]string{"dev_door": "Entrance", "dev_bell": "Bell", "dev_back": "Back"} {
+		if z := zones[id]; z.Name != want || z.Room != "" {
+			t.Fatalf("%s: %+v, want %q without a room", id, z, want)
+		}
+	}
+	if z := zones["dev_pir"]; z.Room != "Salon" || z.Kind != "interior" {
+		t.Fatalf("a good room was lost: %+v", z)
+	}
+	want := []RoomLeftAside{
+		{Zone: "dev_back", Reason: "it is blank"},
+		{Zone: "dev_bell", Reason: "it contains a control or invisible character"},
+		{Zone: "dev_door", Reason: "it is longer than 32 characters"},
+	}
+	if !reflect.DeepEqual(r.RoomsLeftAside, want) {
+		t.Fatalf("rooms left aside %+v, want %+v", r.RoomsLeftAside, want)
+	}
+	// The installer's tools show the zones as the hub watches them.
+	site, err := ReadSite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(site.Zones) != 4 || site.Zones["dev_door"].Room != "" || site.Zones["dev_pir"].Room != "Salon" {
+		t.Fatalf("ReadSite gave %+v", site.Zones)
+	}
+	// They still refuse to write such a room.
+	site.Zones["dev_door"] = install.Zone{Name: "Entrance", Kind: "entry", Room: strings.Repeat("x", 40)}
+	if err := CheckSite(path, site); err == nil {
+		t.Fatal("CheckSite accepted a room the tools must refuse")
 	}
 }
