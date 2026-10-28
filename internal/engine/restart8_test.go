@@ -26,7 +26,8 @@ func movedBeforeTheMode(h *harness) (Signal, time.Time) {
 // case): the start of the mode tells it, or, the clock set back an hour while the engine
 // ran, the time a Boot before set it aside does (SetAside). This is the restored engine
 // of the random sequences, right where the live one rang (28 October 2026, seed 169
-// shifted, see setAsideApart).
+// shifted); the live one now sets it aside too as the clock goes back (see
+// restart9_test.go).
 func TestAMovementFromBeforeTheModeDoesNotRingAgain(t *testing.T) {
 	for _, back := range []bool{false, true} {
 		h := newHarness(t)
@@ -44,23 +45,6 @@ func TestAMovementFromBeforeTheModeDoesNotRingAgain(t *testing.T) {
 			t.Fatalf("the clock set back %v, the second restart: %v", back, err)
 		}
 		h.mustBe(ModeArmed)
-	}
-}
-
-// The limit written in docs/engine.md (28 October 2026): the same movement, never set
-// aside by a Boot, the clock set back an hour while the engine ran, rings at the next
-// restart. The start of the mode, brought back to the time the clock went back to, no
-// longer tells it from a real movement dated since on the clock as it is, which the
-// project would rather ring for: an alarm too many, never one lost. The day the engine
-// tells the two, this test changes with the doc.
-func TestAMovementFromBeforeTheModeNeverSetAsideRingsAfterTheClockWentBack(t *testing.T) {
-	h := newHarness(t)
-	sig, booted := movedBeforeTheMode(h)
-	h.now, booted = h.now.Add(-time.Hour), booted.Add(-time.Hour)
-	noActions(t, h.e.Handle(Tick{Now: h.now}))
-	h.e = restart(t, h)
-	if as := h.e.Boot(h.now, Booted{At: booted}, []Signal{sig}); !acted(as) {
-		t.Fatalf("the movement from before the mode, the clock set back: %v", as)
 	}
 }
 

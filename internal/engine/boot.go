@@ -63,8 +63,12 @@ func (e *Engine) Boot(now time.Time, booted Booted, current []Signal) []Action {
 		out = append(out, SirenOn{Duration: e.s.Deadline.Sub(now)})
 	}
 	for _, sig := range alarms {
+		began := sig.Now
 		sig.Now = now
 		out = append(out, e.signal(sig)...)
+		if key := sensorKey(sig.DeviceID, sig.Sensor); e.s.Moving[key].Equal(now) {
+			e.move(key, Signal{Active: true, Now: began}) // as the broker keeps it
+		}
 	}
 	return out
 }
@@ -148,6 +152,9 @@ func (e *Engine) learn(ref bootRef, current []Signal) []Signal {
 	for _, sig := range current {
 		key := sensorKey(sig.DeviceID, sig.Sensor)
 		early := e.early[key]
+		if !early && e.watches(sig) {
+			e.move(key, sig) // the broker's state, the time it began included
+		}
 		again := sig.Active && !sig.Now.IsZero() && sig.Now.Equal(before[key])
 		if !early && (again || e.older(ref, sig)) {
 			if sig.Active && !sig.Now.IsZero() {
@@ -280,6 +287,9 @@ func (e *Engine) hear(sig Signal) {
 		}
 		e.early[key] = true
 	}
+	if momentary(sig.Sensor) {
+		e.move(key, sig)
+	}
 	if !lasting(sig.Sensor) && sig.Sensor != SensorPanic || sig.Now.IsZero() {
 		return
 	}
@@ -295,6 +305,31 @@ func (e *Engine) hear(sig Signal) {
 // breaking) are moments.
 func lasting(s SensorKind) bool {
 	return s == SensorContact || s == SensorSmoke || s == SensorTamper
+}
+
+// momentary tells whether a sensor's state is a moment that keeps no time in the engine
+// but its active one (Moving): a movement, a vibration, glass breaking. A panic button
+// keeps Heard instead.
+func momentary(s SensorKind) bool { return !lasting(s) && s != SensorPanic }
+
+// watches tells whether the engine takes the momentary state of sig: a sensor its zone
+// reacts to, as signal hears it.
+func (e *Engine) watches(sig Signal) bool {
+	zone, known := e.cfg.Zones[sig.DeviceID]
+	return momentary(sig.Sensor) && known && Accepts(zone.Kind, sig.Sensor)
+}
+
+// move records the state of a momentary sensor (Moving): active, by the time it began;
+// at rest, or not saying when it began, it is dropped.
+func (e *Engine) move(key string, sig Signal) {
+	if !sig.Active || sig.Now.IsZero() {
+		delete(e.s.Moving, key)
+		return
+	}
+	if e.s.Moving == nil {
+		e.s.Moving = map[string]time.Time{}
+	}
+	e.s.Moving[key] = sig.Now
 }
 
 func sensorKey(deviceID string, s SensorKind) string { return deviceID + "/" + string(s) }

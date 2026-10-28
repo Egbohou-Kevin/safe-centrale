@@ -112,6 +112,12 @@ type Snapshot struct {
 	// the clock did since (a mode's start brought back by a clock set back no longer
 	// tells them, see older). Hearing the sensor drops its entry.
 	SetAside map[string]time.Time `json:"set_aside,omitempty"`
+	// Moving are the momentary sensors (a movement, a vibration, glass breaking) whose
+	// last state the engine took is active, per sensor, by the time it began as the
+	// broker keeps it. The clock set back behind the start of the mode while the engine
+	// runs, those that began before it are set aside (see pullSinceBack): brought back,
+	// that start no longer tells them at the next Boot. Their return to rest drops them.
+	Moving map[string]time.Time `json:"moving,omitempty"`
 	// BootShown is the Shown the last Boot was given (see Booted), zero when unknown: the
 	// trace of the system's start, written once per system run to the nanosecond. Given
 	// again, the hub restarted within the same run, after a Boot that already took the
@@ -142,6 +148,7 @@ func (s Snapshot) clone() Snapshot {
 	s.Heard = maps.Clone(s.Heard)
 	s.HeardAhead = maps.Clone(s.HeardAhead)
 	s.SetAside = maps.Clone(s.SetAside)
+	s.Moving = maps.Clone(s.Moving)
 	s.Failures = slices.Clone(s.Failures)
 	s.TimedOut = slices.Clone(s.TimedOut)
 	s.Raised = slices.Clone(s.Raised)

@@ -721,19 +721,39 @@ c'est le même état, écarté sans regarder l'horloge. Entendre le capteur effa
 entrée. Les dates du contrat sont à la milliseconde : un autre état du même capteur
 portant la même heure n'arrive pas en pratique.
 
-Reste une limite : l'horloge reculée pendant la marche (et non au démarrage), un
-mouvement commencé avant le mode sur l'ancienne horloge, toujours actif et que `Boot`
-n'a donc jamais écarté, est pris pour nouveau au redémarrage suivant, avant que
-l'horloge ne rattrape le début du mode : une alarme de trop, plutôt qu'un vrai
-mouvement perdu.
+L'horloge reculée pendant la marche (et non au démarrage) : corrigé le 28 octobre
+2026. Un mouvement commencé avant le mode sur l'ancienne horloge, toujours actif et que
+`Boot` n'avait donc jamais écarté, était pris pour nouveau au redémarrage suivant, avant
+que l'horloge ne rattrape le début du mode : une alarme de trop. Le moteur garde
+désormais l'état actif de chaque capteur momentané entendu (`moving`, par l'heure où il
+a commencé, telle que le broker la garde ; le retour au repos l'efface). Au moment où
+l'horloge recule derrière le début du mode pendant la marche, avant de le ramener, il
+met à part (`set_aside`) ceux que `Boot` aurait écartés : commencés au plus au début du
+mode, ou pendant le délai de sortie en cours jusqu'à la dernière heure vue. Rendus par
+le broker avec cette heure-là, ce sont les mêmes états, écartés sans regarder l'horloge.
+Rien d'autre ne change : un vrai mouvement pendant l'arrêt du hub porte une autre heure
+et sonne, même daté avant l'ancien début du mode ; un mouvement mis à part, entendu au
+repos puis de nouveau actif (front montant), sonne, en marche comme pendant l'arrêt.
+Pas au `Boot` : le début du mode tel que la marche précédente l'a laissé y suffit (voir
+plus haut). Une sauvegarde d'avant, sans `moving`, se lit sans erreur ; son `Boot`
+garde l'état rendu par le broker. Le moteur écarte ainsi exactement ce qu'il aurait
+écarté sans recul de l'horloge : un broker qui perd sa dernière sauvegarde et rend le
+mouvement mis à part, le hub arrêté pendant qu'un nouveau avait lieu, a perdu ce
+nouveau avant le hub, recul ou pas.
+Témoins : `internal/engine/restart9_test.go` (le mouvement d'avant le mode, celui du
+délai de sortie, armé en marche ou au redémarrage ; cas positifs : le vrai mouvement
+pendant l'arrêt, le front montant ; la sauvegarde sans `moving`). Il remplace le test
+qui figeait la limite (`TestAMovementFromBeforeTheModeNeverSetAsideRingsAfterTheClockWentBack`).
 
-Les séquences aléatoires l'atteignent (28 octobre 2026, `internal/engine/random_test.go`,
-graine 169 des séquences décalées) : un moteur restauré dont un `Boot` avait écarté le
-mouvement avant le recul ne sonne pas, et il a raison ; le moteur qui ne l'avait jamais
-écarté sonne. De même pour un redémarrage à horloge reculée, l'heure de démarrage
-inconnue (graine 2019, au-delà des 200 rejouées à chaque test) : tout état daté au plus
-maintenant est pris tel quel (voir plus haut). Aucune alerte n'est perdue ; la sonnerie
-de trop est celle de ces deux règles écrites.
+Les séquences aléatoires l'atteignaient (`internal/engine/random_test.go`, graine 169 des
+séquences décalées) : un moteur restauré dont un `Boot` avait écarté le mouvement avant
+le recul ne sonnait pas, et il avait raison ; le moteur vivant sonnait. Le vivant le met
+maintenant à part au recul : la graine 169 ne sépare plus les deux moteurs
+(`TestTheShiftedSeed169NoLongerParts`). Sur 3000 graines ordinaires et 3000 décalées,
+les séparations passent de 35 (18 et 17) à 2 (graines ordinaires 2019 et 2910), toutes
+deux un redémarrage à horloge reculée, l'heure de démarrage inconnue : tout état daté au
+plus maintenant est pris tel quel (voir plus haut). Aucune alerte n'est perdue ; la
+sonnerie de trop qui reste est celle de cette règle écrite.
 À un redémarrage que les séquences ne vérifient pas, si un état momentané actif est
 écarté par un seul des deux moteurs (`setAsideApart`), la comparaison continue
 (`parting`, 28 octobre 2026, relecture) : seul le moteur restauré peut l'avoir écarté ;
@@ -741,7 +761,8 @@ il doit faire tout ce que ferait le moteur vivant s'il gardait les mêmes états
 donc aucune autre alerte perdue ; et s'ils se séparent, le vivant envoie une alerte
 d'intrusion pour ce capteur et le restauré ne fait rien pour lui. Une nouvelle fourche
 part ensuite du moteur vivant. Témoins : `internal/engine/restart8_test.go` (le mouvement
-écarté une fois ne sonne plus, celui jamais écarté sonne) et la graine 169 décalée.
+écarté une fois par un `Boot` ne sonne plus) et la graine 2019
+(`TestTheSeed2019PartsOnAMovementSetAsideByTheRestoredEngine`).
 
 Corrigé le 28 octobre 2026 : `pullBack` effaçait les heures entendues postérieures à
 maintenant, et un mode commencé après maintenant faisait prendre tel quel tout état

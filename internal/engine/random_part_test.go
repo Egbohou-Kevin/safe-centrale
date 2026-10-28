@@ -53,11 +53,10 @@ type apartOn struct {
 // setAsideApart finds an active momentary sensor set aside by one engine and not the
 // other: a Boot of the restored one set it aside, when the start of the mode still told
 // it from a movement dated since. At a restart the rig cannot check, the other may take
-// it for news and ring: the clock set back while the engines ran, the start of the mode
-// brought back no longer telling it (the limit written in docs/engine.md, 28 October
-// 2026), or set back at the restart, the boot time unknown or the state dated since the
-// system started (a state dated up to now is trusted). An alarm too many, the restored
-// engine right (see parting).
+// it for news and ring: the clock set back at the restart, the boot time unknown or the
+// state dated since the system started (a state dated up to now is trusted). An alarm too
+// many, the restored engine right (see parting). The clock set back while the engines
+// ran, the live one sets it aside too since 28 October 2026 (see setMovingAside).
 func (r *rig) setAsideApart(twin *rig) apartOn {
 	mine, theirs := r.e.Snapshot().SetAside, twin.e.Snapshot().SetAside
 	for _, s := range randomSensors {
@@ -169,5 +168,28 @@ func TestPartingSeesItsDefects(t *testing.T) {
 	half := rings[2:]
 	if held.parting(rings, half, half) == nil {
 		t.Error("parting passed a restored engine acting on the movement it set aside")
+	}
+}
+
+// The sequence where a restored engine first parted from the live one (28 October 2026):
+// a movement heard during an exit delay, set aside by the fork's Boot, then the clock set
+// back an hour while the engines ran, and two restarts. The live engine rang at the
+// second, for that movement, the restored one did nothing about it, and was right. The
+// live engine now sets the movement aside as the clock goes back behind the start of the
+// mode (see setMovingAside): the two no longer part.
+func TestTheShiftedSeed169NoLongerParts(t *testing.T) {
+	if got := runRandom(t, 169, true); got.parted != 0 {
+		t.Fatalf("seed 169 shifted: %d partings, want none", got.parted)
+	}
+}
+
+// What is left of the partings (28 October 2026): a restart with the clock set back, the
+// boot time unknown, where the live engine takes a movement dated up to now for news (see
+// docs/engine.md) and the restored one, which a Boot made set it aside, does not. Every
+// other action of that restart is the same (see parting). A new fork starts from the live
+// engine after it.
+func TestTheSeed2019PartsOnAMovementSetAsideByTheRestoredEngine(t *testing.T) {
+	if got := runRandom(t, 2019, false); got.parted < 1 {
+		t.Fatalf("seed 2019: %d partings, want one at least", got.parted)
 	}
 }
