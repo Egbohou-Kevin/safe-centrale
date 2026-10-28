@@ -569,7 +569,7 @@ le début du mode) a donc été posée avant le recul :
   compare à elle comme d'habitude (plus ancien ou égal, il est écarté) ;
 - un état daté avant le démarrage du système, sur l'horloge telle qu'elle est
   maintenant, l'a été avant le recul (sauf un saut de NTP avant le démarrage du hub,
-  voir les limites connues) : il se compare de même. Le hub donne à `Boot` cette heure
+  voir plus bas) : il se compare de même. Le hub donne à `Boot` cette heure
   de démarrage, maintenant moins `/proc/uptime` (`sysclock.Uptime`, port `Deps.Uptime`) ;
 - un état daté depuis le démarrage du système, au plus maintenant, l'a été après le
   recul, pendant le démarrage : c'est peut-être une vraie intrusion, il est pris tel
@@ -610,6 +610,49 @@ Le même état daté depuis le démarrage du système déclenche (le cas positif
 heure de démarrage, la règle d'avant tient. Les séquences aléatoires redémarrent avec
 ou sans elle, le broker rendant un état antérieur au recul.
 
+Un saut de NTP avant le démarrage du hub. Les services qui datent les états des
+capteurs (Zigbee, batterie) démarrent avant le hub, et NTP avance parfois l'horloge
+avant lui : l'heure de démarrage se calcule alors sur l'horloge corrigée, et une porte
+ouverte dans les secondes après la mise sous tension, datée sur l'horloge encore
+reculée, paraît antérieure au démarrage du système. Comparée à l'heure entendue avant
+la coupure, elle paraissait plus ancienne : écartée, puis mise à part (`set_aside`),
+donc écartée aussi aux démarrages suivants, l'alerte était perdue. Corrigé le 28
+octobre 2026 (`internal/engine/restart7_test.go`,
+`TestARestartAfterNTPSetTheClockForwardTellsADoorOpenedMeanwhile`) :
+
+- l'unité `safehome-boot-clock.service` (`deploy/system/`, posée et activée par
+  `install.sh`) écrit tôt au démarrage, après `systemd-timesyncd` (qui avance d'abord
+  l'horloge à la dernière heure qu'il a écrite) et avant `sysinit.target` (donc avant
+  tout réseau, donc avant NTP), l'heure et l'uptime dans `/run/safehome-boot-clock`.
+  Le hub les lit (`sysclock.StartShown`, port `Deps.StartShown`) : l'heure lue moins
+  l'uptime est le démarrage du système tel que l'horloge l'affichait. Le durcissement
+  de `safehome-hub.service` n'y change rien, `/run` reste lisible avec
+  `ProtectSystem=strict` ;
+- avant l'heure de démarrage calculée sur l'horloge corrigée, l'horloge a sauté :
+  `Boot` reçoit les deux (`engine.Booted{At, Shown}`). Un état daté depuis l'heure
+  affichée au démarrage, et moins d'un uptime après elle (il a été daté avant le saut,
+  donc avant maintenant), est une nouvelle de ce démarrage : pris tel quel, sauf s'il
+  porte exactement l'heure entendue (c'est le même état) ;
+- une heure du moteur posée depuis le démarrage, au plus maintenant, l'a été après le
+  saut, plus tard que toute heure lue avant : elle se compare comme d'habitude. Une
+  heure d'avant le démarrage (entendue avant la coupure) ou après maintenant (posée
+  avant le recul) ne s'ordonne pas avec un tel état ;
+- la trace absente (unité pas encore posée, ou pas encore de redémarrage depuis),
+  illisible, ou qui n'est pas avant le démarrage calculé (pas de saut, ou une lecture
+  fausse : après lui, après maintenant), la règle de l'heure de démarrage seule tient.
+
+Le prix accepté : un état gardé par le broker d'avant la coupure, daté moins d'un uptime
+après l'heure où l'horloge est repartie, est pris pour une nouvelle et peut donner une
+alerte de trop (le bon côté de la règle du projet). Borner la fenêtre à l'uptime évite
+qu'une horloge repartie de 1970 rende nouvelles toutes les heures d'avant. Un hub
+redémarré longtemps après le système voit un uptime plus long, la fenêtre s'étend
+jusqu'au démarrage calculé ; ce qu'il a entendu depuis s'ordonne toujours. Les
+séquences aléatoires redémarrent aussi avec un saut de NTP avant le hub (le système
+levé depuis 30 s), et vérifient que rien de ce que le moteur a entendu ne revient en
+dehors de cette fenêtre ; pas pendant qu'un capteur momentané est actif : sa
+nouvelle serait prise par un moteur jamais redémarré, et écartée par un moteur
+restauré dont un `Boot` l'avait mise à part, deux réponses permises par ce prix.
+
 Limites connues (28 octobre 2026) :
 
 - un état gardé par le broker daté d'avant un recul de l'horloge pendant la marche,
@@ -620,14 +663,18 @@ Limites connues (28 octobre 2026) :
   démarrage (voir plus haut) : une porte refermée après la dernière écriture du broker
   pendant cette marche, ouverte plus longtemps que le nouveau recul, peut encore
   déclencher ;
-- une horloge avancée par NTP entre le démarrage du système et celui du hub (le hub
-  ne voit que les sauts postérieurs à son propre démarrage) : l'heure de démarrage se
-  calcule alors sur l'horloge corrigée, et un état daté pendant ce temps sur l'horloge
-  encore reculée paraît antérieur au démarrage du système. Il est écarté s'il n'est
-  pas plus récent que l'heure entendue, puis mis à part (`set_aside`), donc écarté
-  aussi aux démarrages suivants : c'est une alerte perdue, rare (une intrusion dans
-  les quelques secondes après la mise sous tension, la porte refermée ensuite). Cette
-  perte existait avant le lot ; la corriger est un autre lot, à décider par Kevin.
+- une horloge avancée par NTP entre le démarrage du système et celui du hub : corrigé
+  le 28 octobre 2026 (voir plus haut). Reste limite : sans la trace de l'heure lue au
+  démarrage (unité pas posée, ou centrale pas redémarrée depuis qu'elle l'est), ou si
+  NTP avance l'horloge avant que l'unité l'écrive (un réseau levé avant
+  `sysinit.target`, `systemd-networkd` par exemple ; la vraie centrale utilise
+  NetworkManager, qui démarre après), la perte d'avant tient : une intrusion dans les
+  secondes après la mise sous tension, la porte refermée ensuite, n'alerte pas ;
+- une horloge avancée plusieurs fois après l'écriture de la trace, avant le hub (un
+  second saut entre elle et NTP) : un état daté sur une horloge intermédiaire peut
+  tomber au-delà d'un uptime après l'heure lue au démarrage, et se comparer encore à
+  l'heure entendue. Aucune source de ce second saut connue sur la centrale
+  (`fake-hwclock` et `systemd-timesyncd` passent avant l'unité).
 
 Le début du mode suit la même règle. Trouvé postérieur à maintenant, il est mis à
 part (`since_ahead`, que l'état publié dit toujours) et ramené à maintenant (`since`),
