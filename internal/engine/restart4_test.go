@@ -26,7 +26,7 @@ func TestARestartDuringTheExitDelayDoesNotPressThePanicAgain(t *testing.T) {
 		h.advance(30 * time.Second)
 		h.e = restart(t, h)
 		h.now = h.now.Add(10 * time.Second)
-		noActions(t, h.e.Boot(h.now, time.Time{}, []Signal{at(panic_, SensorPanic, true, pressed)}))
+		noActions(t, h.e.Boot(h.now, Booted{}, []Signal{at(panic_, SensorPanic, true, pressed)}))
 		h.mustBe(ModeArming)
 	}
 }
@@ -43,11 +43,11 @@ func TestARestartDoesNotPressThePanicAgain(t *testing.T) {
 	h.signal(panic_, SensorPanic, true)
 	h.advance(time.Minute)
 	h.e = restart(t, h)
-	noActions(t, h.e.Boot(h.now, time.Time{}, []Signal{at(panic_, SensorPanic, true, pressed)}))
+	noActions(t, h.e.Boot(h.now, Booted{}, []Signal{at(panic_, SensorPanic, true, pressed)}))
 
 	h.e = restart(t, h)
 	h.now = h.now.Add(time.Minute)
-	if as := h.e.Boot(h.now, time.Time{}, []Signal{at(panic_, SensorPanic, true, h.now.Add(-time.Second))}); len(alerts(as)) != 1 {
+	if as := h.e.Boot(h.now, Booted{}, []Signal{at(panic_, SensorPanic, true, h.now.Add(-time.Second))}); len(alerts(as)) != 1 {
 		t.Fatalf("a press while the hub was off: %v", as)
 	}
 }
@@ -65,7 +65,7 @@ func TestAPanicPressedWhileOffDuringTheExitDelayAlerts(t *testing.T) {
 			h.e = restart(t, h)
 			pressed := h.now.Add(15 * time.Second)
 			h.now = h.now.Add(bootAfter)
-			as := h.e.Boot(h.now, time.Time{}, []Signal{at(panic_, SensorPanic, true, pressed)})
+			as := h.e.Boot(h.now, Booted{}, []Signal{at(panic_, SensorPanic, true, pressed)})
 			if len(alerts(as)) != 1 {
 				t.Errorf("boot after %v, siren %v, a press while the hub was off: %v", bootAfter, siren, as)
 			}

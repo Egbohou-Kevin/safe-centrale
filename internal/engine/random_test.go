@@ -54,6 +54,10 @@ type rig struct {
 	// Boot is given it when bootKnown (two seeds in three), the zero time otherwise.
 	bootAt    time.Time
 	bootKnown bool
+	// shown is when the system started on the clock as it read at boot, before NTP set
+	// it forward: the zero time unless the last reboot was stepped (see restartBack).
+	// Read once at boot, the clock's later steps do not move it.
+	shown time.Time
 	// before and booted are the mode before the last restart, and what Boot did.
 	before Mode
 	booted []Action
@@ -65,6 +69,10 @@ type rig struct {
 	// broker giving back a state dated up to now, before the system started, older than
 	// a time heard after now (see staleBehind).
 	ordered int
+	// stepped counts the restarts checked after NTP set the clock forward before the
+	// hub started, the broker giving back a state kept from before the clock went back,
+	// dated before the time it went back to: the class the step must not open.
+	stepped int
 	// blurred are the momentary sensors (a movement, glass breaking) whose state was
 	// taken before a clock set back. The engine keeps no time of theirs, which every
 	// passer-by would rewrite, and compares them with the start of the mode: once the
@@ -102,7 +110,7 @@ func (r *rig) fork() (*rig, []Action) {
 	f := &rig{
 		harness: h, states: maps.Clone(r.states), blurred: maps.Clone(r.blurred),
 		prev: maps.Clone(r.prev), retained: maps.Clone(r.retained), apart: maps.Clone(r.apart),
-		reached: r.reached, bootAt: r.bootAt, bootKnown: r.bootKnown,
+		reached: r.reached, bootAt: r.bootAt, bootKnown: r.bootKnown, shown: r.shown,
 	}
 	return f, f.boot()
 }
@@ -116,11 +124,20 @@ func (r *rig) boot() []Action {
 			current = append(current, sig)
 		}
 	}
-	var booted time.Time
+	var booted Booted
 	if r.bootKnown {
-		booted = r.bootAt
+		booted = Booted{At: r.bootAt, Shown: r.shown}
 	}
 	return r.e.Boot(r.now, booted, current)
+}
+
+func (r *rig) momentaryActive() bool {
+	for s, sig := range r.states {
+		if !keepsTime(s.sensor) && sig.Active {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *rig) blurredActive() bool {
@@ -164,57 +181,6 @@ func (r *rig) loseLastSave() {
 	}
 }
 
-// staleBehind tells whether the broker gives back a state dated up to now while the
-// one the engine heard is after now, and the boot time does not tell it from a state
-// dated while the hub was starting: unknown, or the state dated since the system
-// started, or the time heard set apart by a run before (see Engine.older).
-func (r *rig) staleBehind() bool {
-	for s, sig := range r.retained {
-		ordered := r.bootKnown && sig.Now.Before(r.bootAt) && !r.apart[s]
-		if !sig.Now.After(r.now) && r.states[s].Now.After(r.now) && !ordered {
-			return true
-		}
-	}
-	return false
-}
-
-// staleCaughtUp tells whether the broker gives back a state older than one heard after
-// a time the clock went back to, the clock since caught up with it.
-func (r *rig) staleCaughtUp() bool {
-	for s := range r.retained {
-		if r.apart[s] && !r.states[s].Now.After(r.now) {
-			return true
-		}
-	}
-	return false
-}
-
-// keptBehind tells whether the broker gives back a state dated up to now while the one
-// the engine heard is after now, whatever the boot time says.
-func (r *rig) keptBehind() bool {
-	for s, sig := range r.retained {
-		if !sig.Now.After(r.now) && r.states[s].Now.After(r.now) {
-			return true
-		}
-	}
-	return false
-}
-
-func keepsTime(s SensorKind) bool { return lasting(s) || s == SensorPanic }
-
-// momentaryUpToNow tells whether a momentary sensor is active in a state dated up to
-// now, and not before the system started when Boot knows it: it cannot be told from a
-// movement while the hub was starting.
-func (r *rig) momentaryUpToNow() bool {
-	for s, sig := range r.states {
-		since := !r.bootKnown || !sig.Now.Before(r.bootAt)
-		if !lasting(s.sensor) && s.sensor != SensorPanic && sig.Active && !sig.Now.After(r.now) && since {
-			return true
-		}
-	}
-	return false
-}
-
 func (r *rig) sense(s sensorRef, active bool) []Action {
 	sig := Signal{Now: r.now, DeviceID: s.dev, Sensor: s.sensor, Active: active}
 	if old, ok := r.states[s]; ok {
@@ -245,7 +211,10 @@ type randomOp struct {
 
 func pick[T any](rnd *rand.Rand, from ...T) T { return from[rnd.IntN(len(from))] }
 
-func randomOpFor(rnd *rand.Rand, i int) randomOp {
+// randomOpFor draws the i-th input from rnd; ntp draws whether a reboot is stepped
+// forward before the hub starts, apart so that the sequences drawn before that choice
+// existed stay as they were.
+func randomOpFor(rnd, ntp *rand.Rand, i int) randomOp {
 	id := fmt.Sprintf("c%d", i)
 	switch x := rnd.IntN(20); {
 	case x < 6:
@@ -265,12 +234,12 @@ func randomOpFor(rnd *rand.Rand, i int) randomOp {
 	case x == 15:
 		return order("disarm bad code", opOther, codeOrder(id, CmdDisarm, false))
 	}
-	return clockOp(rnd, id)
+	return clockOp(rnd, ntp, id)
 }
 
 // clockOp is a restart, a clock set back or forward, a restart with the clock set back
 // (a Pi that keeps no time), or a good disarm.
-func clockOp(rnd *rand.Rand, id string) randomOp {
+func clockOp(rnd, ntpRnd *rand.Rand, id string) randomOp {
 	switch rnd.IntN(6) {
 	case 0:
 		return randomOp{name: "restart", kind: opRestart, do: (*rig).restartAsIs}
@@ -288,11 +257,20 @@ func clockOp(rnd *rand.Rand, id string) randomOp {
 	case 4:
 		d := pick(rnd, time.Minute, 10*time.Minute, 3*time.Hour, 72*time.Hour)
 		lost := rnd.IntN(2) == 0
+		var ntp time.Duration
+		if ntpRnd.IntN(2) == 0 {
+			// As far as the time the clock went back from (a restart moves no deadline),
+			// or half way, the clock still behind the times heard.
+			ntp = pick(ntpRnd, d, d/2)
+		}
 		name := "restart, clock back " + d.String()
 		if lost {
 			name += ", the broker's last save lost"
 		}
-		return randomOp{name: name, kind: opRestart, do: func(r *rig) []Action { return r.restartBack(d, lost) }}
+		if ntp > 0 {
+			name += ", NTP sets it forward " + ntp.String() + " before the hub starts"
+		}
+		return randomOp{name: name, kind: opRestart, do: func(r *rig) []Action { return r.restartBack(d, lost, ntp) }}
 	case 2:
 		d := pick(rnd, time.Minute, time.Hour, 14*time.Hour)
 		return randomOp{name: "clock stepped " + d.String(), do: func(r *rig) []Action {
@@ -309,7 +287,7 @@ func clockOp(rnd *rand.Rand, id string) randomOp {
 func (r *rig) restartAsIs() []Action {
 	r.before = r.e.Mode()
 	r.e = restart(r.t, r.harness)
-	r.unsure = r.blurredActive() || r.staleBehind()
+	r.unsure = r.blurredActive() || r.staleBehind() || r.staleStepped()
 	if !r.unsure && r.staleCaughtUp() {
 		r.caughtUp++
 	}
@@ -329,18 +307,32 @@ func (r *rig) catchUp() []Action {
 }
 
 // restartBack restarts with the clock set back by d, the broker's last save lost or
-// not: the system restarts then.
-func (r *rig) restartBack(d time.Duration, lost bool) []Action {
+// not: the system restarts then. ntp, when not zero, is how far NTP sets the clock
+// forward before the hub starts: the system's start moves with it, the time the clock
+// read then does not. Not while a momentary sensor is active: dated since the time the
+// clock went back to, its state is news to an engine that never restarted, and no news
+// to one restored by a Boot that set it aside (SetAside): the two may part, both
+// right, an alert too many being the price accepted on 28 October 2026.
+func (r *rig) restartBack(d time.Duration, lost bool, ntp time.Duration) []Action {
 	r.before = r.e.Mode()
 	r.e = restart(r.t, r.harness)
 	r.now = r.now.Add(-d)
 	r.bootAt = r.now
+	r.shown = time.Time{}
+	if ntp > 0 && !r.momentaryActive() {
+		r.shown = r.now
+		r.now = r.now.Add(ntp)
+		r.bootAt = r.now
+	}
 	if lost {
 		r.loseLastSave()
 	}
-	r.unsure = r.blurredActive() || r.momentaryUpToNow() || r.staleBehind()
+	r.unsure = r.blurredActive() || r.momentaryUpToNow() || r.staleBehind() || r.staleStepped()
 	if !r.unsure && r.keptBehind() {
 		r.ordered++
+	}
+	if !r.unsure && ntp > 0 && r.bootKnown && len(r.retained) > 0 {
+		r.stepped++
 	}
 	r.blur()
 	r.setApart()
@@ -362,11 +354,17 @@ func order(name string, kind opKind, c Command) randomOp {
 // So too the class the boot time is for: a state the broker kept from before the clock
 // went back, dated up to the new time, older than a time heard after it (28 October
 // 2026, the limits written before Boot knew when the system started).
+// And NTP setting the clock forward before the hub starts, a state kept from before the
+// clock went back given back: the class the time read at boot must not open (28
+// October 2026).
 func TestRandomSequencesKeepTheAlarmInvariants(t *testing.T) {
-	caughtUp, ordered := 0, 0
+	caughtUp, ordered, stepped := 0, 0, 0
 	for seed := range uint64(randomSeeds) {
-		c, o := runRandom(t, seed)
-		caughtUp, ordered = caughtUp+c, ordered+o
+		c, o, s := runRandom(t, seed)
+		caughtUp, ordered, stepped = caughtUp+c, ordered+o, stepped+s
+	}
+	if stepped < 10 {
+		t.Errorf("%d restarts checked after NTP set the clock forward before the hub, a stale state given back", stepped)
 	}
 	if caughtUp < 10 {
 		t.Errorf("%d restarts checked after the clock caught up with a time set apart, the broker's state older", caughtUp)
@@ -374,19 +372,20 @@ func TestRandomSequencesKeepTheAlarmInvariants(t *testing.T) {
 	if ordered < 10 {
 		t.Errorf("%d restarts checked on a state kept from before the clock went back, ordered by the boot time", ordered)
 	}
-	t.Logf("checked: %d after the clock caught up, %d ordered by the boot time", caughtUp, ordered)
+	t.Logf("checked: %d after the clock caught up, %d ordered by the boot time, %d after a step before the hub", caughtUp, ordered, stepped)
 }
 
 // runRandom plays the sequence of one seed, a fork restored from the saved state
 // taking the same inputs from a random step on. It returns the restarts checked after
 // the clock caught up with a time set apart (see rig.caughtUp), and those the boot time
-// made checkable (see rig.ordered).
-func runRandom(t *testing.T, seed uint64) (int, int) {
+// made checkable (see rig.ordered), and those after a step before the hub (see
+// rig.stepped).
+func runRandom(t *testing.T, seed uint64) (int, int, int) {
 	t.Helper()
-	rnd := rand.New(rand.NewPCG(seed, 1))
+	rnd, ntp := rand.New(rand.NewPCG(seed, 1)), rand.New(rand.NewPCG(seed, 2))
 	ops := make([]randomOp, randomSteps)
 	for i := range ops {
-		ops[i] = randomOpFor(rnd, i)
+		ops[i] = randomOpFor(rnd, ntp, i)
 	}
 	at := rnd.IntN(randomSteps)
 	fail := func(i int, err error) {
@@ -401,7 +400,7 @@ func runRandom(t *testing.T, seed uint64) (int, int) {
 	r.bootKnown = seed%3 != 0
 	var twin *rig
 	for i, op := range ops {
-		if i >= at && twin == nil && !r.blurredActive() && !r.staleBehind() {
+		if i >= at && twin == nil && !r.blurredActive() && !r.staleBehind() && !r.staleStepped() {
 			var booted []Action
 			twin, booted = r.fork()
 			if err := onlySiren(booted); err != nil {
@@ -423,7 +422,7 @@ func runRandom(t *testing.T, seed uint64) (int, int) {
 	if err := r.finish(); err != nil {
 		fail(len(ops)-1, err)
 	}
-	return r.caughtUp, r.ordered
+	return r.caughtUp, r.ordered, r.stepped
 }
 
 // step applies one input and checks what must hold after it.
@@ -644,7 +643,7 @@ func TestTheRandomChecksSeeTheirDefects(t *testing.T) {
 	caught.sense(sensorRef{panic_, SensorPanic}, true)
 	caught.advance(time.Minute)
 	caught.reached = caught.now
-	caught.restartBack(3*time.Minute, true)
+	caught.restartBack(3*time.Minute, true, 0)
 	if caught.catchUp(); caught.unsure || caught.caughtUp != 1 {
 		t.Error("the rig does not see a restart after the clock caught up, the broker's state older")
 	}

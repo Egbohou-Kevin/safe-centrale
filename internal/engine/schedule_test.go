@@ -413,7 +413,7 @@ func TestAnArmingMissedPastTheLimitIsDropped(t *testing.T) {
 	h := newHarness(t, closes22)
 	h.e = restart(t, h)
 	h.now = t0.Add(11 * time.Hour) // 08:00 the next day
-	as := h.e.Boot(h.now, time.Time{}, []Signal{
+	as := h.e.Boot(h.now, Booted{}, []Signal{
 		{DeviceID: motion, Sensor: SensorMotion, Active: true},
 		{DeviceID: door, Sensor: SensorContact, Active: true},
 	})
@@ -453,7 +453,7 @@ func TestScheduleSurvivesARestart(t *testing.T) {
 	}
 
 	h.e = restart(t, h)
-	h.e.Boot(h.now, time.Time{}, nil)
+	h.e.Boot(h.now, Booted{}, nil)
 	got := h.e.Snapshot().Schedule
 	if got == nil || *got != *want {
 		t.Fatalf("after restart %+v, want %+v", got, want)
@@ -468,7 +468,7 @@ func TestRestartDuringAutomaticExitDelayKeepsItPostponable(t *testing.T) {
 	h.advance(time.Hour + time.Minute)
 	h.mustBe(ModeArming)
 	h.e = restart(t, h)
-	h.e.Boot(h.now, time.Time{}, nil)
+	h.e.Boot(h.now, Booted{}, nil)
 	h.mustBe(ModeArming)
 	if r := replyOf(t, h.postpone()); r.Status != StatusDone {
 		t.Fatalf("%+v", r)
@@ -481,7 +481,7 @@ func TestBootPlansWhenTheSnapshotHasNoSchedule(t *testing.T) {
 	h.cfg.Closing = allWeek(22, 0)
 	h.e = restart(t, h) // restarted with a schedule configured
 	h.mustPlan(time.Time{})
-	h.e.Boot(h.now, time.Time{}, nil)
+	h.e.Boot(h.now, Booted{}, nil)
 	h.mustPlan(closing)
 	h.mustWake(notice)
 }

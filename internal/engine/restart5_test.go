@@ -41,7 +41,7 @@ var heardBeforeTheRestart = []heardThenRestarted{
 	{"a movement that rang until the siren ran out", func(h *harness) Signal {
 		h.cfg.SirenCycle, h.cfg.SirenPause, h.cfg.SirenCycles = 20*time.Second, 10*time.Second, 2
 		h.e = restart(h.t, h)
-		h.e.Boot(h.now, time.Time{}, nil)
+		h.e.Boot(h.now, Booted{}, nil)
 		h.armed()
 		h.advance(30 * time.Second)
 		moved := h.now
@@ -87,7 +87,7 @@ func TestARestartWithTheClockSetBackDoesNotActOnWhatItHeard(t *testing.T) {
 			mode := h.e.Mode()
 			h.e = restart(t, h)
 			h.now = h.now.Add(-d)
-			as := h.e.Boot(h.now, time.Time{}, []Signal{sig})
+			as := h.e.Boot(h.now, Booted{}, []Signal{sig})
 			if err := onlySiren(as); err != nil {
 				t.Errorf("%s, the clock %v back: %v", c.name, d, err)
 			}
@@ -100,7 +100,7 @@ func TestARestartWithTheClockSetBackDoesNotActOnWhatItHeard(t *testing.T) {
 			h.now = h.now.Add(d + time.Minute)
 			h.e.Handle(Tick{Now: h.now})
 			h.e = restart(t, h)
-			if err := onlySiren(h.e.Boot(h.now, time.Time{}, []Signal{sig})); err != nil {
+			if err := onlySiren(h.e.Boot(h.now, Booted{}, []Signal{sig})); err != nil {
 				t.Errorf("%s, the clock set right: %v", c.name, err)
 			}
 		}
@@ -118,7 +118,7 @@ func TestARestartWithTheClockSetBackActsOnWhatIsNew(t *testing.T) {
 			h.e = restart(t, h)
 			h.now = h.now.Add(-d)
 			sig.Now = h.now.Add(-5 * time.Second)
-			as := h.e.Boot(h.now, time.Time{}, []Signal{sig})
+			as := h.e.Boot(h.now, Booted{}, []Signal{sig})
 			if len(alerts(as)) == 0 && len(eventsOf[Triggered](as)) == 0 && len(eventsOf[EntryDelayStarted](as)) == 0 {
 				t.Errorf("%s again, the clock %v back: %v", c.name, d, as)
 			}
@@ -153,7 +153,7 @@ func TestTimesHeardBeforeTheClockWentBackCountAgainOnceItCatchesUp(t *testing.T)
 					stop := h.now
 					h.e = restart(t, h)
 					h.now = h.now.Add(-d)
-					h.e.Boot(h.now, time.Time{}, []Signal{sig})
+					h.e.Boot(h.now, Booted{}, []Signal{sig})
 					key := sensorKey(sig.DeviceID, sig.Sensor)
 					ref, apart := h.e.Snapshot().HeardAhead[key]
 					if !apart {
@@ -174,7 +174,7 @@ func TestTimesHeardBeforeTheClockWentBackCountAgainOnceItCatchesUp(t *testing.T)
 						continue
 					}
 					h.e = restart(t, h)
-					if err := onlySiren(h.e.Boot(h.now, time.Time{}, []Signal{sig})); err != nil {
+					if err := onlySiren(h.e.Boot(h.now, Booted{}, []Signal{sig})); err != nil {
 						t.Errorf("%s: %v", name, err)
 					}
 					if h.e.Mode() != mode {

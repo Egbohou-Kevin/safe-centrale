@@ -19,7 +19,7 @@ func (h *Hub) boot(ctx context.Context) error {
 	}
 	signals := h.endBootWindow()
 	err := h.alarm.loop.Do(ctx, func(now time.Time) []engine.Action {
-		actions := h.alarm.eng.Boot(now, h.bootedAt(now), signals)
+		actions := h.alarm.eng.Boot(now, engine.Booted{At: h.bootedAt(now)}, signals)
 		h.publishState(now) // the first retained state, even if nothing changed since the last run
 		// An installation mode never survives a restart: one left open by a crash is
 		// closed for the console too. One opened at the keypad during the boot window

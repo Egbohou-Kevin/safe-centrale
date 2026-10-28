@@ -25,7 +25,7 @@ func TestARestartIgnoresAStateOlderThanWhatTheEngineHeard(t *testing.T) {
 	h.armed()
 	h.e = restart(t, h)
 	h.now = h.now.Add(10 * time.Minute)
-	noActions(t, h.e.Boot(h.now, time.Time{}, []Signal{at(back, SensorContact, true, opened)}))
+	noActions(t, h.e.Boot(h.now, Booted{}, []Signal{at(back, SensorContact, true, opened)}))
 	h.mustBe(ModeArmed)
 	if h.e.Snapshot().Open[back] {
 		t.Fatal("the back door is closed, as the engine heard last")
@@ -33,7 +33,7 @@ func TestARestartIgnoresAStateOlderThanWhatTheEngineHeard(t *testing.T) {
 
 	// A door opened while the hub was off is news.
 	h.e = restart(t, h)
-	as := h.e.Boot(h.now, time.Time{}, []Signal{at(back, SensorContact, true, h.now.Add(-time.Minute))})
+	as := h.e.Boot(h.now, Booted{}, []Signal{at(back, SensorContact, true, h.now.Add(-time.Minute))})
 	if tr := onlyEvent[Triggered](t, as); tr.Cause.DeviceID != back {
 		t.Fatalf("a door opened during the outage rings: %+v", tr)
 	}
@@ -43,7 +43,7 @@ func TestARestartIgnoresAStateOlderThanWhatTheEngineHeard(t *testing.T) {
 	h = newHarness(t)
 	h.open(back)
 	h.e = restart(t, h)
-	h.e.Boot(h.now, time.Time{}, []Signal{at(back, SensorContact, false, t0.Add(-time.Hour))})
+	h.e.Boot(h.now, Booted{}, []Signal{at(back, SensorContact, false, t0.Add(-time.Hour))})
 	if r := replyOf(t, h.arm()); r.Reason != ReasonZoneOpen {
 		t.Fatalf("the back door is still open: %+v", r)
 	}
@@ -61,7 +61,7 @@ func TestARestartIgnoresAnAlarmStateTheEngineAlreadyHad(t *testing.T) {
 	h.signal(smoke, SensorSmoke, false)
 	h.cmd(CmdSilence, goodCode("u_1"))
 	h.e = restart(t, h)
-	noActions(t, h.e.Boot(h.now, time.Time{}, []Signal{at(smoke, SensorSmoke, true, went)}))
+	noActions(t, h.e.Boot(h.now, Booted{}, []Signal{at(smoke, SensorSmoke, true, went)}))
 	h.mustBe(ModeDisarmed)
 
 	h = newHarness(t)
@@ -72,7 +72,7 @@ func TestARestartIgnoresAnAlarmStateTheEngineAlreadyHad(t *testing.T) {
 	h.advance(h.cfg.ExitDelay)
 	h.mustBe(ModeArmed)
 	h.e = restart(t, h)
-	noActions(t, h.e.Boot(h.now, time.Time{}, []Signal{at(motion, SensorMotion, true, moved)}))
+	noActions(t, h.e.Boot(h.now, Booted{}, []Signal{at(motion, SensorMotion, true, moved)}))
 	h.mustBe(ModeArmed)
 
 	// The same movement, the hub off before the exit delay ended.
@@ -82,12 +82,12 @@ func TestARestartIgnoresAnAlarmStateTheEngineAlreadyHad(t *testing.T) {
 	h.moves()
 	h.e = restart(t, h)
 	h.now = h.now.Add(10 * time.Minute)
-	h.e.Boot(h.now, time.Time{}, []Signal{at(motion, SensorMotion, true, t0.Add(time.Minute))})
+	h.e.Boot(h.now, Booted{}, []Signal{at(motion, SensorMotion, true, t0.Add(time.Minute))})
 	h.mustBe(ModeArmed)
 
 	// A movement after the arming, while the hub was off, is an intrusion.
 	h.e = restart(t, h)
-	if as := h.e.Boot(h.now, time.Time{}, []Signal{at(motion, SensorMotion, true, h.now.Add(-time.Minute))}); len(eventsOf[Triggered](as)) != 1 {
+	if as := h.e.Boot(h.now, Booted{}, []Signal{at(motion, SensorMotion, true, h.now.Add(-time.Minute))}); len(eventsOf[Triggered](as)) != 1 {
 		t.Fatalf("a movement during the outage rings: %v", as)
 	}
 }
@@ -110,6 +110,6 @@ func TestADoorOpenedBeforeBootIsNotKnownAlready(t *testing.T) {
 		h.now = h.now.Add(time.Hour)
 		noActions(t, h.open(c.dev))
 		h.now = h.now.Add(time.Second)
-		c.want(t, h.e.Boot(h.now, time.Time{}, []Signal{at(c.dev, SensorContact, true, h.now.Add(-time.Second))}))
+		c.want(t, h.e.Boot(h.now, Booted{}, []Signal{at(c.dev, SensorContact, true, h.now.Add(-time.Second))}))
 	}
 }

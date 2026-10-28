@@ -216,7 +216,7 @@ func TestAnAlarmDuringAnEntryDelayDoesNotDropTheIntrusion(t *testing.T) {
 			h.advance(10 * time.Second)
 			first := onlyEvent[Triggered](t, other.do(h)).Incident
 			h.e = restart(t, h) // what is left of the entry delay is saved
-			h.e.Boot(h.now, time.Time{}, nil)
+			h.e.Boot(h.now, Booted{}, nil)
 			if len(alerts(h.moves())) != 0 {
 				t.Fatal("motion during the entry delay is the person coming in")
 			}
