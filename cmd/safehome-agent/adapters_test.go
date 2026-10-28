@@ -77,3 +77,29 @@ func TestADamagedCodeKeyDoesNotStopTheAgent(t *testing.T) {
 		}
 	}
 }
+
+// A key that cannot be made private (a file left to root) or whose folder cannot be
+// flushed is still used, with a warning: a refusal there would stop the alarms.
+func TestAKeyThatCannotBeMadePrivateOrFlushedIsStillUsed(t *testing.T) {
+	refuse := func() error { return os.ErrPermission }
+	defer func(c func(string, os.FileMode) error, s func(string) error) { chmodFile, syncFolder = c, s }(chmodFile, syncFolder)
+	chmodFile = func(string, os.FileMode) error { return refuse() }
+	syncFolder = func(string) error { return refuse() }
+	dir := t.TempDir()
+	var logs bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logs, nil))
+	k, err := codeKey(dir, log)
+	if err != nil || k == nil {
+		t.Fatalf("a failed folder flush stopped the agent: %v", err)
+	}
+	if err := os.Chmod(filepath.Join(dir, "code-key"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	again, err := codeKey(dir, log)
+	if err != nil || again.Public() != k.Public() {
+		t.Fatalf("a failed chmod stopped the agent: %v", err)
+	}
+	if n := strings.Count(logs.String(), "level=WARN"); n < 3 || strings.Contains(logs.String(), k.Encode()) {
+		t.Fatalf("%d warnings: %s", n, logs.String())
+	}
+}
