@@ -22,8 +22,9 @@ func (a *App) paired(id string) (*contract.RegistryDevice, error) {
 	return nil, fmt.Errorf("%w: %s", ErrUnknown, id)
 }
 
-// SetZone gives a paired device its zone; the room its zone had stays (the console edits no room).
-func (a *App) SetZone(id, name, kind string) error {
+// SetZone gives a paired device its zone, whole: an empty room is none, as with
+// safehome-install zone without -room (the page sends the room it shows).
+func (a *App) SetZone(id, name, kind, room string) error {
 	if _, err := a.sessionCtx(); err != nil {
 		return err
 	}
@@ -31,7 +32,7 @@ func (a *App) SetZone(id, name, kind string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := a.site.SetZoneKeepingRoom(id, install.Zone{Name: name, Kind: kind}, d); err != nil {
+	if _, err := a.site.SetZone(id, install.Zone{Name: name, Kind: kind, Room: room}, d); err != nil {
 		return err
 	}
 	a.log.Info("zone set from the console", "device", id, "kind", kind)

@@ -203,16 +203,6 @@ func ValidZone(z Zone) error {
 // not know (one of another adapter) unchecked. A siren's name gives way to the zone's:
 // the alerts call a device with a zone by its zone's name (SirenName).
 func (e *Editor) SetZone(id string, z Zone, d *contract.RegistryDevice) (old *Zone, err error) {
-	return e.setZone(id, z, d, false)
-}
-
-// SetZoneKeepingRoom gives the device id the zone z as SetZone does, but with the room its
-// zone already has: an editor of the name and kind alone (the console) never drops a room.
-func (e *Editor) SetZoneKeepingRoom(id string, z Zone, d *contract.RegistryDevice) (old *Zone, err error) {
-	return e.setZone(id, z, d, true)
-}
-
-func (e *Editor) setZone(id string, z Zone, d *contract.RegistryDevice, keepRoom bool) (old *Zone, err error) {
 	if err := ValidZone(z); err != nil {
 		return nil, err
 	}
@@ -224,9 +214,6 @@ func (e *Editor) setZone(id string, z Zone, d *contract.RegistryDevice, keepRoom
 	err = e.edit(func(s *Site) (bool, error) {
 		if had, ok := s.Zones[id]; ok {
 			old = &had
-			if keepRoom {
-				z.Room = had.Room
-			}
 		}
 		s.Zones[id] = z
 		s.SirenNames = unnamed(s.SirenNames, id)

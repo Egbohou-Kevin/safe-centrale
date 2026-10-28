@@ -257,8 +257,11 @@ est conseillé.
   appareil ajouté reçoit sa zone tout de suite, et un capteur déclenché aussitôt
   apparaît dans les tests.
 - **Zones** : un nom (32 caractères au plus, sans caractère de contrôle ni caractère
-  invisible comme un saut de ligne ou une marque de sens d'écriture) et un type. La
-  page ne propose que les types que l'appareil peut servir. La centrale applique la
+  invisible comme un saut de ligne ou une marque de sens d'écriture), un type, et une
+  pièce facultative (même règle que le nom), que la liste des appareils montre au
+  propriétaire. La page ne propose que les types que l'appareil peut servir. La zone
+  part en entier : le champ pièce est prérempli de la pièce actuelle, et vidé, la zone
+  n'en a plus (depuis le 28 octobre 2026). La centrale applique la
   même règle aux noms d'un `hub.json` modifié à la main : elle refuse de démarrer
   avec un nom fautif, et l'erreur nomme la zone.
 - **Sirènes** : ajouter ou retirer une sirène, et lui donner son nom dans les textes des

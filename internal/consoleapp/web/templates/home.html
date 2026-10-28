@@ -31,7 +31,7 @@
       {{if not .Paired}}<span class="problem">— pas appairé</span>{{end}}{{if .Offline}}<span class="warn">— muet</span>{{end}}</div>
     {{if .Capabilities}}<div class="muted">{{join .Capabilities}}</div>{{end}}
     <div>
-      {{with .Zone}}Zone « {{.Name}} » — {{template "kind" .Kind}}{{end}}
+      {{with .Zone}}Zone « {{.Name}} »{{if .Room}}, pièce « {{.Room}} »{{end}} — {{template "kind" .Kind}}{{end}}
       {{if .Siren}}Sirène{{if .Zone}} <span class="muted">(nommée comme sa zone dans les alertes)</span>{{else}} « {{.SirenName}} »{{if not .SirenNamed}} <span class="muted">(nom par défaut)</span>{{end}}{{end}}{{end}}
       {{if .Keypad}}Clavier{{end}}
       {{if and (not .Zone) (not .Siren) (not .Keypad)}}<span class="warn">Sans usage</span>{{end}}
@@ -39,6 +39,7 @@
     {{if and .Paired .Kinds}}<form method="post" action="/zone">
       <input type="hidden" name="id" value="{{.ID}}">
       <input type="text" name="name" maxlength="32" placeholder="Nom de la zone (ex. Porte d'entrée)" value="{{with .Zone}}{{.Name}}{{end}}">
+      <input type="text" name="room" maxlength="32" placeholder="Pièce, facultative (ex. Salon)" value="{{with .Zone}}{{.Room}}{{end}}">
       <select name="kind">{{$zone := .Zone}}{{range $k := .Kinds}}<option value="{{$k}}"{{with $zone}}{{if eq .Kind $k}} selected{{end}}{{end}}>{{template "kind" $k}}</option>{{end}}</select>
       <button>{{if .Zone}}Changer la zone{{else}}Donner une zone{{end}}</button>
     </form>{{end}}
