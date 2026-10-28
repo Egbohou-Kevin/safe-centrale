@@ -220,7 +220,19 @@ func (c *collector) wait(t *testing.T, n int) []Message {
 
 func dial(t *testing.T, ctx context.Context, url, id string, subs []Subscription, h func(Message)) *Client {
 	t.Helper()
-	c, err := Dial(ctx, Options{BrokerURL: url, ClientID: id, Subscriptions: subs, OnMessage: h})
+	// A connected client may not be subscribed yet: a message published before the
+	// broker's answer would be lost, so a client with subscriptions waits for it.
+	subscribed := make(chan struct{}, 1)
+	o := Options{BrokerURL: url, ClientID: id, Subscriptions: subs, OnMessage: h}
+	if len(subs) > 0 {
+		o.OnSubscribed = func() {
+			select {
+			case subscribed <- struct{}{}:
+			default:
+			}
+		}
+	}
+	c, err := Dial(ctx, o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,6 +240,13 @@ func dial(t *testing.T, ctx context.Context, url, id string, subs []Subscription
 	defer cancel()
 	if err := c.Await(awaitCtx); err != nil {
 		t.Fatalf("connecting to the broker: %v", err)
+	}
+	if len(subs) > 0 {
+		select {
+		case <-subscribed:
+		case <-awaitCtx.Done():
+			t.Fatalf("subscribing at the broker: %v", awaitCtx.Err())
+		}
 	}
 	return c
 }
