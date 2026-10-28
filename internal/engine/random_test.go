@@ -23,6 +23,8 @@ import (
 const (
 	randomSeeds = 200
 	randomSteps = 80
+	// shiftedSeeds are played again with one more draw (see randomOpFor).
+	shiftedSeeds = 500
 )
 
 type sensorRef struct {
@@ -214,8 +216,9 @@ func pick[T any](rnd *rand.Rand, from ...T) T { return from[rnd.IntN(len(from))]
 
 // randomOpFor draws the i-th input from rnd; ntp draws whether a reboot is stepped
 // forward before the hub starts, apart so that the sequences drawn before that choice
-// existed stay as they were.
-func randomOpFor(rnd, ntp *rand.Rand, i int) randomOp {
+// existed stay as they were. shifted draws once more on a restart with the clock set
+// back, one time in two: a second family of sequences from the same seeds.
+func randomOpFor(rnd, ntp *rand.Rand, i int, shifted bool) randomOp {
 	id := fmt.Sprintf("c%d", i)
 	switch x := rnd.IntN(20); {
 	case x < 6:
@@ -235,12 +238,12 @@ func randomOpFor(rnd, ntp *rand.Rand, i int) randomOp {
 	case x == 15:
 		return order("disarm bad code", opOther, codeOrder(id, CmdDisarm, false))
 	}
-	return clockOp(rnd, ntp, id)
+	return clockOp(rnd, ntp, id, shifted)
 }
 
 // clockOp is a restart, a clock set back or forward, a restart with the clock set back
 // (a Pi that keeps no time), or a good disarm.
-func clockOp(rnd, ntpRnd *rand.Rand, id string) randomOp {
+func clockOp(rnd, ntpRnd *rand.Rand, id string, shifted bool) randomOp {
 	switch rnd.IntN(6) {
 	case 0:
 		return randomOp{name: "restart", kind: opRestart, do: (*rig).restartAsIs}
@@ -258,6 +261,9 @@ func clockOp(rnd, ntpRnd *rand.Rand, id string) randomOp {
 	case 4:
 		d := pick(rnd, time.Minute, 10*time.Minute, 3*time.Hour, 72*time.Hour)
 		lost := rnd.IntN(2) == 0
+		if shifted && rnd.IntN(2) == 0 {
+			_ = pick(rnd, d, d/2) // a draw lost, which shifts the rest of the sequence
+		}
 		var ntp time.Duration
 		if ntpRnd.IntN(2) == 0 {
 			// As far as the time the clock went back from (a restart moves no deadline),
@@ -358,12 +364,18 @@ func order(name string, kind opKind, c Command) randomOp {
 // And NTP setting the clock forward before the hub starts, a state kept from before the
 // clock went back given back: the class the time read at boot must not open (28
 // October 2026).
+// The shifted sequences, one more draw on each restart with the clock set back, reach
+// a restored engine that set aside a movement the live one never did (28 October 2026,
+// seed 169): see setAsideApart.
 func TestRandomSequencesKeepTheAlarmInvariants(t *testing.T) {
-	caughtUp, ordered, stepped := 0, 0, 0
+	var all tally
 	for seed := range uint64(randomSeeds) {
-		c, o, s := runRandom(t, seed)
-		caughtUp, ordered, stepped = caughtUp+c, ordered+o, stepped+s
+		all = all.add(runRandom(t, seed, false))
 	}
+	for seed := range uint64(shiftedSeeds) {
+		all = all.add(runRandom(t, seed, true))
+	}
+	caughtUp, ordered, stepped := all.caughtUp, all.ordered, all.stepped
 	if stepped < 10 {
 		t.Errorf("%d restarts checked after NTP set the clock forward before the hub, a stale state given back", stepped)
 	}
@@ -373,7 +385,21 @@ func TestRandomSequencesKeepTheAlarmInvariants(t *testing.T) {
 	if ordered < 10 {
 		t.Errorf("%d restarts checked on a state kept from before the clock went back, ordered by the boot time", ordered)
 	}
-	t.Logf("checked: %d after the clock caught up, %d ordered by the boot time, %d after a step before the hub", caughtUp, ordered, stepped)
+	if all.parted < 1 {
+		t.Errorf("no restored engine parted on a movement only it set aside")
+	}
+	t.Logf("checked: %d after the clock caught up, %d ordered by the boot time, %d after a step before the hub; %d comparisons ended on a movement set aside by one engine only",
+		caughtUp, ordered, stepped, all.parted)
+}
+
+// The sequence where a restored engine first parted from the live one (28 October 2026):
+// a movement heard during an exit delay, set aside by the fork's Boot, then the clock set
+// back an hour while the engines ran, and two restarts. The live engine rings at the
+// second, the restored one does not, and it is right: the comparison ends at the first.
+func TestTheShiftedSeed169PartsOnAMovementSetAsideByTheRestoredEngine(t *testing.T) {
+	if got := runRandom(t, 169, true); got.parted != 1 {
+		t.Fatalf("seed 169 shifted: %d comparisons ended, want 1", got.parted)
+	}
 }
 
 // runRandom plays the sequence of one seed, a fork restored from the saved state
@@ -381,12 +407,12 @@ func TestRandomSequencesKeepTheAlarmInvariants(t *testing.T) {
 // the clock caught up with a time set apart (see rig.caughtUp), and those the boot time
 // made checkable (see rig.ordered), and those after a step before the hub (see
 // rig.stepped).
-func runRandom(t *testing.T, seed uint64) (int, int, int) {
+func runRandom(t *testing.T, seed uint64, shifted bool) tally {
 	t.Helper()
 	rnd, ntp := rand.New(rand.NewPCG(seed, 1)), rand.New(rand.NewPCG(seed, 2))
 	ops := make([]randomOp, randomSteps)
 	for i := range ops {
-		ops[i] = randomOpFor(rnd, ntp, i)
+		ops[i] = randomOpFor(rnd, ntp, i, shifted)
 	}
 	at := rnd.IntN(randomSteps)
 	fail := func(i int, err error) {
@@ -400,8 +426,9 @@ func runRandom(t *testing.T, seed uint64) (int, int, int) {
 	r := newRig(t)
 	r.bootKnown = seed%3 != 0
 	var twin *rig
+	parted := 0
 	for i, op := range ops {
-		if i >= at && twin == nil && !r.blurredActive() && !r.staleBehind() && !r.staleStepped() {
+		if i >= at && twin == nil && parted == 0 && !r.blurredActive() && !r.staleBehind() && !r.staleStepped() {
 			var booted []Action
 			twin, booted = r.fork()
 			if err := onlySiren(booted); err != nil {
@@ -412,7 +439,11 @@ func runRandom(t *testing.T, seed uint64) (int, int, int) {
 		if twin != nil {
 			twin.reached = r.reached
 		}
+		apart := twin != nil && op.kind == opRestart && r.setAsideApart(twin)
 		as, err := r.step(op)
+		if apart && r.unsure {
+			twin, parted = nil, 1 // the two may part from here, both allowed
+		}
 		if err == nil && twin != nil {
 			err = sameActions(as, op.do(twin))
 		}
@@ -423,7 +454,35 @@ func runRandom(t *testing.T, seed uint64) (int, int, int) {
 	if err := r.finish(); err != nil {
 		fail(len(ops)-1, err)
 	}
-	return r.caughtUp, r.ordered, r.stepped
+	return tally{caughtUp: r.caughtUp, ordered: r.ordered, stepped: r.stepped, parted: parted}
+}
+
+// tally counts, over the sequences, the restarts checked in the classes they must reach
+// (see rig.caughtUp, rig.ordered, rig.stepped) and the restored engines whose comparison
+// with the live one ended on a movement only one of them set aside (see setAsideApart).
+type tally struct{ caughtUp, ordered, stepped, parted int }
+
+func (a tally) add(b tally) tally {
+	return tally{a.caughtUp + b.caughtUp, a.ordered + b.ordered, a.stepped + b.stepped, a.parted + b.parted}
+}
+
+// setAsideApart tells whether an active momentary sensor is set aside by one engine and
+// not the other: a Boot of the restored one set it aside, when the start of the mode
+// still told it from a movement dated since. At a restart the rig cannot check, the
+// other may take it for news and ring: the clock set back while the engines ran, the
+// start of the mode brought back no longer telling it (the limit written in
+// docs/engine.md, 28 October 2026), or set back at the restart, the boot time unknown or
+// the state dated since the system started (a state dated up to now is trusted). An
+// alarm too many, the restored engine right: from that restart on, the two may part.
+func (r *rig) setAsideApart(twin *rig) bool {
+	mine, theirs := r.e.Snapshot().SetAside, twin.e.Snapshot().SetAside
+	for s, sig := range r.states {
+		key := sensorKey(s.dev, s.sensor)
+		if !keepsTime(s.sensor) && sig.Active && mine[key].Equal(sig.Now) != theirs[key].Equal(sig.Now) {
+			return true
+		}
+	}
+	return false
 }
 
 // step applies one input and checks what must hold after it.
