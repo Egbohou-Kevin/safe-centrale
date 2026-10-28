@@ -93,6 +93,13 @@ type Snapshot struct {
 	// an unclean stop (see older). Open and Tampered move with each change anyway; a
 	// panic button has neither, Heard is its only memory across a restart.
 	Heard map[string]time.Time `json:"heard,omitempty"`
+	// HeardAhead are the times of Heard found after now, the clock gone back behind them
+	// since (a Pi that keeps no time restarts days behind, until NTP sets it right). A
+	// state dated since may be dated before them and still be news: they only tell the
+	// very state heard, and order the states dated before the clock went back (see
+	// older). Hearing the sensor again drops its time here; the clock catching up with
+	// it puts it back in Heard (see pullBack).
+	HeardAhead map[string]time.Time `json:"heard_ahead,omitempty"`
 
 	// Memory of the last alarm, kept after the system goes back to armed.
 	LastTrigger   *Cause    `json:"last_trigger,omitempty"`
@@ -115,6 +122,7 @@ func (s Snapshot) clone() Snapshot {
 	s.Open = maps.Clone(s.Open)
 	s.Tampered = maps.Clone(s.Tampered)
 	s.Heard = maps.Clone(s.Heard)
+	s.HeardAhead = maps.Clone(s.HeardAhead)
 	s.Failures = slices.Clone(s.Failures)
 	s.TimedOut = slices.Clone(s.TimedOut)
 	s.Raised = slices.Clone(s.Raised)

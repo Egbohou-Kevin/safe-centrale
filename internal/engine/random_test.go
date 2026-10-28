@@ -14,8 +14,10 @@ import (
 // Random sequences of inputs, each from a fixed seed, checked after every input
 // against what must hold whatever happens: the siren follows the alarm, an incident
 // goes off once, a good code disarms, a restored state goes on as the live one did, a
-// clock set back neither disarms nor holds a deadline beyond its own length, and every
-// alarm that went off ends cleared. A failure prints the seed and the sequence, which
+// clock set back neither disarms nor holds a deadline beyond its own length, a restart
+// acts on nothing the engine heard, with the clock set back or once it caught up, the
+// broker giving back a state older than the one heard, and every alarm that went off
+// ends cleared. A failure prints the seed and the sequence, which
 // replay it. The checks see their defects (TestTheRandomChecksSeeTheirDefects).
 
 const (
@@ -37,11 +39,36 @@ var randomSensors = []sensorRef{
 type rig struct {
 	*harness
 	states map[sensorRef]Signal // the last state of each sensor, given back at Boot
-	// blurred are the sensors whose state was taken before a clock set back, which
-	// drops what the engine heard after the new time (see pullBack): a momentary one
-	// may then seem to begin after the mode, and act again at Boot. No fork starts
-	// while one of them is active, a limit left as it is (see the lot's report).
-	blurred   map[sensorRef]bool
+	prev   map[sensorRef]Signal // the state of each sensor before its last one
+	// retained are the states the broker gave back from its last save, older than the
+	// one the engine heard (a door closed after that save comes back open): given back
+	// at each Boot until the sensor sends again.
+	retained map[sensorRef]Signal
+	// apart are the sensors heard after a time the clock went back to: the engine sets
+	// their time apart until the clock catches up with it (see pullBack).
+	apart map[sensorRef]bool
+	// reached is the latest time the clock reached, before it was set back.
+	reached time.Time
+	// before and booted are the mode before the last restart, and what Boot did.
+	before Mode
+	booted []Action
+	// caughtUp counts the restarts checked after the clock caught up with a time set
+	// apart, the broker giving back a state older than it: the class the sequences must
+	// reach (see TestRandomSequencesKeepTheAlarmInvariants).
+	caughtUp int
+	// blurred are the momentary sensors (a movement, glass breaking) whose state was
+	// taken before a clock set back. The engine keeps no time of theirs, which every
+	// passer-by would rewrite, and compares them with the start of the mode: once the
+	// clock went back, a state dated up to the new time cannot be told from one dated
+	// since, which is news (see behind), and one dated after it from a mode begun after
+	// the clock went back. No fork starts while one of them is active, and a restart
+	// with the clock set back is not checked then: a limit left as it is, written in
+	// docs/engine.md (28 October 2026). A door, a panic button keep their time.
+	blurred map[sensorRef]bool
+	// unsure is set by a restart that could not be checked: a momentary sensor active,
+	// blurred or, the clock set back, dated up to the new time; or a state the broker
+	// kept dated up to now while the one heard is after now (see staleBehind).
+	unsure    bool
 	sirenOn   bool // the last siren order was SirenOn
 	triggered map[string]bool
 	alerted   map[string]bool
@@ -51,6 +78,7 @@ type rig struct {
 func newRig(t *testing.T) *rig {
 	return &rig{
 		harness: newHarness(t), states: map[sensorRef]Signal{}, blurred: map[sensorRef]bool{},
+		prev: map[sensorRef]Signal{}, retained: map[sensorRef]Signal{}, apart: map[sensorRef]bool{},
 		triggered: map[string]bool{}, alerted: map[string]bool{}, cleared: map[string]bool{},
 	}
 }
@@ -60,14 +88,20 @@ func newRig(t *testing.T) *rig {
 func (r *rig) fork() (*rig, []Action) {
 	h := &harness{t: r.t, e: r.e, now: r.now, ids: r.ids, cfg: r.cfg}
 	h.e = restart(r.t, h)
-	f := &rig{harness: h, states: maps.Clone(r.states), blurred: maps.Clone(r.blurred)}
+	f := &rig{
+		harness: h, states: maps.Clone(r.states), blurred: maps.Clone(r.blurred),
+		prev: maps.Clone(r.prev), retained: maps.Clone(r.retained), apart: maps.Clone(r.apart),
+		reached: r.reached,
+	}
 	return f, f.boot()
 }
 
 func (r *rig) boot() []Action {
 	var current []Signal
 	for _, s := range randomSensors {
-		if sig, ok := r.states[s]; ok {
+		if sig, ok := r.retained[s]; ok {
+			current = append(current, sig)
+		} else if sig, ok := r.states[s]; ok {
 			current = append(current, sig)
 		}
 	}
@@ -83,10 +117,81 @@ func (r *rig) blurredActive() bool {
 	return false
 }
 
+// blur marks the momentary sensors' states as taken before a clock set back.
+func (r *rig) blur() {
+	for s := range r.states {
+		if !lasting(s.sensor) && s.sensor != SensorPanic {
+			r.blurred[s] = true
+		}
+	}
+}
+
+// setApart marks the sensors that keep a time and were heard after now, the clock just
+// set back: the engine sets their time apart.
+func (r *rig) setApart() {
+	for s, sig := range r.states {
+		if keepsTime(s.sensor) && sig.Now.After(r.now) {
+			r.apart[s] = true
+		}
+	}
+}
+
+// loseLastSave gives back, for each sensor that keeps a time, the state before its last
+// one when that is dated after now: the broker lost its last writes in the stop. Not
+// one dated after the last, the clock set back between the two: the engine cannot
+// order them, a limit written in docs/engine.md (28 October 2026).
+func (r *rig) loseLastSave() {
+	for s, p := range r.prev {
+		if keepsTime(s.sensor) && p.Now.After(r.now) && p.Now.Before(r.states[s].Now) {
+			r.retained[s] = p
+		}
+	}
+}
+
+// staleBehind tells whether the broker gives back a state dated up to now while the
+// one the engine heard is after now: it cannot be told from a state dated while the hub
+// was starting, the limit written in docs/engine.md (28 October 2026).
+func (r *rig) staleBehind() bool {
+	for s, sig := range r.retained {
+		if !sig.Now.After(r.now) && r.states[s].Now.After(r.now) {
+			return true
+		}
+	}
+	return false
+}
+
+// staleCaughtUp tells whether the broker gives back a state older than one heard after
+// a time the clock went back to, the clock since caught up with it.
+func (r *rig) staleCaughtUp() bool {
+	for s := range r.retained {
+		if r.apart[s] && !r.states[s].Now.After(r.now) {
+			return true
+		}
+	}
+	return false
+}
+
+func keepsTime(s SensorKind) bool { return lasting(s) || s == SensorPanic }
+
+// momentaryUpTo tells whether a momentary sensor is active in a state dated up to t.
+func (r *rig) momentaryUpTo(t time.Time) bool {
+	for s, sig := range r.states {
+		if !lasting(s.sensor) && s.sensor != SensorPanic && sig.Active && !sig.Now.After(t) {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *rig) sense(s sensorRef, active bool) []Action {
 	sig := Signal{Now: r.now, DeviceID: s.dev, Sensor: s.sensor, Active: active}
+	if old, ok := r.states[s]; ok {
+		r.prev[s] = old
+	}
 	r.states[s] = sig
 	delete(r.blurred, s)
+	delete(r.retained, s)
+	delete(r.apart, s)
 	return r.e.Handle(sig)
 }
 
@@ -96,6 +201,7 @@ const (
 	opOther opKind = iota
 	opDisarm
 	opBack
+	opRestart
 )
 
 // randomOp is one input of a sequence, applied the same way to a rig and its fork.
@@ -130,20 +236,30 @@ func randomOpFor(rnd *rand.Rand, i int) randomOp {
 	return clockOp(rnd, id)
 }
 
-// clockOp is a restart, a clock set back or forward, or a good disarm.
+// clockOp is a restart, a clock set back or forward, a restart with the clock set back
+// (a Pi that keeps no time), or a good disarm.
 func clockOp(rnd *rand.Rand, id string) randomOp {
-	switch rnd.IntN(4) {
+	switch rnd.IntN(6) {
 	case 0:
-		return randomOp{name: "restart", do: func(r *rig) []Action { r.e = restart(r.t, r.harness); return r.boot() }}
+		return randomOp{name: "restart", kind: opRestart, do: (*rig).restartAsIs}
+	case 5:
+		return randomOp{name: "clock caught up, restart", kind: opRestart, do: (*rig).catchUp}
 	case 1:
 		d := pick(rnd, time.Minute, 10*time.Minute, time.Hour, 3*time.Hour)
 		return randomOp{name: "clock back " + d.String(), kind: opBack, do: func(r *rig) []Action {
 			r.now = r.now.Add(-d)
-			for s := range r.states {
-				r.blurred[s] = true
-			}
+			r.blur()
+			r.setApart()
 			return r.e.Handle(Tick{Now: r.now})
 		}}
+	case 4:
+		d := pick(rnd, time.Minute, 10*time.Minute, 3*time.Hour, 72*time.Hour)
+		lost := rnd.IntN(2) == 0
+		name := "restart, clock back " + d.String()
+		if lost {
+			name += ", the broker's last save lost"
+		}
+		return randomOp{name: name, kind: opRestart, do: func(r *rig) []Action { return r.restartBack(d, lost) }}
 	case 2:
 		d := pick(rnd, time.Minute, time.Hour, 14*time.Hour)
 		return randomOp{name: "clock stepped " + d.String(), do: func(r *rig) []Action {
@@ -155,6 +271,45 @@ func clockOp(rnd *rand.Rand, id string) randomOp {
 	return order("disarm good code", opDisarm, codeOrder(id, CmdDisarm, true))
 }
 
+// restartAsIs restarts on the clock as it is.
+func (r *rig) restartAsIs() []Action {
+	r.before = r.e.Mode()
+	r.e = restart(r.t, r.harness)
+	r.unsure = r.blurredActive() || r.staleBehind()
+	if !r.unsure && r.staleCaughtUp() {
+		r.caughtUp++
+	}
+	r.booted = r.boot()
+	return r.booted
+}
+
+// catchUp lets a clock set back run on past the latest time it reached, ticked but
+// never stepped (no internet, or a few minutes back), then restarts.
+func (r *rig) catchUp() []Action {
+	var out []Action
+	if r.reached.After(r.now) {
+		r.now = r.reached.Add(time.Minute)
+		out = r.e.Handle(Tick{Now: r.now})
+	}
+	return append(out, r.restartAsIs()...)
+}
+
+// restartBack restarts with the clock set back by d, the broker's last save lost or
+// not.
+func (r *rig) restartBack(d time.Duration, lost bool) []Action {
+	r.before = r.e.Mode()
+	r.e = restart(r.t, r.harness)
+	r.now = r.now.Add(-d)
+	if lost {
+		r.loseLastSave()
+	}
+	r.unsure = r.blurredActive() || r.momentaryUpTo(r.now) || r.staleBehind()
+	r.blur()
+	r.setApart()
+	r.booted = r.boot()
+	return r.booted
+}
+
 func codeOrder(id string, name CommandName, ok bool) Command {
 	return Command{ID: id, Name: name, Origin: OriginKeypad, Auth: Auth{Checked: true, OK: ok, User: "u_owner"}}
 }
@@ -163,15 +318,23 @@ func order(name string, kind opKind, c Command) randomOp {
 	return randomOp{name: name, kind: kind, do: func(r *rig) []Action { c.Now = r.now; return r.e.Handle(c) }}
 }
 
+// The sequences also reach the class a restart after the clock caught up must handle:
+// without it, a time heard before the clock went back and never put back (28 October
+// 2026) passed every seed.
 func TestRandomSequencesKeepTheAlarmInvariants(t *testing.T) {
+	caughtUp := 0
 	for seed := range uint64(randomSeeds) {
-		runRandom(t, seed)
+		caughtUp += runRandom(t, seed)
+	}
+	if caughtUp < 10 {
+		t.Errorf("%d restarts checked after the clock caught up with a time set apart, the broker's state older", caughtUp)
 	}
 }
 
 // runRandom plays the sequence of one seed, a fork restored from the saved state
-// taking the same inputs from a random step on.
-func runRandom(t *testing.T, seed uint64) {
+// taking the same inputs from a random step on. It returns the restarts checked after
+// the clock caught up with a time set apart (see rig.caughtUp).
+func runRandom(t *testing.T, seed uint64) int {
 	t.Helper()
 	rnd := rand.New(rand.NewPCG(seed, 1))
 	ops := make([]randomOp, randomSteps)
@@ -190,12 +353,16 @@ func runRandom(t *testing.T, seed uint64) {
 	r := newRig(t)
 	var twin *rig
 	for i, op := range ops {
-		if i >= at && twin == nil && !r.blurredActive() {
+		if i >= at && twin == nil && !r.blurredActive() && !r.staleBehind() {
 			var booted []Action
 			twin, booted = r.fork()
 			if err := onlySiren(booted); err != nil {
 				fail(i, err)
 			}
+		}
+		r.reached = later(r.reached, r.now)
+		if twin != nil {
+			twin.reached = r.reached
 		}
 		as, err := r.step(op)
 		if err == nil && twin != nil {
@@ -208,6 +375,7 @@ func runRandom(t *testing.T, seed uint64) {
 	if err := r.finish(); err != nil {
 		fail(len(ops)-1, err)
 	}
+	return r.caughtUp
 }
 
 // step applies one input and checks what must hold after it.
@@ -221,6 +389,8 @@ func (r *rig) step(op randomOp) ([]Action, error) {
 		errs = append(errs, r.disarmed(ringing, as))
 	case op.kind == opBack:
 		errs = append(errs, pulledBack(mode, r.e.Mode(), as))
+	case op.kind == opRestart && !r.unsure:
+		errs = append(errs, rebooted(r.before, r.e.Mode(), r.booted))
 	}
 	errs = append(errs, bounds(r.cfg, r.now, r.e.NextWake(), r.e.Snapshot().LockedUntil))
 	return as, errors.Join(errs...)
@@ -304,6 +474,15 @@ func pulledBack(before, after Mode, as []Action) error {
 		return fmt.Errorf("a clock set back moved %s to %s: %s", before, after, describe(as))
 	}
 	return nil
+}
+
+// rebooted checks a restart: at most the siren told again, in the mode it found. What
+// the engine heard before is no news, the clock set back or not.
+func rebooted(before, after Mode, as []Action) error {
+	if after != before {
+		return fmt.Errorf("a restart moved %s to %s: %s", before, after, describe(as))
+	}
+	return onlySiren(as)
 }
 
 // bounds checks that nothing the engine waits for lies further than its own length:
@@ -404,6 +583,22 @@ func TestTheRandomChecksSeeTheirDefects(t *testing.T) {
 	}
 	if pulledBack(ModeArmed, ModeArmed, nil) != nil || pulledBack(ModeArmed, ModeDisarmed, nil) == nil {
 		t.Error("pulledBack does not tell a clock set back that disarms")
+	}
+	if rebooted(ModeTriggered, ModeTriggered, []Action{SirenOn{Duration: time.Second}}) != nil ||
+		rebooted(ModeArmed, ModeTriggered, nil) == nil || rebooted(ModeDisarmed, ModeDisarmed, []Action{Alert{}}) == nil {
+		t.Error("rebooted does not tell a restart that acts on what the engine heard")
+	}
+	// The sequences reach what rebooted is for: a state the broker kept from before
+	// a time heard, the clock gone back behind that time and caught up since.
+	caught := newRig(t)
+	caught.sense(sensorRef{panic_, SensorPanic}, true)
+	caught.advance(30 * time.Second)
+	caught.sense(sensorRef{panic_, SensorPanic}, true)
+	caught.advance(time.Minute)
+	caught.reached = caught.now
+	caught.restartBack(3*time.Minute, true)
+	if caught.catchUp(); caught.unsure || caught.caughtUp != 1 {
+		t.Error("the rig does not see a restart after the clock caught up, the broker's state older")
 	}
 	cfg := r.cfg
 	if bounds(cfg, t0, t0.Add(cfg.SirenCycle), t0.Add(cfg.LockoutDuration)) != nil ||

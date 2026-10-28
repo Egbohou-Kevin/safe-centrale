@@ -83,7 +83,9 @@ func (e *Engine) forget(id string) {
 	delete(e.s.Open, id)
 	delete(e.s.Bypassed, id)
 	delete(e.s.Tampered, id)
-	maps.DeleteFunc(e.s.Heard, func(key string, _ time.Time) bool { return strings.HasPrefix(key, id+"/") })
+	ofDevice := func(key string, _ time.Time) bool { return strings.HasPrefix(key, id+"/") }
+	maps.DeleteFunc(e.s.Heard, ofDevice)
+	maps.DeleteFunc(e.s.HeardAhead, ofDevice)
 	e.dropWaiting(func(w Incident) bool { return w.Cause.DeviceID == id })
 	e.dropSounding(func(c Cause) bool { return c.DeviceID == id })
 }

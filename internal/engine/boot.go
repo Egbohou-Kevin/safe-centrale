@@ -94,14 +94,22 @@ func (e *Engine) learn(now time.Time, current []Signal) []Signal {
 // vibration, glass breaking) keeps no such time, which every passer-by would rewrite: its state is
 // older when it began before the mode the engine is in, or during the exit delay under
 // way (not a panic button, which that delay does not concern). Live, it was heard then, and did what it does in that mode; active since, it is
-// no new movement. A state that does not say when it began is trusted, as is one dated
-// after now, the engine's times then being of no use: a clock that ran ahead.
+// no new movement. A state that does not say when it began is trusted.
+//
+// A time of the engine's after now was set before the clock went back behind it: a Pi
+// that keeps no time restarts from an old one, days behind the saved state, until NTP
+// sets it right (see behind). The times heard then are kept apart (HeardAhead, see
+// pullBack).
 func (e *Engine) older(now time.Time, sig Signal) bool {
 	if sig.Now.IsZero() {
 		return false
 	}
-	if heard, ok := e.s.Heard[sensorKey(sig.DeviceID, sig.Sensor)]; ok {
+	key := sensorKey(sig.DeviceID, sig.Sensor)
+	if heard, ok := e.s.Heard[key]; ok {
 		return !sig.Now.After(heard)
+	}
+	if ahead, ok := e.s.HeardAhead[key]; ok && behind(sig.Now, ahead, now) {
+		return true
 	}
 	if lasting(sig.Sensor) || !sig.Active {
 		return false
@@ -117,7 +125,23 @@ func (e *Engine) older(now time.Time, sig Signal) bool {
 		}
 		from = later(from, end)
 	}
-	return !from.After(now) && !sig.Now.After(from)
+	if from.After(now) {
+		return behind(sig.Now, from, now)
+	}
+	return !sig.Now.After(from)
+}
+
+// behind tells whether a state that began at began is no later than ref, a time the
+// engine set before the clock went back behind it. A state dated after now was dated
+// before the clock went back too, on the same clock as ref: the two compare. One dated
+// up to now may have been dated since, on the clock as it is now, and be news: it is
+// trusted, unless it bears ref itself, the very state the engine heard. A real
+// intrusion after the restart must ring; a state dated before the time the clock went
+// back to cannot be told from it here, the engine not knowing that time: a door closed
+// after the broker's last save, open longer than the clock went back, comes back open
+// and is taken (see docs/engine.md, 28 October 2026).
+func behind(began, ref, now time.Time) bool {
+	return !began.After(ref) && (began.After(now) || began.Equal(ref))
 }
 
 // hear records when the engine took the state of a sensor that keeps one in every
@@ -140,6 +164,7 @@ func (e *Engine) hear(sig Signal) {
 		e.s.Heard = map[string]time.Time{}
 	}
 	e.s.Heard[key] = sig.Now
+	delete(e.s.HeardAhead, key)
 }
 
 // lasting tells whether a sensor holds its state until it changes, in every mode: a

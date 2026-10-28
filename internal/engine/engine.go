@@ -16,7 +16,6 @@ package engine
 
 import (
 	"fmt"
-	"maps"
 	"time"
 )
 
@@ -155,7 +154,13 @@ func (e *Engine) Handle(in Input) []Action {
 // time may go back within a run (the hub's loop hands the engine the clock as it is,
 // see driver.Options.FollowsClock) or across a restart. The automatic arming is
 // planned again instead (checkPlan), at Boot or as soon as the time goes back: a plan
-// made on a clock that ran ahead may have skipped today's closing.
+// made on a clock that ran ahead may have skipped today's closing. The times the
+// sensors were heard are set apart (HeardAhead): compared as they are, a press stamped
+// since on the clock set back would look older than them, and dropped, the very press
+// already heard would look new at Boot, and alert again (see older). They are Heard
+// again once now reaches them, the clock having caught up with the one they were taken
+// on, by a step of NTP or simply running on: a state dated before them then compares
+// with them, as a door that came back open from the broker's last save.
 func (e *Engine) pullBack(now time.Time) {
 	if now.Before(e.seen) && e.s.Mode == ModeDisarmed && !e.awaitingBoot {
 		e.checkPlan(now)
@@ -171,7 +176,24 @@ func (e *Engine) pullBack(now time.Time) {
 			e.s.Checking[ref] = now
 		}
 	}
-	maps.DeleteFunc(e.s.Heard, func(_ string, at time.Time) bool { return at.After(now) }) // see older
+	for key, at := range e.s.HeardAhead {
+		if !at.After(now) {
+			if e.s.Heard == nil {
+				e.s.Heard = map[string]time.Time{}
+			}
+			e.s.Heard[key] = at
+			delete(e.s.HeardAhead, key)
+		}
+	}
+	for key, at := range e.s.Heard {
+		if at.After(now) {
+			if e.s.HeardAhead == nil {
+				e.s.HeardAhead = map[string]time.Time{}
+			}
+			e.s.HeardAhead[key] = at
+			delete(e.s.Heard, key)
+		}
+	}
 	if latest := now.Add(e.cfg.LockoutDuration); e.s.LockedUntil.After(latest) {
 		e.s.LockedUntil = latest
 	}
@@ -193,7 +215,8 @@ func (e *Engine) pullBack(now time.Time) {
 // would arm at once, an intrusion during an entry delay would ring at once and a siren
 // would stop. The automatic arming is a time of day, not a wait: it stays, and so do
 // the times the engine only says (since, armed since, the last alarm) or compares with
-// a device's (Heard).
+// a device's (Heard, HeardAhead: the next input, at the clock as it is after the step,
+// puts back what it caught up with, see pullBack).
 func (e *Engine) Stepped(d time.Duration) {
 	if d <= 0 {
 		return
