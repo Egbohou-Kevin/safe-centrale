@@ -702,7 +702,10 @@ effacé ensuite), chaque unité `safehome*` ou `zigbee2mqtt*` qui diffère de la
 remise telle quelle, chaque unité que l'archive n'avait pas (une unité neuve du paquet) est retirée
 avec ses liens dans `*.wants`, puis arrêtée après `daemon-reload`. Les services activés parmi les
 programmes revenus et les unités remises redémarrent, chacun une fois ; une unité identique n'est
-ni touchée ni redémarrée. Le message final dit ce qui est revenu : « the previous programs », « the
+ni touchée ni redémarrée, et une unité remise qui n'est pas un démon (son `Type` lu par
+`systemctl show` n'est ni `simple`, `exec`, `notify`, `notify-reload`, `forking` ni `dbus`) est remise
+sans redémarrer : `safehome-boot-clock`, un `oneshot`, réécrirait sinon l'heure lue au démarrage,
+avant NTP, par une heure d'après (« not restarted: its type is oneshot, not a daemon's »). Le message final dit ce qui est revenu : « the previous programs », « the
 previous units » ou « the previous programs and units ». Une restauration ratée (archive illisible,
 copie refusée) est dite en nommant l'archive (« the units could not all be put back from
 /data/maintenance/units-… »), la suite continue comme pour un redémarrage raté, et le message final

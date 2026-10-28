@@ -160,7 +160,8 @@ restore_units() {
 # X.prev, docs/systeme.md, "Maintenance"; an X.prev.new is a copy cut short, never put
 # back), then the units as saved before install.sh (restore_units); with "units", only
 # the units, and nothing to put back is no stop. systemd reloads, the units removed stop,
-# and the services of those enabled among the programs and units back restart on them.
+# and the services of those enabled among the programs and units back restart on them,
+# but a unit that is not a daemon (a oneshot, safehome-boot-clock) never restarts.
 # Nothing is disarmed; the alarm's state (/var/lib/safehome) is not touched. Called
 # last after ||, where set -e still stops: each step that may fail is said here.
 roll_back() {
@@ -189,16 +190,34 @@ roll_back() {
 	for n in $removed; do
 		pi "sudo -n systemctl stop $n" || echo "!! $n could not be stopped" >&2
 	done
+	# program:NAME or unit:NAME, each name once, a program first (a for loop: ssh
+	# would read a while loop's input).
 	again=$({
-		for p in $back; do echo "$p"; done
+		for p in $back; do echo "program:$p"; done
 		for n in $changed; do
-			[ "${n%.service}" = "$n" ] || echo "${n%.service}"
+			[ "${n%.service}" = "$n" ] || echo "unit:${n%.service}"
 		done
-	} | awk '!seen[$0]++')
-	for p in $again; do
+	} | awk -F: '!seen[$2]++')
+	for e in $again; do
+		kind=${e%%:*} p=${e#*:}
 		if [ "$(pi "systemctl is-enabled $p.service 2>/dev/null || true")" != enabled ]; then
 			echo "   $p back"
-		elif pi "sudo -n systemctl restart $p.service"; then
+			continue
+		fi
+		# A unit put back restarts only if it runs a daemon: a oneshot such as
+		# safehome-boot-clock runs at boot only, and a restart would replace what it
+		# read then (docs/systeme.md, "Maintenance"). A program's service always does.
+		if [ "$kind" = unit ]; then
+			kind=$(pi "systemctl show -p Type --value $p.service" || true)
+			case "$kind" in
+			simple | exec | notify | notify-reload | forking | dbus) ;;
+			*)
+				echo "   $p back, not restarted: its type is ${kind:-unreadable}, not a daemon's"
+				continue
+				;;
+			esac
+		fi
+		if pi "sudo -n systemctl restart $p.service"; then
 			echo "   $p back, restarted"
 		else
 			echo "!! $p back, but its restart failed" >&2
