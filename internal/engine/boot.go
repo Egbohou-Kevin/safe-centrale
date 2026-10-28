@@ -30,7 +30,11 @@ import (
 // from an old one, and a state dated before booted.At was dated before the clock went
 // back, on the clock of the engine's own times (see behind), unless NTP set the clock
 // forward before the hub started (see bootRef.stepped). Unknown, or after now (a wrong
-// reading), the states dated up to now are trusted as before.
+// reading), the states dated up to now are trusted as before. The trace of that step
+// (booted.Shown) serves the first Boot of a system run only (see Snapshot.BootShown): at
+// a later one, a live step forward since would widen it, and every state the engine
+// heard before that step would look dated before NTP set the clock, news: a movement
+// heard rang again (28 October 2026).
 func (e *Engine) Boot(now time.Time, booted Booted, current []Signal) []Action {
 	e.awaitingBoot = false
 	e.s.Checking = nil // the checks under way did not survive the restart
@@ -38,9 +42,12 @@ func (e *Engine) Boot(now time.Time, booted Booted, current []Signal) []Action {
 	if booted.At.After(now) {
 		ref.booted = time.Time{}
 	}
-	if ref.booted.IsZero() || !ref.shown.Before(ref.booted) {
-		ref.shown = time.Time{} // no step forward, or a wrong reading: the rule without it
+	// No step forward, a wrong reading, or the trace a Boot of this system run already
+	// had: the rule without it.
+	if ref.booted.IsZero() || !ref.shown.Before(ref.booted) || booted.Shown.Equal(e.s.BootShown) {
+		ref.shown = time.Time{}
 	}
+	e.s.BootShown = booted.Shown
 	e.pullBack(now) // brings Since back if the clock went back behind it: ref keeps it
 	alarms := e.learn(ref, current)
 	e.apartBefore = nil
