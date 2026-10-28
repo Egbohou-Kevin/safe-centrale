@@ -1,0 +1,25 @@
+# The clock as it reads early at boot, before NTP can set it (docs/engine.md, 28 October
+# 2026). A Pi without a battery clock starts from the last time it saved, and NTP sets it
+# forward once the network is up, sometimes before the hub starts: a device state dated
+# in between is on the clock as it read at boot. The hub reads this line (the time, then
+# the uptime, in seconds) to tell such a state from one the broker kept from before the
+# power cut (internal/adapter/sysclock.StartShown).
+#
+# After systemd-timesyncd, which first sets the clock forward to the last time it saved;
+# before sysinit.target, so before any network, hence any NTP. Read by the hub under its
+# hardening: /run stays readable with ProtectSystem=strict.
+[Unit]
+Description=safeHome: the clock as it reads at boot, before NTP
+DefaultDependencies=no
+After=fake-hwclock.service systemd-timesyncd.service
+Before=sysinit.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+UMask=0022
+ExecStart=/bin/sh -c 'read up rest </proc/uptime && echo "$(date +%%s.%%N) $up" >/run/safehome-boot-clock.new && mv /run/safehome-boot-clock.new /run/safehome-boot-clock'
+
+[Install]
+WantedBy=sysinit.target

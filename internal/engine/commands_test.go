@@ -157,7 +157,7 @@ func TestAPatientGuesserAlertsTheContactsWithoutLocking(t *testing.T) {
 		guess(i)
 	}
 	h.e = restart(t, h)
-	h.e.Boot(h.now, time.Time{}, nil)
+	h.e.Boot(h.now, Booted{}, nil)
 	for i := 5; i <= 7; i++ {
 		guess(i)
 	}
@@ -192,7 +192,7 @@ func (h *harness) aheadThenBack(d time.Duration, edit func(s *Snapshot, ahead ti
 	snap := h.e.Snapshot()
 	edit(&snap, h.now.Add(d))
 	h.e.Restore(snap)
-	h.e.Boot(h.now, time.Time{}, nil)
+	h.e.Boot(h.now, Booted{}, nil)
 }
 
 // Wrong codes stamped in the future count as now: they leave the window

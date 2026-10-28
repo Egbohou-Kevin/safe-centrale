@@ -19,7 +19,7 @@ func (h *Hub) boot(ctx context.Context) error {
 	}
 	signals := h.endBootWindow()
 	err := h.alarm.loop.Do(ctx, func(now time.Time) []engine.Action {
-		actions := h.alarm.eng.Boot(now, h.bootedAt(now), signals)
+		actions := h.alarm.eng.Boot(now, h.booted(now), signals)
 		h.publishState(now) // the first retained state, even if nothing changed since the last run
 		// An installation mode never survives a restart: one left open by a crash is
 		// closed for the console too. One opened at the keypad during the boot window
@@ -59,6 +59,25 @@ func (h *Hub) bootedAt(now time.Time) time.Time {
 		return time.Time{}
 	}
 	return booted
+}
+
+// booted is when the system started, for the engine: on the clock as it is now
+// (bootedAt), and on the clock as it read early at boot when NTP set it forward since,
+// before the hub started. The time read at boot unknown, or not before the start on
+// the clock as it is now (no step forward, or a wrong reading: after it, after now),
+// the engine keeps the rule of the start alone.
+func (h *Hub) booted(now time.Time) engine.Booted {
+	b := engine.Booted{At: h.bootedAt(now)}
+	if b.At.IsZero() || h.deps.StartShown == nil {
+		return b
+	}
+	shown, ok := h.deps.StartShown()
+	if !ok || !shown.Before(b.At) {
+		return b
+	}
+	h.log.Info("the clock was set forward since the system started", "by", b.At.Sub(shown))
+	b.Shown = shown
+	return b
 }
 
 // bootWindow waits for the link to come up (LinkWait at most), then for the retained

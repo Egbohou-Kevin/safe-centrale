@@ -67,7 +67,7 @@ func TestARestartTellsAStateKeptFromBeforeTheSetBackByTheBootTime(t *testing.T) 
 		h.e = restart(t, h)
 		h.now = back
 		booted := h.now.Add(-2 * time.Second)
-		as := h.e.Boot(h.now, booted, []Signal{sig})
+		as := h.e.Boot(h.now, Booted{At: booted}, []Signal{sig})
 		if err := onlySiren(as); err != nil {
 			t.Errorf("%s: %v", c.name, err)
 		}
@@ -87,7 +87,7 @@ func TestARestartActsOnAStateDatedSinceTheSystemStarted(t *testing.T) {
 		h.now = back
 		booted := h.now.Add(-2 * time.Second)
 		sig.Now = h.now.Add(-time.Second)
-		if as := h.e.Boot(h.now, booted, []Signal{sig}); !acted(as) {
+		if as := h.e.Boot(h.now, Booted{At: booted}, []Signal{sig}); !acted(as) {
 			t.Errorf("%s, dated since the system started: %v", c.name, as)
 		}
 	}
@@ -107,7 +107,7 @@ func TestARestartWithoutABootTimeTrustsWhatIsDatedUpToNow(t *testing.T) {
 			if booted > 0 {
 				at = h.now.Add(booted)
 			}
-			if as := h.e.Boot(h.now, at, []Signal{sig}); !acted(as) {
+			if as := h.e.Boot(h.now, Booted{At: at}, []Signal{sig}); !acted(as) {
 				t.Errorf("%s, boot time %v: %v", c.name, at, as)
 			}
 		}
@@ -126,12 +126,12 @@ func TestTheBootTimeDoesNotOrderATimeSetApartByARunBefore(t *testing.T) {
 	h.armed()
 	h.e = restart(t, h)
 	h.now = h.now.Add(-3 * 24 * time.Hour)
-	noActions(t, h.e.Boot(h.now, h.now.Add(-2*time.Second), nil))
+	noActions(t, h.e.Boot(h.now, Booted{At: h.now.Add(-2 * time.Second)}, nil))
 	h.advance(time.Hour)
 	opened := h.now // the hub down, the Zigbee adapter up
 	h.e = restart(t, h)
 	h.now = opened.Add(time.Minute)
-	as := h.e.Boot(h.now, opened.Add(30*time.Second), []Signal{at(back, SensorContact, true, opened)})
+	as := h.e.Boot(h.now, Booted{At: opened.Add(30 * time.Second)}, []Signal{at(back, SensorContact, true, opened)})
 	if len(eventsOf[Triggered](as)) != 1 {
 		t.Fatalf("a door opened while the hub was down, its time set apart by the run before: %v", as)
 	}
@@ -150,7 +150,7 @@ func TestTheStartOfTheModeIsBroughtBackWithTheClock(t *testing.T) {
 		h.advance(time.Minute)
 		h.e = restart(t, h)
 		h.now = h.now.Add(-3 * 24 * time.Hour)
-		noActions(t, h.e.Boot(h.now, h.now.Add(-2*time.Second), nil))
+		noActions(t, h.e.Boot(h.now, Booted{At: h.now.Add(-2 * time.Second)}, nil))
 		snap := h.e.Snapshot()
 		if !snap.SinceAhead.Equal(since) || !snap.Since.Equal(h.now) {
 			t.Fatalf("the clock 3 days back: since %v, apart %v", snap.Since, snap.SinceAhead)
@@ -170,7 +170,7 @@ func TestTheStartOfTheModeIsBroughtBackWithTheClock(t *testing.T) {
 		moved := h.now // the hub down, the Zigbee adapter up
 		h.e = restart(t, h)
 		h.now = moved.Add(-10 * time.Minute) // the Pi starts again from the time it last saved
-		as := h.e.Boot(h.now, h.now.Add(-2*time.Second), []Signal{at(motion, SensorMotion, true, moved)})
+		as := h.e.Boot(h.now, Booted{At: h.now.Add(-2 * time.Second)}, []Signal{at(motion, SensorMotion, true, moved)})
 		if len(eventsOf[Triggered](as)) == 0 && len(eventsOf[EntryDelayStarted](as)) == 0 {
 			t.Fatalf("a movement after the clock went back the first time: %v", as)
 		}
@@ -193,7 +193,7 @@ func TestTheStartOfTheModeWaitsForBoot(t *testing.T) {
 	h.e = restart(t, h)
 	h.now = h.now.Add(-3 * time.Minute)
 	h.close(door) // during the boot window
-	if err := onlySiren(h.e.Boot(h.now, h.now.Add(-2*time.Second), []Signal{at(motion, SensorMotion, true, moved)})); err != nil {
+	if err := onlySiren(h.e.Boot(h.now, Booted{At: h.now.Add(-2 * time.Second)}, []Signal{at(motion, SensorMotion, true, moved)})); err != nil {
 		t.Fatal(err)
 	}
 	h.mustBe(ModeArmed)
@@ -217,7 +217,7 @@ func TestAStateSetAsideIsSetAsideAgain(t *testing.T) {
 	for _, back := range []time.Duration{3 * 24 * time.Hour, 10 * time.Minute} {
 		h.e = restart(t, h)
 		h.now = h.now.Add(-back)
-		if err := onlySiren(h.e.Boot(h.now, h.now.Add(-2*time.Second), []Signal{sig})); err != nil {
+		if err := onlySiren(h.e.Boot(h.now, Booted{At: h.now.Add(-2 * time.Second)}, []Signal{sig})); err != nil {
 			t.Fatalf("the clock %v back: %v", back, err)
 		}
 		h.mustBe(ModeArmed)

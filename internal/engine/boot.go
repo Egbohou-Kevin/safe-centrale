@@ -26,17 +26,20 @@ import (
 // Momentary sensors (motion) must therefore publish their return to rest, or a
 // stale "active" state would trigger an alarm on restart.
 //
-// booted is when the system started, on the clock as it is now (now less the
-// system's uptime), the zero time when unknown: a Pi that keeps no time starts from an
-// old one, and a state dated before booted was dated before the clock went back, on
-// the clock of the engine's own times (see behind). Unknown, or after now (a wrong
+// booted says when the system started (see Booted): a Pi that keeps no time starts
+// from an old one, and a state dated before booted.At was dated before the clock went
+// back, on the clock of the engine's own times (see behind), unless NTP set the clock
+// forward before the hub started (see bootRef.stepped). Unknown, or after now (a wrong
 // reading), the states dated up to now are trusted as before.
-func (e *Engine) Boot(now, booted time.Time, current []Signal) []Action {
+func (e *Engine) Boot(now time.Time, booted Booted, current []Signal) []Action {
 	e.awaitingBoot = false
 	e.s.Checking = nil // the checks under way did not survive the restart
-	ref := bootRef{now: now, booted: booted, since: e.s.Since}
-	if booted.After(now) {
+	ref := bootRef{now: now, booted: booted.At, shown: booted.Shown, since: e.s.Since}
+	if booted.At.After(now) {
 		ref.booted = time.Time{}
+	}
+	if ref.booted.IsZero() || !ref.shown.Before(ref.booted) {
+		ref.shown = time.Time{} // no step forward, or a wrong reading: the rule without it
 	}
 	e.pullBack(now) // brings Since back if the clock went back behind it: ref keeps it
 	alarms := e.learn(ref, current)
@@ -63,6 +66,61 @@ func (e *Engine) Boot(now, booted time.Time, current []Signal) []Action {
 // its now (see pullSinceBack), as Boot found it otherwise.
 type bootRef struct {
 	now, booted, since time.Time
+	// shown is when the system started on the clock as it read early at boot, before
+	// NTP set it forward: before booted, the zero time otherwise (see stepped).
+	shown time.Time
+}
+
+// Booted is when the system started, as Boot needs it.
+type Booted struct {
+	// At is when the system started on the clock as it is now: now less the system's
+	// uptime. The zero time when unknown.
+	At time.Time
+	// Shown is when the system started on the clock as it read early at boot, before
+	// NTP set it: before At when NTP set the clock forward since. The zero time when
+	// unknown.
+	Shown time.Time
+}
+
+// stepped tells whether a state dated at t may be dated on the clock the system
+// started with, before NTP set it forward, while ref, a time of the engine's, was not
+// set on the clock as it is since: the two do not compare.
+//
+// NTP may set the clock forward before the hub starts (the services that date the
+// devices' states start before it): booted, taken on the clock set right, is then later
+// than shown, the time the clock read at boot, and a door opened in the seconds after
+// the power came back is dated before booted, on the clock as it read then. Compared
+// with a time heard before the power cut, it would look older and be lost. It was read
+// before the step, before now: at most the uptime (now less booted) after shown. Such a
+// state is therefore news unless it bears ref itself.
+//
+// A time of the engine's since booted, up to now, is on the clock set right: the state
+// compares with it once brought onto that clock (see mended). Not every such time was
+// set after the step: the end of an exit delay was set before the power cut, ahead. One
+// before booted (heard before the power cut) or after now (set before the clock went
+// back) does not compare. The price: a state the broker kept from before the power cut,
+// dated less than the uptime after the time the clock went back to, rings again
+// (docs/engine.md, 28 October 2026).
+func (r bootRef) stepped(t, ref time.Time) bool {
+	return r.beforeStep(t) && (ref.Before(r.booted) || ref.After(r.now))
+}
+
+// beforeStep tells whether a state dated at t may be dated on the clock the system
+// started with, before NTP set it forward (see stepped).
+func (r bootRef) beforeStep(t time.Time) bool {
+	return !r.shown.IsZero() && !t.Before(r.shown) && t.Before(r.booted) && t.Before(r.shown.Add(r.now.Sub(r.booted)))
+}
+
+// mended brings a state dated at t onto the clock set right when it may be dated on the
+// clock as it read at boot (see beforeStep): as long after booted as it was after
+// shown. Any other time is given back as is. A movement in the seconds after the end of
+// an exit delay that ended while the system started, dated before the step, is later
+// than that end: compared as dated, it looked older and was lost.
+func (r bootRef) mended(t time.Time) time.Time {
+	if !r.beforeStep(t) {
+		return t
+	}
+	return r.booted.Add(t.Sub(r.shown))
 }
 
 // learn records the devices' states given at Boot: which contacts are open, which
@@ -132,7 +190,11 @@ func (e *Engine) learn(ref bootRef, current []Signal) []Signal {
 // pullBack). The system's start, when known, tells a state dated before the clock went
 // back from one dated since; not for a time set apart by a run before this one
 // (apartBefore), the broker's state may be dated on that run's clock. The start of the
-// mode is the one the run before left (bootRef.since), on its own clock.
+// mode is the one the run before left (bootRef.since), on its own clock. The clock set
+// forward by NTP before the hub started, a state dated on the clock as it read at boot
+// is news against a time of the engine's on another clock (see bootRef.stepped), and is
+// brought onto the clock set right against one since the system started, up to now
+// (see bootRef.mended): the end of an exit delay that ended meanwhile.
 func (e *Engine) older(ref bootRef, sig Signal) bool {
 	now, booted := ref.now, ref.booted
 	if sig.Now.IsZero() {
@@ -140,14 +202,21 @@ func (e *Engine) older(ref bootRef, sig Signal) bool {
 	}
 	key := sensorKey(sig.DeviceID, sig.Sensor)
 	if heard, ok := e.s.Heard[key]; ok {
-		return !sig.Now.After(heard)
+		if ref.stepped(sig.Now, heard) {
+			return sig.Now.Equal(heard)
+		}
+		return !ref.mended(sig.Now).After(heard)
 	}
 	if ahead, ok := e.s.HeardAhead[key]; ok {
 		before := booted
 		if e.apartBefore[key] {
 			before = time.Time{}
 		}
-		if behind(sig.Now, ahead, now, before) {
+		if ref.stepped(sig.Now, ahead) {
+			if sig.Now.Equal(ahead) {
+				return true
+			}
+		} else if behind(sig.Now, ahead, now, before) {
 			return true
 		}
 	}
@@ -165,10 +234,13 @@ func (e *Engine) older(ref bootRef, sig Signal) bool {
 		}
 		from = later(from, end)
 	}
+	if ref.stepped(sig.Now, from) {
+		return sig.Now.Equal(from)
+	}
 	if from.After(now) {
 		return behind(sig.Now, from, now, booted)
 	}
-	return !sig.Now.After(from)
+	return !ref.mended(sig.Now).After(from)
 }
 
 // behind tells whether a state that began at began is no later than ref, a time the

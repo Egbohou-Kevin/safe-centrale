@@ -132,6 +132,11 @@ type Deps struct {
 	// states the broker kept from before the clock went back (see engine.Boot). Nil, or
 	// unknown, keeps the rule without it.
 	Uptime func() (d time.Duration, ok bool)
+	// StartShown says when the system started on the clock as it read early at boot,
+	// before NTP could set it forward; ok is false when it cannot tell. Before the start
+	// Uptime gives, it tells the engine the states dated on the clock as it read then
+	// (see engine.Booted). Nil, or unknown, keeps the rule of Uptime alone.
+	StartShown func() (time.Time, bool)
 	// Contacts returns the ids of the site's contacts as saved now, which decide whose
 	// codes the hub takes. The configuration from the cloud may change them while the
 	// hub runs: during the installation mode it does not restart for it. Nil keeps the

@@ -1,11 +1,12 @@
-// Package sysclock tells whether the system clock is synchronised, and how long the
-// system has been up. A Raspberry Pi has no clock that survives a power cut: until NTP
-// sets it, the time is wrong, and so are the times in the messages. It uses the
-// standard library only.
+// Package sysclock tells whether the system clock is synchronised, how long the
+// system has been up, and when it started on the clock as it read at boot. A
+// Raspberry Pi has no clock that survives a power cut: until NTP sets it, the time
+// is wrong, and so are the times in the messages. It uses the standard library only.
 package sysclock
 
 import (
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -39,4 +40,48 @@ func parseUptime(s string) (time.Duration, bool) {
 		return 0, false
 	}
 	return time.Duration(sec * float64(time.Second)), true
+}
+
+// BootClockPath is where safehome-boot-clock.service (deploy/system) writes, early at
+// boot and before NTP can set the clock, the time and the uptime as they read then.
+const BootClockPath = "/run/safehome-boot-clock"
+
+// StartShown says when the system started on the clock as it read early at boot,
+// before NTP could set it: the time written in BootClockPath less the uptime written
+// with it. NTP setting the clock forward since, it is before now less Uptime. ok is
+// false where it cannot tell (the file missing, as outside the hub, or not a positive
+// time and a positive uptime).
+func StartShown() (time.Time, bool) {
+	b, err := os.ReadFile(BootClockPath)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parseBootClock(string(b))
+}
+
+// parseBootClock reads "<seconds since 1970>.<fraction> <uptime in seconds>", what
+// date +%s.%N and /proc/uptime say, and returns the first less the second.
+func parseBootClock(s string) (time.Time, bool) {
+	fields := strings.Fields(s)
+	if len(fields) != 2 {
+		return time.Time{}, false
+	}
+	whole, frac, _ := strings.Cut(fields[0], ".")
+	sec, err := strconv.ParseInt(whole, 10, 64)
+	if err != nil || sec <= 0 || len(frac) > 9 {
+		return time.Time{}, false
+	}
+	var nsec int64
+	if frac != "" {
+		n, err := strconv.ParseUint(frac+strings.Repeat("0", 9-len(frac)), 10, 64)
+		if err != nil {
+			return time.Time{}, false
+		}
+		nsec = int64(n)
+	}
+	up, ok := parseUptime(fields[1])
+	if !ok {
+		return time.Time{}, false
+	}
+	return time.Unix(sec, nsec).Add(-up), true
 }

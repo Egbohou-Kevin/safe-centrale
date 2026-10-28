@@ -40,7 +40,9 @@ programmes et leurs configurations d'exemple : même broker, même dossier d'ét
 | `safehome-console` | La console locale : pendant le mode installation seulement, le réseau Wi-Fi de la centrale et la page de l'installateur (`security-install.md`) | `systemd/safehome-console.service`, `system/polkit-safehome-console.rules`, `system/nm-dispatcher-safehome-console` |
 
 Réglages système : `system/journald-safehome.conf` (journaux),
-`system/watchdog-safehome.conf` (chien de garde), `system/fstab-data` (partition de
+`system/watchdog-safehome.conf` (chien de garde), `system/safehome-boot-clock.service`
+(l'heure lue tôt au démarrage, avant NTP, dans `/run/safehome-boot-clock` : le hub
+s'en sert au redémarrage, voir `engine.md`), `system/fstab-data` (partition de
 données), `system/polkit-safehome-console.rules` (la console peut créer, lever,
 baisser et supprimer les connexions de NetworkManager, sans éteindre la radio ; la
 règle vaut pour tout programme lancé sous `safehome`, voir la limite dans
@@ -363,8 +365,9 @@ coupés (moins de mémoire, rien d'exposé). Le `base_topic` doit être le même
 ### 9. Démarrer les services
 
 ```bash
-sudo cp deploy/systemd/*.service /etc/systemd/system/
+sudo cp deploy/systemd/*.service deploy/system/safehome-boot-clock.service /etc/systemd/system/
 sudo systemctl daemon-reload
+sudo systemctl enable safehome-boot-clock   # prise au prochain démarrage, avant NTP
 sudo systemctl enable --now zigbee2mqtt safehome-zigbee safehome-gsm safehome-hub safehome-agent
 sudo systemctl enable --now safehome-video        # seulement sur un site avec caméras
 sudo systemctl enable --now safehome-maint
