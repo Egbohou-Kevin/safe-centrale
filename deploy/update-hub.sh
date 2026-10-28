@@ -3,7 +3,8 @@
 # (docs/systeme.md, "Maintenance"), in four phases run one after the other:
 #
 #   deploy/update-hub.sh 1                     save cmdline.txt and the alarm's mode, leave read-only, reboot
-#   deploy/update-hub.sh -v VERSION 2 BUNDLE   write access, DNS and clock, install, check, clean up
+#   deploy/update-hub.sh -v VERSION 2 BUNDLE   write access, DNS and clock, install, check, clean up;
+#                                              the previous programs back if the new ones do not hold
 #   deploy/update-hub.sh 3                     back to read-only (cmdline.txt as saved), reboot
 #   deploy/update-hub.sh 4                     overlay, timesyncd's clock on /data, services, same alarm mode, cloud reached
 #
@@ -60,14 +61,55 @@ wait_back() {
 	die "the hub did not come back after 4 minutes"
 }
 
-wait_services() {
+# services_hold: after two minutes, every unit active and none failed. A program that
+# crashes at start never reaches failed (Restart=always, no start limit): it stays
+# activating, so anything but active counts.
+services_hold() {
 	echo "== services for two minutes"
 	sleep 120
-	pi "systemctl list-units $units --no-legend --plain" | awk '{print "   " $1, $3, $4}'
-	bad=$(pi "systemctl list-units $units --no-legend --plain --state=failed" | wc -l)
-	[ "$bad" -eq 0 ] || die "$bad service(s) failed"
+	# Called after ||, where set -e does not stop: each failure is said here.
+	if ! list=$(pi "systemctl list-units $units --no-legend --plain"); then
+		echo "!! the services cannot be listed" >&2
+		return 1
+	fi
+	printf '%s\n' "$list" | awk 'NF {print "   " $1, $3, $4}'
+	bad=$(printf '%s\n' "$list" | awk 'NF && $3 != "active" {n++} END {print n + 0}')
+	if [ "$bad" -ne 0 ]; then
+		echo "!! $bad service(s) not active" >&2
+		return 1
+	fi
 	echo "   failed units:"
 	pi 'systemctl --failed --no-legend --plain' | sed 's/^/     /'
+}
+
+wait_services() { services_hold || die "the services do not hold"; }
+
+# The mark install.sh leaves while the programs in place are not yet confirmed.
+unconfirmed=/usr/local/bin/.safehome-prev.unconfirmed
+
+# roll_back: the programs install.sh replaced go back (it kept each one as X.prev,
+# docs/systeme.md, "Maintenance"), and the services of those enabled restart on them.
+# Nothing is disarmed; the alarm's state (/var/lib/safehome) is not touched. Called
+# last after ||, where set -e still stops: each step that may fail is said here.
+roll_back() {
+	echo "== putting the previous programs back"
+	if ! back=$(pi "sudo -n sh -c 'cd /usr/local/bin && rc=0 && for f in safehome-*.prev; do [ -e \"\$f\" ] || continue; if mv -f \"\$f\" \"\${f%.prev}\"; then echo \"\${f%.prev}\"; else rc=1; fi; done; [ \$rc != 0 ] || rm -f $unconfirmed; exit \$rc'"); then
+		die "$1, and the previous programs could not all be put back (back: $(printf '%s' "${back:-none}" | tr '\n' ' ')); the others are still safehome-*.prev in /usr/local/bin"
+	fi
+	[ -n "$back" ] || die "$1, and no previous program was kept: nothing to put back"
+	pi 'sudo -n systemctl daemon-reload' || echo "!! systemctl daemon-reload failed" >&2
+	for p in $back; do
+		if [ "$(pi "systemctl is-enabled $p.service 2>/dev/null || true")" != enabled ]; then
+			echo "   $p back"
+		elif pi "sudo -n systemctl restart $p.service"; then
+			echo "   $p back, restarted"
+		else
+			echo "!! $p back, but its restart failed" >&2
+		fi
+	done
+	echo "   $(pi '/usr/local/bin/safehome-hub version' || echo 'hub version not readable')"
+	services_hold || die "$1; the previous programs are back but the services still do not hold"
+	die "$1; the previous programs are back and their services hold"
 }
 
 # Out of read-only mode, / is still read-only at boot: NetworkManager cannot write
@@ -114,12 +156,21 @@ case "$phase" in
 	scp -q -r -i "$key" "$bundle" "$hub:safehome"
 	echo "== installing"
 	if ! pi 'sudo -n ./safehome/deploy/install.sh' 2>&1 | tail -n 40; then
-		die "install.sh failed (it put the previous configuration back)"
+		# Past the configuration check, install.sh has replaced the programs and left
+		# its mark: a restart that failed puts the previous ones back too.
+		if [ "$(pi "test -e $unconfirmed && echo yes || true")" = yes ]; then
+			roll_back "install.sh failed after replacing the programs"
+		fi
+		die "install.sh failed before replacing the programs (it put the previous configuration back)"
 	fi
-	got=$(pi '/usr/local/bin/safehome-hub version')
-	[ "$got" = "safehome-hub $version" ] || die "the hub says $got"
+	# From here the programs are the new ones: if they do not hold, the previous ones
+	# go back before stopping. A hub that cannot even say its version counts.
+	got=$(pi '/usr/local/bin/safehome-hub version') || got="(version not readable)"
+	[ "$got" = "safehome-hub $version" ] || roll_back "the hub says $got"
 	echo "   $got"
-	wait_services
+	services_hold || roll_back "the new programs do not hold"
+	pi "sudo -n rm -f $unconfirmed"
+	echo "== the new programs hold: the previous ones stay as .prev, no longer pending"
 	pi 'rm -rf ~/safehome'
 	[ -z "$(pi 'ls ~')" ] || die "the home folder is not empty: $(pi 'ls ~')"
 	echo "== home folder empty"
