@@ -3,6 +3,7 @@ package hubconfig
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -135,6 +136,44 @@ func TestTheCloudCheckLaysTheDevicesAsTheHubDoes(t *testing.T) {
 	}
 	if len(r.Hub.SirenIDs) != 1 || len(r.Hub.Engine.Zones) != 7 {
 		t.Fatalf("sirens %v, %d zones: want the file's own", r.Hub.SirenIDs, len(r.Hub.Engine.Zones))
+	}
+}
+
+// A room the hub clears costs only itself with a configuration from the cloud too, the
+// normal case on a real site: the cloud check does not refuse that configuration, and
+// once it is stored the hub keeps every zone and still says which room it cleared.
+func TestABadRoomCostsOnlyItselfUnderTheCloudConfiguration(t *testing.T) {
+	path, state := exampleWithState(t)
+	devices := `{"zones": {
+		"dev_door": {"name": "Entrance", "kind": "entry", "room": "` + strings.Repeat("x", 40) + `"},
+		"dev_back": {"name": "Back", "kind": "instant"},
+		"dev_pir": {"name": "Living room", "kind": "interior", "room": "Salon"},
+		"dev_smoke": {"name": "Kitchen", "kind": "24h_fire"}
+	}, "siren_ids": ["dev_siren1"]}`
+	if err := os.WriteFile(filepath.Join(state, DevicesFile), []byte(devices), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	checked, err := WithSiteConfig(path, cloudConfig())
+	if err != nil {
+		t.Fatalf("the cloud configuration was refused for a room: %v", err)
+	}
+	if z := checked.Hub.Engine.Zones; len(z) != 4 || z["dev_door"].Name != "Entrance" || z["dev_door"].Room != "" {
+		t.Fatalf("the cloud check saw %+v, want the file's 4 zones, dev_door without a room", z)
+	}
+	if err := siteconfig.Write(state, cloudConfig()); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Load(path)
+	if err != nil || r.SiteErr != nil || r.SiteVersion != 4 || r.DevicesErr != nil || r.DevicesSum == "" {
+		t.Fatalf("%v, site %v (version %d), devices %v", err, r.SiteErr, r.SiteVersion, r.DevicesErr)
+	}
+	zones := r.Hub.Engine.Zones
+	if len(zones) != 4 || zones["dev_door"].Room != "" || zones["dev_pir"].Room != "Salon" {
+		t.Fatalf("%d zone(s) watched: %+v", len(zones), zones)
+	}
+	want := []RoomLeftAside{{Zone: "dev_door", Reason: "it is longer than 32 characters"}}
+	if !reflect.DeepEqual(r.RoomsLeftAside, want) {
+		t.Fatalf("rooms left aside %+v, want %+v", r.RoomsLeftAside, want)
 	}
 }
 

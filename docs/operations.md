@@ -129,18 +129,7 @@ clé, la ligne SMS est attendue, et une passerelle muette est une panne (voir
 À noter : `timezone` (Lomé : `Africa/Lome`, UTC), `zones` (le rôle de chaque appareil :
 `name`, `kind`, et `room`, facultatif depuis le 28 octobre 2026, la pièce que la liste
 des appareils montre au propriétaire, même règle que `name` ; une centrale plus
-ancienne refuse un fichier qui dit `room` : ne l'écrire qu'après sa mise à jour. Les
-zones posées par `safehome-install zone` (dont `-room`) et par la console locale ne
-vont pas dans `hub.json` mais dans `site-devices.json`, au dossier d'état, qui remplace
-alors les zones et les sirènes de `hub.json`. Avant un retour arrière vers une version
-sans `room` : cette centrale plus ancienne écarte tout `site-devices.json` qui dit
-`room`, ne surveille plus que les zones de `hub.json` et `safehome-hub check` échoue ;
-vider les pièces d'abord (`safehome-install zone` sans `-room`, ou le champ vide de la
-console). À partir du 28 octobre 2026, une pièce hors règle de `site-devices.json`
-(fichier modifié à la main, règle durcie) ne coûte qu'elle-même : la centrale la vide, garde la zone surveillée,
-l'écrit au journal (`a zone's room is left aside`, qui nomme la zone sans citer la
-pièce) et `check` l'avertit sans échouer ; les outils, eux, refusent toujours d'écrire
-une pièce hors règle),
+ancienne refuse un fichier qui dit `room` : ne l'écrire qu'après sa mise à jour),
 `siren_ids` (les sirènes ; `[]` pour un site sans sirène, par choix : ses alarmes ne
 font que prévenir, voir `engine.md`, « Un site sans sirène » ; la ligne est obligatoire) et `siren_names` (facultatif : le nom d'une sirène dans les
 textes des alertes, par identifiant, par exemple `{"dev_siren1": "Reserve"}` ; même
@@ -149,6 +138,21 @@ parmi plusieurs ; une sirène qui a aussi une zone garde le nom de sa zone et n'
 `siren_names`, voir `escalation.md`), `closing` (heure de fermeture par jour, `"off"`
 pour ne pas armer ce jour-là), `access.iterations` (coût du hachage, à régler sur la
 centrale réelle).
+
+Les zones posées par `safehome-install zone` (dont `-room`) et par la console locale ne
+vont pas dans `hub.json` mais dans `site-devices.json`, au dossier d'état, qui remplace
+alors les zones et les sirènes de `hub.json`.
+
+**Avant un retour arrière** vers une version sans `room` : cette centrale plus ancienne
+écarte tout `site-devices.json` qui dit `room`, ne surveille plus que les zones de
+`hub.json`, et `safehome-hub check` échoue. Vider les pièces d'abord
+(`safehome-install zone` sans `-room`, ou le champ vide de la console).
+
+Depuis le 28 octobre 2026, une pièce hors règle dans `site-devices.json` (fichier modifié
+à la main, règle durcie) ne coûte qu'elle-même : la centrale la vide et garde la zone
+surveillée, l'écrit au journal (`a zone's room is left aside`, qui nomme la zone sans
+citer la pièce), et `check` l'avertit sans échouer. Les outils, eux, refusent toujours
+d'écrire une pièce hors règle.
 
 ## Démarrage
 
