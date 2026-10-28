@@ -895,12 +895,15 @@ chaque appareil du registre, pour la fiche Capteurs de l'application.
   `instant`, `interior`, `24h_fire`, `24h_panic` ou `24h_tamper` : l'application les dit
   en mots simples, jamais tels quels.
 - `room` (depuis le 28 octobre 2026, facultatif) : la pièce où l'installateur a mis
-  l'appareil, saisie avec sa zone (`room` de la zone dans `hub.json` ou le fichier
-  `devices`, `safehome-install zone -room`). Texte libre de l'installateur, même règle
+  l'appareil, saisie avec sa zone (`room` de la zone dans `hub.json` ou dans
+  `site-devices.json` du dossier d'état, qu'écrivent `safehome-install zone -room` et la
+  console locale). Texte libre de l'installateur, même règle
   que le nom de zone (1 à 32 caractères, ni contrôle ni invisible), coupé à 32 comme
   `name` : à montrer en texte, jamais en balisage. Absent hors zone, pour une zone sans
   pièce, et d'une centrale plus ancienne : la liste est alors exactement celle d'avant.
-  Un texte fixe de configuration, comme `name` : jamais un état ni une heure.
+  Un texte fixe de configuration, comme `name` : jamais un état ni une heure. Une pièce
+  hors règle dans `site-devices.json` (fichier modifié à la main) est absente : la
+  centrale l'écarte seule et garde la zone (28 octobre 2026).
 - `type` : la première capacité de l'appareil (commandes comprises : une sirène a
   `siren`) dans cet ordre : `siren`, `keypad`, `smoke`, `contact`, `motion`,
   `glass_break`, `vibration`, `panic`. `tamper`, `battery` et `link` ne décident

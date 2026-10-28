@@ -67,7 +67,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 // check says what the configuration is. Zones and sirens set by the installer's tools
 // that the hub would leave aside fail it: the hub would run on the configuration
 // file's own, older ones, and the installation script must stop there (an update
-// that made a rule stricter, a file edited by hand).
+// that made a rule stricter, a file edited by hand). A room the hub clears is only a
+// warning: its zone is watched all the same.
 func check(cfg hubconfig.Result, stdout, stderr io.Writer) int {
 	if cfg.DevicesErr != nil {
 		fmt.Fprintf(stderr, "configuration error: the zones and sirens set by the installer's tools would be left aside, the hub would watch those of its own file: %v\n", cfg.DevicesErr)
@@ -80,6 +81,9 @@ func check(cfg hubconfig.Result, stdout, stderr io.Writer) int {
 	}
 	if cfg.DevicesSum != "" {
 		fmt.Fprintf(stdout, "zones and sirens: set by the installer's tools (%s in %s)\n", hubconfig.DevicesFile, cfg.StateDir)
+	}
+	for _, r := range cfg.RoomsLeftAside {
+		fmt.Fprintf(stdout, "warning: zone %q has no room: the room of %s is left aside, %s; the zone is watched all the same\n", r.Zone, hubconfig.DevicesFile, r.Reason)
 	}
 	switch {
 	case cfg.SiteErr != nil:
@@ -127,6 +131,9 @@ func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr
 	defer release()
 	if cfg.DevicesErr != nil {
 		log.Error("the zones and sirens set by the installer's tools are left aside: the hub runs on its own file", "err", cfg.DevicesErr)
+	}
+	for _, r := range cfg.RoomsLeftAside {
+		log.Warn("a zone's room is left aside, the zone is watched without it", "zone", r.Zone, "reason", r.Reason)
 	}
 
 	ids := contract.NewIDGenerator()

@@ -34,6 +34,10 @@ type Result struct {
 	// and sirens of the file at path). DevicesErr says why it was left aside.
 	DevicesSum string
 	DevicesErr error
+
+	// RoomsLeftAside names the zones of the devices file whose room the hub would
+	// refuse: each zone is watched without its room, never left aside for it.
+	RoomsLeftAside []RoomLeftAside
 }
 
 // Load reads and checks the file at path, lays over it the zones and sirens the
@@ -45,12 +49,12 @@ func Load(path string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	f, digest, devErr := withStateDevices(f)
+	f, digest, rooms, devErr := withStateDevices(f)
 	r, err := build(f)
 	if err != nil {
 		return Result{}, fmt.Errorf("hubconfig: %s: %w", path, err)
 	}
-	r.DevicesSum, r.DevicesErr = digest, devErr
+	r.DevicesSum, r.DevicesErr, r.RoomsLeftAside = digest, devErr, rooms
 	return withStoredSite(r, f), nil
 }
 
@@ -62,27 +66,29 @@ func WithSiteConfig(path string, o contract.ConfigSetData) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	f, _, _ = withStateDevices(f)
+	f, _, _, _ = withStateDevices(f)
 	return withSite(f, o)
 }
 
 // withStateDevices lays over f the devices file of its state folder. A file that
 // cannot be read, or that the hub would refuse, is left aside and devErr says why;
-// digest identifies the file laid over f.
-func withStateDevices(f file) (out file, digest string, devErr error) {
+// digest identifies the file laid over f. A room the hub would refuse costs only
+// itself: it is cleared, and rooms names its zone.
+func withStateDevices(f file) (out file, digest string, rooms []RoomLeftAside, devErr error) {
 	if f.StateDir == "" {
-		return f, "", nil
+		return f, "", nil, nil
 	}
 	d, digest, found, err := readDevices(f.StateDir)
 	if err != nil || !found {
-		return f, "", err
+		return f, "", nil, err
 	}
+	rooms = clearBadRooms(d.Zones)
 	out = f // withDevices replaces the zones map, so f keeps its own
 	withDevices(&out, d)
 	if _, err := build(out); err != nil {
-		return f, "", fmt.Errorf("hubconfig: %s left aside: %w", DevicesFile, err)
+		return f, "", nil, fmt.Errorf("hubconfig: %s left aside: %w", DevicesFile, err)
 	}
-	return out, digest, nil
+	return out, digest, rooms, nil
 }
 
 // withStoredSite lays over r, built from f, the configuration set from the cloud that
@@ -102,7 +108,7 @@ func withStoredSite(r Result, f file) Result {
 		return r
 	}
 	merged.SiteVersion = o.Version
-	merged.DevicesSum, merged.DevicesErr = r.DevicesSum, r.DevicesErr
+	merged.DevicesSum, merged.DevicesErr, merged.RoomsLeftAside = r.DevicesSum, r.DevicesErr, r.RoomsLeftAside
 	return merged
 }
 

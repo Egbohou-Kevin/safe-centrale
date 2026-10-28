@@ -116,6 +116,54 @@ func TestTheCheckFailsWhenTheDevicesFileIsLeftAside(t *testing.T) {
 	}
 }
 
+// A room the hub clears passes the check with a warning: its zone is watched all the
+// same, and the installation script goes on (28 October 2026).
+func TestTheCheckWarnsOfARoomLeftAside(t *testing.T) {
+	state := t.TempDir()
+	path := writeConfig(t, "mqtt://127.0.0.1:1883", state, "")
+	devices := `{"zones": {"dev_door": {"name": "Entrance", "kind": "entry", "room": "` + strings.Repeat("x", 40) + `"}}, "siren_ids": ["dev_siren1"]}`
+	if err := os.WriteFile(filepath.Join(state, hubconfig.DevicesFile), []byte(devices), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errb := cli(t, "", "check", "-config", path)
+	if code != 0 || !strings.Contains(out, "1 zone(s)") || !strings.Contains(out, `warning: zone "dev_door" has no room`) || strings.Contains(out, "xxxxx") {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errb)
+	}
+}
+
+// A room the hub clears is journaled at the start, one line per zone, naming the zone
+// and never quoting the room: its text may hold control characters (28 October 2026).
+func TestTheHubJournalsARoomLeftAside(t *testing.T) {
+	broker := mqtttest.Start(t)
+	state := t.TempDir()
+	devices := `{"zones": {
+		"dev_door": {"name": "Entrance", "kind": "entry", "room": "` + strings.Repeat("x", 40) + `"},
+		"dev_back": {"name": "Back", "kind": "instant", "room": "Hall\u0007\u001b[2J"}
+	}, "siren_ids": ["dev_siren1"]}`
+	if err := os.WriteFile(filepath.Join(state, hubconfig.DevicesFile), []byte(devices), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l := startLive(t, broker, state, writeConfig(t, broker.URL(), state, ""))
+	l.waitState("disarmed")
+	if code := l.stopHub(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	logs := l.logs.String()
+	for _, zone := range []string{"dev_door", "dev_back"} {
+		said := slices.ContainsFunc(strings.Split(logs, "\n"), func(line string) bool {
+			return strings.Contains(line, "a zone's room is left aside") && strings.Contains(line, "zone="+zone+" ")
+		})
+		if !said {
+			t.Fatalf("no warning for %s in the logs:\n%s", zone, logs)
+		}
+	}
+	for _, room := range []string{"xxxxx", "Hall", "[2J", "\a", "\x1b", `\a`, `\x1b`} {
+		if strings.Contains(logs, room) {
+			t.Fatalf("the logs quote a room (%q):\n%s", room, logs)
+		}
+	}
+}
+
 // A site without a siren, by choice (26 October 2026), passes the check, which says it:
 // the installation script goes on.
 func TestTheCheckAcceptsASiteWithoutASiren(t *testing.T) {

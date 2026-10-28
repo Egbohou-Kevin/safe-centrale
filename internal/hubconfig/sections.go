@@ -1,6 +1,7 @@
 package hubconfig
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -19,7 +20,9 @@ import (
 // zones reads the zones. A name follows the installer's rule (install.ValidName),
 // even in a file edited by hand: it goes into SMS, voice messages and the alarm
 // events. A room, when there is one, follows the same rule (install.ValidRoom): it
-// goes to the cloud and the app in the device list.
+// goes to the cloud and the app in the device list. The rule holds for the
+// configuration file and for what the installer's tools write; in the devices file
+// the hub loads, clearBadRooms has cleared a room that breaks it first.
 func zones(in map[string]zoneFile) (map[string]engine.Zone, error) {
 	out := make(map[string]engine.Zone, len(in))
 	for id, z := range in {
@@ -32,6 +35,39 @@ func zones(in map[string]zoneFile) (map[string]engine.Zone, error) {
 		out[id] = engine.Zone{Name: z.Name, Kind: engine.ZoneKind(z.Kind), Room: z.Room} // the kind is checked by the engine
 	}
 	return out, nil
+}
+
+// RoomLeftAside is a zone of the devices file whose room the hub cleared: the zone is
+// watched, without its room. Reason never quotes the room, which may hold control
+// characters or be of any length.
+type RoomLeftAside struct {
+	Zone   string
+	Reason string
+}
+
+// clearBadRooms clears in zones each room install.ValidRoom refuses, and names their
+// zones in a stable order. A room is optional: a sensor must never stop being watched
+// for it (a file edited by hand, a rule made stricter by an update).
+func clearBadRooms(zones map[string]zoneFile) []RoomLeftAside {
+	var left []RoomLeftAside
+	for _, id := range slices.Sorted(maps.Keys(zones)) {
+		z := zones[id]
+		err := install.ValidRoom(z.Room)
+		if err == nil {
+			continue
+		}
+		reason := "it contains a control or invisible character"
+		switch {
+		case errors.Is(err, install.ErrNameTooLong):
+			reason = fmt.Sprintf("it is longer than %d characters", install.MaxNameLength)
+		case errors.Is(err, install.ErrEmptyName):
+			reason = "it is blank"
+		}
+		z.Room = ""
+		zones[id] = z
+		left = append(left, RoomLeftAside{Zone: id, Reason: reason})
+	}
+	return left
 }
 
 // sirenNames checks the sirens' list, which must be there (errNoSirenList), and their

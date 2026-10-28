@@ -139,6 +139,21 @@ parmi plusieurs ; une sirène qui a aussi une zone garde le nom de sa zone et n'
 pour ne pas armer ce jour-là), `access.iterations` (coût du hachage, à régler sur la
 centrale réelle).
 
+Les zones posées par `safehome-install zone` (dont `-room`) et par la console locale ne
+vont pas dans `hub.json` mais dans `site-devices.json`, au dossier d'état, qui remplace
+alors les zones et les sirènes de `hub.json`.
+
+**Avant un retour arrière** vers une version sans `room` : cette centrale plus ancienne
+écarte tout `site-devices.json` qui dit `room`, ne surveille plus que les zones de
+`hub.json`, et `safehome-hub check` échoue. Vider les pièces d'abord
+(`safehome-install zone` sans `-room`, ou le champ vide de la console).
+
+Depuis le 28 octobre 2026, une pièce hors règle dans `site-devices.json` (fichier modifié
+à la main, règle durcie) ne coûte qu'elle-même : la centrale la vide et garde la zone
+surveillée, l'écrit au journal (`a zone's room is left aside`, qui nomme la zone sans
+citer la pièce), et `check` l'avertit sans échouer. Les outils, eux, refusent toujours
+d'écrire une pièce hors règle.
+
 ## Démarrage
 
 Sur la centrale, systemd démarre les programmes et les relance s'ils tombent :
