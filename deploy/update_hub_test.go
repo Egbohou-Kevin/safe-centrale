@@ -28,7 +28,11 @@ import (
 // install"). $FAKE_ROOT_FS, $FAKE_DATA_FS, $FAKE_TIMESYNC_FS,
 // $FAKE_TIMESYNCD and $FAKE_MODE are what /, /data and timesyncd's folder are mounted
 // as, timesyncd's state and the alarm's mode; $FAKE_NO_CLOUD, an agent that never
-// reached the cloud.
+// reached the cloud. $FAKE_TAR makes the units' archive fail ("fails"), unreadable
+// ("unreadable") or without the hub's unit ("empty"). The bundle scp copies lands in
+// $HUB/home, where its sums are computed; /boot/firmware is $HUB/boot/firmware. The
+// boot id changes once the hub is asked to reboot, unless $FAKE_NO_REBOOT; its uptime
+// is always short.
 const fakeHub = `for cmd; do :; done
 printf '%s\n' "$cmd" >> "$LOG"
 hub=$(cat "$HUB/usr/local/bin/safehome-hub")
@@ -49,6 +53,18 @@ case "$cmd" in
 	[ -z "$FAKE_INSTALL" ] ;;
 *"systemctl restart"*) [ -z "$FAKE_RESTART" ] ;;
 */usr/local/bin*) bash -c "$(printf '%s' "$cmd" | sed "s#/usr/local/bin#$HUB/usr/local/bin#g")" ;;
+*"tar -czf"*) [ "$FAKE_TAR" != fails ] ;;
+*"tar -tzf"*)
+	if [ "$FAKE_TAR" = unreadable ]; then echo "gzip: stdin: unexpected end of file" >&2; exit 2; fi
+	if [ "$FAKE_TAR" != empty ]; then printf 'etc/systemd/system/\netc/systemd/system/safehome-hub.service\n'; fi ;;
+*"cd ~/safehome"*) HOME="$HUB/home" bash -c "$cmd" ;;
+*boot_id*) if [ -e "$HUB/rebooted" ]; then echo new-boot; else echo old-boot; fi ;;
+"sudo -n reboot") [ -n "$FAKE_NO_REBOOT" ] || touch "$HUB/rebooted" ;;
+*/proc/uptime) echo 100 ;;
+*"sed -i 's/overlayroot"*)
+	f="$HUB/boot/firmware/cmdline.txt"
+	sed 's/overlayroot=tmpfs[^ ]* //' "$f" > "$f.sed" && /bin/mv "$f.sed" "$f" ;;
+*/boot/firmware*) bash -c "$(printf '%s' "$cmd" | sed "s#/boot/firmware#$HUB/boot/firmware#g")" ;;
 "findmnt -no FSTYPE /") echo "${FAKE_ROOT_FS:-ext4}" ;;
 "findmnt -no FSTYPE /data") echo "${FAKE_DATA_FS:-ext4}" ;;
 "findmnt -no FSTYPE /var/lib/systemd/timesync") echo "${FAKE_TIMESYNC_FS:-ext4}" ;;
@@ -81,6 +97,7 @@ case "$cmd" in
 	printf 'Id=safehome-hub.service\nActiveState=%s\nActiveEnterTimestampMonotonic=%s\n\n' "$state" "$at"
 	printf 'ActiveEnterTimestampMonotonic=100000000\nActiveState=active\nId=safehome-agent.service\n\n'
 	printf 'Id=mosquitto.service\nActiveEnterTimestampMonotonic=90000000\nActiveState=active\n' ;;
+*"is-enabled systemd-remount-fs"*) echo masked ;;
 *"is-enabled safehome-hub.service"* | *"is-enabled safehome-agent.service"*) echo enabled ;;
 *is-enabled*) echo disabled ;;
 esac`
@@ -248,7 +265,16 @@ func updateHub(t *testing.T, dir string, files map[string]string, args ...string
 	}
 	hub, log, stubs := filepath.Join(dir, "hub"), filepath.Join(dir, "log"), filepath.Join(dir, "stubs")
 	writeScript(t, filepath.Join(stubs, "ssh"), fakeHub)
-	writeScript(t, filepath.Join(stubs, "scp"), "exit 0")
+	// scp copies the bundle into the hub's home folder; $FAKE_ALTER is a file changed on
+	// the way, $FAKE_DROP one lost.
+	writeScript(t, filepath.Join(stubs, "scp"), `src= dst=
+for a; do src=$dst; dst=$a; done
+mkdir -p "$HUB/home" && cp -R "$src" "$HUB/home/${dst#*:}"
+if [ -n "$FAKE_ALTER" ]; then echo altered >> "$HUB/home/safehome/$FAKE_ALTER"; fi
+if [ -n "$FAKE_DROP" ]; then rm "$HUB/home/safehome/$FAKE_DROP"; fi`)
+	// $FAKE_CUT: the power is cut while tee writes, its file left half written.
+	writeScript(t, filepath.Join(stubs, "tee"), `if [ -n "$FAKE_CUT" ]; then for a; do :; done; head -c 12 > "$a"; exit 1; fi
+exec /usr/bin/tee "$@"`)
 	writeScript(t, filepath.Join(stubs, "sleep"), "exit 0")
 	writeScript(t, filepath.Join(stubs, "sudo"), `[ "$1" != -n ] || shift; SUDO=1 exec "$@"`)
 	writeScript(t, filepath.Join(stubs, "cat"), `for a; do :; done
@@ -319,6 +345,132 @@ func TestUpdateHubPhaseFourChecksTheHubBackInReadOnlyMode(t *testing.T) {
 			for _, bad := range []string{".prev", "disarm", "systemctl restart"} {
 				if strings.Contains(cmds, bad) {
 					t.Errorf("ran a command with %q: phase 4 only checks", bad)
+				}
+			}
+		})
+	}
+}
+
+// Phase 2 of update-hub.sh installs nothing from a bundle that is not, file for file,
+// the one made here (sums computed here before scp, on the hub after), nor before the
+// units are saved and their archive read back: it stops before install.sh, every
+// program left as it is.
+func TestUpdateHubPhaseTwoInstallsNothingUncheckedOrWithoutTheUnitsSaved(t *testing.T) {
+	for _, c := range []struct {
+		name, want string
+		env        []string
+		copied     bool // the bundle was copied and its sums computed on the hub
+	}{
+		{"the bundle arrives whole", "phase 2 done", nil, true},
+		{"a file is changed on the way", "the bundle on the hub differs from this one (./deploy/install.sh ): nothing installed",
+			[]string{"FAKE_ALTER=deploy/install.sh"}, true},
+		{"a file is lost on the way", "the bundle on the hub differs from this one (./config/hub.example.json ): nothing installed",
+			[]string{"FAKE_DROP=config/hub.example.json"}, true},
+		{"the units cannot be saved", "the units could not be saved in /data/maintenance/units-", []string{"FAKE_TAR=fails"}, false},
+		{"the units' archive cannot be read back", ".tgz cannot be read back: nothing installed", []string{"FAKE_TAR=unreadable"}, false},
+		{"the units' archive lacks the hub's unit", ".tgz does not hold safehome-hub.service: nothing installed", []string{"FAKE_TAR=empty"}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			bundle := filepath.Join(dir, "bundle")
+			writeScript(t, filepath.Join(bundle, "deploy", "install.sh"), "exit 0")
+			writeFile(t, filepath.Join(bundle, "config", "hub.example.json"), "{}")
+			files := map[string]string{"safehome-hub": "0.3.0", "safehome-hub.prev": "0.2.1"}
+			cmd, log := updateHub(t, dir, files, "-v", "0.3.0", "2", bundle)
+			cmd.Env = append(cmd.Env, c.env...)
+			b, err := cmd.CombinedOutput()
+			out := string(b)
+			holds := c.want == "phase 2 done"
+			if (err == nil) != holds {
+				t.Fatalf("err = %v, want an error: %v, in:\n%s", err, !holds, out)
+			}
+			if !strings.Contains(out, c.want) {
+				t.Errorf("%q not in:\n%s", c.want, out)
+			}
+			cmds := strings.Split(string(must(os.ReadFile(log))), "\n")
+			saved := slices.IndexFunc(cmds, func(l string) bool { return strings.Contains(l, "tar -czf") })
+			read := slices.IndexFunc(cmds, func(l string) bool { return strings.Contains(l, "tar -tzf") })
+			sums := slices.IndexFunc(cmds, func(l string) bool { return strings.Contains(l, "cd ~/safehome") })
+			install := slices.IndexFunc(cmds, func(l string) bool { return strings.HasSuffix(l, "install.sh") })
+			if (install >= 0) != holds {
+				t.Errorf("install.sh run: %v, want it run only from a checked bundle, the units saved", install >= 0)
+			}
+			if (sums >= 0) != c.copied {
+				t.Errorf("sums computed on the hub: %v, want %v", sums >= 0, c.copied)
+			}
+			if saved < 0 || (c.copied && (read < saved || sums < read)) || (holds && install < sums) {
+				t.Errorf("units saved at %d, read back at %d, sums at %d, install.sh at %d: want them in this order", saved, read, sums, install)
+			}
+			for _, l := range cmds {
+				if strings.Contains(l, ".prev") || strings.Contains(l, "systemctl restart") || strings.Contains(l, "disarm") {
+					t.Errorf("ran %q: nothing is put back, restarted or disarmed", l)
+				}
+			}
+			for name, want := range files {
+				if got := string(must(os.ReadFile(filepath.Join(dir, "hub", "usr", "local", "bin", name)))); got != want {
+					t.Errorf("%s = %q, want %q", name, got, want)
+				}
+			}
+		})
+	}
+}
+
+// Phases 1 and 3 reboot the hub and wait for it: it is back once it answers from
+// another boot (its boot id), never because its uptime is short. Phase 3 never writes
+// cmdline.txt in place: a cut while it is written leaves the one in place whole, and
+// nothing reboots.
+func TestUpdateHubRebootsForRealAndNeverWritesCmdlineInPlace(t *testing.T) {
+	const (
+		readOnly = "console=serial0,115200 root=PARTUUID=1-02 overlayroot=tmpfs:recurse=0 rootwait\n"
+		writable = "console=serial0,115200 root=PARTUUID=1-02 rootwait\n"
+	)
+	for _, c := range []struct {
+		name, phase, want, cmdline string
+		env                        []string
+	}{
+		{"phase 1, the hub reboots", "1", "phase 1 done", writable, nil},
+		{"phase 1, the hub does not reboot, its uptime short", "1",
+			"the hub has not restarted after 4 minutes: it still answers from the same boot", writable, []string{"FAKE_NO_REBOOT=1"}},
+		{"phase 3, the hub reboots", "3", "phase 3 done", readOnly, nil},
+		{"phase 3, the hub does not reboot, its uptime short", "3",
+			"the hub has not restarted after 4 minutes: it still answers from the same boot", readOnly, []string{"FAKE_NO_REBOOT=1"}},
+		{"phase 3, a cut while cmdline.txt is written", "3",
+			"cmdline.txt.new could not be written: cmdline.txt left as it was", writable, []string{"FAKE_CUT=1"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			onHub := filepath.Join(dir, "hub", "boot", "firmware", "cmdline.txt")
+			if c.phase == "1" {
+				writeFile(t, onHub, readOnly)
+			} else {
+				writeFile(t, onHub, writable)
+				writeFile(t, filepath.Join(dir, "work", "cmdline.txt"), readOnly)
+			}
+			cmd, log := updateHub(t, dir, map[string]string{"safehome-hub": "0.3.0"}, c.phase)
+			cmd.Env = append(cmd.Env, c.env...)
+			b, err := cmd.CombinedOutput()
+			out := string(b)
+			holds := c.want == "phase "+c.phase+" done"
+			if (err == nil) != holds {
+				t.Fatalf("err = %v, want an error: %v, in:\n%s", err, !holds, out)
+			}
+			if !strings.Contains(out, c.want) {
+				t.Errorf("%q not in:\n%s", c.want, out)
+			}
+			if got := string(must(os.ReadFile(onHub))); got != c.cmdline {
+				t.Errorf("cmdline.txt = %q, want %q", got, c.cmdline)
+			}
+			if _, err := os.Stat(onHub + ".new"); holds && err == nil {
+				t.Error("cmdline.txt.new left beside cmdline.txt")
+			}
+			cmds := strings.Split(string(must(os.ReadFile(log))), "\n")
+			rebooted := slices.Contains(cmds, "sudo -n reboot")
+			if cut := slices.Contains(c.env, "FAKE_CUT=1"); rebooted == cut {
+				t.Errorf("rebooted: %v, want %v", rebooted, !cut)
+			}
+			for _, l := range cmds {
+				if strings.Contains(l, "tee /boot/firmware/cmdline.txt ") || (strings.Contains(l, "engine.json") && c.phase == "3") {
+					t.Errorf("ran %q: cmdline.txt is never written in place, phase 3 leaves the alarm alone", l)
 				}
 			}
 		})

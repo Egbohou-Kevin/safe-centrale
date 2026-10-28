@@ -3,7 +3,8 @@
 # (docs/systeme.md, "Maintenance"), in four phases run one after the other:
 #
 #   deploy/update-hub.sh 1                     save cmdline.txt and the alarm's mode, leave read-only, reboot
-#   deploy/update-hub.sh -v VERSION 2 BUNDLE   write access, DNS and clock, install, check, clean up;
+#   deploy/update-hub.sh -v VERSION 2 BUNDLE   write access, DNS and clock, units saved, bundle copied
+#                                              and its sums compared, install, check, clean up;
 #                                              the previous programs back if the new ones do not hold
 #   deploy/update-hub.sh 3                     back to read-only (cmdline.txt as saved), reboot
 #   deploy/update-hub.sh 4                     overlay, timesyncd's clock on /data, services, same alarm mode, cloud reached
@@ -48,16 +49,26 @@ die() {
 mode() { pi 'sudo -n python3 -c "import json;print(json.load(open(\"/var/lib/safehome/engine.json\"))[\"mode\"])"'; }
 units='"safehome-*" mosquitto.service zigbee2mqtt.service'
 
-wait_back() {
+# The hub's boot, as the kernel names it: a new one after each start. A short uptime
+# proves nothing, the hub may have started less than five minutes before the reboot.
+boot_id=/proc/sys/kernel/random/boot_id
+
+# reboot_hub: the hub restarts, and is back only once it answers from another boot.
+reboot_hub() {
+	boot_before=$(pi "cat $boot_id") && [ -n "$boot_before" ] || die "the hub's boot id cannot be read: not rebooting"
+	pi 'sudo -n reboot' || true
 	echo "== waiting for the hub to come back (4 minutes at most)"
 	sleep 20
+	seen=""
 	for i in $(seq 1 44); do
-		if [ "$(pi 'cut -d. -f1 /proc/uptime' 2>/dev/null || echo 999)" -lt 300 ]; then
+		seen=$(pi "cat $boot_id" 2>/dev/null) || seen=""
+		if [ -n "$seen" ] && [ "$seen" != "$boot_before" ]; then
 			echo "   back after $((20 + i * 5)) s"
 			return 0
 		fi
 		sleep 5
 	done
+	[ "$seen" != "$boot_before" ] || die "the hub has not restarted after 4 minutes: it still answers from the same boot"
 	die "the hub did not come back after 4 minutes"
 }
 
@@ -177,22 +188,39 @@ case "$phase" in
 	pi "sudo -n sed -i 's/overlayroot=tmpfs[^ ]* //' /boot/firmware/cmdline.txt"
 	[ "$(pi 'grep -c overlayroot /boot/firmware/cmdline.txt || true')" = 0 ] || die "overlayroot still in cmdline.txt"
 	echo "== read-only removed from cmdline.txt, rebooting"
-	pi 'sudo -n reboot' || true
-	wait_back
+	reboot_hub
 	;;
 2)
 	[ $# -eq 2 ] && [ -n "$version" ] || usage
 	bundle=$2
 	[ -x "$bundle/deploy/install.sh" ] || die "$bundle is not a bundle"
 	[ ! -d "$bundle/site" ] || die "the bundle holds a site folder (secrets): make it without -s"
+	# Each file's sum, here before the copy, then on the hub after it (scp -r follows links).
+	sha=(sha256sum)
+	command -v sha256sum >/dev/null || sha=(shasum -a 256)
+	here=$(cd "$bundle" && find -L . -type f -exec "${sha[@]}" {} + | LC_ALL=C sort) ||
+		die "the bundle's sums cannot be computed here"
 	[ "$(pi 'findmnt -no FSTYPE /')" = ext4 ] || die "/ is not ext4: run phase 1 first"
 	pi 'sudo -n mount -o remount,rw /'
 	dns_and_clock
 	stamp=$(date +%Y%m%d-%H%M)
-	pi "sudo -n mkdir -p /data/maintenance && sudo -n sh -c 'tar -czf /data/maintenance/units-$stamp.tgz /etc/systemd/system/safehome* /etc/systemd/system/zigbee2mqtt* 2>/dev/null; true'"
-	echo "== units kept in /data/maintenance/units-$stamp.tgz, copying the bundle"
+	# The units are the only way back for them (no .prev): saved and read back, or no install.
+	units_tgz=/data/maintenance/units-$stamp.tgz
+	pi "sudo -n sh -c 'mkdir -p /data/maintenance && cd / && tar -czf $units_tgz etc/systemd/system/safehome* etc/systemd/system/zigbee2mqtt*'" ||
+		die "the units could not be saved in $units_tgz: nothing installed"
+	saved=$(pi "sudo -n tar -tzf $units_tgz") || die "$units_tgz cannot be read back: nothing installed"
+	printf '%s\n' "$saved" | grep -qx etc/systemd/system/safehome-hub.service ||
+		die "$units_tgz does not hold safehome-hub.service: nothing installed"
+	echo "== units kept in $units_tgz, copying the bundle"
 	pi 'rm -rf ~/safehome'
 	scp -q -r -i "$key" "$bundle" "$hub:safehome"
+	there=$(pi "cd ~/safehome && find . -type f -exec sha256sum {} + | LC_ALL=C sort") ||
+		die "the bundle's sums cannot be computed on the hub: nothing installed"
+	if [ "$there" != "$here" ]; then
+		differ=$(diff <(printf '%s\n' "$here") <(printf '%s\n' "$there") | awk '/^[<>]/ {print $3}' | LC_ALL=C sort -u | tr '\n' ' ') || true
+		die "the bundle on the hub differs from this one ($differ): nothing installed"
+	fi
+	echo "== bundle copied, $(printf '%s\n' "$here" | wc -l | tr -d ' ') files, same sums"
 	# A mark left by an earlier run cut short is not this run's: install.sh may fail
 	# before replacing anything, and those programs then stay as they are.
 	before=$(mark) && [ "$before" != unreadable ] || die "the mark of an unconfirmed install cannot be read"
@@ -234,12 +262,18 @@ case "$phase" in
 3)
 	[ -s "$work/cmdline.txt" ] || die "no saved cmdline.txt: phase 1 saves it"
 	pi 'sudo -n raspi-config nonint enable_overlayfs'
-	pi 'sudo -n tee /boot/firmware/cmdline.txt >/dev/null' <"$work/cmdline.txt"
+	# Never written in place: a cut while /boot is written must leave a hub that boots.
+	# Written beside it on the same /boot, checked, synced, then renamed over it.
+	pi 'sudo -n tee /boot/firmware/cmdline.txt.new >/dev/null' <"$work/cmdline.txt" ||
+		die "cmdline.txt.new could not be written: cmdline.txt left as it was"
+	pi 'cat /boot/firmware/cmdline.txt.new' | cmp - "$work/cmdline.txt" ||
+		die "cmdline.txt.new differs from the saved one: cmdline.txt left as it was"
+	pi 'sudo -n sync && sudo -n mv -f /boot/firmware/cmdline.txt.new /boot/firmware/cmdline.txt && sudo -n sync' ||
+		die "cmdline.txt could not be replaced by cmdline.txt.new: check both before any reboot"
 	pi 'cat /boot/firmware/cmdline.txt' | cmp - "$work/cmdline.txt" || die "cmdline.txt differs from the saved one"
 	[ "$(pi 'systemctl is-enabled systemd-remount-fs || true')" = masked ] || die "systemd-remount-fs is not masked"
 	echo "== cmdline.txt as saved, remount-fs masked, rebooting"
-	pi 'sudo -n reboot' || true
-	wait_back
+	reboot_hub
 	;;
 4)
 	[ "$(pi 'findmnt -no FSTYPE /')" = overlay ] || die "/ is not an overlay"
