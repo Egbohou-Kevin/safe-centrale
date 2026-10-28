@@ -97,7 +97,8 @@ type Snapshot struct {
 	// since (a Pi that keeps no time restarts days behind, until NTP sets it right). A
 	// state dated since may be dated before them and still be news: they only tell the
 	// very state heard, and order the states dated before the clock went back (see
-	// older). Hearing the sensor again drops its time here.
+	// older). Hearing the sensor again drops its time here; the clock catching up with
+	// it puts it back in Heard (see pullBack).
 	HeardAhead map[string]time.Time `json:"heard_ahead,omitempty"`
 
 	// Memory of the last alarm, kept after the system goes back to armed.

@@ -571,18 +571,47 @@ Les heures entendues ainsi dépassées sont mises à part (`heard_ahead` dans la
 sauvegarde) au lieu d'être effacées : elles ne servent plus qu'à reconnaître le même
 état et à ordonner les états datés avant le recul. Comparées comme les autres, un
 appui daté depuis sur l'horloge reculée paraîtrait plus ancien et serait perdu.
-Entendre de nouveau le capteur les remplace ; le saut en avant de NTP
-(`Engine.Stepped`) les rend comparables, celles qu'il dépasse, l'horloge ayant
-rattrapé celle qui les a posées. Limite connue : un état momentané (mouvement, bris de
-vitre) commencé avant l'heure où l'horloge est repartie, et toujours actif, ne se
-distingue pas d'un état daté pendant le démarrage ; il est pris tel quel, et peut
-déclencher si le mode a commencé après lui. Corrigé le 28 octobre 2026 : `pullBack`
-effaçait les heures entendues postérieures à maintenant, et un mode commencé après
-maintenant faisait prendre tel quel tout état momentané ; un bouton panique déjà
-pressé alertait de nouveau à chaque redémarrage, un mouvement déjà entendu ou une
-porte refermée après la dernière écriture du broker déclenchaient l'intrusion
-(`internal/engine/restart5_test.go` ; le redémarrage à horloge reculée est aussi dans
-les séquences aléatoires).
+Entendre de nouveau le capteur les remplace ; dès que l'horloge les atteint, par un
+saut de NTP ou en marchant simplement (pas d'internet, ou un recul de quelques
+minutes), elles redeviennent des heures entendues ordinaires, l'horloge ayant
+rattrapé celle qui les a posées.
+
+Limites connues (28 octobre 2026), le moteur ne sachant pas à quelle heure l'horloge
+est repartie : un état daté avant cette heure ne se distingue pas d'un état daté
+pendant le démarrage, et il est pris tel quel. Ainsi :
+
+- une porte (ou un détecteur de fumée, un sabotage) refermée après la dernière
+  écriture du broker, mais ouverte depuis plus longtemps que le recul, revient
+  ouverte et déclenche l'intrusion au retour du courant, le cas corrigé le 25 octobre ;
+  le Pi sans module d'horloge recule à chaque coupure, ce cas reste donc probable ;
+- un bouton panique pressé deux fois, le broker n'ayant gardé que le premier appui,
+  plus ancien que le recul, alerte de nouveau ;
+- un état momentané (mouvement, bris de vitre) commencé avant cette heure et toujours
+  actif peut déclencher si le mode a commencé après lui ;
+- un état gardé par le broker daté d'avant un recul de l'horloge pendant la marche,
+  plus tard donc que l'état entendu ensuite, est pris tel quel : les deux dates ne
+  s'ordonnent pas.
+
+Les trois premiers cas se corrigent si le hub donne à `Boot` l'heure de démarrage du
+système (maintenant moins `/proc/uptime`) : un état daté avant elle l'a été avant le
+recul, et se compare aux heures du moteur. C'est à décider par Kevin, hors du moteur.
+Autre défaut voisin laissé de côté : `pullBack` ne ramène pas le début du mode
+(`since`) posé avant un recul ; à un redémarrage suivant où l'horloge recule encore,
+un vrai mouvement pendant l'arrêt, daté après la nouvelle heure mais avant ce début,
+serait pris pour ancien.
+
+Corrigé le 28 octobre 2026 : `pullBack` effaçait les heures entendues postérieures à
+maintenant, et un mode commencé après maintenant faisait prendre tel quel tout état
+momentané ; un bouton panique déjà pressé alertait de nouveau à chaque redémarrage, un
+mouvement déjà entendu, ou une porte refermée après la dernière écriture du broker et
+ouverte moins longtemps que le recul, déclenchaient l'intrusion. Corrigé le même jour
+après une revue : seul le saut de NTP remettait les heures mises à part avec les
+autres, et seulement jusqu'à la dernière heure donnée au moteur plus le saut ;
+une horloge qui rattrapait en marchant, ou un hub silencieux avant le saut, les
+laissait à part pour toujours, et l'état périmé d'une porte déclenchait au redémarrage
+suivant (`internal/engine/restart5_test.go` ; les séquences aléatoires redémarrent
+aussi à horloge reculée, puis rattrapée, le broker rendant un état plus ancien que
+celui entendu).
 
 Après une restauration, le moteur ne rejoue aucune échéance avant `Boot` : ni tic, ni
 rattrapage au passage d'un ordre ou d'un signal reçu pendant la fenêtre de démarrage.

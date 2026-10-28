@@ -136,8 +136,10 @@ func (e *Engine) older(now time.Time, sig Signal) bool {
 // before the clock went back too, on the same clock as ref: the two compare. One dated
 // up to now may have been dated since, on the clock as it is now, and be news: it is
 // trusted, unless it bears ref itself, the very state the engine heard. A real
-// intrusion after the restart must ring; a state older than the time the clock went
-// back to cannot be told from it.
+// intrusion after the restart must ring; a state dated before the time the clock went
+// back to cannot be told from it here, the engine not knowing that time: a door closed
+// after the broker's last save, open longer than the clock went back, comes back open
+// and is taken (see docs/engine.md, 28 October 2026).
 func behind(began, ref, now time.Time) bool {
 	return !began.After(ref) && (began.After(now) || began.Equal(ref))
 }

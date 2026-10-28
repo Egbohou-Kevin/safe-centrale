@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -50,6 +51,18 @@ var heardBeforeTheRestart = []heardThenRestarted{
 		h.mustBe(ModeArmed)
 		return at(motion, SensorMotion, true, moved)
 	}},
+	{"a panic button pressed again after the broker's last save", func(h *harness) Signal {
+		h.now = h.now.Add(time.Hour)
+		pressed := h.now
+		h.signal(panic_, SensorPanic, true)
+		h.advance(30 * time.Second)
+		h.signal(panic_, SensorPanic, true)
+		h.advance(time.Minute)
+		return at(panic_, SensorPanic, true, pressed)
+	}},
+	// Opened a moment before it was closed, later than the clock went back to: a door
+	// opened before that cannot be told from one opened while the hub was starting, a
+	// limit written in docs/engine.md (28 October 2026).
 	{"a door closed after the broker's last save", func(h *harness) Signal {
 		opened := h.now
 		h.open(back)
@@ -108,6 +121,66 @@ func TestARestartWithTheClockSetBackActsOnWhatIsNew(t *testing.T) {
 			as := h.e.Boot(h.now, []Signal{sig})
 			if len(alerts(as)) == 0 && len(eventsOf[Triggered](as)) == 0 && len(eventsOf[EntryDelayStarted](as)) == 0 {
 				t.Errorf("%s again, the clock %v back: %v", c.name, d, as)
+			}
+		}
+	}
+}
+
+// The times heard before the clock went back count again once the clock catches up
+// with them, whether NTP steps it or it simply runs on: at the next restart, a state
+// the broker kept from before them is older, as without a clock set back. Before 28
+// October 2026 (the first fix of that day), only a step told by the driver put them
+// back, and only as far as the last time the engine was handed plus the step: a clock
+// that ran on, or a hub quiet before the step, left them apart for good, and the stale state of a door rang at the next
+// restart. A step short of a time heard leaves it apart: the clock has not caught up.
+// A restart then, the state the broker kept now dated before the clock, is the limit
+// written in docs/engine.md: it cannot be told from a state dated while the hub was
+// starting, and is not checked here.
+func TestTimesHeardBeforeTheClockWentBackCountAgainOnceItCatchesUp(t *testing.T) {
+	type landing struct {
+		name string
+		from time.Duration // from the time heard
+	}
+	landings := []landing{{"short of", -time.Second}, {"on", 0}, {"past", time.Minute}}
+	for _, d := range setBacks {
+		for _, c := range heardBeforeTheRestart {
+			for _, stepped := range []bool{true, false} {
+				for _, l := range landings {
+					name := fmt.Sprintf("%s, the clock %v back, %s the time heard, stepped=%v", c.name, d, l.name, stepped)
+					h := newHarness(t)
+					sig := c.heard(h)
+					mode := h.e.Mode()
+					stop := h.now
+					h.e = restart(t, h)
+					h.now = h.now.Add(-d)
+					h.e.Boot(h.now, []Signal{sig})
+					key := sensorKey(sig.DeviceID, sig.Sensor)
+					ref, apart := h.e.Snapshot().HeardAhead[key]
+					if !apart {
+						ref = stop // a momentary sensor: the mode began before the stop
+					}
+					to := ref.Add(l.from)
+					if stepped {
+						// A quiet hub: the clock ran on unseen before NTP stepped it.
+						quiet := min(30*time.Second, to.Sub(h.now)/2)
+						h.e.Stepped(to.Sub(h.now) - quiet)
+					}
+					h.now = to
+					h.e.Handle(Tick{Now: h.now})
+					if _, still := h.e.Snapshot().HeardAhead[key]; apart && still != (l.from < 0) {
+						t.Errorf("%s: set apart %v", name, still)
+					}
+					if l.from < 0 {
+						continue
+					}
+					h.e = restart(t, h)
+					if err := onlySiren(h.e.Boot(h.now, []Signal{sig})); err != nil {
+						t.Errorf("%s: %v", name, err)
+					}
+					if h.e.Mode() != mode {
+						t.Errorf("%s: %s became %s", name, mode, h.e.Mode())
+					}
+				}
 			}
 		}
 	}

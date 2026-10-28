@@ -157,7 +157,10 @@ func (e *Engine) Handle(in Input) []Action {
 // made on a clock that ran ahead may have skipped today's closing. The times the
 // sensors were heard are set apart (HeardAhead): compared as they are, a press stamped
 // since on the clock set back would look older than them, and dropped, the very press
-// already heard would look new at Boot, and alert again (see older).
+// already heard would look new at Boot, and alert again (see older). They are Heard
+// again once now reaches them, the clock having caught up with the one they were taken
+// on, by a step of NTP or simply running on: a state dated before them then compares
+// with them, as a door that came back open from the broker's last save.
 func (e *Engine) pullBack(now time.Time) {
 	if now.Before(e.seen) && e.s.Mode == ModeDisarmed && !e.awaitingBoot {
 		e.checkPlan(now)
@@ -171,6 +174,15 @@ func (e *Engine) pullBack(now time.Time) {
 	for ref, at := range e.s.Checking {
 		if at.After(now) {
 			e.s.Checking[ref] = now
+		}
+	}
+	for key, at := range e.s.HeardAhead {
+		if !at.After(now) {
+			if e.s.Heard == nil {
+				e.s.Heard = map[string]time.Time{}
+			}
+			e.s.Heard[key] = at
+			delete(e.s.HeardAhead, key)
 		}
 	}
 	for key, at := range e.s.Heard {
@@ -203,21 +215,11 @@ func (e *Engine) pullBack(now time.Time) {
 // would arm at once, an intrusion during an entry delay would ring at once and a siren
 // would stop. The automatic arming is a time of day, not a wait: it stays, and so do
 // the times the engine only says (since, armed since, the last alarm) or compares with
-// a device's (Heard). The times heard that the clock had gone back behind (HeardAhead)
-// and that the step passes are Heard again: the clock caught up with the one they were
-// taken on, and the states dated on it compare with them (see older).
+// a device's (Heard, HeardAhead: the next input, at the clock as it is after the step,
+// puts back what it caught up with, see pullBack).
 func (e *Engine) Stepped(d time.Duration) {
 	if d <= 0 {
 		return
-	}
-	for key, at := range e.s.HeardAhead {
-		if at.After(e.seen) && !at.After(e.seen.Add(d)) {
-			if e.s.Heard == nil {
-				e.s.Heard = map[string]time.Time{}
-			}
-			e.s.Heard[key] = at
-			delete(e.s.HeardAhead, key)
-		}
 	}
 	if e.s.Mode != ModeDisarmed { // disarmed, the deadline is the automatic arming's
 		e.s.Deadline = moved(e.s.Deadline, d)
