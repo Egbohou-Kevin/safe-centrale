@@ -483,7 +483,9 @@ func TestAHugeVersionIsRefusedAndTheNextOneStillTaken(t *testing.T) {
 	r.alarm(contract.StateTriggered) // not quiet: what is kept waits
 	r.config(phoneConfig(8))
 	r.config(phoneConfig(contract.MaxConfigVersion + 1))
-	if d := r.waitAnswer(2); d.Status != contract.ConfigRejected || d.Version != contract.MaxConfigVersion+1 ||
+	// Answered as version 0, which the cloud never numbers: it reads the version in a
+	// 32-bit int, where a huge one could wrap onto a real version and mark it refused.
+	if d := r.waitAnswer(2); d.Status != contract.ConfigRejected || d.Version != 0 ||
 		!strings.Contains(d.Reason, "version") {
 		t.Fatalf("%+v", d)
 	}
@@ -505,7 +507,7 @@ func TestAHugeFirstVersionIsRefused(t *testing.T) {
 	r := start(t, DefaultConfig(site, 0))
 	r.alarm(contract.StateTriggered)
 	r.config(phoneConfig(contract.MaxConfigVersion + 1))
-	if d := r.waitAnswer(1); d.Status != contract.ConfigRejected || d.Version != contract.MaxConfigVersion+1 {
+	if d := r.waitAnswer(1); d.Status != contract.ConfigRejected || d.Version != 0 {
 		t.Fatalf("%+v", d)
 	}
 	r.config(phoneConfig(contract.MaxConfigVersion))

@@ -369,6 +369,11 @@ func QuietState(state string, devices bool) bool {
 
 // answer publishes config.applied: applied when why is empty, rejected otherwise.
 func (a *App) answer(now time.Time, version int, why string) {
+	if version < 0 || version > contract.MaxConfigVersion {
+		// The cloud reads the version in a 32-bit int: a huge one could wrap onto a real
+		// version and mark it refused. 0 names none (the cloud numbers from 1).
+		version = 0
+	}
 	d := contract.ConfigAppliedData{Version: version, Status: contract.ConfigApplied}
 	if why != "" {
 		d.Status, d.Reason = contract.ConfigRejected, why

@@ -179,6 +179,8 @@ func (d ConfigAppliedData) Validate() error {
 	switch {
 	case d.Version < 0:
 		return fmt.Errorf("%w: negative version", ErrInvalid)
+	case d.Version > MaxConfigVersion:
+		return fmt.Errorf("%w: version beyond %d, which the cloud cannot read", ErrInvalid, MaxConfigVersion)
 	case d.Status != ConfigApplied && d.Status != ConfigRejected:
 		return fmt.Errorf("%w: status %q", ErrInvalid, d.Status)
 	case d.Status == ConfigRejected && d.Reason == "":
