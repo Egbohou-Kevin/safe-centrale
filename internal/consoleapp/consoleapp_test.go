@@ -32,7 +32,7 @@ func TestTheConsoleLivesOnlyWhileTheInstallationModeLasts(t *testing.T) {
 	if r.isServing() || r.app.Overview().Open {
 		t.Fatal("the page outlives the mode")
 	}
-	if err := r.app.SetZone("dev_motion", "Salle", "interior"); !errors.Is(err, ErrClosed) {
+	if err := r.app.SetZone("dev_motion", "Salle", "interior", ""); !errors.Is(err, ErrClosed) {
 		t.Fatalf("a change while closed: %v", err)
 	}
 	if err := r.app.NameSiren("dev_siren", "Reserve"); !errors.Is(err, ErrClosed) {
@@ -152,7 +152,7 @@ func TestThePageFollowsTheDevicesDuringAPairing(t *testing.T) {
 	if !slices.ContainsFunc(r.app.Overview().Devices, func(d Device) bool { return d.ID == "dev_k7p2" }) {
 		t.Fatalf("the device list without the new device: %+v", r.app.Overview().Devices)
 	}
-	if err := r.app.SetZone("dev_k7p2", "Reserve", "instant"); err != nil {
+	if err := r.app.SetZone("dev_k7p2", "Reserve", "instant", ""); err != nil {
 		t.Fatalf("a zone for the new device during the window: %v", err)
 	}
 	r.deliver(contract.DeviceEventTopic(site, "dev_k7p2"), contract.TypeDeviceEvent,
@@ -171,12 +171,12 @@ func TestZonesAndSirensFromThePage(t *testing.T) {
 		err  func() error
 		want error
 	}{
-		{"unknown device", func() error { return r.app.SetZone("dev_nope", "X", "entry") }, ErrUnknown},
-		{"empty name", func() error { return r.app.SetZone("dev_motion", " ", "interior") }, ErrEmptyName},
+		{"unknown device", func() error { return r.app.SetZone("dev_nope", "X", "entry", "") }, ErrUnknown},
+		{"empty name", func() error { return r.app.SetZone("dev_motion", " ", "interior", "") }, ErrEmptyName},
 		{"long name", func() error {
-			return r.app.SetZone("dev_motion", strings.Repeat("a", install.MaxNameLength+1), "interior")
+			return r.app.SetZone("dev_motion", strings.Repeat("a", install.MaxNameLength+1), "interior", "")
 		}, ErrNameTooLong},
-		{"wrong kind", func() error { return r.app.SetZone("dev_motion", "Salle", "24h_fire") }, ErrCannotServe},
+		{"wrong kind", func() error { return r.app.SetZone("dev_motion", "Salle", "24h_fire", "") }, ErrCannotServe},
 		{"a contact as a siren", func() error { return r.app.Siren("dev_door", true) }, ErrNotASiren},
 		{"the last siren", func() error { return r.app.Siren("dev_siren", false) }, ErrLastSiren},
 		{"no zone to remove", func() error { return r.app.Unzone("dev_motion") }, ErrNoZone},
@@ -189,21 +189,42 @@ func TestZonesAndSirensFromThePage(t *testing.T) {
 			t.Errorf("%s: got %v", c.name, err)
 		}
 	}
-	// A room laid by safehome-install outlives an edit from the console.
-	site, _ := r.sites.Read()
-	site.Zones["dev_motion"] = install.Zone{Name: "Avant", Kind: "interior", Room: "Salon"}
-	if err := r.sites.Write(site); err != nil {
+	// The zone is given whole, with its room: kept and shown, sent again with a new
+	// name (the page sends the room it shows), cleared when empty.
+	zoneOf := func() *install.Zone {
+		o := r.app.Overview()
+		return o.Devices[slices.IndexFunc(o.Devices, func(d Device) bool { return d.ID == "dev_motion" })].Zone
+	}
+	if err := r.app.SetZone("dev_motion", "Avant", "interior", "Salon"); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.app.SetZone("dev_motion", "Salle", "interior"); err != nil {
+	if z := zoneOf(); z == nil || *z != (install.Zone{Name: "Avant", Kind: "interior", Room: "Salon"}) {
+		t.Fatalf("the overview's zone %+v", z)
+	}
+	before, _ := r.sites.Read()
+	for _, room := range []string{" ", strings.Repeat("p", install.MaxNameLength+1), "Sa\nlon"} {
+		if err := r.app.SetZone("dev_motion", "Avant", "interior", room); err == nil {
+			t.Errorf("room %q accepted", room)
+		}
+	}
+	if after, _ := r.sites.Read(); after.Zones["dev_motion"] != before.Zones["dev_motion"] {
+		t.Fatalf("a refused room written: %+v", after.Zones["dev_motion"])
+	}
+	if err := r.app.SetZone("dev_motion", "Salle", "interior", "Salon"); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.app.Unzone("dev_door"); err != nil {
 		t.Fatal(err)
 	}
-	site, _ = r.sites.Read()
+	site, _ := r.sites.Read()
 	if site.Zones["dev_motion"] != (install.Zone{Name: "Salle", Kind: "interior", Room: "Salon"}) || len(site.Zones) != 1 {
 		t.Fatalf("zones %+v", site.Zones)
+	}
+	if err := r.app.SetZone("dev_motion", "Salle", "interior", ""); err != nil {
+		t.Fatal(err)
+	}
+	if site, _ = r.sites.Read(); site.Zones["dev_motion"].Room != "" || zoneOf().Room != "" {
+		t.Fatalf("an empty room kept the old one: %+v", site.Zones["dev_motion"])
 	}
 	// The siren shows the name the alerts call it by: the default, then its own.
 	sirenOf := func() Device {
@@ -528,8 +549,8 @@ func TestChangesOfTheSiteAtOnceAreAllKept(t *testing.T) {
 	r.sites.slowRead = 5 * time.Millisecond
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
-	wg.Go(func() { errs <- r.app.SetZone("dev_motion", "Salle", "interior") })
-	wg.Go(func() { errs <- r.app.SetZone("dev_door", "Porte", "instant") })
+	wg.Go(func() { errs <- r.app.SetZone("dev_motion", "Salle", "interior", "") })
+	wg.Go(func() { errs <- r.app.SetZone("dev_door", "Porte", "instant", "") })
 	wg.Wait()
 	close(errs)
 	for err := range errs {

@@ -27,8 +27,8 @@ type fakeConsole struct {
 
 func (f *fakeConsole) Overview() consoleapp.Overview { return f.o }
 func (f *fakeConsole) Pair() error                   { f.calls = append(f.calls, "pair"); return f.err }
-func (f *fakeConsole) SetZone(id, name, kind string) error {
-	f.calls = append(f.calls, fmt.Sprintf("zone %s %q %s", id, name, kind))
+func (f *fakeConsole) SetZone(id, name, kind, room string) error {
+	f.calls = append(f.calls, fmt.Sprintf("zone %s %q %s %q", id, name, kind, room))
 	return f.err
 }
 func (f *fakeConsole) Unzone(id string) error { f.calls = append(f.calls, "unzone "+id); return f.err }
@@ -65,7 +65,7 @@ func overview() consoleapp.Overview {
 		Status: &contract.ZigbeeStatusData{Bridge: contract.BridgeOnline, Devices: 2, Offline: []string{}},
 		Devices: []consoleapp.Device{
 			{ID: "dev_door", Model: "aqara.contact", Capabilities: []string{"contact", "battery"}, Paired: true,
-				Zone: &install.Zone{Name: "Porte <A>", Kind: "entry"}, Kinds: []string{"entry", "instant", "interior"}},
+				Zone: &install.Zone{Name: "Porte <A>", Kind: "entry", Room: "Salon <B>"}, Kinds: []string{"entry", "instant", "interior"}},
 			{ID: "dev_siren", Model: "heiman.siren", Capabilities: []string{"siren"}, Paired: true, Siren: true, CanSound: true,
 				SirenName: "Sir\u00e8ne"},
 		},
@@ -112,7 +112,8 @@ func TestThePageShowsTheDevicesInFrench(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Mode installation ouvert jusqu'\u00e0 14:30", "Pont en ligne, 2 appareil(s)", "dev_door",
-		"Zone \u00ab Porte &lt;A&gt; \u00bb \u2014 Entr\u00e9e (avec d\u00e9lai)", `<option value="entry" selected>`,
+		"Zone \u00ab Porte &lt;A&gt; \u00bb, pi\u00e8ce \u00ab Salon &lt;B&gt; \u00bb \u2014 Entr\u00e9e (avec d\u00e9lai)", `<option value="entry" selected>`,
+		"name=\"room\" maxlength=\"32\" placeholder=\"Pi\u00e8ce, facultative (ex. Salon)\" value=\"Salon &lt;B&gt;\"",
 		"Sir\u00e8ne \u00ab Sir\u00e8ne \u00bb <span class=\"muted\">(nom par d\u00e9faut)</span>", `action="/siren-name"`,
 		"Nommer la sir\u00e8ne", "Ne plus servir de sir\u00e8ne", "Retirer du r\u00e9seau", "Appairer de nouveaux appareils",
 		"no zone: nothing is watched", "Terminer l'installation",
@@ -121,8 +122,8 @@ func TestThePageShowsTheDevicesInFrench(t *testing.T) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	if strings.Contains(body, "<A>") {
-		t.Error("a zone name is not escaped")
+	if strings.Contains(body, "<A>") || strings.Contains(body, "<B>") {
+		t.Error("a zone or room name is not escaped")
 	}
 	for k, want := range map[string]string{
 		"Content-Security-Policy": "default-src 'none'", "X-Frame-Options": "DENY", "Cache-Control": "no-store",
@@ -144,7 +145,8 @@ func TestASirenWithAZoneShowsNoSirenName(t *testing.T) {
 		Zone: &install.Zone{Name: "Cuisine", Kind: "24h_fire"}, Siren: true, CanSound: true, SirenName: "Cuisine", Kinds: []string{"24h_fire"}}}
 	body := get(newHandler(t, &fakeConsole{o: o}), "/").Body.String()
 	if !strings.Contains(body, "Sir\u00e8ne <span class=\"muted\">(nomm\u00e9e comme sa zone dans les alertes)</span>") ||
-		strings.Contains(body, `action="/siren-name"`) || strings.Contains(body, "nom par d\u00e9faut") {
+		strings.Contains(body, `action="/siren-name"`) || strings.Contains(body, "nom par d\u00e9faut") ||
+		strings.Contains(body, ", pi\u00e8ce") || !strings.Contains(body, "name=\"room\" maxlength=\"32\" placeholder=\"Pi\u00e8ce, facultative (ex. Salon)\" value=\"\"") {
 		t.Fatalf("%s", body)
 	}
 }
@@ -178,8 +180,8 @@ func TestTheTestsPage(t *testing.T) {
 func TestOrdersAndTheirOutcome(t *testing.T) {
 	c := &fakeConsole{o: overview()}
 	h := newHandler(t, c)
-	w := post(h, "/zone", url.Values{"id": {"dev_door"}, "name": {"  Porte  "}, "kind": {"instant"}})
-	if w.Code != http.StatusSeeOther || c.calls[0] != `zone dev_door "Porte" instant` {
+	w := post(h, "/zone", url.Values{"id": {"dev_door"}, "name": {"  Porte  "}, "kind": {"instant"}, "room": {" Salon "}})
+	if w.Code != http.StatusSeeOther || c.calls[0] != `zone dev_door "Porte" instant "Salon"` {
 		t.Fatalf("%d %v", w.Code, c.calls)
 	}
 	loc := w.Header().Get("Location")
@@ -195,7 +197,7 @@ func TestOrdersAndTheirOutcome(t *testing.T) {
 	post(h, "/remove", url.Values{"id": {"dev_door"}})
 	post(h, "/pair", nil)
 	post(h, "/finish", nil)
-	want := []string{`zone dev_door "Porte" instant`, "siren dev_siren true", "siren name dev_siren \"R\u00e9serve\"",
+	want := []string{`zone dev_door "Porte" instant "Salon"`, "siren dev_siren true", "siren name dev_siren \"R\u00e9serve\"",
 		"unzone dev_door", "remove dev_door", "pair", "finish"}
 	if strings.Join(c.calls, "|") != strings.Join(want, "|") {
 		t.Fatalf("calls %v", c.calls)
@@ -206,6 +208,7 @@ func TestOrdersAndTheirOutcome(t *testing.T) {
 		consoleapp.ErrClosed:    "retapez le code installateur",
 		consoleapp.ErrLastSiren: "garder au moins une sir\u00e8ne",
 		fmt.Errorf("zone name %q is %w", "x", consoleapp.ErrNameTooLong): "Nom trop long",
+		fmt.Errorf("room name %q is %w", "x", consoleapp.ErrNameTooLong): "Nom trop long",
 		fmt.Errorf("%w: a fire zone...", consoleapp.ErrCannotServe):      "ne peut pas servir",
 		consoleapp.ErrEmptyName:                          "Donnez un nom",
 		consoleapp.ErrNoAnswer:                           "n'a pas r\u00e9pondu",

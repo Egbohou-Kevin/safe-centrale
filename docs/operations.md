@@ -573,6 +573,12 @@ Wi-Fi de la centrale et y sert la page `http://10.42.0.1/`. Il éteint les deux 
 du mode. Le reste du temps, il attend sans rien ouvrir. Fonctionnement et sécurité :
 `security-install.md`.
 
+Chaque appareil y montre sa zone et sa pièce, et le formulaire de zone les change
+(depuis le 28 octobre 2026). Comme `safehome-install zone`, la zone part en entier : le
+champ pièce, prérempli de la pièce actuelle, la garde quand on change seulement le nom
+ou le type ; vidé, la zone n'a plus de pièce. Une pièce hors règle est refusée comme un
+nom, sans rien écrire.
+
 | Commande | Effet |
 |---|---|
 | `safehome-console check -config FICHIER` | Vérifie la configuration, celle de la centrale, et la présence de `nmcli` |

@@ -27,7 +27,7 @@ import (
 type Console interface {
 	Overview() consoleapp.Overview
 	Pair() error
-	SetZone(id, name, kind string) error
+	SetZone(id, name, kind, room string) error
 	Unzone(id string) error
 	Siren(id string, on bool) error
 	NameSiren(id, name string) error
@@ -90,7 +90,7 @@ func New(c Console, host string, clients netip.Prefix, loc *time.Location) (*Han
 	h.mux.HandleFunc("GET /tests", h.tests)
 	h.mux.HandleFunc("POST /pair", h.act("pair", func(r *http.Request, _ string) error { return h.c.Pair() }))
 	h.mux.HandleFunc("POST /zone", h.act("zone", func(r *http.Request, id string) error {
-		return h.c.SetZone(id, strings.TrimSpace(r.PostFormValue("name")), r.PostFormValue("kind"))
+		return h.c.SetZone(id, strings.TrimSpace(r.PostFormValue("name")), r.PostFormValue("kind"), strings.TrimSpace(r.PostFormValue("room")))
 	}))
 	h.mux.HandleFunc("POST /unzone", h.act("unzone", func(r *http.Request, id string) error { return h.c.Unzone(id) }))
 	h.mux.HandleFunc("POST /siren", h.act("siren", func(r *http.Request, id string) error {
