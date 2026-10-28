@@ -140,6 +140,43 @@ func TestWriteSiteEmptiesZones(t *testing.T) {
 	}
 }
 
+// A zone's room is kept with it and reaches the hub's zones; a zone without one is
+// written as before rooms, and a room the installer's rule refuses is never written.
+func TestWriteSiteKeepsTheRoomOfAZone(t *testing.T) {
+	path, stateDir := copyExample(t)
+	s, _ := ReadSite(path)
+	s.Zones["dev_door"] = install.Zone{Name: "Entree", Kind: "entry", Room: "Salon"}
+	if err := WriteSite(path, s); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ReadSite(path); err != nil || !reflect.DeepEqual(got, s) {
+		t.Fatalf("read back %+v (%v), wrote %+v", got, err, s)
+	}
+	data, _ := os.ReadFile(filepath.Join(stateDir, DevicesFile))
+	if bytes.Count(data, []byte(`"room"`)) != 1 || !bytes.Contains(data, []byte(`"room": "Salon"`)) {
+		t.Fatalf("only the door says a room:\n%s", data)
+	}
+	r, err := Load(path)
+	if err != nil || r.DevicesErr != nil {
+		t.Fatal(err, r.DevicesErr)
+	}
+	if z := r.Hub.Engine.Zones["dev_door"]; z.Room != "Salon" || r.Hub.Engine.Zones["dev_back"].Room != "" {
+		t.Fatalf("zones the hub runs with: %+v", r.Hub.Engine.Zones)
+	}
+
+	s.Zones["dev_door"] = install.Zone{Name: "Entree", Kind: "entry", Room: "Salon\n"}
+	if err := WriteSite(path, s); err == nil {
+		t.Fatal("a room with a line break was written")
+	}
+	s.Zones["dev_door"] = install.Zone{Name: "Entree", Kind: "entry"}
+	if err := WriteSite(path, s); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(stateDir, DevicesFile)); bytes.Contains(data, []byte(`"room"`)) {
+		t.Fatalf("a site without rooms is written as before them:\n%s", data)
+	}
+}
+
 func TestWriteSiteRefusesWhatTheHubWouldRefuse(t *testing.T) {
 	path, stateDir := copyExample(t)
 	s, _ := ReadSite(path)
@@ -176,6 +213,7 @@ func TestADamagedDevicesFileNeverStopsTheHub(t *testing.T) {
 		"stray brace":    `{"zones": {}, "siren_ids": ["dev_siren1"]} }`,
 		"not an object":  `[]`,
 		"empty siren id": `{"zones": {}, "siren_ids": [""]}`,
+		"room too long":  `{"zones": {"dev_door": {"name": "A", "kind": "entry", "room": "` + strings.Repeat("x", 33) + `"}}, "siren_ids": ["dev_siren1"]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			path, stateDir := copyExample(t)

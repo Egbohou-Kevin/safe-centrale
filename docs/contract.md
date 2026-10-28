@@ -878,8 +878,8 @@ chaque appareil du registre, pour la fiche Capteurs de l'application.
         "heard": "2026-10-24T14:47:00.000Z", "battery": 60 },
       { "id": "dev_smoke", "name": "Réserve", "zone": "24h_fire", "type": "smoke",
         "online": true, "battery": 10, "battery_low": true },
-      { "id": "dev_door", "name": "Entrée", "zone": "entry", "type": "contact",
-        "online": true, "battery": 80 },
+      { "id": "dev_door", "name": "Entrée", "zone": "entry", "room": "Accueil",
+        "type": "contact", "online": true, "battery": 80 },
       { "id": "dev_siren1", "type": "siren", "online": true }
     ],
     "sirens": 1
@@ -894,6 +894,13 @@ chaque appareil du registre, pour la fiche Capteurs de l'application.
   clavier). `name` est coupé à 32 caractères, comme `device_name`. `zone` vaut `entry`,
   `instant`, `interior`, `24h_fire`, `24h_panic` ou `24h_tamper` : l'application les dit
   en mots simples, jamais tels quels.
+- `room` (depuis le 28 octobre 2026, facultatif) : la pièce où l'installateur a mis
+  l'appareil, saisie avec sa zone (`room` de la zone dans `hub.json` ou le fichier
+  `devices`, `safehome-install zone -room`). Texte libre de l'installateur, même règle
+  que le nom de zone (1 à 32 caractères, ni contrôle ni invisible), coupé à 32 comme
+  `name` : à montrer en texte, jamais en balisage. Absent hors zone, pour une zone sans
+  pièce, et d'une centrale plus ancienne : la liste est alors exactement celle d'avant.
+  Un texte fixe de configuration, comme `name` : jamais un état ni une heure.
 - `type` : la première capacité de l'appareil (commandes comprises : une sirène a
   `siren`) dans cet ordre : `siren`, `keypad`, `smoke`, `contact`, `motion`,
   `glass_break`, `vibration`, `panic`. `tamper`, `battery` et `link` ne décident
@@ -943,7 +950,7 @@ chaque appareil du registre, pour la fiche Capteurs de l'application.
   Zigbee, la qualité de liaison (utile à l'installateur, qui la lit sur place).
 - Taille : environ 100 octets par appareil, 600 à 900 octets pour un kit.
 - Envoi : seulement sur un vrai changement (en ligne ou non, pile arrondie, pile
-  faible, appareil ajouté ou retiré ; le nom et la zone changent avec la configuration,
+  faible, appareil ajouté ou retiré ; le nom, la zone et la pièce changent avec la configuration,
   qui redémarre la centrale), une fois à chaque démarrage de la centrale, une fois les
   états retenus revenus (comme `system.health`), et de nouveau à chaque connexion de
   l'agent au cloud. Pas de renvoi périodique.

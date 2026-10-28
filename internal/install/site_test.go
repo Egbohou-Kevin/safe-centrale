@@ -61,6 +61,8 @@ func TestSetZoneChecksTheZoneAndTheDevice(t *testing.T) {
 		want error
 	}{
 		"no name":       {Zone{Name: " ", Kind: "entry"}, nil, ErrEmptyName},
+		"blank room":    {Zone{Name: "Porte", Kind: "entry", Room: " "}, nil, ErrEmptyName},
+		"long room":     {Zone{Name: "Porte", Kind: "entry", Room: strings.Repeat("x", 33)}, nil, ErrNameTooLong},
 		"long name":     {Zone{Name: strings.Repeat("x", 33), Kind: "entry"}, nil, ErrNameTooLong},
 		"cannot serve":  {Zone{Name: "Fumee", Kind: "24h_fire"}, registered("dev_k7p2", "contact"), ErrCannotServe},
 		"unknown kind":  {Zone{Name: "Garage", Kind: "garage"}, nil, nil},
@@ -82,6 +84,12 @@ func TestSetZoneChecksTheZoneAndTheDevice(t *testing.T) {
 	}
 	if s, _ := sites.Read(); s.Zones["dev_door"] != (Zone{Name: "Porte", Kind: "instant"}) || s.Zones["dev_k7p2"].Kind != "24h_tamper" {
 		t.Fatalf("%+v", s)
+	}
+	if _, err := e.SetZone("dev_door", Zone{Name: "Porte", Kind: "instant", Room: "Salon"}, registered("dev_door", "contact")); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := sites.Read(); s.Zones["dev_door"] != (Zone{Name: "Porte", Kind: "instant", Room: "Salon"}) {
+		t.Fatalf("the room is kept with the zone: %+v", s.Zones["dev_door"])
 	}
 }
 

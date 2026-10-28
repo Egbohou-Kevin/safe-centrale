@@ -44,12 +44,12 @@ func TestTheListHoldsTheRegisteredDevicesWithTheirZones(t *testing.T) {
 	none(t, h.battery("dev_ghost", 5)) // heard of, but not registered: not listed
 
 	want := []Device{
-		{ID: "dev_back", Capabilities: []string{"battery", "contact", "link"}, Zone: Zone{"Back yard", "instant"},
+		{ID: "dev_back", Capabilities: []string{"battery", "contact", "link"}, Zone: Zone{Name: "Back yard", Kind: "instant"},
 			Since: since, Heard: heard, Battery: 60, BatteryKnown: true},
-		{ID: "dev_door", Capabilities: []string{"battery", "contact", "link"}, Zone: Zone{"Entrance", "entry"},
+		{ID: "dev_door", Capabilities: []string{"battery", "contact", "link"}, Zone: Zone{Name: "Entrance", Kind: "entry"},
 			Online: true, Battery: 80, BatteryKnown: true},
 		{ID: "dev_siren1", Capabilities: []string{"link", "siren"}, Online: true},
-		{ID: "dev_smoke", Capabilities: []string{"battery", "link", "smoke", "tamper"}, Zone: Zone{"Store room", "24h_fire"},
+		{ID: "dev_smoke", Capabilities: []string{"battery", "link", "smoke", "tamper"}, Zone: Zone{Name: "Store room", Kind: "24h_fire"},
 			Online: true, Battery: 10, BatteryKnown: true, BatteryLow: true},
 	}
 	if got := h.m.Devices(); !reflect.DeepEqual(got, want) {

@@ -66,6 +66,22 @@ func TestValidName(t *testing.T) {
 	}
 }
 
+// A room follows the name's rule; empty is no room.
+func TestValidRoom(t *testing.T) {
+	for room, want := range map[string]error{
+		"":                                   nil,
+		"Salon":                              nil,
+		"Arri\u00e8re-boutique":              nil,
+		"   ":                                ErrEmptyName,
+		"Salon\n":                            errAny,
+		"Salon\u202e":                        errAny,
+		strings.Repeat("a", MaxNameLength):   nil,
+		strings.Repeat("a", MaxNameLength+1): ErrNameTooLong,
+	} {
+		checkRefusal(t, fmt.Sprintf("ValidRoom(%q)", room), ValidRoom(room), want)
+	}
+}
+
 // errAny stands for a refusal that has no sentinel of its own.
 var errAny = errors.New("any refusal")
 
@@ -83,7 +99,7 @@ func checkRefusal(t *testing.T, call string, err, want error) {
 
 func TestCheckOfAGoodSiteSaysNothing(t *testing.T) {
 	site := Site{
-		Zones:    map[string]Zone{"dev_door": {"Entree", "entry"}, "dev_smoke": {"Fumee", "24h_fire"}},
+		Zones:    map[string]Zone{"dev_door": {Name: "Entree", Kind: "entry"}, "dev_smoke": {Name: "Fumee", Kind: "24h_fire"}},
 		SirenIDs: []string{"dev_siren1"},
 	}
 	devices := []contract.RegistryDevice{
@@ -102,18 +118,19 @@ func TestCheckOfAGoodSiteSaysNothing(t *testing.T) {
 func TestCheckFindsWhatIsWrong(t *testing.T) {
 	site := Site{
 		Zones: map[string]Zone{
-			"dev_door":   {"Entree", "entry"},    // fine
-			"dev_smoke":  {"Fumee", "entry"},     // a smoke detector cannot trigger an entry zone
-			"dev_gone":   {"Reserve", "instant"}, // not paired
-			"dev_window": {"Vitrine", "glass"},   // unknown kind
-			"dev_noname": {"", "instant"},        // no name
+			"dev_door":   {Name: "Entree", Kind: "entry"},                   // fine
+			"dev_smoke":  {Name: "Fumee", Kind: "entry"},                    // a smoke detector cannot trigger an entry zone
+			"dev_gone":   {Name: "Reserve", Kind: "instant"},                // not paired
+			"dev_window": {Name: "Vitrine", Kind: "glass"},                  // unknown kind
+			"dev_noname": {Name: "", Kind: "instant"},                       // no name
+			"dev_room":   {Name: "Salon", Kind: "instant", Room: "Salon\n"}, // a line break in a room
 		},
 		SirenIDs:   []string{"dev_motion", "dev_lost"},
 		SirenNames: map[string]string{"dev_lost": "Reserve\t"}, // a tab in a name
 	}
 	devices := []contract.RegistryDevice{
 		dev("dev_door", "contact"), dev("dev_smoke", "smoke"), dev("dev_window", "contact"),
-		dev("dev_noname", "contact"), dev("dev_motion", "motion"), dev("dev_spare", "contact"),
+		dev("dev_noname", "contact"), dev("dev_motion", "motion"), dev("dev_spare", "contact"), dev("dev_room", "contact"),
 	}
 	var got []string
 	for _, f := range Check(site, devices) {
@@ -122,6 +139,7 @@ func TestCheckFindsWhatIsWrong(t *testing.T) {
 	want := []string{
 		"warning dev_gone",
 		"problem dev_noname",
+		"problem dev_room",
 		"problem dev_smoke",
 		"problem dev_window",
 		"problem dev_motion", // a siren that cannot sound
@@ -136,15 +154,18 @@ func TestCheckFindsWhatIsWrong(t *testing.T) {
 	if !HasProblem(Check(site, devices)) {
 		t.Fatal("HasProblem missed the problems")
 	}
-	if f := Check(site, devices)[5]; !strings.Contains(f.Text, "the alerts call it \"Sir\u00e8ne 1\"") {
+	if f := Check(site, devices)[6]; !strings.Contains(f.Text, "the alerts call it \"Sir\u00e8ne 1\"") {
 		t.Fatalf("an unnamed siren must say what the alerts call it: %s", f)
+	}
+	if f := Check(site, devices)[2]; !strings.Contains(f.Text, `zone "Salon": room name "Salon\n" contains a control`) {
+		t.Fatalf("a bad room names its zone: %s", f)
 	}
 }
 
 // A siren with a zone has its zone's name: unnamed, it is no warning, nor is the only
 // other siren, which the alerts call "Sirene"; a name of its own is a problem.
 func TestCheckOfASirenWithAZone(t *testing.T) {
-	site := Site{Zones: map[string]Zone{"dev_smoke": {"Cuisine", "24h_fire"}}, SirenIDs: []string{"dev_smoke", "dev_siren"}}
+	site := Site{Zones: map[string]Zone{"dev_smoke": {Name: "Cuisine", Kind: "24h_fire"}}, SirenIDs: []string{"dev_smoke", "dev_siren"}}
 	devices := []contract.RegistryDevice{dev("dev_smoke", "smoke", "siren"), dev("dev_siren", "siren")}
 	if f := Check(site, devices); len(f) != 0 {
 		t.Fatalf("%v", f)
@@ -159,7 +180,7 @@ func TestCheckOfASirenWithAZone(t *testing.T) {
 // The sirens listed are all gone from the network (removed from a tool while the other
 // edited the site): nothing can sound, which is a problem, not a warning per siren.
 func TestCheckOfSirensNoneOfWhichIsPaired(t *testing.T) {
-	site := Site{Zones: map[string]Zone{"dev_door": {"Entree", "entry"}}, SirenIDs: []string{"dev_lost"}}
+	site := Site{Zones: map[string]Zone{"dev_door": {Name: "Entree", Kind: "entry"}}, SirenIDs: []string{"dev_lost"}}
 	f := Check(site, []contract.RegistryDevice{dev("dev_door", "contact")})
 	if !slices.ContainsFunc(f, func(x Finding) bool {
 		return x.Level == Problem && x.DeviceID == "" && strings.Contains(x.Text, "no siren can sound")

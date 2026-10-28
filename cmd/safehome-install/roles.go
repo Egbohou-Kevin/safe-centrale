@@ -34,7 +34,7 @@ func (c *command) editor() *install.Editor {
 }
 
 func (c *command) zone(ctx context.Context, s *install.Session) error {
-	id, z := c.args[0], install.Zone{Name: c.zoneName, Kind: c.kind}
+	id, z := c.args[0], install.Zone{Name: c.zoneName, Kind: c.kind, Room: c.room}
 	if err := install.ValidZone(z); err != nil {
 		return err
 	}
@@ -47,12 +47,21 @@ func (c *command) zone(ctx context.Context, s *install.Session) error {
 		return err
 	}
 	if old != nil {
-		fmt.Fprintf(c.stdout, "%s: zone %q (%s) is now %q (%s)\n", id, old.Name, old.Kind, z.Name, z.Kind)
+		fmt.Fprintf(c.stdout, "%s: zone %s is now %s\n", id, zoneText(*old), zoneText(z))
 	} else {
-		fmt.Fprintf(c.stdout, "%s: zone %q (%s)\n", id, z.Name, z.Kind)
+		fmt.Fprintf(c.stdout, "%s: zone %s\n", id, zoneText(z))
 	}
 	fmt.Fprintln(c.stdout, restartHint)
 	return nil
+}
+
+// zoneText says a zone: its name, its kind and its room when it has one
+// (`"Reserve" (entry, room "Salon")`).
+func zoneText(z install.Zone) string {
+	if z.Room == "" {
+		return fmt.Sprintf("%q (%s)", z.Name, z.Kind)
+	}
+	return fmt.Sprintf("%q (%s, room %q)", z.Name, z.Kind, z.Room)
 }
 
 func (c *command) unzone() error {

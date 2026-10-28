@@ -126,7 +126,10 @@ nomme les contacts qui n'acceptent que SMS et appel : personne ne les prévient.
 clé, la ligne SMS est attendue, et une passerelle muette est une panne (voir
 `escalation.md`, « Une centrale sans ligne SMS »).
 
-À noter : `timezone` (Lomé : `Africa/Lome`, UTC), `zones` (le rôle de chaque appareil),
+À noter : `timezone` (Lomé : `Africa/Lome`, UTC), `zones` (le rôle de chaque appareil :
+`name`, `kind`, et `room`, facultatif depuis le 28 octobre 2026, la pièce que la liste
+des appareils montre au propriétaire, même règle que `name` ; une centrale plus
+ancienne refuse un fichier qui dit `room` : ne l'écrire qu'après sa mise à jour),
 `siren_ids` (les sirènes ; `[]` pour un site sans sirène, par choix : ses alarmes ne
 font que prévenir, voir `engine.md`, « Un site sans sirène » ; la ligne est obligatoire) et `siren_names` (facultatif : le nom d'une sirène dans les
 textes des alertes, par identifiant, par exemple `{"dev_siren1": "Reserve"}` ; même
@@ -472,7 +475,7 @@ GOOS=linux GOARCH=arm64 go build -o safehome-install ./cmd/safehome-install
 |---|---|
 | `devices -config F` | Les appareils appairés, leur modèle, leurs capacités et leur usage (zone, sirène, clavier, ou « inutilisé ») ; l'état de Zigbee2MQTT et les appareils hors ligne |
 | `pair -config F [-for 2m]` | Ouvre le réseau (10 min au plus) et affiche chaque appareil ajouté ou refusé, avec la raison ; Ctrl-C referme le réseau tout de suite |
-| `zone -config F -name NOM -kind TYPE APPAREIL` | Donne sa zone à un appareil (ou la change) |
+| `zone -config F -name NOM -kind TYPE [-room PIECE] APPAREIL` | Donne sa zone à un appareil (ou la change) ; `-room` dit aussi sa pièce (même règle que le nom), que la liste des appareils montre au propriétaire. La zone est donnée en entier : sans `-room`, elle n'a plus de pièce |
 | `unzone -config F APPAREIL` | Retire la zone d'un appareil |
 | `siren -config F add\|remove APPAREIL` | Fait d'un appareil une sirène, ou plus ; `add -name NOM` la nomme aussi |
 | `siren -config F name -name NOM APPAREIL` | Donne à une sirène son nom dans les textes des alertes (ou le change) ; une sirène qui a une zone garde le nom de sa zone |
@@ -487,7 +490,7 @@ Une installation type :
 
 ```bash
 sudo -u safehome safehome-install pair  -config /etc/safehome/hub.json
-sudo -u safehome safehome-install zone  -config /etc/safehome/hub.json -name "Porte arriere" -kind instant dev_k7p2
+sudo -u safehome safehome-install zone  -config /etc/safehome/hub.json -name "Porte arriere" -kind instant -room "Reserve" dev_k7p2
 sudo -u safehome safehome-install siren -config /etc/safehome/hub.json name -name "Reserve" dev_siren1
 sudo -u safehome safehome-install watch -config /etc/safehome/hub.json
 sudo -u safehome safehome-install check -config /etc/safehome/hub.json

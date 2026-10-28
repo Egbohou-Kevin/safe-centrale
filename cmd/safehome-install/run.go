@@ -17,8 +17,8 @@ const usage = `usage:
   safehome-install devices -config FILE                  paired devices and what each one is for
   safehome-install pair    -config FILE [-for 2m]        open the network and report the devices that join
   safehome-install remove  -config FILE DEVICE           remove a device for good (and its zone or siren role)
-  safehome-install zone    -config FILE -name NAME -kind KIND DEVICE
-                                                         give a device its zone
+  safehome-install zone    -config FILE -name NAME -kind KIND [-room ROOM] DEVICE
+                                                         give a device its zone (and its room)
   safehome-install unzone  -config FILE DEVICE           take a device out of its zone
   safehome-install siren   -config FILE add|remove DEVICE
                                                          use a device as a siren, or stop
@@ -52,6 +52,7 @@ type command struct {
 	args     []string // the positional arguments
 	zoneName string   // -name, of a zone or a siren
 	kind     string   // -kind
+	room     string   // -room, of a zone
 	pairFor  time.Duration
 	force    bool
 	stdout   io.Writer
@@ -128,6 +129,7 @@ func (c *command) flags(stderr io.Writer) *flag.FlagSet {
 	case "zone":
 		fs.StringVar(&c.zoneName, "name", "", "the zone's name, as people say it (required)")
 		fs.StringVar(&c.kind, "kind", "", "the zone's kind: "+strings.Join(install.ZoneKinds(), ", ")+" (required)")
+		fs.StringVar(&c.room, "room", "", "the room the device is in, as people say it, for the owner's list (none without it)")
 		fs.BoolVar(&c.force, "force", false, "accept a device that is not in the Zigbee registry (another adapter)")
 	case "siren":
 		fs.StringVar(&c.zoneName, "name", "", "the siren's name in the alerts, as people say it (required by name)")

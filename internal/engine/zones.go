@@ -17,10 +17,13 @@ const (
 	ZoneTamper   ZoneKind = "24h_tamper" // tamper, always active
 )
 
-// Zone describes the zone of a device. The name comes from the site configuration.
+// Zone describes the zone of a device. The name and the room (empty when none) come
+// from the site configuration; the room only goes to the device list, never into an
+// alarm.
 type Zone struct {
 	Name string
 	Kind ZoneKind
+	Room string
 }
 
 // zoneSensors lists, for each kind of zone, the sensors it reacts to: a smoke

@@ -51,7 +51,7 @@ func Devices(devices []health.Device) contract.DevicesData {
 			continue
 		}
 		dh := contract.DeviceHealth{
-			ID: d.ID, Name: contract.DeviceName(d.Zone.Name), Zone: d.Zone.Kind, Type: typ,
+			ID: d.ID, Name: contract.DeviceName(d.Zone.Name), Zone: d.Zone.Kind, Room: contract.DeviceName(d.Zone.Room), Type: typ,
 			Online: d.Online, BatteryLow: d.BatteryLow,
 		}
 		if !d.Online {

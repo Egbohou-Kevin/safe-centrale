@@ -33,6 +33,12 @@
             ],
             "description": "Type de la zone de l'appareil ; absent hors zone"
           },
+          "room": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Depuis le 28 octobre 2026 : la pièce où l'installateur a mis l'appareil, saisie avec sa zone (texte libre, même règle que le nom) ; absente hors zone, pour une zone sans pièce, et d'une centrale plus ancienne"
+          },
           "type": {
             "type": "string",
             "enum": [
