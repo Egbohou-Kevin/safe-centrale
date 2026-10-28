@@ -986,6 +986,10 @@ refuse. Le téléphone y met `args.sealed`, le code scellé pour la clé de l'ag
   (autre clé, autre site, autre commande, altéré), dont l'heure est à plus de cinq minutes
   de la sienne, qu'il a déjà vu (la clé éphémère le nomme), ou qui n'est pas un code de 4 à
   8 chiffres. La centrale ne le compte pas comme un code faux.
+- L'agent se souvient de chaque sceau ouvert tant qu'il s'ouvrirait encore (jusqu'à l'heure du
+  sceau plus cinq minutes), à part des identifiants des messages : un cloud qui garde un sceau
+  ne peut pas le faire oublier en envoyant des milliers de messages, puis le rejouer
+  (28/10/2026 ; avant, la marque du sceau partageait les 2048 derniers identifiants).
 - Il ouvre le sceau et donne au moteur un `alarm.command` ordinaire, `args.code` en clair,
   sur le broker local seulement.
 

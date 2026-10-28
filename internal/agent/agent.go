@@ -120,8 +120,12 @@ type Snapshot struct {
 	GivenUp   map[string]time.Time `json:"given_up,omitempty"`
 	Incidents map[string]time.Time `json:"incidents"` // incidents seen going up -> last seen
 	Seen      []string             `json:"seen"`      // ids of the last messages from the cloud
-	Dropped   int                  `json:"dropped"`   // items that left the queue without reaching the cloud
-	Tokens    float64              `json:"tokens"`    // the cloud's allowance of messages
+	// Seals holds the seals opened (the phone's one-time key -> the phone's time in it),
+	// while they still open: apart from Seen, so that a flood of ids cannot push one out
+	// and let it be used again (down.go).
+	Seals     map[string]time.Time `json:"seals,omitempty"`
+	Dropped   int                  `json:"dropped"` // items that left the queue without reaching the cloud
+	Tokens    float64              `json:"tokens"`  // the cloud's allowance of messages
 	TokensAt  time.Time            `json:"tokens_at"`
 	Answers   float64              `json:"answers"` // the allowance of answers to orders over the limit (down.go)
 	AnswersAt time.Time            `json:"answers_at"`
@@ -180,6 +184,7 @@ func (r *Relay) Snapshot() Snapshot {
 	s.Incidents = maps.Clone(s.Incidents)
 	s.Photos = maps.Clone(s.Photos)
 	s.Retained = maps.Clone(s.Retained)
+	s.Seals = maps.Clone(s.Seals)
 	return s
 }
 
@@ -200,6 +205,9 @@ func (r *Relay) Restore(s Snapshot) {
 	}
 	if s.Retained == nil {
 		s.Retained = map[string]string{}
+	}
+	if s.Seals == nil {
+		s.Seals = map[string]time.Time{}
 	}
 	if s.TokensAt.IsZero() {
 		s.Tokens = float64(r.cfg.DownBurst)

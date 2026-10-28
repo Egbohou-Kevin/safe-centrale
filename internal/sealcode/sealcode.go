@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -54,9 +55,10 @@ func Generate() (*Key, error) {
 	return &Key{k}, nil
 }
 
-// Parse reads the private key written by Encode.
+// Parse reads the private key written by Encode. Spaces around it are ignored: a file
+// written by hand often ends with a newline. Its errors never quote the key.
 func Parse(s string) (*Key, error) {
-	b, err := base64.StdEncoding.DecodeString(s)
+	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(s))
 	if err != nil {
 		return nil, errors.New("sealcode: the key is not base64")
 	}
@@ -79,6 +81,9 @@ type Opened struct {
 	// Ephemeral is the phone's one-time public key, which names the seal: the same one
 	// seen twice is a replay.
 	Ephemeral string
+	// At is the phone's time in the seal: the seal opens until At+Window on the hub's
+	// clock, so its Ephemeral must be remembered until then.
+	At time.Time
 }
 
 func aad(site, command string) []byte { return []byte(info + "|" + site + "|" + command) }
@@ -127,7 +132,7 @@ func (k *Key) Open(sealed, site, command string, now time.Time) (Opened, error) 
 	if !ValidCode(code) {
 		return Opened{}, ErrBad
 	}
-	return Opened{Code: code, Ephemeral: base64.StdEncoding.EncodeToString(raw[1 : 1+pubLen])}, nil
+	return Opened{Code: code, Ephemeral: base64.StdEncoding.EncodeToString(raw[1 : 1+pubLen]), At: at}, nil
 }
 
 func trimZeros(b []byte) []byte {

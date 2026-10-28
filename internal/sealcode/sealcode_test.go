@@ -19,7 +19,7 @@ func TestSealThenOpen(t *testing.T) {
 			t.Errorf("the seal shows the code")
 		}
 		o, err := k.Open(s, "tg-lom-0001", "alarm.disarm", at.Add(time.Minute))
-		if err != nil || o.Code != code || o.Ephemeral == "" {
+		if err != nil || o.Code != code || o.Ephemeral == "" || !o.At.Equal(at) {
 			t.Errorf("code %q: got %+v, %v", code, o, err)
 		}
 	}
@@ -87,6 +87,15 @@ func TestKeyRoundTrip(t *testing.T) {
 	}
 	if _, err := Parse("AAAA"); err == nil {
 		t.Error("parsed junk")
+	}
+	// A key file ended by a newline, as an editor writes it, is the same key.
+	if again, err := Parse(k.Encode() + "\n"); err != nil || again.Public() != k.Public() {
+		t.Errorf("a key with its newline: %v", err)
+	}
+	// An error never quotes the key, even a damaged one.
+	enc := k.Encode()
+	if _, err := Parse(enc[:len(enc)-4]); err == nil || strings.Contains(err.Error(), enc[:16]) {
+		t.Errorf("a truncated key: %v", err)
 	}
 }
 
