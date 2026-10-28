@@ -29,9 +29,12 @@ type file struct {
 	Versions       map[string]string   `json:"versions"`
 }
 
+// zoneFile has the fields of install.Zone, in its order (they convert into each
+// other). A zone without a room is written as before rooms.
 type zoneFile struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`
+	Room string `json:"room,omitempty"`
 }
 
 type alarmFile struct {

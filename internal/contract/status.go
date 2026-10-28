@@ -91,6 +91,9 @@ type DeviceHealth struct {
 	// any zone (a siren).
 	Name string `json:"name,omitempty"`
 	Zone string `json:"zone,omitempty"`
+	// Room is the room the installer put the device in, set with its zone (since 28
+	// October 2026), cut like Name. Absent outside any zone and for a zone without one.
+	Room string `json:"room,omitempty"`
 	Type string `json:"type"` // contact, motion, smoke, keypad, siren, panic, vibration, glass_break
 	// Online is false once the adapter counts the device offline. Only then: Since,
 	// when it went offline, and Heard, its last news before (absent when it said

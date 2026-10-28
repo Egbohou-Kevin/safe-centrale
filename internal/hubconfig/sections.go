@@ -18,14 +18,18 @@ import (
 
 // zones reads the zones. A name follows the installer's rule (install.ValidName),
 // even in a file edited by hand: it goes into SMS, voice messages and the alarm
-// events.
+// events. A room, when there is one, follows the same rule (install.ValidRoom): it
+// goes to the cloud and the app in the device list.
 func zones(in map[string]zoneFile) (map[string]engine.Zone, error) {
 	out := make(map[string]engine.Zone, len(in))
 	for id, z := range in {
 		if err := install.ValidName(z.Name); err != nil {
 			return nil, fmt.Errorf("zone of %q: %w", id, err)
 		}
-		out[id] = engine.Zone{Name: z.Name, Kind: engine.ZoneKind(z.Kind)} // the kind is checked by the engine
+		if err := install.ValidRoom(z.Room); err != nil {
+			return nil, fmt.Errorf("zone of %q: %w", id, err)
+		}
+		out[id] = engine.Zone{Name: z.Name, Kind: engine.ZoneKind(z.Kind), Room: z.Room} // the kind is checked by the engine
 	}
 	return out, nil
 }

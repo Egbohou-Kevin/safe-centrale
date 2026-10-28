@@ -12,11 +12,13 @@ import (
 // keeps the times it went offline with. Door and motion states never reach the
 // monitor.
 
-// Zone is the zone of a device in the site's configuration: its name ("Entrance")
-// and its kind ("entry", "instant", "24h_fire"...), as the configuration writes it.
+// Zone is the zone of a device in the site's configuration: its name ("Entrance"),
+// its kind ("entry", "instant", "24h_fire"...) and its room ("Salon", empty when the
+// installer gave none), as the configuration writes them.
 type Zone struct {
 	Name string
 	Kind string
+	Room string
 }
 
 // Absence is when an offline device went offline, and when it was last heard before

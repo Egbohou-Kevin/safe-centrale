@@ -76,6 +76,25 @@ func TestTheDeviceListShowsEachRegisteredDevice(t *testing.T) {
 	r.validateAll()
 }
 
+// The room the installer gave a zone goes with its device; a zone without one says
+// nothing more than before rooms (the test above).
+func TestTheDeviceListSaysTheRoomOfAZone(t *testing.T) {
+	r := newRig(t, nil, func(c *Config) {
+		z := c.Engine.Zones[devDoor]
+		z.Room = "Salon"
+		c.Engine.Zones[devDoor] = z
+	})
+	r.start()
+	r.theShop()
+	r.settle()
+	list := lastList(t, r)
+	if !strings.Contains(list, `{"id":"dev_door","name":"entrance","zone":"entry","room":"Salon","type":"contact","online":true}`) ||
+		strings.Count(list, `"room"`) != 1 {
+		t.Fatalf("the door's room, and no other: %s", list)
+	}
+	r.validateAll()
+}
+
 // The list goes to the cloud: it is published again only when what it says changes.
 // The doors, the passers-by and the statuses repeated every minute are no news.
 func TestTheDeviceListGoesOnlyOnARealChange(t *testing.T) {

@@ -416,6 +416,36 @@ func TestAnInstallation(t *testing.T) {
 
 // The removal went out without an answer: the adapter may still carry it out, so the
 // configuration stops using the device, and the tool says so and fails.
+// A room goes with the zone, by the name's rule; the zone given again without one
+// has none.
+func TestAZoneTakesARoom(t *testing.T) {
+	broker := mqtttest.Start(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	path := writeConfig(t, broker.URL())
+	startAdapter(t, ctx, broker.URL(), exampleDevices())
+
+	for room, refusal := range map[string]string{"Salon\n": "contains a control", strings.Repeat("x", 33): "longer than 32", " ": "room name is empty"} {
+		if code, _, errb := cli(ctx, "zone", "dev_door", "-config", path, "-name", "Entree", "-kind", "entry", "-room", room); code != 1 || !strings.Contains(errb, refusal) {
+			t.Fatalf("room %q: %d %q", room, code, errb)
+		}
+	}
+	code, out, _ := cli(ctx, "zone", "dev_door", "-config", path, "-name", "Entree", "-kind", "entry", "-room", "Salon")
+	if code != 0 || !strings.Contains(out, `zone "Entree" (entry) is now "Entree" (entry, room "Salon")`) {
+		t.Fatalf("zone with a room: %d %q", code, out)
+	}
+	if z := readSite(t, path).Zones["dev_door"]; z != (install.Zone{Name: "Entree", Kind: "entry", Room: "Salon"}) {
+		t.Fatalf("zone in the file: %+v", z)
+	}
+	if code, out, _ := cli(ctx, "check", "-config", path); code != 0 || !strings.Contains(out, "OK: 7 zone(s)") {
+		t.Fatalf("check with a room: %d %q", code, out)
+	}
+	code, out, _ = cli(ctx, "zone", "dev_door", "-config", path, "-name", "Entree", "-kind", "entry")
+	if code != 0 || !strings.Contains(out, `is now "Entree" (entry)`) || readSite(t, path).Zones["dev_door"].Room != "" {
+		t.Fatalf("zone without a room: %d %q", code, out)
+	}
+}
+
 func TestAnUnconfirmedRemovalLeavesTheConfiguration(t *testing.T) {
 	broker := mqtttest.Start(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

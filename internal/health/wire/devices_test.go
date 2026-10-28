@@ -62,6 +62,28 @@ func TestTheDeviceListOfTheContractsExample(t *testing.T) {
 	}
 }
 
+// A zone's room goes with its device, cut like its name; a zone without one, and a
+// device outside any zone, say no room.
+func TestTheRoomOfAZoneGoesWithItsDevice(t *testing.T) {
+	long := strings.Repeat("\u00e9", contract.MaxDeviceName+1)
+	list := Devices([]health.Device{
+		{ID: "dev_door", Capabilities: []string{"contact"}, Zone: health.Zone{Name: "Entree", Kind: "entry", Room: "Salon"}, Online: true},
+		{ID: "dev_back", Capabilities: []string{"contact"}, Zone: health.Zone{Name: "Arriere", Kind: "instant", Room: long}, Online: true},
+		{ID: "dev_motion", Capabilities: []string{"motion"}, Zone: health.Zone{Name: "Boutique", Kind: "interior"}, Online: true},
+		{ID: "dev_siren1", Capabilities: []string{"siren"}, Online: true},
+	})
+	schematest.Validate(t, "system-devices.json", list)
+	got, _ := json.Marshal(list)
+	want := `{"devices":[` +
+		`{"id":"dev_door","name":"Entree","zone":"entry","room":"Salon","type":"contact","online":true},` +
+		`{"id":"dev_back","name":"Arriere","zone":"instant","room":"` + long[:2*contract.MaxDeviceName] + `","type":"contact","online":true},` +
+		`{"id":"dev_motion","name":"Boutique","zone":"interior","type":"motion","online":true},` +
+		`{"id":"dev_siren1","type":"siren","online":true}]}`
+	if string(got) != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+}
+
 // The type is the first capability found in the order of the contract; tamper,
 // battery and link never decide, and a device that is none of the types is left out.
 func TestTheTypeIsTheFirstCapabilityInTheContractsOrder(t *testing.T) {

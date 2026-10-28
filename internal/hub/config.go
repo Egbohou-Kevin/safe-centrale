@@ -112,7 +112,7 @@ func (c Config) healthConfig() health.Config {
 	hc.HubDeviceID = c.HubDeviceID
 	hc.Zones = make(map[string]health.Zone, len(c.Engine.Zones))
 	for id, z := range c.Engine.Zones {
-		hc.Zones[id] = health.Zone{Name: z.Name, Kind: string(z.Kind)}
+		hc.Zones[id] = health.Zone{Name: z.Name, Kind: string(z.Kind), Room: z.Room}
 	}
 	return hc
 }

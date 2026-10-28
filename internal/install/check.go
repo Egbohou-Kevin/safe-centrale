@@ -105,6 +105,15 @@ func ValidName(name string) error { return validName("zone", name) }
 // texts.
 func ValidSirenName(name string) error { return validName("siren", name) }
 
+// ValidRoom checks a zone's room, by the zones' rule: written by the installer, it
+// goes to the cloud and the app. Empty is no room, and is valid.
+func ValidRoom(room string) error {
+	if room == "" {
+		return nil
+	}
+	return validName("room", room)
+}
+
 func validName(what, name string) error {
 	switch {
 	case strings.TrimSpace(name) == "":
@@ -153,6 +162,9 @@ func (f *findings) zones(site Site, byID map[string]contract.RegistryDevice) {
 		z := site.Zones[id]
 		if err := ValidName(z.Name); err != nil {
 			f.add(Problem, id, "%v", err)
+		}
+		if err := ValidRoom(z.Room); err != nil {
+			f.add(Problem, id, "zone %q: %v", z.Name, err)
 		}
 		d, paired := byID[id]
 		if err := ValidKind(z.Kind); err != nil {

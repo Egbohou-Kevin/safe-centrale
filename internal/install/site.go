@@ -11,10 +11,14 @@ import (
 	"safehome/internal/contract"
 )
 
-// Zone is what a device is for: a name for people and a kind for the engine.
+// Zone is what a device is for: a name for people and a kind for the engine, and
+// where it is, the room ("Salon"), for the owner's list of devices; empty when the
+// installer gave none. Same fields, in the same order, as the configuration file's
+// zones (hubconfig converts one into the other).
 type Zone struct {
 	Name string
 	Kind string
+	Room string
 }
 
 // Site is the use of the devices: their zones and the sirens. SirenNames names some
@@ -183,9 +187,12 @@ func (e *Editor) checkWithout(site Site, id string) error {
 	return e.sites.Check(without)
 }
 
-// ValidZone checks a zone's name and kind, whatever the device.
+// ValidZone checks a zone's name, room and kind, whatever the device.
 func ValidZone(z Zone) error {
 	if err := ValidName(z.Name); err != nil {
+		return err
+	}
+	if err := ValidRoom(z.Room); err != nil {
 		return err
 	}
 	return ValidKind(z.Kind)

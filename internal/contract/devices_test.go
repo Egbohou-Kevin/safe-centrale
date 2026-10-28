@@ -49,8 +49,10 @@ func TestTheDeviceListSchemaMatchesGo(t *testing.T) {
 	if got := sorted(item.Required); !slices.Equal(got, required) {
 		t.Errorf("schema required fields %v, Go fields without omitempty %v", got, required)
 	}
-	if got := item.Properties["name"]["maxLength"]; got != float64(MaxDeviceName) {
-		t.Errorf("name maxLength %v, MaxDeviceName %d", got, MaxDeviceName)
+	for _, field := range []string{"name", "room"} {
+		if got := item.Properties[field]["maxLength"]; got != float64(MaxDeviceName) {
+			t.Errorf("%s maxLength %v, MaxDeviceName %d", field, got, MaxDeviceName)
+		}
 	}
 }
 
@@ -62,7 +64,7 @@ func TestTheDeviceListSchemaAcceptsTheContractsExample(t *testing.T) {
 	list := DevicesData{Devices: []DeviceHealth{
 		{ID: "dev_back", Name: "Arri\u00e8re-cour", Zone: "instant", Type: CapContact, Since: since, Heard: heard, Battery: intPtr(60)},
 		{ID: "dev_smoke", Name: "R\u00e9serve", Zone: "24h_fire", Type: CapSmoke, Online: true, Battery: intPtr(10), BatteryLow: true},
-		{ID: "dev_door", Name: "Entr\u00e9e", Zone: "entry", Type: CapContact, Online: true, Battery: intPtr(80)},
+		{ID: "dev_door", Name: "Entr\u00e9e", Zone: "entry", Room: "Accueil", Type: CapContact, Online: true, Battery: intPtr(80)},
 		{ID: "dev_siren1", Type: CapSiren, Online: true},
 	}}
 	schematest.Validate(t, "system-devices.json", list)
@@ -91,6 +93,8 @@ func TestTheDeviceListSchemaRefusesWhatTheContractRefuses(t *testing.T) {
 		"an unknown type":           strings.Replace(ok, `"contact"`, `"tamper"`, 1),
 		"an unknown zone":           strings.Replace(ok, `"type"`, `"zone":"perimeter","type"`, 1),
 		"a name too long":           strings.Replace(ok, `"type"`, `"name":"`+strings.Repeat("x", MaxDeviceName+1)+`","type"`, 1),
+		"a room too long":           strings.Replace(ok, `"type"`, `"room":"`+strings.Repeat("x", MaxDeviceName+1)+`","type"`, 1),
+		"an empty room":             strings.Replace(ok, `"type"`, `"room":"","type"`, 1),
 		"without a type":            strings.Replace(ok, `"type":"contact",`, "", 1),
 		"without online":            strings.Replace(ok, `"online":false,`, "", 1),
 		"a malformed time":          strings.Replace(ok, `"2026-10-24T14:47:00.000Z"`, `"14:47"`, 1),
