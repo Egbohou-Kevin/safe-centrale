@@ -189,14 +189,20 @@ func TestZonesAndSirensFromThePage(t *testing.T) {
 			t.Errorf("%s: got %v", c.name, err)
 		}
 	}
+	// A room laid by safehome-install outlives an edit from the console.
+	site, _ := r.sites.Read()
+	site.Zones["dev_motion"] = install.Zone{Name: "Avant", Kind: "interior", Room: "Salon"}
+	if err := r.sites.Write(site); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.app.SetZone("dev_motion", "Salle", "interior"); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.app.Unzone("dev_door"); err != nil {
 		t.Fatal(err)
 	}
-	site, _ := r.sites.Read()
-	if site.Zones["dev_motion"] != (install.Zone{Name: "Salle", Kind: "interior"}) || len(site.Zones) != 1 {
+	site, _ = r.sites.Read()
+	if site.Zones["dev_motion"] != (install.Zone{Name: "Salle", Kind: "interior", Room: "Salon"}) || len(site.Zones) != 1 {
 		t.Fatalf("zones %+v", site.Zones)
 	}
 	// The siren shows the name the alerts call it by: the default, then its own.
