@@ -169,11 +169,15 @@ put() {
 # put_program SRC DEST: puts a program, keeping the one it replaces as DEST.prev when they
 # differ, for update-hub.sh to put back if the services do not hold (docs/systeme.md,
 # "Maintenance"). An unchanged or new program leaves no .prev: one left from an earlier
-# update would bring back a version older than the one running.
+# update would bring back a version older than the one running. While $UNCONFIRMED
+# exists, the programs in place are an install not yet confirmed (a run cut short, or
+# phase 2 run again): its .prev are the programs that held, kept as they are.
 put_program() {
-	if [ -f "$2" ] && ! cmp -s "$1" "$2"; then
+	if [ -n "$unconfirmed" ] && [ -e "$2.prev" ]; then
+		:
+	elif [ -f "$2" ] && ! cmp -s "$1" "$2"; then
 		cp -p "$2" "$2.prev"
-	else
+	elif [ -z "$unconfirmed" ]; then
 		rm -f "$2.prev"
 	fi
 	put "$1" "$2" 755
@@ -233,9 +237,17 @@ if has console; then
 	put "$BUNDLE/deploy/system/nm-dispatcher-safehome-console" "$ROOT/etc/NetworkManager/dispatcher.d/50-safehome-console" 755
 fi
 
+# Made before the first program is replaced, removed by update-hub.sh once the new ones
+# hold (or by hand, step 6 of "Maintenance"); a run that keeps no .prev leaves none.
+UNCONFIRMED="$BIN/.safehome-prev.unconfirmed"
+unconfirmed=""
+[ ! -e "$UNCONFIRMED" ] || unconfirmed=yes
+mkdir -p "$BIN"
+: >"$UNCONFIRMED"
 for p in $PROGRAMS $TOOLS; do
 	put_program "$BUNDLE/bin/safehome-$p" "$BIN/safehome-$p"
 done
+ls "$BIN"/safehome-*.prev >/dev/null 2>&1 || rm -f "$UNCONFIRMED"
 for u in "$BUNDLE"/deploy/systemd/*.service; do
 	put "$u" "$UNITS/$(basename "$u")" 644
 done

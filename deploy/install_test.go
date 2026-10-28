@@ -279,6 +279,49 @@ func TestAnUpdateKeepsThePreviousProgramsOnlyWhereTheyChanged(t *testing.T) {
 	}
 }
 
+// Until phase 2 confirms the new programs (it removes the mark), running install.sh again
+// keeps the .prev it made: they are the programs that held, the only way back. Once
+// confirmed, the next install is an update like any other.
+func TestARunAgainBeforeConfirmationKeepsThePreviousPrograms(t *testing.T) {
+	r := newRig(t)
+	r.minimalSite()
+	r.mustRun()
+	bin := "usr/local/bin/"
+	if r.exists(unconfirmed) {
+		t.Fatal("a first install, which keeps no .prev, left the mark")
+	}
+	held := map[string][]byte{}
+	for _, p := range []string{"safehome-hub", "safehome-agent"} {
+		held[p] = must(os.ReadFile(r.path(bin + p)))
+	}
+	writeScript(t, filepath.Join(r.bundle, "bin", "safehome-hub"), "# the new hub\n"+fakeProgram)
+	r.mustRun()
+	if !r.exists(unconfirmed) {
+		t.Fatal("an update that kept a .prev left no mark")
+	}
+	r.mustRun() // phase 2 run again after an interruption
+	writeScript(t, filepath.Join(r.bundle, "bin", "safehome-agent"), "# the new agent\n"+fakeProgram)
+	r.mustRun() // and with a bundle changed in between
+	for p, want := range held {
+		if b, err := os.ReadFile(r.path(bin + p + ".prev")); err != nil || string(b) != string(want) {
+			t.Errorf("%s.prev = %q (%v), want the program that held", p, b, err)
+		}
+	}
+
+	if err := os.Remove(r.path(unconfirmed)); err != nil { // phase 2 confirmed them
+		t.Fatal(err)
+	}
+	r.mustRun()
+	for _, p := range []string{"safehome-hub.prev", "safehome-agent.prev"} {
+		if r.exists(bin + p) {
+			t.Errorf("%s kept after the confirmation, though its program is unchanged", p)
+		}
+	}
+	if r.exists(unconfirmed) {
+		t.Error("an install that kept no .prev left the mark")
+	}
+}
+
 func TestABadProfileWithoutSiteFolderPutsThePreviousOnesBack(t *testing.T) {
 	r := newRig(t)
 	r.minimalSite()

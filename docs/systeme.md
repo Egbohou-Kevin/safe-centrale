@@ -639,16 +639,30 @@ lecture seule : le dossier de timesyncd (`/var/lib/systemd/timesync`) doit être
 **Retour arrière des programmes** (28 octobre 2026). `install.sh` garde chaque programme qu'il
 remplace (`safehome-*` de `/usr/local/bin`) en `safehome-<programme>.prev`, à côté, quand l'ancien
 diffère du nouveau ; un programme identique ou neuf n'en laisse aucun, pas même un `.prev` d'une
-mise à jour précédente (il ramènerait une version plus vieille que celle qui tourne). La phase 2
-attend ensuite deux minutes : si la version lue n'est pas celle du paquet, ou si une unité n'est
-pas `active` (un programme qui plante au démarrage n'est jamais `failed` : `Restart=always` sans
-limite le laisse `activating`), elle remet chaque `.prev` à sa place (`mv`, d'un coup),
-`systemctl daemon-reload`, redémarre les services activés parmi eux, attend encore deux minutes,
-puis s'arrête en disant que l'ancienne version est revenue (et si ses services tiennent). Rien
-n'est désarmé ; l'état de l'alarme (`/var/lib/safehome`) n'est pas touché. Ni la configuration
-(déjà vérifiée par les nouveaux programmes), ni les unités ne reviennent : les unités d'avant sont
-dans `/data/maintenance/units-<date>.tgz`, à remettre à la main si besoin (étape 5). Le retour ne
-joue pas quand `install.sh` lui-même échoue (sa configuration revient, les programmes restent).
+mise à jour précédente (il ramènerait une version plus vieille que celle qui tourne). Avant de
+remplacer le premier programme, il pose la marque `/usr/local/bin/.safehome-prev.unconfirmed` (retirée
+s'il ne garde aucun `.prev`) : tant qu'elle est là, les programmes en place ne sont pas confirmés,
+et une nouvelle installation (phase 2 relancée après une coupure, paquet refait entre-temps) garde
+les `.prev` existants, qui sont les programmes qui tenaient ; elle n'ajoute que ceux des programmes
+changés depuis. La phase 2 lit d'abord la version (sans attendre) : si elle n'est pas celle du
+paquet, ou si le programme ne sait même pas la dire, le retour joue tout de suite ; sinon elle
+attend deux minutes, et si une unité n'est pas `active` (un programme qui plante au démarrage n'est
+jamais `failed` : `Restart=always` sans limite le laisse `activating`), le retour joue aussi. Le
+retour remet chaque `.prev` à sa place (`mv`, d'un coup ; un seul `mv` raté arrête tout en nommant
+ceux déjà revenus), `systemctl daemon-reload`, redémarre les services activés parmi eux (un
+redémarrage raté est dit, la suite continue), attend encore deux minutes, puis s'arrête en disant
+que l'ancienne version est revenue, et si ses services tiennent. Quand les nouveaux programmes
+tiennent, la phase 2 retire la marque : les `.prev` restent, mais la mise à jour suivante repart
+d'eux comme d'une installation ordinaire. Rien n'est désarmé ; l'état de l'alarme
+(`/var/lib/safehome`) n'est pas touché. Ni la configuration (déjà vérifiée par les nouveaux
+programmes), ni les unités ne reviennent : les unités d'avant sont dans
+`/data/maintenance/units-<date>.tgz`, à remettre à la main si besoin (étape 5). **L'ancien
+programme repart sur l'état et la configuration que le nouveau a déjà utilisés** (`engine.json`,
+fichiers de `/etc/safehome`) : un changement de leur format entre deux versions doit rester lisible
+par la précédente, sinon le retour ne suffit pas. Quand `install.sh` échoue à la vérification de la
+configuration, rien n'a été remplacé : sa configuration revient, rien n'est redémarré, la phase 2
+s'arrête sans retour. Quand il échoue plus loin (un redémarrage de service), les programmes sont
+déjà les nouveaux et la marque est posée : la phase 2 fait alors le même retour.
 Les `.prev` s'écrivent en maintenance (`/` en ext4 inscriptible) et restent sous l'overlay après le
 retour en lecture seule : c'est voulu, l'ancienne version reste à portée de main. Place prise : au
 plus un `.prev` par programme, 9 ; les 9 programmes du paquet `dist/maj-8b00128` font 66 788 Kio
@@ -690,9 +704,20 @@ plus un `.prev` par programme, 9 ; les 9 programmes du paquet `dist/maj-8b00128`
    faire **sans** `-s` quand la configuration du site est déjà sur la centrale (aucun secret dans le
    paquet), puis `sudo ./safehome/deploy/install.sh`. Garder d'abord une copie des unités systemd
    en place : si une unité nouvelle empêche un service de démarrer, remettre la sienne seule,
-   `systemctl daemon-reload`, puis redémarrer ce service.
+   `systemctl daemon-reload`, puis redémarrer ce service. Si ce sont les nouveaux programmes qui
+   ne tiennent pas, remettre les `.prev` gardés par `install.sh`, puis redémarrer les services
+   activés parmi eux (pas d'autre, ni `safehome-boot-clock`) :
+
+   ```bash
+   cd /usr/local/bin
+   back=$(for f in safehome-*.prev; do [ -e "$f" ] && sudo mv -f "$f" "${f%.prev}" && echo "${f%.prev}"; done)
+   sudo rm -f .safehome-prev.unconfirmed
+   sudo systemctl daemon-reload
+   for p in $back; do systemctl is-enabled -q "$p" && sudo systemctl restart "$p"; done
+   ```
 6. **Vérifier** : chaque service `active` pendant deux minutes, `safehome-hub version`,
-   `systemctl --failed` vide.
+   `systemctl --failed` vide. Puis confirmer les nouveaux programmes :
+   `sudo rm -f /usr/local/bin/.safehome-prev.unconfirmed` (la phase 2 le fait elle-même).
 7. **Effacer le paquet et tout dossier `site/`** copié sur la centrale (`rm -rf ~/safehome`), puis
    `ls ~` : rien ne doit rester. Le 26 octobre, un dossier `site/` avec des secrets restait d'un
    essai précédent.
