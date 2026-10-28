@@ -620,10 +620,29 @@ Limites connues (28 octobre 2026) :
   pendant cette marche, ouverte plus longtemps que le nouveau recul, peut encore
   déclencher.
 
-Autre défaut voisin laissé de côté : `pullBack` ne ramène pas le début du mode
-(`since`) posé avant un recul ; à un redémarrage suivant où l'horloge recule encore,
-un vrai mouvement pendant l'arrêt, daté après la nouvelle heure mais avant ce début,
-serait pris pour ancien.
+Le début du mode suit la même règle. Trouvé postérieur à maintenant, il est mis à
+part (`since_ahead`, que l'état publié dit toujours) et ramené à maintenant (`since`),
+le plus tard où le mode a pu commencer sur l'horloge telle qu'elle est : les états
+momentanés datés sur elle s'y comparent. L'horloge qui le rattrape le remet en place.
+Pas avant `Boot` : `Boot` compare les états gardés par le broker au début du mode tel
+que la marche précédente l'a laissé. Corrigé le 28 octobre 2026 : le début du mode
+restait postérieur ; à un redémarrage suivant où l'horloge reculait encore, un vrai
+mouvement pendant l'arrêt du hub, daté après la nouvelle heure mais avant ce début,
+était pris pour ancien et écarté.
+
+Ramené, le début du mode ne reconnaît plus un mouvement gardé par le broker d'avant
+le mode, sur l'ancienne horloge, toujours actif : il lui paraîtrait nouveau au
+redémarrage suivant. `Boot` garde donc les états actifs qu'il écarte, chacun par l'heure
+où il a commencé (`set_aside`) : rendu de nouveau par le broker, avec cette heure-là,
+c'est le même état, écarté sans regarder l'horloge. Entendre le capteur efface son
+entrée. Les dates du contrat sont à la milliseconde : un autre état du même capteur
+portant la même heure n'arrive pas en pratique.
+
+Reste une limite : l'horloge reculée pendant la marche (et non au démarrage), un
+mouvement commencé avant le mode sur l'ancienne horloge, toujours actif et que `Boot`
+n'a donc jamais écarté, est pris pour nouveau au redémarrage suivant, avant que
+l'horloge ne rattrape le début du mode : une alarme de trop, plutôt qu'un vrai
+mouvement perdu.
 
 Corrigé le 28 octobre 2026 : `pullBack` effaçait les heures entendues postérieures à
 maintenant, et un mode commencé après maintenant faisait prendre tel quel tout état

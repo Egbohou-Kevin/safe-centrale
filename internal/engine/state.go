@@ -51,6 +51,12 @@ type Snapshot struct {
 	// endIncident), which State says. Since stays when the mode began, which Boot
 	// needs (see older). Zero while disarmed or arming.
 	ArmedSince time.Time `json:"armed_since,omitzero"`
+	// SinceAhead is the start of the mode found after now, the clock gone back behind it
+	// since: Since is brought back to the time the clock went back to meanwhile, the
+	// latest the mode can have begun on the clock as it is, which the states dated on it
+	// compare with (see older). The clock catching up with it puts it back in Since (see
+	// pullBack). State still says it. Zero otherwise.
+	SinceAhead time.Time `json:"since_ahead,omitzero"`
 
 	Bypassed   map[string]bool `json:"bypassed"`    // devices bypassed until disarming
 	Open       map[string]bool `json:"open"`        // contacts that are currently open
@@ -100,6 +106,12 @@ type Snapshot struct {
 	// older). Hearing the sensor again drops its time here; the clock catching up with
 	// it puts it back in Heard (see pullBack).
 	HeardAhead map[string]time.Time `json:"heard_ahead,omitempty"`
+	// SetAside are the active states the last Boot found older than what the engine knew
+	// and set aside, per sensor, by the time they began: given back again by the broker
+	// at a later Boot, bearing that very time, they are the same states, no news whatever
+	// the clock did since (a mode's start brought back by a clock set back no longer
+	// tells them, see older). Hearing the sensor drops its entry.
+	SetAside map[string]time.Time `json:"set_aside,omitempty"`
 
 	// Memory of the last alarm, kept after the system goes back to armed.
 	LastTrigger   *Cause    `json:"last_trigger,omitempty"`
@@ -123,6 +135,7 @@ func (s Snapshot) clone() Snapshot {
 	s.Tampered = maps.Clone(s.Tampered)
 	s.Heard = maps.Clone(s.Heard)
 	s.HeardAhead = maps.Clone(s.HeardAhead)
+	s.SetAside = maps.Clone(s.SetAside)
 	s.Failures = slices.Clone(s.Failures)
 	s.TimedOut = slices.Clone(s.TimedOut)
 	s.Raised = slices.Clone(s.Raised)
