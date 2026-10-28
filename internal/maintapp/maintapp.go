@@ -244,6 +244,13 @@ func (a *App) startTunnel(session string) {
 		defer cancel()
 		if a.previousStopped(ctx, prev, session) {
 			a.runTunnel(ctx, session)
+			return
+		}
+		// Closed before it started: ended still waits for the previous tunnel, or
+		// the next one would start while that one holds the port.
+		select {
+		case <-prev:
+		case <-a.life.Done():
 		}
 	}()
 }
