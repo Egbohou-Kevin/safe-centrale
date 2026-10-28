@@ -543,8 +543,8 @@ réécrirait : son état est écarté s'il a commencé avant le mode où est le 
 avant la fin du délai de sortie en cours ; pas pour un bouton panique jamais entendu,
 zone 24 h que ce délai ne concerne pas : seul le début du mode compte). Vivant, il a été entendu alors et a fait ce
 qu'il fait dans ce mode ; actif depuis, ce n'est pas un nouveau mouvement. Un état qui
-ne dit pas quand il a commencé, ou daté après maintenant (une horloge partie en avant),
-est pris tel quel. Un état changé pendant la fenêtre de démarrage est une nouvelle de
+ne dit pas quand il a commencé est pris tel quel ; un état daté après maintenant suit la
+règle de l'horloge reculée ci-dessous. Un état changé pendant la fenêtre de démarrage est une nouvelle de
 ce démarrage, jamais écartée. Corrigé le 25 octobre 2026 après une revue : une fenêtre
 fermée deux minutes avant une coupure, la boutique armée, déclenchait l'intrusion au
 retour du courant. Corrigé le 28 octobre 2026, trouvé par les tests de séquences
@@ -553,6 +553,36 @@ cours, sa fin, après maintenant, faisait prendre tel quel tout état momentané
 panique pressé avant l'armement donnait une seconde alerte au redémarrage, une sirène
 avec `PanicSiren`) ; et un bouton panique pressé dans le mode en cours, sans heure
 gardée, donnait une nouvelle alerte à chaque redémarrage.
+
+Une horloge reculée au démarrage ne fait pas reprendre pour neuf ce que le moteur a
+déjà entendu. Le Pi sans module d'horloge repart de la dernière heure qu'il a pu
+écrire, des minutes en arrière après une coupure, des jours en lecture seule (la vraie
+centrale, le 28 octobre 2026, repartie du 25 alors que son état datait du 28), puis NTP
+l'avance. Une heure du moteur postérieure à maintenant (l'heure entendue d'un capteur,
+le début du mode) a donc été posée avant le recul :
+
+- un état daté après maintenant a été daté avant le recul, sur la même horloge : il se
+  compare à elle comme d'habitude (plus ancien ou égal, il est écarté) ;
+- un état daté au plus maintenant a pu l'être après le recul, pendant le démarrage :
+  c'est peut-être une vraie intrusion, il est pris tel quel, sauf s'il porte exactement
+  l'heure que le moteur a gardée de ce capteur (c'est le même état).
+
+Les heures entendues ainsi dépassées sont mises à part (`heard_ahead` dans la
+sauvegarde) au lieu d'être effacées : elles ne servent plus qu'à reconnaître le même
+état et à ordonner les états datés avant le recul. Comparées comme les autres, un
+appui daté depuis sur l'horloge reculée paraîtrait plus ancien et serait perdu.
+Entendre de nouveau le capteur les remplace ; le saut en avant de NTP
+(`Engine.Stepped`) les rend comparables, celles qu'il dépasse, l'horloge ayant
+rattrapé celle qui les a posées. Limite connue : un état momentané (mouvement, bris de
+vitre) commencé avant l'heure où l'horloge est repartie, et toujours actif, ne se
+distingue pas d'un état daté pendant le démarrage ; il est pris tel quel, et peut
+déclencher si le mode a commencé après lui. Corrigé le 28 octobre 2026 : `pullBack`
+effaçait les heures entendues postérieures à maintenant, et un mode commencé après
+maintenant faisait prendre tel quel tout état momentané ; un bouton panique déjà
+pressé alertait de nouveau à chaque redémarrage, un mouvement déjà entendu ou une
+porte refermée après la dernière écriture du broker déclenchaient l'intrusion
+(`internal/engine/restart5_test.go` ; le redémarrage à horloge reculée est aussi dans
+les séquences aléatoires).
 
 Après une restauration, le moteur ne rejoue aucune échéance avant `Boot` : ni tic, ni
 rattrapage au passage d'un ordre ou d'un signal reçu pendant la fenêtre de démarrage.

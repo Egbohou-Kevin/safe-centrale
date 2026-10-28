@@ -14,8 +14,9 @@ import (
 // Random sequences of inputs, each from a fixed seed, checked after every input
 // against what must hold whatever happens: the siren follows the alarm, an incident
 // goes off once, a good code disarms, a restored state goes on as the live one did, a
-// clock set back neither disarms nor holds a deadline beyond its own length, and every
-// alarm that went off ends cleared. A failure prints the seed and the sequence, which
+// clock set back neither disarms nor holds a deadline beyond its own length, a restart
+// with the clock set back acts on nothing the engine heard, and every alarm that went
+// off ends cleared. A failure prints the seed and the sequence, which
 // replay it. The checks see their defects (TestTheRandomChecksSeeTheirDefects).
 
 const (
@@ -37,11 +38,18 @@ var randomSensors = []sensorRef{
 type rig struct {
 	*harness
 	states map[sensorRef]Signal // the last state of each sensor, given back at Boot
-	// blurred are the sensors whose state was taken before a clock set back, which
-	// drops what the engine heard after the new time (see pullBack): a momentary one
-	// may then seem to begin after the mode, and act again at Boot. No fork starts
-	// while one of them is active, a limit left as it is (see the lot's report).
-	blurred   map[sensorRef]bool
+	// blurred are the momentary sensors (a movement, glass breaking) whose state was
+	// taken before a clock set back. The engine keeps no time of theirs, which every
+	// passer-by would rewrite, and compares them with the start of the mode: once the
+	// clock went back, a state dated up to the new time cannot be told from one dated
+	// since, which is news (see behind), and one dated after it from a mode begun after
+	// the clock went back. No fork starts while one of them is active, and a restart
+	// with the clock set back is not checked then: a limit left as it is, written in
+	// docs/engine.md (28 October 2026). A door, a panic button keep their time.
+	blurred map[sensorRef]bool
+	// unsure is set by a restart with the clock set back that could not be checked: a
+	// momentary sensor active, blurred or dated up to the new time.
+	unsure    bool
 	sirenOn   bool // the last siren order was SirenOn
 	triggered map[string]bool
 	alerted   map[string]bool
@@ -83,6 +91,25 @@ func (r *rig) blurredActive() bool {
 	return false
 }
 
+// blur marks the momentary sensors' states as taken before a clock set back.
+func (r *rig) blur() {
+	for s := range r.states {
+		if !lasting(s.sensor) && s.sensor != SensorPanic {
+			r.blurred[s] = true
+		}
+	}
+}
+
+// momentaryUpTo tells whether a momentary sensor is active in a state dated up to t.
+func (r *rig) momentaryUpTo(t time.Time) bool {
+	for s, sig := range r.states {
+		if !lasting(s.sensor) && s.sensor != SensorPanic && sig.Active && !sig.Now.After(t) {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *rig) sense(s sensorRef, active bool) []Action {
 	sig := Signal{Now: r.now, DeviceID: s.dev, Sensor: s.sensor, Active: active}
 	r.states[s] = sig
@@ -96,6 +123,7 @@ const (
 	opOther opKind = iota
 	opDisarm
 	opBack
+	opRestartBack
 )
 
 // randomOp is one input of a sequence, applied the same way to a rig and its fork.
@@ -130,19 +158,27 @@ func randomOpFor(rnd *rand.Rand, i int) randomOp {
 	return clockOp(rnd, id)
 }
 
-// clockOp is a restart, a clock set back or forward, or a good disarm.
+// clockOp is a restart, a clock set back or forward, a restart with the clock set back
+// (a Pi that keeps no time), or a good disarm.
 func clockOp(rnd *rand.Rand, id string) randomOp {
-	switch rnd.IntN(4) {
+	switch rnd.IntN(5) {
 	case 0:
 		return randomOp{name: "restart", do: func(r *rig) []Action { r.e = restart(r.t, r.harness); return r.boot() }}
 	case 1:
 		d := pick(rnd, time.Minute, 10*time.Minute, time.Hour, 3*time.Hour)
 		return randomOp{name: "clock back " + d.String(), kind: opBack, do: func(r *rig) []Action {
 			r.now = r.now.Add(-d)
-			for s := range r.states {
-				r.blurred[s] = true
-			}
+			r.blur()
 			return r.e.Handle(Tick{Now: r.now})
+		}}
+	case 4:
+		d := pick(rnd, time.Minute, 10*time.Minute, 3*time.Hour, 72*time.Hour)
+		return randomOp{name: "restart, clock back " + d.String(), kind: opRestartBack, do: func(r *rig) []Action {
+			r.e = restart(r.t, r.harness)
+			r.now = r.now.Add(-d)
+			r.unsure = r.blurredActive() || r.momentaryUpTo(r.now)
+			r.blur()
+			return r.boot()
 		}}
 	case 2:
 		d := pick(rnd, time.Minute, time.Hour, 14*time.Hour)
@@ -221,6 +257,8 @@ func (r *rig) step(op randomOp) ([]Action, error) {
 		errs = append(errs, r.disarmed(ringing, as))
 	case op.kind == opBack:
 		errs = append(errs, pulledBack(mode, r.e.Mode(), as))
+	case op.kind == opRestartBack && !r.unsure:
+		errs = append(errs, rebooted(mode, r.e.Mode(), as))
 	}
 	errs = append(errs, bounds(r.cfg, r.now, r.e.NextWake(), r.e.Snapshot().LockedUntil))
 	return as, errors.Join(errs...)
@@ -304,6 +342,15 @@ func pulledBack(before, after Mode, as []Action) error {
 		return fmt.Errorf("a clock set back moved %s to %s: %s", before, after, describe(as))
 	}
 	return nil
+}
+
+// rebooted checks a restart with the clock set back: at most the siren told again, in
+// the mode it found. What the engine heard before is no news.
+func rebooted(before, after Mode, as []Action) error {
+	if after != before {
+		return fmt.Errorf("a restart with the clock set back moved %s to %s: %s", before, after, describe(as))
+	}
+	return onlySiren(as)
 }
 
 // bounds checks that nothing the engine waits for lies further than its own length:
@@ -404,6 +451,10 @@ func TestTheRandomChecksSeeTheirDefects(t *testing.T) {
 	}
 	if pulledBack(ModeArmed, ModeArmed, nil) != nil || pulledBack(ModeArmed, ModeDisarmed, nil) == nil {
 		t.Error("pulledBack does not tell a clock set back that disarms")
+	}
+	if rebooted(ModeTriggered, ModeTriggered, []Action{SirenOn{Duration: time.Second}}) != nil ||
+		rebooted(ModeArmed, ModeTriggered, nil) == nil || rebooted(ModeDisarmed, ModeDisarmed, []Action{Alert{}}) == nil {
+		t.Error("rebooted does not tell a restart that acts on what the engine heard")
 	}
 	cfg := r.cfg
 	if bounds(cfg, t0, t0.Add(cfg.SirenCycle), t0.Add(cfg.LockoutDuration)) != nil ||
