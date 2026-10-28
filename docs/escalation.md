@@ -635,7 +635,7 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
 La passerelle GSM (`safehome-gsm`) exécute les demandes `sms` et `call`, connaît les
 numéros des contacts et publie `alert.ack` pour une réponse « 1 ». Les canaux
 application et WhatsApp partent par l'agent de liaison vers le cloud (dépôt
-`safeHome-cloud`), qui envoie WhatsApp ; l'application n'existe pas encore. Pas encore
+`safeHome-cloud`), qui envoie WhatsApp et les notifications de l'application (Android, en essai depuis le 28 octobre 2026). Pas encore
 fait : le changement des plans depuis le cloud (les contacts, eux, arrivent par
 `config.set`, que le cloud envoie dès qu'ils changent).
 
