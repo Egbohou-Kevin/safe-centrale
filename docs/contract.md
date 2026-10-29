@@ -996,12 +996,21 @@ le cloud, à chaque changement et de nouveau chaque minute même sans changement
 - `key` : la clé publique de l'agent (P-256, point non compressé de 65 octets, en base64),
   créée au premier démarrage. Les téléphones scellent le code d'accès avec elle (voir
   « Le code scellé ») : le cloud la relaie et ne voit jamais le code. Absente du dernier
-  message ci-dessous. La clé privée est dans `code-key`, dans le dossier d'état de l'agent :
-  droits de son propriétaire seul (remis à 0600 au démarrage s'ils sont plus larges, avec
-  un avertissement), écrite entière sur la carte puis renommée. Abîmée (vide, tronquée),
-  elle est mise de côté en `code-key.damaged` et remplacée par une nouvelle plutôt que
-  d'arrêter l'agent, qui porte les alarmes : les téléphones reçoivent la nouvelle par
-  `key`, et un sceau fait pour l'ancienne est refusé `bad_seal` (28/10/2026).
+  message ci-dessous. La clé privée est dans `agent/code-key`, sous-dossier du dossier
+  d'état de l'agent (`/var/lib/safehome/agent`, créé en 0700 par l'agent s'il manque),
+  que les unités des autres programmes cacheront (29/10/2026) : droits de son
+  propriétaire seul (remis à 0600 au démarrage s'ils sont plus larges, avec un
+  avertissement), écrite entière sur la carte puis renommée. Si elle n'y est pas, l'agent
+  lit `code-key` à l'ancien endroit, à plat dans le dossier d'état (fichier, ou lien
+  laissé par l'installation), et ne tire **jamais** de clé neuve tant que celle-ci se
+  lit : une clé neuve casse tous les sceaux faits pour l'ancienne. L'agent ne déplace
+  rien : la copie vers `agent/` et le lien à l'ancien endroit sont le travail de
+  l'installation. Il tire une clé neuve, rangée dans `agent/`, dans trois cas seulement :
+  les deux endroits manquent ; l'ancien endroit est un lien qui ne mène à rien (avec un
+  avertissement) ; la clé lue est abîmée (vide, tronquée). Abîmée, elle est mise de côté
+  là où elle était, sous le nom `code-key.damaged`, plutôt que d'arrêter l'agent, qui
+  porte les alarmes : les téléphones reçoivent la nouvelle par `key`, et un sceau fait
+  pour l'ancienne est refusé `bad_seal` (28/10/2026).
 - Le même message, avec `uplink` à `down` et `seq` à 0, est le « dernier message »
   (Last Will) que le broker du cloud publie si la connexion se coupe sans prévenir.
   L'agent le publie lui-même quand il s'arrête proprement.

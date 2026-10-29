@@ -51,7 +51,7 @@ func TestTheExampleIsValidAndRepeatsTheDefaults(t *testing.T) {
 	if c.Password != "s3cret-of-the-site" || c.Username != "tg-lom-0001" || c.CAFile != "" {
 		t.Fatalf("%+v", c)
 	}
-	if r.BrokerURL != "mqtt://127.0.0.1:1883" || r.StateDir != "/var/lib/safehome" || r.LogLevel != slog.LevelInfo {
+	if r.BrokerURL != "mqtt://127.0.0.1:1883" || r.StateDir != "/var/lib/safehome" || r.KeyDir != "/var/lib/safehome/agent" || r.LogLevel != slog.LevelInfo {
 		t.Fatalf("%+v", r)
 	}
 }

@@ -74,7 +74,7 @@ func runAgent(ctx context.Context, cfg agentconfig.Result, stderr io.Writer) int
 		log.Error("cannot prepare the photos' upload", "err", err)
 		return 1
 	}
-	key, err := codeKey(cfg.StateDir, log)
+	key, err := codeKey(cfg.KeyDir, cfg.StateDir, log)
 	if err != nil {
 		log.Error("cannot read or make the key for the sealed codes", "err", err)
 		return 1

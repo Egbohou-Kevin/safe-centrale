@@ -56,21 +56,39 @@ func (u uploader) Put(ctx context.Context, url, token string, body io.Reader, si
 	return err
 }
 
-// codeKey reads the agent's key for the sealed codes, or draws one at the first start. It
-// is written with the rights of its owner alone, whole or not at all, and on the card
-// before it is used. A key file open to others is made private again. A damaged one (a
-// power cut) is set aside and replaced, rather than stop the agent, which carries the
-// alarms: the new public half reaches the phones with agent.status, and a seal made for
-// the old one is answered bad_seal. A key read or written whole is used even when it
-// cannot be made private or its folder flushed (a file left to root, a card that refuses
-// a folder sync): that is warned, not fatal. No message quotes the key.
-func codeKey(dir string, log *slog.Logger) (*sealcode.Key, error) {
-	path := filepath.Join(dir, "code-key")
+// codeKey reads the agent's key for the sealed codes from dir, the agent's own folder, made
+// 0700 if missing, or draws one at the first start. It is written with the rights of its
+// owner alone, whole or not at all, and on the card before it is used. A key missing from
+// dir is read at its old place in oldDir, where an earlier agent kept it (a file, or the
+// link the installer leaves there): a new key is drawn only when both are missing, since a
+// new key breaks every seal made for the old one. Nothing is moved. A key file open to
+// others is made private again. A damaged one (a power cut) is set aside where it lies
+// and replaced in dir, rather than stop the agent, which carries the alarms: the new
+// public half reaches the phones with agent.status, and a seal made for the old one is
+// answered bad_seal. A key read or written whole is used even when it cannot be made
+// private or its folder flushed (a file left to root, a card that refuses a folder sync):
+// that is warned, not fatal. No message quotes the key.
+func codeKey(dir, oldDir string, log *slog.Logger) (*sealcode.Key, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	newPath := filepath.Join(dir, keyName)
+	path := newPath
 	b, err := os.ReadFile(path)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return newCodeKey(dir, path, log)
-	case err != nil:
+	if errors.Is(err, os.ErrNotExist) {
+		path = filepath.Join(oldDir, keyName)
+		b, err = os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			if _, lerr := os.Lstat(path); lerr == nil {
+				log.Warn("the key's old place is a link to nothing: a new key is drawn", "path", path)
+			}
+			return newCodeKey(dir, newPath, log)
+		}
+		if err == nil {
+			log.Info("the key for the sealed codes is read at its old place", "path", path)
+		}
+	}
+	if err != nil {
 		return nil, err
 	}
 	k, err := sealcode.Parse(string(b))
@@ -79,7 +97,7 @@ func codeKey(dir string, log *slog.Logger) (*sealcode.Key, error) {
 		if err := os.Rename(path, path+".damaged"); err != nil {
 			return nil, err
 		}
-		return newCodeKey(dir, path, log)
+		return newCodeKey(dir, newPath, log)
 	}
 	st, err := os.Stat(path)
 	if err != nil {
@@ -94,6 +112,9 @@ func codeKey(dir string, log *slog.Logger) (*sealcode.Key, error) {
 	return k, nil
 }
 
+// keyName is the file of the key for the sealed codes, in the agent's folder.
+const keyName = "code-key"
+
 // newCodeKey draws a key and writes it at path: a file of its own (0600), flushed to the
 // card, then renamed, and the folder flushed too, so that a power cut leaves the old
 // state or the whole key.
@@ -102,7 +123,7 @@ func newCodeKey(dir, path string, log *slog.Logger) (*sealcode.Key, error) {
 	if err != nil {
 		return nil, err
 	}
-	tmp, err := os.CreateTemp(dir, "code-key-*") // 0600
+	tmp, err := os.CreateTemp(dir, keyName+"-*") // 0600
 	if err != nil {
 		return nil, err
 	}
