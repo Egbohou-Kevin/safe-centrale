@@ -205,4 +205,8 @@ type State struct {
 	KeypadLockedUntil time.Time
 
 	NextScheduled time.Time // next automatic arming while disarmed, zero if none
+	// ExitDelay is the exit delay an arming would take now, from the running
+	// configuration (the cloud's included), in every mode: the app says it before
+	// arming. Zero only where the engine does not know it.
+	ExitDelay time.Duration
 }

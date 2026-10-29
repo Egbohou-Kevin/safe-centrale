@@ -98,7 +98,7 @@ func (e *Engine) NextWake() time.Time {
 // State returns the public summary of the engine at time now.
 func (e *Engine) State(now time.Time) State {
 	// The mode's start as it was taken, not where a clock set back brought it.
-	st := State{Mode: e.s.Mode, Since: later(e.s.Since, e.s.SinceAhead)}
+	st := State{Mode: e.s.Mode, Since: later(e.s.Since, e.s.SinceAhead), ExitDelay: e.cfg.ExitDelay}
 	switch e.s.Mode {
 	case ModeArmed:
 		// Armed since the arming, through the alarms that left the site armed (trial

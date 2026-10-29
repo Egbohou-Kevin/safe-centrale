@@ -53,6 +53,11 @@
       "type": "string",
       "format": "date-time",
       "description": "UTC, à la milliseconde"
+    },
+    "exit_delay_s": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Le délai de sortie, en secondes, que prendrait un armement maintenant, d'après la configuration en cours de la centrale (celle venue du cloud comprise). Dans tous les états : l'application l'annonce avant d'armer (« Sortez · 30 s »). Absent si la centrale ne le connaît pas, ou si elle est antérieure au 29 octobre 2026 : jamais 0"
     }
   },
   "required": [

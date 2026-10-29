@@ -19,6 +19,8 @@ func TestAConfigurationFromTheCloudRestartsTheHubThenIsApplied(t *testing.T) {
 	cfg := writeConfig(t, broker.URL(), state, "")
 	l := startLive(t, broker, state, cfg)
 	l.waitState("disarmed")
+	// The state says the exit delay an arming would take: hub.json's default first.
+	l.waitExitDelay(120)
 
 	// Without an owner: refused at once, nothing kept, no restart.
 	l.publish(contract.ConfigSetTopic(site), contract.TypeConfigSet, contract.ConfigSetData{Version: 2, Contacts: []contract.ConfigContact{
@@ -33,7 +35,7 @@ func TestAConfigurationFromTheCloudRestartsTheHubThenIsApplied(t *testing.T) {
 
 	// A good one: kept, then the hub stops for systemd to start it again.
 	l.publish(contract.ConfigSetTopic(site), contract.TypeConfigSet, contract.ConfigSetData{
-		Version: 3, SiteName: "Boutique Be", EntryDelayS: 20,
+		Version: 3, SiteName: "Boutique Be", EntryDelayS: 20, ExitDelayS: 45,
 		Contacts: []contract.ConfigContact{
 			{ID: "u_owner", Name: "Ama", Role: "owner", Channels: []string{"app", "sms"}, Phone: "+22890000001"},
 			{ID: "u_night", Name: "Kofi", Role: "guard", Channels: []string{"sms"}, Phone: "+22870000002"},
@@ -61,6 +63,8 @@ func TestAConfigurationFromTheCloudRestartsTheHubThenIsApplied(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "2 contact(s)") || !strings.Contains(out, "from the cloud: version 3") {
 		t.Fatalf("%d %q", code, out)
 	}
+	// The exit delay of 45 s from the cloud is the one the state says, before arming.
+	l.waitExitDelay(45)
 	// The entry delay of 20 s from the cloud: an entry, then the alarm only after it.
 	l.event("dev_keypad", contract.CapKeypad, "arm", "")
 	l.waitState("arming")

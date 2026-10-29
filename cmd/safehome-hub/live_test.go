@@ -150,6 +150,19 @@ func (l *live) waitState(want string) {
 	drivertest.WaitFor(l.t, "state "+want, func() bool { return l.lastState() == want })
 }
 
+// waitExitDelay waits for the last alarm.state to say the exit delay want, in seconds.
+func (l *live) waitExitDelay(want int) {
+	l.t.Helper()
+	drivertest.WaitFor(l.t, fmt.Sprintf("exit_delay_s %d", want), func() bool {
+		states := l.seen(contract.TypeAlarmState)
+		if len(states) == 0 {
+			return false
+		}
+		d, _ := contract.DecodeData[contract.AlarmStateData](states[len(states)-1])
+		return d.ExitDelayS == want
+	})
+}
+
 func (l *live) waitCount(typ string, n int) {
 	l.t.Helper()
 	drivertest.WaitFor(l.t, fmt.Sprintf("%d x %s", n, typ), func() bool { return len(l.seen(typ)) >= n })
