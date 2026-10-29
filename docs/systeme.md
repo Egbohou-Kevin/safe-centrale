@@ -187,13 +187,22 @@ des unités :
   en place. Après elle, un fichier régulier à plat a été écrit par un programme d'avant, remis
   par un retour arrière (il a remplacé le lien) : ce fichier-là gagne et est recopié dans le
   dossier, son `.prev` d'abord ;
-- **arrêt court du hub et de la console** : s'il reste un fichier régulier des codes à plat,
-  `install.sh` arrête la console et le hub juste avant le déplacement, pour qu'aucun n'écrive
-  entre le choix de la copie et la copie, puis les relance (le hub d'abord), même si le
-  déplacement échoue (`trap start_codes_stopped EXIT`) : jamais une maison laissée sans
-  alarme. La fenêtre sans alarme : 0,083 s mesurés sur le Mac ; sur le Pi, projeté, non mesuré
-  (0,3 à 1 s), **à mesurer** (liste ci-dessous). Une fois les liens posés, plus d'arrêt : les
-  programmes n'écrivent que dans le dossier.
+- **arrêt court du hub et de la console** : s'il reste un fichier régulier des codes à plat (le
+  fichier ou son `.prev`, pas un lien), `install.sh` arrête la console puis le hub juste avant
+  le déplacement, pour qu'aucun n'écrive entre le choix de la copie et la copie. La relance
+  dépend de l'issue :
+  - le déplacement réussit : rien ne les relance tout de suite. C'est la boucle finale
+    d'`install.sh` (`systemctl restart` de chaque programme, dans l'ordre hub, gsm, zigbee,
+    agent, video, maint, console, power) qui les relance : le hub en premier, la console après
+    la plupart des autres ;
+  - le déplacement échoue (disque plein, fichier illisible) : `trap start_codes_stopped EXIT`,
+    posé pour le seul déplacement, relance le hub puis la console et écrit
+    `install.sh: the codes did not move; started again: …` : jamais une maison laissée sans
+    alarme.
+
+  La fenêtre sans alarme va de l'arrêt du hub à sa relance : 0,083 s mesurés sur le Mac ; sur
+  le Pi, projeté, non mesuré (0,3 à 1 s), **à mesurer** (liste ci-dessous). Une fois les liens
+  posés, plus d'arrêt : les programmes n'écrivent que dans le dossier.
 
 **Ajouter un dossier d'état** : d'abord les unités (l'`InaccessiblePaths=-` du dossier dans
 chaque unité qui n'en a pas besoin), puis `stateReaders` dans `deploy/separation_test.go` (le
@@ -1158,7 +1167,16 @@ ne tient pas, donc remet les unités d'avant :
 
 À vérifier sur le Pi au premier déploiement des dossiers d'état (29 octobre 2026, « Ce qui
 tourne », les dossiers d'état) ; S = `/var/lib/safehome`. Aucun fichier ne s'affiche : on ouvre
-(`head -c0`), on ne lit pas. Noter l'heure du début de la phase 2 (`date`) :
+(`head -c0`), on ne lit pas. Avant la mise à jour, noter :
+
+- l'heure du début, au format que `journalctl --since` accepte, à l'heure du Pi :
+  `date '+%F %T'` (par exemple `2026-10-29 17:05:00`) ;
+- s'il reste un fichier des codes à plat (la condition de l'arrêt du hub, point 3) :
+  `for f in access.json installer.json codes-taken.json; do for g in $f $f.prev; do sudo test -f /var/lib/safehome/$g -a ! -L /var/lib/safehome/$g && echo "à plat : $g"; done; done`.
+  Une ligne `à plat : …` : le hub sera arrêté pendant le déplacement. Aucune ligne : le
+  déplacement est déjà fait (ou rien à déplacer), pas d'arrêt pour lui.
+
+Puis :
 
 1. les liens, les dossiers et la marque :
    `sudo ls -la /var/lib/safehome | grep -e ' -> ' -e ' agent$' -e ' codes$'` montre
@@ -1178,10 +1196,18 @@ tourne », les dossiers d'état) ; S = `/var/lib/safehome`. Aucun fichier ne s'a
    `/var/lib/safehome/agent/code-key` (et le lien `code-key`) échoue,
    `/var/lib/safehome/codes/access.json` s'ouvre ; dans celui du hub, comme la console ;
 3. l'arrêt réel du hub pendant le déplacement :
-   `journalctl -u safehome-hub -o short-precise --since "<heure notée>" | grep -e Stopp -e Started`
-   ; l'écart entre `Stopped` et le `Started` suivant est la fenêtre sans alarme (0,083 s sur le
-   Mac, 0,3 à 1 s projeté sur le Pi) : le noter ici. Témoin positif : les deux lignes existent (il
-   restait un fichier à plat) ; sinon le déplacement était déjà fait, sans arrêt ;
+   `journalctl -u safehome-hub -o short-precise --since "<heure notée>" | grep -e Stopp -e Started`.
+   Des lignes sortent toujours : la boucle finale d'`install.sh` relance le hub
+   (`systemctl restart`), déplacement ou non, et la mise à jour elle-même peut l'arrêter et le
+   relancer. Leur seule présence ne prouve rien ; c'est l'écart qui distingue. Un simple
+   redémarrage sépare `Stopped` et `Started` de quelques millisecondes ; l'arrêt pour le
+   déplacement, de toute la durée du déplacement. Témoin positif, si un fichier à plat a été
+   noté avant : un `Stopped` suivi d'un `Started` séparés de plus de 50 ms environ (seuil
+   projeté, non mesuré sur le Pi), et la sortie d'`install.sh` sans la ligne
+   `install.sh: the codes did not move; started again: …`. Cet écart est la fenêtre sans alarme
+   (0,083 s sur le Mac, 0,3 à 1 s projeté sur le Pi) : le noter ici. Si aucun fichier à plat
+   n'a été noté, seuls des redémarrages de quelques millisecondes doivent apparaître ; une
+   paire plus longue serait à comprendre avant d'aller plus loin ;
 4. un code juste accepté après le déplacement : le changer à la console
    (`journalctl -u safehome-hub -b | grep "access codes reloaded"`), puis le taper au clavier ou
    dans l'application : il désarme ; un code faux est refusé (témoin positif). `access.json` à
