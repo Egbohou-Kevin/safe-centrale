@@ -56,7 +56,9 @@ func Open(dir string, log *slog.Logger) (*Store, error) {
 // OpenMoved is Open for documents that move from the folder old to dir: a document
 // dir does not hold yet is read in old, so a program never starts without what it
 // kept there (the installation copies them, the program moves nothing). Every write
-// goes to dir. A dir made here gets old's owner and group, as the documents do: made
+// goes to dir, so from the first one the copy in old is stale: an installation must
+// never copy old over a document dir already holds, unless an older program wrote old
+// again after a rollback that followed the move. A dir made here gets old's owner and group, as the documents do: made
 // by a tool run with plain sudo, root's alone, the service that owns old could never
 // read it.
 func OpenMoved(dir, old string, log *slog.Logger) (*Store, error) {
