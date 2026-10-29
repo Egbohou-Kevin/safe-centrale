@@ -23,7 +23,7 @@ func TestAClockSetForwardCutsNoSirenAndLiftsNoLockout(t *testing.T) {
 	if as := h.advance(time.Minute); len(as) != 0 {
 		t.Fatalf("two minutes into the alarm, after a clock set forward: %v", as)
 	}
-	if s := h.e.State(h.now); s.Mode != ModeTriggered || !s.SirenOn || s.Cycle != 1 || s.LockedUntil.IsZero() {
+	if s := h.e.State(h.now); s.Mode != ModeTriggered || !s.SirenOn || s.Cycle != 1 || s.KeypadLockedUntil.IsZero() {
 		t.Fatalf("after a clock set forward: %+v", s)
 	}
 	if r := replyOf(t, h.cmd(CmdDisarm, goodCode("u_owner"))); r.Reason != ReasonLockedOut {

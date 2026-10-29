@@ -220,6 +220,53 @@ func TestOnlyTheKeypadOpensTheInstallationMode(t *testing.T) {
 	}
 }
 
+// The app's lockout, which a cloud may set at will, does not stop the installer at the
+// keypad: the mode opens and the code is not counted as a keypad wrong code.
+func TestTheAppsLockoutDoesNotStopTheInstaller(t *testing.T) {
+	r := newRig(t, nil)
+	r.withInstaller()
+	r.start()
+	n := r.hub.cfg.Engine.LockoutAttempts
+	for range n {
+		r.order(contract.CmdDisarm, contract.CommandArgs{Code: "000000"}, contract.OriginApp, "u_owner")
+	}
+	r.waitAcks(n)
+	if r.engineSnapshot().LockedUntil.IsZero() {
+		t.Fatal("the app is not locked")
+	}
+	r.openInstall()
+	if s := r.engineSnapshot(); len(s.KeypadFailures) != 0 || !s.KeypadLockedUntil.IsZero() || s.WrongCodes != n {
+		t.Fatalf("the installer code counted: keypad failures %v, locked until %v, wrong codes %d", s.KeypadFailures, s.KeypadLockedUntil, s.WrongCodes)
+	}
+}
+
+// The keypad's lockout does: the code is refused locked_out, not counted again.
+func TestTheKeypadsLockoutStopsTheInstaller(t *testing.T) {
+	r := newRig(t, nil)
+	r.withInstaller()
+	r.start()
+	n := r.hub.cfg.Engine.LockoutAttempts
+	for range n {
+		r.keypad(contract.ValDisarm, "000000")
+	}
+	r.waitAcks(n)
+	if r.engineSnapshot().KeypadLockedUntil.IsZero() {
+		t.Fatal("the keypad is not locked")
+	}
+	r.keypad(contract.ValDisarm, installerCode)
+	r.waitAcks(n + 1)
+	r.settle()
+	if got := lastAck(t, r); got.Reason != contract.ReasonLockedOut {
+		t.Fatalf("%+v", got)
+	}
+	if r.lastInstall().Status == contract.InstallOpen {
+		t.Fatal("the mode opened on a locked keypad")
+	}
+	if s := r.engineSnapshot(); len(s.KeypadFailures) != 0 || s.WrongCodes != n {
+		t.Fatalf("the refused code counted: keypad failures %v, wrong codes %d, want %d", s.KeypadFailures, s.WrongCodes, n)
+	}
+}
+
 func TestAPersonsCodeStillDisarmsWithAnInstallerCode(t *testing.T) {
 	r := newRig(t, nil)
 	r.withInstaller()

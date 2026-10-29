@@ -133,10 +133,16 @@ type Snapshot struct {
 
 	Schedule *Schedule `json:"schedule,omitempty"`
 
-	// Failures are the wrong codes of the last LockoutWindow, oldest first, from the
-	// keypad and the app alike: the lockout is the site's.
+	// Failures are the app's wrong codes of the last LockoutWindow, oldest first (every
+	// origin but the keypad): the lockout is the origin's (29 October 2026, see
+	// Engine.lockout). A state saved before kept the site's here: read again, its
+	// lockout becomes the app's and the keypad starts free.
 	Failures    []time.Time `json:"failures,omitempty"`
-	LockedUntil time.Time   `json:"locked_until"` // disarming is refused until this time
+	LockedUntil time.Time   `json:"locked_until"` // disarming from the app is refused until this time
+	// KeypadFailures and KeypadLockedUntil are the keypad's own. A program from before
+	// them, brought back by a rollback, reads this state and ignores them.
+	KeypadFailures    []time.Time `json:"keypad_failures,omitempty"`
+	KeypadLockedUntil time.Time   `json:"keypad_locked_until,omitzero"` // disarming at the keypad is refused until this time
 	// WrongCodes counts the wrong codes since the last good one, however spread out,
 	// from the keypad and the app alike: every LockoutAttempts of them alert the
 	// contacts, locked or not. A lockout does not start it over.
@@ -152,6 +158,7 @@ func (s Snapshot) clone() Snapshot {
 	s.SetAside = maps.Clone(s.SetAside)
 	s.Momentary = maps.Clone(s.Momentary)
 	s.Failures = slices.Clone(s.Failures)
+	s.KeypadFailures = slices.Clone(s.KeypadFailures)
 	s.TimedOut = slices.Clone(s.TimedOut)
 	s.Raised = slices.Clone(s.Raised)
 	s.Waiting = slices.Clone(s.Waiting)
@@ -192,7 +199,10 @@ type State struct {
 	SirenOn     bool
 	Cycle       int       // current siren cycle, starting at 1
 	Of          int       // number of siren cycles
-	LockedUntil time.Time // zero unless disarming is locked
+	LockedUntil time.Time // zero unless disarming from the app is locked: the one published
+	// KeypadLockedUntil: zero unless disarming at the keypad is locked. Not published (the
+	// contract's locked_until is the app's): the keypad hears of it by its refusal.
+	KeypadLockedUntil time.Time
 
 	NextScheduled time.Time // next automatic arming while disarmed, zero if none
 }

@@ -478,7 +478,7 @@ func (a tally) add(b tally) tally {
 // step applies one input and checks what must hold after it.
 func (r *rig) step(op randomOp) ([]Action, error) {
 	ringing, mode := r.e.State(r.now).Incident, r.e.Mode()
-	locked := r.now.Before(r.e.Snapshot().LockedUntil)
+	locked := r.now.Before(r.e.Snapshot().KeypadLockedUntil) // the sequences enter their codes at the keypad
 	as := op.do(r)
 	errs := []error{r.observe(as)}
 	switch {
@@ -489,7 +489,8 @@ func (r *rig) step(op randomOp) ([]Action, error) {
 	case op.kind == opRestart && !r.unsure:
 		errs = append(errs, rebooted(r.before, r.e.Mode(), r.booted))
 	}
-	errs = append(errs, bounds(r.cfg, r.now, r.e.NextWake(), r.e.Snapshot().LockedUntil))
+	snap := r.e.Snapshot()
+	errs = append(errs, bounds(r.cfg, r.now, r.e.NextWake(), snap.LockedUntil, snap.KeypadLockedUntil))
 	return as, errors.Join(errs...)
 }
 
@@ -583,13 +584,15 @@ func rebooted(before, after Mode, as []Action) error {
 }
 
 // bounds checks that nothing the engine waits for lies further than its own length:
-// the longest delay or siren step, the lockout.
-func bounds(cfg Config, now, wake, locked time.Time) error {
+// the longest delay or siren step, the lockouts (the app's and the keypad's).
+func bounds(cfg Config, now, wake time.Time, locks ...time.Time) error {
 	if longest := max(cfg.ExitDelay, cfg.EntryDelay, cfg.SirenCycle, cfg.SirenPause); wake.After(now.Add(longest)) {
 		return fmt.Errorf("next wake %v after now, longer than any step", wake.Sub(now))
 	}
-	if locked.After(now.Add(cfg.LockoutDuration)) {
-		return fmt.Errorf("locked %v after now, longer than the lockout", locked.Sub(now))
+	for _, locked := range locks {
+		if locked.After(now.Add(cfg.LockoutDuration)) {
+			return fmt.Errorf("locked %v after now, longer than the lockout", locked.Sub(now))
+		}
 	}
 	return nil
 }
@@ -699,7 +702,8 @@ func TestTheRandomChecksSeeTheirDefects(t *testing.T) {
 	}
 	cfg := r.cfg
 	if bounds(cfg, t0, t0.Add(cfg.SirenCycle), t0.Add(cfg.LockoutDuration)) != nil ||
-		bounds(cfg, t0, t0.Add(time.Hour), time.Time{}) == nil || bounds(cfg, t0, time.Time{}, t0.Add(time.Hour)) == nil {
+		bounds(cfg, t0, t0.Add(time.Hour), time.Time{}) == nil || bounds(cfg, t0, time.Time{}, t0.Add(time.Hour)) == nil ||
+		bounds(cfg, t0, time.Time{}, time.Time{}, t0.Add(time.Hour)) == nil {
 		t.Error("bounds does not tell a deadline or a lockout held too long")
 	}
 	if allCleared(map[string]bool{"a": true}, map[string]bool{"a": true}) != nil || allCleared(map[string]bool{"a": true}, nil) == nil {

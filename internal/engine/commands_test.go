@@ -35,8 +35,8 @@ func TestBadCodesLockOutThenRecover(t *testing.T) {
 	if al := alerts(as); len(al) != 1 || al[0].Kind != AlertAuthFailed {
 		t.Fatalf("lockout alert: %v", al)
 	}
-	if got := h.e.State(h.now).LockedUntil; got.IsZero() {
-		t.Fatal("State must announce the lockout")
+	if st := h.e.State(h.now); st.KeypadLockedUntil.IsZero() || !st.LockedUntil.IsZero() {
+		t.Fatalf("State must announce the keypad's lockout, and only it: %+v", st)
 	}
 
 	// During the lockout, even the right code is refused.
@@ -47,7 +47,7 @@ func TestBadCodesLockOutThenRecover(t *testing.T) {
 	}
 	h.mustBe(ModeTriggered)
 	// And a wrong code during the lockout does not count.
-	if got := len(h.e.Snapshot().Failures); got != 0 {
+	if got := len(h.e.Snapshot().KeypadFailures); got != 0 {
 		t.Fatalf("counter %d", got)
 	}
 	r = replyOf(t, h.cmd(CmdDisarm, badCode))
@@ -57,7 +57,7 @@ func TestBadCodesLockOutThenRecover(t *testing.T) {
 
 	// After the 10 minutes, the right code works.
 	h.advance(time.Minute)
-	if got := h.e.State(h.now).LockedUntil; !got.IsZero() {
+	if got := h.e.State(h.now).KeypadLockedUntil; !got.IsZero() {
 		t.Fatal("the lockout is over")
 	}
 	r = replyOf(t, h.cmd(CmdDisarm, goodCode("u_owner")))
@@ -110,27 +110,6 @@ func TestOnlyTheWrongCodesOfTheLastTenMinutesCount(t *testing.T) {
 		t.Fatalf("locked until %v, window %v", got, LockoutWindow)
 	}
 	h.mustBe(ModeArmed)
-}
-
-// Three wrong codes within 10 minutes lock the whole site for LockoutDuration,
-// whether they came from the keypad or the app.
-func TestThreeWrongCodesWithinTenMinutesLockTheSite(t *testing.T) {
-	h := newHarness(t)
-	h.armed()
-	h.badAt(0, OriginKeypad)
-	if af := h.badAt(5*time.Minute, OriginApp); af.Attempts != 2 {
-		t.Fatalf("the keypad and the app count together: %+v", af)
-	}
-	af := h.badAt(5*time.Minute-time.Second, OriginKeypad)
-	if af.Attempts != 3 || !af.LockedUntil.Equal(h.now.Add(h.cfg.LockoutDuration)) {
-		t.Fatalf("three within 10 minutes: %+v", af)
-	}
-	if r := replyOf(t, h.cmd(CmdDisarm, goodCode("u_owner"), func(c *Command) { c.Origin = OriginApp })); r.Reason != ReasonLockedOut {
-		t.Fatalf("the lockout holds for every origin: %+v", r)
-	}
-	if n := len(h.e.Snapshot().Failures); n != 0 {
-		t.Fatalf("a lockout starts the count over: %d left", n)
-	}
 }
 
 // A patient guesser stays under the window: two wrong codes every 10 minutes (the
@@ -200,23 +179,36 @@ func (h *harness) aheadThenBack(d time.Duration, edit func(s *Snapshot, ahead ti
 func TestWrongCodesStampedInTheFutureCountAsNow(t *testing.T) {
 	h := newHarness(t)
 	h.armed()
-	h.aheadThenBack(time.Hour, func(s *Snapshot, ahead time.Time) { s.Failures = []time.Time{ahead, ahead} })
-	if af := h.badAt(LockoutWindow, OriginKeypad); af.Attempts != 1 || !af.LockedUntil.IsZero() {
-		t.Fatalf("two wrong codes from the future still count 10 minutes later: %+v", af)
+	h.aheadThenBack(time.Hour, func(s *Snapshot, ahead time.Time) {
+		s.Failures, s.KeypadFailures = []time.Time{ahead, ahead}, []time.Time{ahead, ahead}
+	})
+	h.advance(LockoutWindow)
+	for _, o := range []Origin{OriginKeypad, OriginApp} {
+		if af := h.badAt(0, o); af.Attempts != 1 || !af.LockedUntil.IsZero() {
+			t.Fatalf("%s: two wrong codes from the future still count 10 minutes later: %+v", o, af)
+		}
 	}
 }
 
-// A lockout set while the clock ran ahead ends at most LockoutDuration from now.
+// A lockout set while the clock ran ahead ends at most LockoutDuration from now, the
+// keypad's and the app's alike.
 func TestALockoutFromTheFutureEndsLockoutDurationFromNow(t *testing.T) {
 	h := newHarness(t)
 	h.armed()
-	h.aheadThenBack(time.Hour, func(s *Snapshot, ahead time.Time) { s.LockedUntil = ahead.Add(h.cfg.LockoutDuration) })
-	if got := h.e.State(h.now).LockedUntil; !got.Equal(h.now.Add(h.cfg.LockoutDuration)) {
-		t.Fatalf("locked until %v, want %v", got, h.now.Add(h.cfg.LockoutDuration))
+	h.aheadThenBack(time.Hour, func(s *Snapshot, ahead time.Time) {
+		s.LockedUntil, s.KeypadLockedUntil = ahead.Add(h.cfg.LockoutDuration), ahead.Add(h.cfg.LockoutDuration)
+	})
+	want := h.now.Add(h.cfg.LockoutDuration)
+	if st := h.e.State(h.now); !st.LockedUntil.Equal(want) || !st.KeypadLockedUntil.Equal(want) {
+		t.Fatalf("locked until %v (app), %v (keypad), want %v", st.LockedUntil, st.KeypadLockedUntil, want)
 	}
 	h.advance(h.cfg.LockoutDuration)
+	if r := replyOf(t, h.cmd(CmdDisarm, goodCode("u_owner"), func(c *Command) { c.Origin = OriginApp })); r.Status != StatusDone {
+		t.Fatalf("the app still locked once the lockout's duration has passed: %+v", r)
+	}
+	h.armed()
 	if r := replyOf(t, h.cmd(CmdDisarm, goodCode("u_owner"))); r.Status != StatusDone {
-		t.Fatalf("still locked once the lockout's duration has passed: %+v", r)
+		t.Fatalf("the keypad still locked once the lockout's duration has passed: %+v", r)
 	}
 }
 

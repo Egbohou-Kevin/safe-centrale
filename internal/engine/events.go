@@ -66,8 +66,8 @@ type Cleared struct {
 // AuthFailed: a wrong code was entered.
 type AuthFailed struct {
 	Origin      Origin
-	Attempts    int       // wrong codes within LockoutWindow, this one included
-	LockedUntil time.Time // zero unless this failure locked disarming
+	Attempts    int       // wrong codes of this origin within LockoutWindow, this one included
+	LockedUntil time.Time // zero unless this failure locked disarming from this origin
 }
 
 // ArmingScheduled: the system announces that it will arm by itself.

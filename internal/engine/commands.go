@@ -239,39 +239,53 @@ func (e *Engine) end(c Command, user string) []Action {
 }
 
 // authorize checks the right to disarm or to silence the siren and tells who it
-// is. A wrong code is counted (wrongCode); a good one starts both counts over. A
-// non-nil refusal holds every action to return instead.
+// is. A wrong code is counted (wrongCode); a good one starts over the wrong codes of
+// its origin and those of the site, the other origin's lockout holding. A non-nil
+// refusal holds every action to return instead.
 func (e *Engine) authorize(c Command) (user string, refusal []Action) {
-	if c.Now.Before(e.s.LockedUntil) {
+	failures, until := e.lockout(c.Origin)
+	if c.Now.Before(*until) {
 		return "", refused(c, ReasonLockedOut)
 	}
 	if c.Auth.Checked && c.Auth.OK {
-		e.s.Failures, e.s.WrongCodes = nil, 0
+		*failures, e.s.WrongCodes = nil, 0
 		if c.Auth.User != "" {
 			return c.Auth.User, nil
 		}
 		return c.User, nil
 	}
-	return "", e.wrongCode(c)
+	return "", e.wrongCode(c, failures, until)
 }
 
-// wrongCode counts a wrong code twice, wherever it was entered: the lockout is the
-// site's. LockoutAttempts of them within LockoutWindow lock disarming: a mistake from
-// this morning does not bring a lockout closer this evening. The count since the last
-// good code ignores time: every LockoutAttempts of them alert the contacts, even
-// without a lockout, so that a patient guesser who stays under the window (the cloud
-// lets one phone try two codes every 10 minutes) is still heard of. One wrong code
+// lockout gives the wrong codes of the last LockoutWindow and the lockout of the
+// origin's side: the keypad's, or the app's for every other origin (29 October 2026).
+// A cloud that seals any code, compromised or wrong, then locks the app only: the
+// staff still disarm at the keypad during an intrusion or a false alarm.
+func (e *Engine) lockout(o Origin) (failures *[]time.Time, until *time.Time) {
+	if o == OriginKeypad {
+		return &e.s.KeypadFailures, &e.s.KeypadLockedUntil
+	}
+	return &e.s.Failures, &e.s.LockedUntil
+}
+
+// wrongCode counts a wrong code twice. LockoutAttempts of them from one origin within
+// LockoutWindow lock disarming from that origin (failures, until): a mistake from this
+// morning does not bring a lockout closer this evening. The count since the last good
+// code is the site's and ignores time: every LockoutAttempts of them, from the keypad
+// and the app alike, alert the contacts, even without a lockout, so that a patient
+// guesser who stays under the window (the cloud lets one phone try two codes every
+// 10 minutes) or alternates the keypad and the app is still heard of. One wrong code
 // raises one alert at most.
-func (e *Engine) wrongCode(c Command) []Action {
-	e.s.Failures = slices.DeleteFunc(e.s.Failures, func(at time.Time) bool { return !c.Now.Before(at.Add(LockoutWindow)) })
-	e.s.Failures = append(e.s.Failures, c.Now)
+func (e *Engine) wrongCode(c Command, failures *[]time.Time, until *time.Time) []Action {
+	*failures = slices.DeleteFunc(*failures, func(at time.Time) bool { return !c.Now.Before(at.Add(LockoutWindow)) })
+	*failures = append(*failures, c.Now)
 	e.s.WrongCodes++
-	failure := AuthFailed{Origin: c.Origin, Attempts: len(e.s.Failures)}
-	locks := len(e.s.Failures) >= e.cfg.LockoutAttempts
+	failure := AuthFailed{Origin: c.Origin, Attempts: len(*failures)}
+	locks := len(*failures) >= e.cfg.LockoutAttempts
 	if locks {
-		e.s.LockedUntil = c.Now.Add(e.cfg.LockoutDuration)
-		e.s.Failures = nil
-		failure.LockedUntil = e.s.LockedUntil
+		*until = c.Now.Add(e.cfg.LockoutDuration)
+		*failures = nil
+		failure.LockedUntil = *until
 	}
 	out := []Action{Emit{failure}}
 	if locks || e.s.WrongCodes%e.cfg.LockoutAttempts == 0 {

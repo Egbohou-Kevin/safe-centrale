@@ -6,9 +6,10 @@ import (
 )
 
 // LockoutWindow is how long a wrong code counts towards the lockout: LockoutAttempts
-// wrong codes within it lock disarming, older ones are forgotten. It is not a setting:
-// the cloud caps each phone at two wrong codes in the same 10 minutes, which keeps
-// one phone under the site's lockout only while the two windows match.
+// wrong codes of one origin (keypad or app) within it lock disarming from that origin,
+// older ones are forgotten. It is not a setting: the cloud caps each phone at two wrong
+// codes in the same 10 minutes, which keeps one phone under the app's lockout only
+// while the two windows match.
 const LockoutWindow = 10 * time.Minute
 
 // TimeOfDay is a wall-clock time in the site's time zone.
@@ -25,7 +26,7 @@ type Config struct {
 	SirenCycle      time.Duration // length of one siren cycle
 	SirenPause      time.Duration // pause between two cycles
 	SirenCycles     int           // maximum number of cycles
-	LockoutAttempts int           // wrong codes within LockoutWindow that lock disarming; as many since the last good code alert
+	LockoutAttempts int           // wrong codes of one origin within LockoutWindow that lock disarming from it; as many since the last good code, any origin, alert
 	LockoutDuration time.Duration // how long disarming stays locked
 	PanicSiren      bool          // the panic button sounds the siren
 

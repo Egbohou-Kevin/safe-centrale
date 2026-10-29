@@ -321,24 +321,42 @@ doit aussi connaître le code.
 - Le code est **vérifié sur le site**, par la centrale (`internal/access`) ; le
   moteur reçoit le résultat et applique le verrouillage. Le code est stocké haché sur
   la centrale. Le cloud le transmet sans le garder ni l'écrire dans ses journaux.
-- Après 3 codes faux en 10 minutes, le moteur refuse tout désarmement pendant 10
-  minutes et publie un événement `alarm.auth_failed` avec une alerte aux contacts.
-- Les 10 minutes glissent : seuls comptent les codes faux des 10 dernières minutes
-  (`engine.LockoutWindow`). Deux codes faux, puis un troisième 11 minutes après le
-  premier, ne verrouillent pas ; trois codes faux espacés de quelques heures non plus.
-  Un bon code remet le compte à zéro, comme le verrouillage.
-- Un second compte ignore le temps : les codes faux depuis le dernier bon code
-  (`wrong_codes` dans la sauvegarde du moteur, clavier et application ensemble). Au
+- Le verrouillage se compte **par origine** (29 octobre 2026) : le clavier d'un côté,
+  l'application de l'autre (toute origine autre que le clavier compte comme
+  l'application). Après 3 codes faux d'une origine en 10 minutes, le moteur refuse le
+  désarmement et l'arrêt de la sirène **depuis cette origine** pendant 10 minutes, et
+  publie un événement `alarm.auth_failed` avec une alerte aux contacts. L'autre
+  origine reste libre : un cloud compromis ou défaillant, qui sait sceller n'importe
+  quel code, ne peut plus empêcher les employés de désarmer au clavier pendant une
+  intrusion ou une fausse alerte ; et quelqu'un qui essaie des codes au clavier ne
+  bloque pas l'application du propriétaire. Décidé seul en autonomie, à relire.
+- Les 10 minutes glissent : seuls comptent les codes faux de la même origine des 10
+  dernières minutes (`engine.LockoutWindow`). Deux codes faux, puis un troisième 11
+  minutes après le premier, ne verrouillent pas ; trois codes faux espacés de quelques
+  heures non plus. Un bon code remet à zéro le compte de **son** origine, comme le
+  verrouillage ; le verrouillage de l'autre origine reste jusqu'à son terme.
+- `alarm.state.locked_until` dit le verrouillage de l'application (celui que le cloud
+  et l'application ont à montrer) ; celui du clavier se dit au clavier, par son refus
+  `locked_out`. La sauvegarde du moteur garde `failures` et `locked_until` pour
+  l'application et ajoute `keypad_failures` et `keypad_locked_until` : une sauvegarde
+  d'avant, relue, donne son verrouillage à l'application et laisse le clavier libre ;
+  le programme précédent, remis par un retour arrière, ignore les champs du clavier.
+- Un second compte ignore le temps et reste **celui du site** : les codes faux depuis
+  le dernier bon code (`wrong_codes` dans la sauvegarde du moteur, clavier et
+  application ensemble ; un bon code de l'une ou l'autre origine le remet à zéro). Deux
+  codes faux de l'application puis un au clavier ne verrouillent rien, mais alertent. Au
   3e, puis au 6e, au 9e..., les contacts reçoivent l'alerte `auth_failed`, **sans
   verrouillage** : l'`alarm.auth_failed` de ce code n'a pas de `locked_until`. Sans
   lui, quelqu'un de patient (un voleur avec le téléphone du propriétaire, que le cloud
   laisse essayer 2 codes toutes les 10 minutes, ou quelqu'un au clavier qui espace ses
-  essais) resterait sous la fenêtre : jamais verrouillé, et personne ne le saurait,
+  essais, ou qui alterne clavier et application) resterait sous la fenêtre : jamais
+  verrouillé, et personne ne le saurait,
   les `alarm.auth_failed` n'allant qu'à l'historique, que le voleur lit. Seul un bon
   code remet ce compte à zéro ; un verrouillage, non.
 - Une horloge qui a avancé puis reculé (module d'horloge défaillant, heure fausse au
   démarrage corrigée ensuite par internet) ne prolonge rien : un code faux daté du
-  futur compte comme entré maintenant, et un verrouillage finit au plus tard 10 minutes
+  futur compte comme entré maintenant, et un verrouillage (du clavier comme de
+  l'application) finit au plus tard 10 minutes
   (`lockout_duration`) après maintenant. De même pour les délais et la sirène : un délai
   de sortie ou d'entrée, un cycle de sirène ou une pause finit au plus tard sa propre
   durée après maintenant (sinon, un délai d'entrée d'une heure où une vraie intrusion
@@ -388,11 +406,14 @@ doit aussi connaître le code.
   heure. Un code faux ne lève jamais deux alertes : quand le 3e code faux verrouille
   aussi, une seule part. Au pire (un verrouillage qui ne tombe pas sur un multiple de
   3), deux alertes pour trois codes faux.
-- Le même contrôle s'applique au clavier, avec le même compte : codes faux du clavier
-  et de l'application s'ajoutent, et le verrouillage vaut pour les deux.
+- Le même contrôle s'applique au clavier, avec son propre compte et son propre
+  verrouillage (29 octobre 2026) : les codes faux du clavier ne verrouillent que le
+  clavier, ceux de l'application que l'application. Seul le compte depuis le dernier
+  bon code (`wrong_codes`, qui lève l'alerte tous les 3 codes faux) additionne clavier
+  et application.
 - La fenêtre n'est pas un réglage : le cloud borne chaque téléphone à 2 codes faux en
-  10 minutes, ce qui ne garde un téléphone sous le verrouillage du site que si les deux
-  fenêtres sont les mêmes. Le nombre de codes (`lockout_attempts`, 3) et la durée du
+  10 minutes, ce qui ne garde un téléphone sous le verrouillage de l'application que si
+  les deux fenêtres sont les mêmes. Le nombre de codes (`lockout_attempts`, 3) et la durée du
   verrouillage (`lockout_duration`, 10 minutes) restent réglables dans `hub.json`.
 
 Idée pour plus tard, hors v1 : un code de contrainte, qui désarme normalement
@@ -403,7 +424,8 @@ mais envoie une alerte silencieuse, utile en cas de braquage.
 Chaque personne autorisée (5 au maximum) a son propre code, lié à son identifiant
 (`user`). Le moteur sait donc **qui** arme, désarme ou coupe la sirène, et l'inscrit
 dans les événements. Retirer l'accès d'une personne revient à supprimer son code, sans
-changer celui des autres. Le verrouillage après 3 codes faux en 10 minutes s'applique au site entier.
+changer celui des autres. Le verrouillage après 3 codes faux en 10 minutes s'applique à
+l'origine du code (clavier ou application), pas au site entier (29 octobre 2026).
 
 ### Armement automatique et report
 
@@ -856,9 +878,10 @@ Décidé :
 - Armement automatique à l'heure de fermeture, avec possibilité de report.
 
 - Sirène : 3 cycles au maximum.
-- Verrouillage après 3 codes faux en 10 minutes (fenêtre glissante), pendant 10
-  minutes. Alerte aux contacts, sans verrouillage, tous les 3 codes faux depuis le
-  dernier bon code.
+- Verrouillage après 3 codes faux d'une même origine (clavier ou application) en 10
+  minutes (fenêtre glissante), pendant 10 minutes, pour cette origine seulement. Alerte
+  aux contacts, sans verrouillage, tous les 3 codes faux depuis le dernier bon code,
+  toutes origines confondues.
 - Armement automatique : préavis de 10 min, report de 30 min, 3 reports au
   maximum.
 - Pas d'armement ni de désarmement par SMS dans la v1.
