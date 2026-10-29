@@ -172,6 +172,7 @@ func newHub(cfg hubconfig.Result, configPath string, deps hub.Deps) (*hub.Hub, e
 	deps.ClockSynced = sysclock.Synced
 	deps.Uptime = sysclock.Uptime
 	deps.StartShown = sysclock.StartShown
+	deps.Updating = readUpdating(cfg.StateDir)
 	deps.Contacts = func() ([]string, error) {
 		current, err := hubconfig.Load(configPath)
 		if err != nil {

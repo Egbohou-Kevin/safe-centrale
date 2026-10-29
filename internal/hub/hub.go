@@ -99,6 +99,7 @@ type healthSide struct {
 	loop        *driver.Loop[health.Input, health.Action, health.Snapshot]
 	uplink      health.LinkState // the last internet state given to the escalation
 	lastHealth  []byte           // the last system.health published
+	announced   time.Time        // the updating_until of the last system.health published
 	lastDevices []byte           // the last system.devices published
 	booted      bool             // the boot is over: system.devices may go (see publishDevices)
 }
@@ -306,6 +307,7 @@ func (h *Hub) Run(ctx context.Context) error {
 		func(c context.Context) { h.authWorker(c, h.keypadChecks) },
 		func(c context.Context) { h.authWorker(c, h.appChecks) },
 		func(c context.Context) { driver.Every(c, h.deps.Clock, h.cfg.HeartbeatEvery, h.publishHeartbeat) },
+		h.followUpdating,
 	} {
 		rest.Go(func() { run(h.life) })
 	}

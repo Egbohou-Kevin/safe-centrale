@@ -89,6 +89,23 @@ type Internet struct {
 
 func (i Internet) at() time.Time { return i.Now }
 
+// Updating announces an update of the hub (deploy/update-hub.sh) until Until, made at
+// Made (zero: Now): system.health says it, so that the app shows the hub being
+// updated rather than its sensors not heard. A zero Until withdraws it. It lasts
+// MaxUpdating at most after it was made, and changes nothing but what is shown: no
+// alert, no watch, nothing of the alarm.
+type Updating struct {
+	Now   time.Time
+	Until time.Time
+	Made  time.Time
+}
+
+// MaxUpdating is the longest an update announcement lasts: past it, a reader ignores
+// it, even when nobody withdrew it (an update that failed must never hide a fault).
+const MaxUpdating = 20 * time.Minute
+
+func (u Updating) at() time.Time { return u.Now }
+
 func (t Tick) at() time.Time         { return t.Now }
 func (m Mains) at() time.Time        { return m.Now }
 func (b Battery) at() time.Time      { return b.Now }

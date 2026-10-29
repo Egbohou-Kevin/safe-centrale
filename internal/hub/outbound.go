@@ -128,7 +128,28 @@ func (h *Hub) publishHealth(now time.Time) {
 	st := h.monitor.mon.Status()
 	h.faults.Store(&st)
 	h.followUplink(now, st.Internet)
-	h.publishChanged(&h.monitor.lastHealth, contract.HealthTopic(h.cfg.Site), contract.TypeHealth, h.healthData(st), now)
+	data := h.healthData(st, now)
+	h.publishChanged(&h.monitor.lastHealth, contract.HealthTopic(h.cfg.Site), contract.TypeHealth, data, now)
+	h.sayUpdating(data.UpdatingUntil)
+}
+
+// sayUpdating logs when system.health starts or stops announcing an update: the update
+// script reads the journal to know that the announcement went out before it stops
+// anything. It runs on the monitor's loop.
+func (h *Hub) sayUpdating(until *contract.Timestamp) {
+	var t time.Time
+	if until != nil {
+		t = until.Time
+	}
+	if t.Equal(h.monitor.announced) {
+		return
+	}
+	h.monitor.announced = t
+	if t.IsZero() {
+		h.log.Info("update no longer announced")
+		return
+	}
+	h.log.Info("update announced", "until", t.UTC().Format(time.RFC3339))
 }
 
 // publishChanged publishes a retained message of the monitor when it differs from the
@@ -146,9 +167,14 @@ func (h *Hub) publishChanged(last *[]byte, topic, typ string, data any, now time
 	h.out.Send(srcHealth, topic, typ, json.RawMessage(raw), true, now)
 }
 
-// healthData is system.health for the monitor's summary and the GSM lines.
-func (h *Hub) healthData(st health.Status) contract.HealthData {
+// healthData is system.health at now for the monitor's summary and the GSM lines. An
+// update announcement whose time has come is left out, even before the monitor's tick
+// drops it (a state restored after its end).
+func (h *Hub) healthData(st health.Status, now time.Time) contract.HealthData {
 	data := contract.HealthData{Links: map[string]string{}, GSM: h.gsm.Load()}
+	if now.Before(st.UpdatingUntil) {
+		data.UpdatingUntil = contract.TSPtr(st.UpdatingUntil)
+	}
 	for name, s := range map[string]health.LinkState{linkGSM: st.GSM, linkZigbee: st.Zigbee, linkInternet: st.Internet} {
 		if link := linkOf(s); link != "" {
 			data.Links[name] = link

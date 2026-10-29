@@ -223,6 +223,53 @@ un poste de développement), rien de tout cela ne se passe.
 `SIGTERM` ou Ctrl-C : la centrale envoie ce qui reste dans sa file (3 s au plus), ferme
 la connexion, retire `hub.pid`.
 
+## La mise à jour annoncée
+
+Pendant une mise à jour (`deploy/update-hub.sh`, voir `systeme.md`, « Maintenance »), la
+centrale est réellement sourde un moment : l'installation arrête Zigbee2MQTT quelques
+secondes, et la centrale redémarre deux fois (phases 1 et 3). Pour que l'application dise
+« Centrale en mise à jour » plutôt que « La centrale n'entend plus ses capteurs » ou
+« injoignable » (décision de Kevin, 29 octobre 2026), la mise à jour s'annonce :
+
+1. **Phase 1**, après avoir lu `cmdline.txt` et le mode de l'alarme, et avant tout
+   arrêt : le script écrit l'heure de fin, maintenant plus 20 minutes à l'horloge de la
+   centrale (RFC 3339, UTC, une ligne), dans `updating-until` du dossier d'état
+   (`/var/lib/safehome`, sur `/data` : le fichier survit aux redémarrages). Il l'écrit
+   à côté puis le renomme, lisible par la centrale (`644`, à `root`).
+2. La centrale le lit à son démarrage, puis toutes les 2 s. Tant que son heure n'est pas
+   passée, `system.health` porte `updating_until` (voir `contract.md`) et le journal
+   dit `update announced` ; l'annonce retirée ou passée, `update no longer announced`.
+   L'annonce est aussi gardée dans l'état de la santé : une centrale qui redémarre la
+   republie tout de suite.
+3. Le script lit le journal de la centrale jusqu'à y voir `update announced`, 30 s au
+   plus. S'il ne la voit pas, il le dit (`!! the hub has not said the update after
+   30 s`) et **continue** : l'annonce n'empêche jamais une mise à jour.
+4. **Fin de la phase 4**, une fois les services tenus, le mode de l'alarme vérifié et le
+   cloud atteint : le script retire le fichier, et `system.health` ne porte plus
+   l'annonce dans les 2 s.
+
+**Jamais plus de 20 minutes.** Une phase qui s'arrête en route laisse l'annonce : elle
+expire seule à son heure, et la centrale cesse alors de la publier sans qu'on y touche.
+La centrale borne aussi l'annonce elle-même : 20 minutes au plus après l'écriture du
+fichier (son heure de modification), et après sa lecture ; une heure plus lointaine est
+ramenée à cette borne, une heure passée ne vaut rien. Un fichier illisible ou qui ne
+contient pas une heure ne vaut rien non plus (le journal le dit) : une annonce abîmée ne
+cache jamais une vraie panne. Une mise à jour qui dure plus de 20 minutes (une pause
+entre deux phases) redit donc les vrais messages de capteurs à partir de là.
+
+**Rien de l'alarme ne change.** L'annonce ne touche ni au moteur, ni à l'escalade, ni aux
+alertes : un `zigbee_down` qui arrive pendant une mise à jour part comme d'habitude. Elle
+ne change que l'affichage.
+
+**La première mise à jour depuis une centrale d'avant le 29 octobre 2026** n'annonce rien
+en phase 1 : l'ancien programme ne lit pas le fichier, le script le dit après 30 s et
+continue. Le fichier reste là, et le nouveau programme, démarré en phase 2, le lit : de
+la phase 2 à la fin, cette mise à jour-là est annoncée, si les 20 minutes ne sont pas
+passées. Les mises à jour suivantes sont annoncées dès la phase 1.
+
+**L'ordre de déploiement** : le cloud qui connaît `updating_until` d'abord (voir
+`contract.md`, journal du 29 octobre 2026), puis la centrale.
+
 ## Codes sans redémarrage
 
 La console locale peut aussi régler le code d'un contact pendant le mode installation

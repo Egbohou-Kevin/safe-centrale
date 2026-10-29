@@ -51,6 +51,10 @@ type Snapshot struct {
 	GSM      Watch `json:"gsm"`
 	Zigbee   Watch `json:"zigbee"`
 	Internet Watch `json:"internet"`
+
+	// UpdatingUntil is until when the hub announces an update (Updating): zero when it
+	// announces none. Kept so that a restart says it again while it holds.
+	UpdatingUntil time.Time `json:"updating_until,omitzero"`
 }
 
 func (s Snapshot) clone() Snapshot {
@@ -89,6 +93,10 @@ type Status struct {
 	// WithoutPower: the hub has no battery module, by choice (Config.WithoutPower):
 	// MainsLost and HubBatteryKnown are then false.
 	WithoutPower bool
+	// UpdatingUntil is until when the hub announces an update, zero when it announces
+	// none. It may have passed since the last input: a reader compares it with the
+	// clock (see Updating).
+	UpdatingUntil time.Time
 }
 
 // Monitor is the health monitor.
@@ -154,6 +162,9 @@ func (m *Monitor) Stepped(d time.Duration) {
 // due.
 func (m *Monitor) NextWake() time.Time {
 	wake := m.s.NextSummary
+	if u := m.s.UpdatingUntil; !u.IsZero() && u.Before(wake) {
+		wake = u // the announcement ends: system.health stops saying it
+	}
 	for _, w := range m.watches() {
 		if due := w.watch.nextWake(w.rule); !due.IsZero() && due.Before(wake) {
 			wake = due
@@ -183,6 +194,7 @@ func (m *Monitor) status() Status {
 		GSM:             m.gsmState(),
 		Zigbee:          m.s.Zigbee.state(),
 		Internet:        m.s.Internet.state(),
+		UpdatingUntil:   m.s.UpdatingUntil,
 	}
 }
 
@@ -193,6 +205,7 @@ func (m *Monitor) Handle(in Input) []Action {
 		w.watch.resume(in.at(), w.rule)
 	}
 	out := m.tick(in.at())
+	m.endUpdating(in.at())
 	switch v := in.(type) {
 	case Mains:
 		if !m.cfg.WithoutPower { // a module run against the configuration says nothing
@@ -214,6 +227,8 @@ func (m *Monitor) Handle(in Input) []Action {
 		m.s.Zigbee.report(v.Now, v.Seen, v.Usable)
 	case Internet:
 		m.s.Internet.report(v.Now, v.Seen, v.Usable)
+	case Updating:
+		m.updating(v)
 	}
 	for _, w := range m.watches() {
 		if w.watch.check(in.at(), w.rule) {

@@ -345,6 +345,7 @@ func TestSchemasAcceptValidMessages(t *testing.T) {
 	schematest.Validate(t, "device-command.json", DeviceCommandData{DeviceID: "dev_s3x9", Command: CmdSirenOff})
 	schematest.Validate(t, "system-health.json", HealthData{Links: map[string]string{}}) // the smallest valid health
 	schematest.Validate(t, "system-health.json", HealthData{Mains: MainsNone, Links: map[string]string{}})
+	schematest.Validate(t, "system-health.json", HealthData{Links: map[string]string{"zigbee": "down"}, UpdatingUntil: TSPtr(ends)})
 	for _, c := range []struct {
 		capability string
 		value      string
@@ -424,6 +425,8 @@ func TestSchemasRejectInvalidMessages(t *testing.T) {
 		{"health without links", "system-health.json", `{"mains":"lost"}`},
 		{"hub battery above 100", "system-health.json", `{"links":{},"hub_battery":120}`},
 		{"gsm line without signal", "system-health.json", `{"links":{},"gsm":{"lines":[{"id":"l","responding":true,"registered":true}]}}`},
+		{"health updating until a word", "system-health.json", `{"links":{},"updating_until":"soon"}`},
+		{"health updating until a number", "system-health.json", `{"links":{},"updating_until":1200}`},
 		{"gsm status without queue", "gsm-status.json", `{"lines":[]}`},
 		{"gsm line negative restarts", "gsm-status.json", `{"queued":0,"lines":[{"id":"l","responding":true,"registered":true,"signal":3,"restarts":-1}]}`},
 		{"zero cycle", "alarm-siren-cycle.json", `{"incident":"i","cycle":0,"of":3}`},
