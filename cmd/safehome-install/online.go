@@ -21,13 +21,20 @@ func (c *command) online(ctx context.Context, fn func(context.Context, *install.
 	if err != nil {
 		return err
 	}
+	// The operator's name and password on the hub's broker (run under sudo), and a
+	// client id of this run's own.
+	operator, err := c.cfg.AsOperator()
+	if err != nil {
+		return err
+	}
+	operator.ClientID = clientID(c.cfg.Hub.Site)
 	connCtx, stopConn := context.WithCancel(context.Background()) // outlives ctx: Ctrl-C still closes the network
 	defer stopConn()
-	client, err := mqtt.Dial(connCtx, mqtt.Options{
-		BrokerURL: c.cfg.BrokerURL, ClientID: clientID(c.cfg.Hub.Site), Ephemeral: true,
+	client, err := mqtt.Dial(connCtx, service.Local(operator, mqtt.Options{
+		Ephemeral:     true,
 		Subscriptions: service.Subscriptions(s.Subscriptions()),
 		OnMessage:     service.Deliver(s.Deliver),
-	})
+	}))
 	if err != nil {
 		return err
 	}
@@ -43,7 +50,7 @@ func (c *command) online(ctx context.Context, fn func(context.Context, *install.
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("cannot reach the broker at %s: is mosquitto running?", c.cfg.BrokerURL)
+		return fmt.Errorf("cannot reach the broker at %s: is mosquitto running, and the tool run with sudo?", c.cfg.BrokerURL)
 	}
 	return fn(ctx, s)
 }

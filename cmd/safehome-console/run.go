@@ -166,9 +166,9 @@ func runConsole(ctx context.Context, cfg consoleconfig.Result, hub hubconfig.Res
 		Name: name, Log: log, Alive: app.Alive,
 		// The network is stopped on the way out of the loop.
 		Loops: []func(context.Context) error{app.Run},
-		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
-			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: service.Subscriptions(app.Subscriptions()), Logger: log,
+		Brokers: []service.Broker{{Publisher: pub, Options: service.Local(cfg, mqtt.Options{
+			Subscriptions: service.Subscriptions(app.Subscriptions()), Logger: log,
 			OnMessage: service.Deliver(app.HandleMessage),
-		}}},
+		})}},
 	}.Run(ctx)
 }
