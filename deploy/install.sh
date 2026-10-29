@@ -396,6 +396,41 @@ if has video; then
 	chmod 700 "$STATE/video" "$STATE/photos" "$STATE/site"
 fi
 
+# move_to_folder FOLDER FILE...: the second phase of the programs' separation (29 October
+# 2026). Each FILE of the state moves into FOLDER, a folder of the state that the other
+# programs' units hide (InaccessiblePaths=), and the flat place becomes a relative link to
+# it: a program put back by a rollback reads the same file. The folder is made and filled
+# in place, never replaced by mv (a running unit's mask stays on the old folder), and
+# before the units restart (one missing when a unit starts is not hidden from it). A file
+# is copied before it is linked, each in one step: a run cut short leaves the flat file
+# or the link, never a link to nothing. The folder's file wins: a regular flat file is
+# copied only into a folder without one, then replaced by the link either way; a flat
+# link is left as it is; a flat place left empty gets the link to the folder's file.
+move_to_folder() {
+	local folder="$1" f flat
+	shift
+	mkdir -p "$STATE/$folder"
+	chown safehome:safehome "$STATE/$folder"
+	chmod 700 "$STATE/$folder"
+	for f in "$@"; do
+		flat="$STATE/$f"
+		[ ! -L "$flat" ] || continue
+		if [ -f "$flat" ] && [ ! -e "$STATE/$folder/$f" ]; then
+			cp -p "$flat" "$STATE/$folder/$f.new"
+			mv -f "$STATE/$folder/$f.new" "$STATE/$folder/$f"
+		fi
+		if [ -f "$STATE/$folder/$f" ] && { [ -f "$flat" ] || [ ! -e "$flat" ]; }; then
+			rm -f "$flat.new"
+			ln -s "$folder/$f" "$flat.new"
+			# Never a folder at $flat here (a regular file or nothing): mv replaces it.
+			mv -f "$flat.new" "$flat"
+		fi
+	done
+}
+# The agent's key for the codes sealed with the cloud (agentconfig.KeyFolder): the agent
+# reads it there since 29 October 2026, the flat one if missing.
+move_to_folder agent code-key
+
 for p in $enabled; do
 	systemctl enable "safehome-$p"
 	systemctl restart "safehome-$p"

@@ -24,7 +24,9 @@ import (
 	"sync"
 	"testing"
 
+	"safehome/internal/agentconfig"
 	"safehome/internal/configfile"
+	"safehome/internal/hubconfig"
 	"safehome/internal/siteconfig"
 	"safehome/internal/videoconfig"
 )
@@ -352,7 +354,7 @@ func TestTheEdgeUnitsSeeNoneOfOurSecrets(t *testing.T) {
 	if got, want := fields(video["Service"]["BindPaths"]), []string{cfg.VideoDir, cfg.PhotoDir}; !slices.Equal(got, want) {
 		t.Errorf("BindPaths = %q, want its own state and the photos %q alone", got, want)
 	}
-	for _, secret := range []string{"code-key", "access.json"} {
+	for _, secret := range []string{filepath.Join(agentconfig.KeyFolder, "code-key"), filepath.Join(hubconfig.CodesFolder, "access.json")} {
 		if video.sees(filepath.Join(cfg.StateDir, secret)) {
 			t.Errorf("the video service sees %s in %s", secret, cfg.StateDir)
 		}
@@ -407,9 +409,10 @@ func (u unit) sees(path string) bool {
 }
 
 // The witness of sees: the video's unit before 28 October 2026, and one that binds the
-// whole state folder back, both show the code key.
+// whole state folder back, both show the code key in the agent's folder; a unit that
+// hides that folder under the whole state shows the rest.
 func TestSeesTellsAStateFolderLeftOpen(t *testing.T) {
-	key := "/var/lib/safehome/code-key"
+	key := filepath.Join("/var/lib/safehome", agentconfig.KeyFolder, "code-key")
 	for name, u := range map[string]unit{
 		"before":        {"Service": {"ReadWritePaths": {"/var/lib/safehome"}, "TemporaryFileSystem": {"/etc/safehome:ro"}}},
 		"bound back":    {"Service": {"TemporaryFileSystem": {"/var/lib/safehome:ro"}, "BindPaths": {"/var/lib/safehome"}}},
@@ -422,6 +425,10 @@ func TestSeesTellsAStateFolderLeftOpen(t *testing.T) {
 	shut := unit{"Service": {"TemporaryFileSystem": {"/var/lib/safehome:ro"}, "BindPaths": {"/var/lib/safehome/video /var/lib/safehome/videos"}}}
 	if shut.sees(key) || shut.sees("/var/lib/safehome/video.json") || !shut.sees("/var/lib/safehome/video/video.json") {
 		t.Error("sees reads a folder as a prefix of the names")
+	}
+	closed := unit{"Service": {"ReadWritePaths": {"/var/lib/safehome"}, "InaccessiblePaths": {"-" + filepath.Dir(key)}}}
+	if closed.sees(key) || !closed.sees("/var/lib/safehome/agent.json") {
+		t.Error("sees does not let the deeper InaccessiblePaths= win over ReadWritePaths=")
 	}
 }
 
