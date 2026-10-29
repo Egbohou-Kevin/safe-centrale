@@ -834,7 +834,11 @@ sont ignorés et journalisés. Sinon, `mains` est absent tant que le module n'a 
 parlé, et `hub_battery` tant que sa batterie n'est pas connue. Un lecteur distingue donc
 `none` (pas de module, c'est voulu) de `lost` (une vraie coupure). Avant le 29 octobre
 2026, une centrale sans module n'envoyait ni `mains` ni `hub_battery`, comme un module
-pas encore entendu.
+pas encore entendu. Un cloud plus ancien ne lit pas `none` comme inconnu : sa copie du
+schéma ferme `mains` sur `present` et `lost`, et il refuse le message `system.health`
+**en entier**, ses liens `zigbee` et `gsm` compris (le tableau de bord ne dit plus rien
+de la santé). L'ordre est donc obligatoire : le cloud qui connaît `none` est déployé
+d'abord, `without_power` n'est posé qu'ensuite.
 
 Le lien `gsm` et les lignes viennent du message `gsm.status` de la passerelle. Le lien
 `gsm` vaut `ok`, `down` (la passerelle dit qu'elle ne peut pas envoyer) ou `silent`
@@ -1115,9 +1119,11 @@ Changements depuis la v1 validée, sans changement de `v` :
   valoir `none`, sur une centrale sans module batterie par choix (`without_power` dans
   `hub.json`), et `hub_battery` est alors absent (voir « `system.health` ») ; le schéma
   `system-health.json` ajoute `none` à l'énumération de `mains`. Un `device.event`
-  `mains` reste `present` ou `lost`. Un cloud qui ne connaît pas `none` le lit comme
-  inconnu, comme avant le `mains` absent : il doit être à jour avant que la centrale
-  pose `without_power` pour que l'application le montre.
+  `mains` reste `present` ou `lost`. Un cloud qui ne connaît pas `none` refuse le
+  `system.health` **en entier** (sa copie du schéma ferme l'énumération de `mains`), et
+  perd aussi les liens `zigbee` et `gsm` : contrairement au `gsm: "none"` du 25 octobre
+  (les liens sont un texte libre), ce n'est pas lu comme inconnu. Ordre obligatoire :
+  le cloud à jour d'abord, puis `without_power` posé sur la centrale.
 
 - **26 octobre 2026, la fin d'une alarme et le site sans sirène** (deuxième essai sur la
   vraie centrale, une sirène configurée jamais appairée) : la fin de l'alarme par une
