@@ -889,6 +889,23 @@ ne tient pas) :
 8. la batterie (si posée) : `journalctl -u safehome-power -b` lit le module (secteur, charge), la
    GSM (si posée) envoie un SMS d'essai, la maintenance ouvre son tunnel sur demande.
 
+Relevé du 29 octobre 2026 sur tg-lom-0500, mise à jour de `0.2.2-71376d0` vers `0.2.3-7e0a668` (phases 1 à 4
+en exit 0, de 12:21 à 12:28, désarmée avant et après) :
+
+| Service | `systemd-analyze security` avant | après |
+|---|---|---|
+| `safehome-hub` | 3.3 OK | 2.8 OK |
+| `zigbee2mqtt` | 8.5 EXPOSED | 8.3 EXPOSED |
+| `safehome-video` (unité posée, service non activé) | 3.7 OK | 3.3 OK |
+
+1 : `verify` ne dit rien. 2 : `--failed` ne montre que les unités cloud-init (sans rapport), les six services
+activés sont `active`. 4 : la clé est vue (EmberZNet 7.4.4, « Zigbee2MQTT started », `database.db` réécrit),
+journal sans avertissement ; un capteur déclenché reste à essayer. 5 : dans l'espace de Zigbee2MQTT,
+`/etc/safehome` et `/var/lib/safehome` sont vides et en mode 000 (7 fichiers hors de lui), `code-key`
+illisible. 6 : site sans caméra, la vidéo ne tourne pas, rien à vérifier. 7 : horloge synchronisée, heure du
+démarrage cohérente, `safehome-hub` sans `ProtectClock` ni filtre d'appels ; le `clock_ok` du battement de cœur
+n'a pas été lu (pas de `mosquitto_sub` sur la centrale). 8 : ni batterie ni GSM posées.
+
 Conséquence : **pas de mises à jour automatiques** (elles seraient effacées au
 redémarrage). La centrale n'est pas joignable depuis internet (derrière la box ou
 l'opérateur 4G), ce qui limite le risque ; prévoir une maintenance par mois au début.
