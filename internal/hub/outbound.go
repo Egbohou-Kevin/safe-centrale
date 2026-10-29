@@ -154,6 +154,10 @@ func (h *Hub) healthData(st health.Status) contract.HealthData {
 			data.Links[name] = link
 		}
 	}
+	if st.WithoutPower { // no module, by choice: never a fault, and no battery to tell
+		data.Mains = contract.MainsNone
+		return data
+	}
 	if h.mains.Load() {
 		data.Mains = contract.ValPresent
 		if st.MainsLost {

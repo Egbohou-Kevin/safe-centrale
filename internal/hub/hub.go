@@ -64,9 +64,12 @@ type Hub struct {
 	started time.Time
 
 	// Read from any goroutine.
-	mode  atomic.Value                       // the alarm state, for the heartbeat
-	mains atomic.Bool                        // a mains reading has been seen
-	gsm   atomic.Pointer[contract.GSMHealth] // the GSM gateway's lines, once it spoke
+	mode  atomic.Value // the alarm state, for the heartbeat
+	mains atomic.Bool  // a mains reading has been seen
+	// powerIgnored: a mains or hub battery reading was ignored on a site without a
+	// battery module, and logged once.
+	powerIgnored atomic.Bool
+	gsm          atomic.Pointer[contract.GSMHealth] // the GSM gateway's lines, once it spoke
 	// faults is the monitor's latest summary, for the engine's loop: an arming that
 	// starts names the silent devices and the weak batteries.
 	faults atomic.Pointer[health.Status]

@@ -193,9 +193,14 @@ func applyAlarm(c *engine.Config, a *alarmFile) error {
 	return nil
 }
 
-func applyHealth(c *health.Config, h *healthFile) error {
+func applyHealth(c *health.Config, h *healthFile, withoutPower bool) error {
+	// No battery module, by choice: the mains say so, and no power alert is raised.
+	c.WithoutPower = withoutPower
 	if h == nil {
 		return nil
+	}
+	if withoutPower && (h.HubBatteryWarn != nil || h.HubBatteryCritical != nil || h.HubBatteryRearm != nil) {
+		return errors.New("without_power: the hub has no battery module, give no health.hub_battery_* threshold")
 	}
 	setInt(&c.HubBatteryWarn, h.HubBatteryWarn)
 	setInt(&c.HubBatteryCritical, h.HubBatteryCritical)

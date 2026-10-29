@@ -208,6 +208,49 @@ func TestMainsPresentAtBootIsNotARestoration(t *testing.T) {
 	none(t, h.mains(false))
 }
 
+// A site without a battery module says so, and whatever a module run against its
+// configuration reports, nobody is told of a cut or of the hub's battery: it has none.
+func TestASiteWithoutPowerModuleSaysSoAndNeverAlertsOnPower(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.WithoutPower = true })
+	if st := h.m.Status(); !st.WithoutPower || st.MainsLost || st.HubBatteryKnown {
+		t.Fatalf("status %+v, want no power module from the start", st)
+	}
+	none(t, h.hubBattery(100))
+	none(t, h.mains(true))
+	none(t, h.hubBattery(38))
+	none(t, h.hubBattery(5))
+	none(t, h.mains(false))
+	if st := h.m.Status(); !st.WithoutPower || st.MainsLost || st.HubBatteryKnown {
+		t.Fatalf("status %+v after a module's readings", st)
+	}
+	// A low battery saved before the configuration changed is not said, and a cut
+	// reported after it is not followed.
+	saved := newHarness(t)
+	none(t, saved.hubBattery(5))
+	h.m.Restore(saved.m.Snapshot())
+	none(t, h.mains(true))
+	none(t, h.mains(false))
+	if st := h.m.Status(); !st.WithoutPower || st.MainsLost || st.HubBatteryKnown {
+		t.Fatalf("status %+v after a restore", st)
+	}
+}
+
+// Without the key, the module is expected and a cut alerts as it always did.
+func TestASiteWithItsPowerModuleStillAlerts(t *testing.T) {
+	h := newHarness(t)
+	if h.m.Status().WithoutPower {
+		t.Fatal("a power module is expected unless the configuration says otherwise")
+	}
+	h.hubBattery(100)
+	h.mains(true)
+	if a := one(t, h.hubBattery(40)); a.Kind != AlertHubBatteryLow {
+		t.Fatalf("%+v", a)
+	}
+	if a := one(t, h.mains(false)); a.Kind != AlertMainsRestored {
+		t.Fatalf("%+v", a)
+	}
+}
+
 func TestOutOfRangeBatteryReadingsAreIgnored(t *testing.T) {
 	h := newHarness(t)
 	h.mains(true)

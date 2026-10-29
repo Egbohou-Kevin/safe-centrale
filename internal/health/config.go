@@ -46,6 +46,11 @@ type Config struct {
 	// gsm_degraded alert is raised, and the gsm link says so (LinkNone) instead of
 	// staying unknown, which a line installed but never heard from also is.
 	WithoutGSM bool
+	// WithoutPower: the hub has no battery module, by choice (no safehome-power). Its
+	// mains and battery are never followed, no power alert is raised, and the status
+	// says so (Status.WithoutPower) instead of leaving them unknown, which a module
+	// installed but never heard from also is.
+	WithoutPower bool
 
 	// The same for the Zigbee adapter. A blind alarm is worse than a missing SMS
 	// backup: the owner is told sooner.

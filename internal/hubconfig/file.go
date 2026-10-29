@@ -16,7 +16,10 @@ type file struct {
 	Timezone    string          `json:"timezone"`
 	HubDeviceID string          `json:"hub_device_id"`
 	// WithoutGSM: the site has no SMS line, by choice (no gsm.json, no gateway).
-	WithoutGSM     bool                `json:"without_gsm"`
+	WithoutGSM bool `json:"without_gsm"`
+	// WithoutPower: the hub has no battery module, by choice (no power.json, no
+	// safehome-power).
+	WithoutPower   bool                `json:"without_power"`
 	SirenIDs       []string            `json:"siren_ids"`
 	SirenNames     map[string]string   `json:"siren_names"`
 	Zones          map[string]zoneFile `json:"zones"`
