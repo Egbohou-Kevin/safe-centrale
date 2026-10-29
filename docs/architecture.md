@@ -242,11 +242,18 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   écriture atomique. L'en-tête commun des fichiers (`site`, `broker_url`, `client_id`,
   `state_dir`, `log_level`) est `configfile.ProgramFile` ; sa méthode `Build` en fait un
   `configfile.Program`, valeurs par défaut comprises. Il ne connaît rien du module, et seuls les paquets `*config`
-  l'importent : aucun domaine ni aucune couche application ne lit de fichier.
+  l'importent : aucun domaine ni aucune couche application ne lit de fichier. Depuis le
+  29 octobre 2026, `Program` porte aussi le nom du programme sur le broker local et son mot de
+  passe, lu dans le dossier que systemd lui donne (`CREDENTIALS_DIRECTORY`, `LoadCredential=`) ;
+  `AsOperator` lit celui de l'opérateur (`/etc/safehome/mqtt/operator.secret`) pour un outil
+  lancé sous sudo. Une erreur nomme le fichier, jamais ce qu'il contient.
 - **`internal/service`** est la part de la racine de composition commune à tous les
   programmes : ligne de commande, verrou du dossier d'état, clients MQTT, dialogue
   avec systemd, arrêt propre. `service.Reload` envoie SIGHUP au programme d'un fichier
-  de pid : la centrale relit alors ses codes. Il ne connaît que quelques adaptateurs, la porte
+  de pid : la centrale relit alors ses codes. `service.Local` remplit l'adresse, l'identifiant,
+  le nom et le mot de passe d'un client du broker local à partir de la configuration
+  (`service.LocalBroker`) : chaque programme passe par lui, pour n'en oublier aucun (29 octobre
+  2026). Il ne connaît que quelques adaptateurs, la porte
   d'entrée et la file d'envoi, rien des domaines ni des couches application, et seul `cmd/` l'importe.
 - **Les racines de composition** (`cmd/safehome-hub`, `cmd/safehome-gsm`,
   `cmd/safehome-zigbee`, `cmd/safehome-agent`, `cmd/safehome-video`, `cmd/safehome-maint`,
@@ -288,7 +295,11 @@ Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent 
   importe un outil de test (`schematest`, `mqtttest`, `attest`, `go2rtctest`, `drivertest`,
   `outboxtest`) ;
 - si du code livré lance un programme (`os/exec`) hors d'un adaptateur ou d'un programme
-  de `cmd/` (29 octobre 2026, étude de sécurité de la centrale).
+  de `cmd/` (29 octobre 2026, étude de sécurité de la centrale) ;
+- si un programme de `cmd/` bâtit un `mqtt.Options` du broker local sans `service.Local`
+  (un `mqtt.Options` écrit à la main doit nommer `Username` et `Password`, comme le client du
+  cloud de l'agent), ou ne passe jamais par `service.Local` (29 octobre 2026, le broker local
+  exige un mot de passe par programme).
 
 ### Les garde-fous de qualité
 

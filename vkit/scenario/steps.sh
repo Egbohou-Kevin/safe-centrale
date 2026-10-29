@@ -10,7 +10,9 @@ KEYPAD=0x00158d0000000006
 OWNER_CODE=1357
 INSTALLER_CODE=2468
 GUARD=+22870000003
-INSTALL="sudo -u safehome safehome-install"
+# As root: the tool reads the operator's password on the hub's broker, root's alone
+# (29 October 2026); it writes nothing on the hub.
+INSTALL="safehome-install"
 HUBCONF="-config /etc/safehome/hub.json"
 
 # A fresh site: no device, no code, no alarm state, no retained message.
@@ -185,7 +187,7 @@ internet() {
 app_order_local() {
 	local data
 	data="{\"command\":\"$1\",\"args\":${2:-{\}},\"origin\":\"app\",\"user\":\"u_owner\",\"exp\":\"$(later '1 minute')\"}"
-	mosquitto_pub -h 127.0.0.1 -q 1 -t "safehome/$SITE/alarm/cmd" -m \
+	hub_pub -q 1 -t "safehome/$SITE/alarm/cmd" -m \
 		"{\"v\":1,\"id\":\"$(id)\",\"site\":\"$SITE\",\"src\":\"cloud\",\"ts\":\"$(now)\",\"type\":\"alarm.command\",\"data\":$data}"
 }
 
@@ -258,7 +260,7 @@ step_console() {
 	fi
 	leave_wifi
 	mark
-	mosquitto_pub -h 127.0.0.1 -q 1 -t "safehome/$SITE/install/cmd" -m \
+	hub_pub -q 1 -t "safehome/$SITE/install/cmd" -m \
 		"{\"v\":1,\"id\":\"$(id)\",\"site\":\"$SITE\",\"src\":\"console\",\"ts\":\"$(now)\",\"type\":\"install.close\",\"data\":{}}"
 	expect bus '"type":"install.mode".*"status":"closed"' 15 "the mode closes"
 }

@@ -511,11 +511,11 @@ Les options peuvent aussi venir après l'appareil
 Une installation type :
 
 ```bash
-sudo -u safehome safehome-install pair  -config /etc/safehome/hub.json
-sudo -u safehome safehome-install zone  -config /etc/safehome/hub.json -name "Porte arriere" -kind instant -room "Reserve" dev_k7p2
-sudo -u safehome safehome-install siren -config /etc/safehome/hub.json name -name "Reserve" dev_siren1
-sudo -u safehome safehome-install watch -config /etc/safehome/hub.json
-sudo -u safehome safehome-install check -config /etc/safehome/hub.json
+sudo safehome-install pair  -config /etc/safehome/hub.json
+sudo safehome-install zone  -config /etc/safehome/hub.json -name "Porte arriere" -kind instant -room "Reserve" dev_k7p2
+sudo safehome-install siren -config /etc/safehome/hub.json name -name "Reserve" dev_siren1
+sudo safehome-install watch -config /etc/safehome/hub.json
+sudo safehome-install check -config /etc/safehome/hub.json
 sudo systemctl restart safehome-hub
 ```
 
