@@ -34,7 +34,7 @@ var allowed = []exception{
 func TestEveryExceptionHasARuleAndAReason(t *testing.T) {
 	known := map[string]bool{}
 	for _, r := range []rule{sizeRule, gofmtRule, asciiRule, duplicationRule, testDuplicationRule, fakesRule, deadRule,
-		slogRule, sleepRule, markerRule, packageDocRule, readmeRule} {
+		slogRule, sleepRule, markerRule, packageDocRule, readmeRule, tlsRule} {
 		known[r.name] = true
 	}
 	for _, e := range allowed {

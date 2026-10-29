@@ -97,3 +97,43 @@ func TestThirdPartyExceptionIsNarrow(t *testing.T) {
 		}
 	}
 }
+
+// allowedExec reports whether a file at rel may run other programs (os/exec): the
+// adapters, which wrap a process (ssh, go2rtc, nmcli, mosquitto in tests), and the
+// programs of cmd/, which call the system's tools (mmcli, systemctl). A domain or
+// an application layer that runs a process would hide a side effect from its tests.
+func allowedExec(rel string) bool {
+	return strings.HasPrefix(rel, filepath.Join("internal", "adapter")+string(filepath.Separator)) ||
+		strings.HasPrefix(rel, "cmd"+string(filepath.Separator))
+}
+
+// Only adapters and programs run other programs: os/exec nowhere else in shipped code.
+func TestOnlyAdaptersAndProgramsRunProcesses(t *testing.T) {
+	walkSources(t, func(rel string, f *ast.File) {
+		if allowedExec(rel) {
+			return
+		}
+		if bad := forbiddenImports(f, func(p string) bool { return p == "os/exec" }); len(bad) > 0 {
+			t.Errorf("%s imports os/exec: only an adapter (internal/adapter/) or a program (cmd/) may run a process", rel)
+		}
+	})
+}
+
+func TestExecRuleIsNarrow(t *testing.T) {
+	cases := []struct {
+		rel  string
+		want bool
+	}{
+		{filepath.Join("internal", "adapter", "sshtunnel", "sshtunnel.go"), true},
+		{filepath.Join("cmd", "safehome-gsm", "modem.go"), true},
+		{filepath.Join("internal", "hub", "hub.go"), false},
+		{filepath.Join("internal", "adapterx", "a.go"), false},
+		{filepath.Join("internal", "cmd", "a.go"), false},
+		{filepath.Join("vkit", "a.go"), false},
+	}
+	for _, c := range cases {
+		if got := allowedExec(c.rel); got != c.want {
+			t.Errorf("allowedExec(%s) = %v, want %v", c.rel, got, c.want)
+		}
+	}
+}

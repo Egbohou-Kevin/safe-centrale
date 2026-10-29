@@ -286,7 +286,9 @@ Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent 
 - si un domaine, le contrat ou le pilote importe la couche application de la centrale ;
 - si une bibliothèque externe est importée hors de son adaptateur, ou si du code livré
   importe un outil de test (`schematest`, `mqtttest`, `attest`, `go2rtctest`, `drivertest`,
-  `outboxtest`).
+  `outboxtest`) ;
+- si du code livré lance un programme (`os/exec`) hors d'un adaptateur ou d'un programme
+  de `cmd/` (29 octobre 2026, étude de sécurité de la centrale).
 
 ### Les garde-fous de qualité
 
@@ -305,6 +307,7 @@ tests tournent avec `go test ./...` (environ une seconde) :
 | `sleep` : pas de `time.Sleep` dans `internal/` hors adaptateurs et paquets de test | – |
 | `marker` : la méthode qui scelle une interface porte son nom (`isAction` pour `Action`) | – |
 | `packagedoc` : chaque paquet a un commentaire « Package nom … » (« Command nom … ») | – |
+| `tls-verify` : aucun fichier, tests compris, ne coupe la vérification du certificat TLS (`InsecureSkipVerify`) ; un test passe par le client de son serveur `httptest` (29 octobre 2026) | – |
 | `readme` : chaque paquet de `internal/` et `cmd/` a sa ligne dans le README, et aucune ligne ne nomme un paquet disparu | – |
 
 Lire un échec : `fichier:ligne: [règle] ce qui ne va pas. Fix: quoi faire`. On corrige
