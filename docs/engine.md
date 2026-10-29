@@ -139,7 +139,7 @@ zone qu'il ne peut pas déclencher.
 | Réglage | Défaut | Remarque |
 |---|---|---|
 | Délai de sortie | 2 min | Le client peut armer tout de suite sans attendre (voir « Armement et délai de sortie ») |
-| Délai d'entrée | 45 s | Le temps de désarmer au clavier ; un code tapé avant la fin est attendu pendant sa vérification, 10 s au plus ; le code du clavier n'attend que les vérifications du clavier, jamais celles de l'application (une file par origine, 29 octobre 2026) (voir « Désarmement à distance avec un code ») |
+| Délai d'entrée | 45 s | Le temps de désarmer au clavier ; un code tapé avant la fin est attendu pendant sa vérification, 10 s au plus ; le code du clavier n'attend que sa propre file (voir « Désarmement à distance avec un code ») |
 | Durée d'un cycle de sirène | 5 min | Voir « Reprise de la sirène » |
 | Pause entre deux cycles | 2 min | |
 | Nombre de cycles | 3 | À confirmer : plafond pour limiter le bruit et la batterie |
@@ -969,10 +969,11 @@ branchement (ci-dessous).
 
 Codé et testé dans `internal/hub` et `cmd/safehome-hub` (le branchement de bout en bout,
 voir `operations.md`) : messages MQTT vers les domaines, enveloppes et topics en sortie,
-vérification des codes sur un fil à part (un par origine depuis le 29 octobre 2026), commande de la sirène, clavier, démarrage avec
-les états retenus, battement de cœur. Un test lance la centrale entière contre un vrai
-broker : armement au clavier, porte forcée, sirène, mauvais code puis bon code,
-redémarrage qui garde l'état armé, rechargement des codes sans redémarrage.
+vérification des codes sur un fil à part (un par origine depuis le 29 octobre 2026),
+commande de la sirène, clavier, démarrage avec les états retenus, battement de cœur. Un
+test lance la centrale entière contre un vrai broker : armement au clavier, porte forcée,
+sirène, mauvais code puis bon code, redémarrage qui garde l'état armé, rechargement des
+codes sans redémarrage.
 
 Codé dans `internal/hub` : l'avertissement à l'armement. Le moteur ne connaît pas la
 santé des appareils ; la centrale garde le dernier résumé de la supervision et ajoute
