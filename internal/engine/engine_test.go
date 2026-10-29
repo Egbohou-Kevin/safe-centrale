@@ -208,6 +208,8 @@ func TestStateSaysTheExitDelayInEveryMode(t *testing.T) {
 		check(ModeArming)
 		h.advance(delay)
 		check(ModeArmed)
+		h.open(door)
+		check(ModeEntryDelay)
 		h.breakWindow()
 		check(ModeTriggered)
 	}

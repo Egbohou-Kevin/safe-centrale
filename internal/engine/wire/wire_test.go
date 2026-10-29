@@ -147,20 +147,25 @@ func TestStateDataSaysTheExitDelay(t *testing.T) {
 		1500 * time.Millisecond: 2,
 		0:                       0,
 	} {
-		got, err := StateData(engine.State{Mode: engine.ModeDisarmed, Since: t0, ExitDelay: delay})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got.ExitDelayS != want {
-			t.Errorf("%v: exit_delay_s %d, want %d", delay, got.ExitDelayS, want)
-		}
-		schematest.Validate(t, "alarm-state.json", got)
-		raw, err := json.Marshal(got)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if said := strings.Contains(string(raw), `"exit_delay_s"`); said != (want != 0) {
-			t.Errorf("%v: %s", delay, raw)
+		for _, s := range []engine.State{
+			{Mode: engine.ModeDisarmed, Since: t0, ExitDelay: delay},
+			{Mode: engine.ModeEntryDelay, Since: t0, EndsAt: t0.Add(45 * time.Second), ExitDelay: delay},
+		} {
+			got, err := StateData(s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.ExitDelayS != want {
+				t.Errorf("%v in %s: exit_delay_s %d, want %d", delay, s.Mode, got.ExitDelayS, want)
+			}
+			schematest.Validate(t, "alarm-state.json", got)
+			raw, err := json.Marshal(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if said := strings.Contains(string(raw), `"exit_delay_s"`); said != (want != 0) {
+				t.Errorf("%v in %s: %s", delay, s.Mode, raw)
+			}
 		}
 	}
 }
