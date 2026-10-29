@@ -481,14 +481,30 @@ move_to_folder agent code-key
 # link alone races with no writer: the programs write the folder alone).
 CODES_MARK="moved-by-install"
 CODES="access.json installer.json codes-taken.json"
+# A move cut short (a full disk, a file it cannot read) ends the script under set -e,
+# before the loop below: what was stopped starts again on the way out, the hub first,
+# never left stopped (a house without alarm). The trap holds for the move alone.
+codes_stopped=""
+start_codes_stopped() {
+	local p
+	for p in $codes_stopped; do
+		systemctl start "safehome-$p" || printf 'install.sh: safehome-%s did not start again\n' "$p" >&2
+	done
+	[ -z "$codes_stopped" ] || printf 'install.sh: the codes did not move; started again:%s\n' " $codes_stopped" >&2
+}
 # shellcheck disable=SC2086 # the documents, one word each
 if flat_holds $CODES; then
+	trap start_codes_stopped EXIT
 	for p in console hub; do
-		! systemctl is-active -q "safehome-$p" || systemctl stop "safehome-$p"
+		if systemctl is-active -q "safehome-$p"; then
+			systemctl stop "safehome-$p"
+			codes_stopped="$p $codes_stopped"
+		fi
 	done
 fi
 # shellcheck disable=SC2086
 move_to_folder --mark "$CODES_MARK" codes $CODES
+trap - EXIT
 
 for p in $enabled; do
 	systemctl enable "safehome-$p"

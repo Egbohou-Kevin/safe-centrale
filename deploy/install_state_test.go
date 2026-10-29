@@ -330,6 +330,7 @@ func TestAFlatCodesFileWinsAfterARollback(t *testing.T) {
 
 // A move cut short (here a document it cannot read) leaves no mark: the next run is
 // still a first move, where the folder's copies win over flat files never linked.
+// The console and the hub it stopped start again on the way out.
 func TestACodesMoveCutShortLeavesNoMark(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads a file without rights")
@@ -340,8 +341,18 @@ func TestACodesMoveCutShortLeavesNoMark(t *testing.T) {
 	if err := os.Chmod(r.path(r.state+"installer.json"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := r.run(); err == nil {
+	_, cmds, err := r.run()
+	if err == nil {
 		t.Fatal("install.sh went on past a copy that failed")
+	}
+	// The console and the hub stopped for the move start again on the way out: never a
+	// hub left stopped, a house without alarm.
+	for _, p := range []string{"console", "hub"} {
+		stop := slices.Index(cmds, "systemctl stop safehome-"+p)
+		start := slices.Index(cmds, "systemctl start safehome-"+p)
+		if stop < 0 || start < stop {
+			t.Errorf("safehome-%s stopped for the move and not started again once it failed: %q", p, cmds)
+		}
 	}
 	r.linked(hubconfig.CodesFolder, "access.json")
 	if r.exists(r.state + codesMark(t)) {
