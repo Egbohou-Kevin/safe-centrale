@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"safehome/internal/agentconfig"
+	"safehome/internal/hubconfig"
 )
 
 // etc is the programs' configuration folder.
@@ -258,7 +259,8 @@ func TestNoUnitSeesTheZigbeeNetworkKey(t *testing.T) {
 // 29 October 2026, second phase) with the programs allowed to read them: every other
 // program's unit hides the folder. The names come from the code.
 var stateReaders = map[string][]string{
-	agentconfig.KeyFolder: {"agent"}, // the key for the codes sealed with the cloud
+	agentconfig.KeyFolder: {"agent"},          // the key for the codes sealed with the cloud
+	hubconfig.CodesFolder: {"hub", "console"}, // the access codes (hashed) and their lock
 }
 
 func TestEveryFolderOfTheStateIsHiddenFromTheOtherUnits(t *testing.T) {

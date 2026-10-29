@@ -396,40 +396,99 @@ if has video; then
 	chmod 700 "$STATE/video" "$STATE/photos" "$STATE/site"
 fi
 
-# move_to_folder FOLDER FILE...: the second phase of the programs' separation (29 October
-# 2026). Each FILE of the state moves into FOLDER, a folder of the state that the other
-# programs' units hide (InaccessiblePaths=), and the flat place becomes a relative link to
-# it: a program put back by a rollback reads the same file. The folder is made and filled
-# in place, never replaced by mv (a running unit's mask stays on the old folder), and
-# before the units restart (one missing when a unit starts is not hidden from it). A file
-# is copied before it is linked, each in one step: a run cut short leaves the flat file
-# or the link, never a link to nothing. The folder's file wins: a regular flat file is
-# copied only into a folder without one, then replaced by the link either way; a flat
-# link is left as it is; a flat place left empty gets the link to the folder's file.
+# move_to_folder [--mark MARK] FOLDER DOC...: the second phase of the programs' separation
+# (29 October 2026). Each document DOC of the state, with its previous version DOC.prev
+# (filestore), moves into FOLDER, a folder of the state that the other programs' units
+# hide (InaccessiblePaths=), and each flat place becomes a relative link to it: a program
+# put back by a rollback reads the same file. The folder is made and filled in place,
+# never replaced by mv (a running unit's mask stays on the old folder), and before the
+# units restart (one missing when a unit starts is not hidden from it). A file is copied
+# before it is linked, each in one step: a run cut short leaves the flat file or the
+# link, never a link to nothing.
+# Which copy wins, for each document (the programs read the folder's when it holds the
+# document or its previous version, the flat one only otherwise, and write the folder's):
+# - the folder holds none: a regular flat file is copied in, the previous version first;
+# - the folder holds it: the folder wins, nothing is copied (the flat copy is stale from
+#   the programs' first write), the flat files become links, a flat one the folder has no
+#   counterpart of is removed (stale too, and never a link to nothing);
+# - with --mark, MARK in FOLDER says an earlier run linked everything: a regular flat
+#   file since then was written by an older program, put back by a rollback, which
+#   replaced the link. That flat document wins and is copied over the folder's. MARK is
+#   made last, once every link is there: a run cut short before it is still a first move.
+# A flat link is left as it is (unless its document was copied), and a flat place left
+# empty gets the link to the folder's file.
 move_to_folder() {
-	local folder="$1" f flat
+	local mark="" folder doc f flat copied
+	if [ "$1" = --mark ]; then
+		mark="$2"
+		shift 2
+	fi
+	folder="$1"
 	shift
 	mkdir -p "$STATE/$folder"
 	chown safehome:safehome "$STATE/$folder"
 	chmod 700 "$STATE/$folder"
-	for f in "$@"; do
-		flat="$STATE/$f"
-		[ ! -L "$flat" ] || continue
-		if [ -f "$flat" ] && [ ! -e "$STATE/$folder/$f" ]; then
-			cp -p "$flat" "$STATE/$folder/$f.new"
-			mv -f "$STATE/$folder/$f.new" "$STATE/$folder/$f"
+	for doc in "$@"; do
+		copied=""
+		if flat_holds "$doc" && { ! folder_holds "$folder" "$doc" || { [ -n "$mark" ] && [ -e "$STATE/$folder/$mark" ]; }; }; then
+			# The previous version first: after a rollback, the flat one may be a link to
+			# the folder's current version, which the next copy replaces.
+			for f in "$doc.prev" "$doc"; do
+				[ -e "$STATE/$f" ] || continue
+				cp -p "$STATE/$f" "$STATE/$folder/$f.new"
+				mv -f "$STATE/$folder/$f.new" "$STATE/$folder/$f"
+			done
+			copied=1
 		fi
-		if [ -f "$STATE/$folder/$f" ] && { [ -f "$flat" ] || [ ! -e "$flat" ]; }; then
-			rm -f "$flat.new"
-			ln -s "$folder/$f" "$flat.new"
-			# Never a folder at $flat here (a regular file or nothing): mv replaces it.
-			mv -f "$flat.new" "$flat"
-		fi
+		for f in "$doc" "$doc.prev"; do
+			flat="$STATE/$f"
+			# A flat link stays, unless its document was just copied: then it may lead to
+			# the folder's current version where the previous one is meant.
+			[ ! -L "$flat" ] || [ -n "$copied" ] || continue
+			if [ -f "$STATE/$folder/$f" ] && { [ -f "$flat" ] || [ ! -e "$flat" ]; }; then
+				rm -f "$flat.new"
+				ln -s "$folder/$f" "$flat.new"
+				# Never a folder at $flat here (a regular file or nothing): mv replaces it.
+				mv -f "$flat.new" "$flat"
+			elif [ -f "$flat" ]; then
+				rm -f "$flat"
+			fi
+		done
 	done
+	[ -z "$mark" ] || [ -e "$STATE/$folder/$mark" ] || touch "$STATE/$folder/$mark"
 }
+# flat_holds DOC...: a regular file at the flat place of a DOC or of its previous version
+# (the files move_to_folder copies or removes).
+flat_holds() {
+	local f
+	for f in "$@"; do
+		{ [ -f "$STATE/$f" ] && [ ! -L "$STATE/$f" ]; } || { [ -f "$STATE/$f.prev" ] && [ ! -L "$STATE/$f.prev" ]; } || continue
+		return 0
+	done
+	return 1
+}
+# folder_holds FOLDER DOC: FOLDER holds DOC or its previous version.
+folder_holds() { [ -e "$STATE/$1/$2" ] || [ -e "$STATE/$1/$2.prev" ]; }
 # The agent's key for the codes sealed with the cloud (agentconfig.KeyFolder): the agent
 # reads it there since 29 October 2026, the flat one if missing.
 move_to_folder agent code-key
+# The access codes (hubconfig.CodesFolder): the hub, the console and the codes tool read
+# them there since 29 October 2026, the flat ones if missing, and write them there alone.
+# Never codes.lock, which lives in the folder alone, nor hub.pid, which stays flat. The
+# console and the hub stop first, so that neither writes a document between the choice
+# of the copy that wins and the copy (the loop below starts them again, the hub first):
+# a window without alarm of a few copies, and only while a flat file is left to move (a
+# link alone races with no writer: the programs write the folder alone).
+CODES_MARK="moved-by-install"
+CODES="access.json installer.json codes-taken.json"
+# shellcheck disable=SC2086 # the documents, one word each
+if flat_holds $CODES; then
+	for p in console hub; do
+		! systemctl is-active -q "safehome-$p" || systemctl stop "safehome-$p"
+	done
+fi
+# shellcheck disable=SC2086
+move_to_folder --mark "$CODES_MARK" codes $CODES
 
 for p in $enabled; do
 	systemctl enable "safehome-$p"
