@@ -293,6 +293,7 @@ Chien de garde : si le système ne répond plus pendant 15 s, la carte redémarr
 ### 6. Mosquitto
 
 ```bash
+sudo install -m 0640 -o mosquitto -g mosquitto deploy/mosquitto/safehome.acl /etc/mosquitto/safehome.acl
 sudo cp deploy/mosquitto/mosquitto.conf /etc/mosquitto/mosquitto.conf
 sudo chown mosquitto:mosquitto /data/mosquitto
 sudo systemctl restart mosquitto
@@ -321,8 +322,9 @@ L'opérateur : `sudo mosquitto_sub …` et `sudo mosquitto_pub …` lisent leurs
 `/root/.config/`, sans mot de passe tapé, et `safehome-install` (sous sudo) lit
 `/etc/safehome/mqtt/operator.secret`. Aucun mot de passe ne passe sur une ligne de commande, ni
 dans un journal ou une erreur. Mosquitto ne démarre pas sans `/etc/mosquitto/safehome.passwd` ni
-`/etc/mosquitto/safehome.acl` : copier `mosquitto.conf` à la main (ci-dessus) seulement après un
-premier passage d'`install.sh`, qui les pose lui-même.
+`/etc/mosquitto/safehome.acl` : l'ACL se pose avant `mosquitto.conf`, toujours avec lui (ci-dessus),
+et copier `mosquitto.conf` à la main seulement après un premier passage d'`install.sh`, qui pose le
+fichier des mots de passe.
 
 **Chaque nom n'a que ses topics** (29 octobre 2026). `deploy/mosquitto/safehome.acl`, posé par
 `install.sh` en `/etc/mosquitto/safehome.acl` (à mosquitto, 0640, sans secret) **avant**
@@ -352,7 +354,9 @@ ni `alarm/cmd`, ni `maint/cmd`, ni `config/set`, et que `safehome-video` ne reç
 **Ajouter un topic** : le code d'abord, puis la ligne dans `deploy/mosquitto/safehome.acl` pour
 chaque programme qui le lit ou l'écrit, puis la ligne de la table de `deploy/acl_test.go`. Sans la
 ligne d'ACL, les tests de bout en bout du programme rougissent (il n'entend plus le topic, ou sa
-publication est refusée) ; sans la ligne de table, `deploy/acl_test.go` rougit.
+publication est refusée) ; une ligne d'ACL sans sa ligne de table, ou dont la table ne donne pas le
+topic à ce nom dans ce sens, fait rougir `deploy/acl_test.go`. Le test ne lit pas le code : un
+topic ajouté au code seul, sans ligne d'ACL, ne se voit que par les tests de bout en bout.
 
 **Le code d'accès n'attend pas dans le broker.** Les programmes gardent leur session
 un jour : en QoS 1, Mosquitto garde pour un programme absent (un redémarrage pour une
@@ -1010,8 +1014,8 @@ lus sur le broker local (`mosquitto-clients` installé sur l'overlay, donc parti
    `sudo mosquitto_pub -V mqttv5 -d -q 1 -t 'safehome/<site>/maint/cmd' -m '{}'` montre
    `received PUBACK (Mid: 1, RC:135)`, et `safehome-maint` ne journalise rien.
 
-Retour arrière : `update-hub.sh` remet aussi `mosquitto.conf` d'avant (« Retour arrière des
-unités ») et redémarre Mosquitto avant les programmes : des programmes d'avant le 29 octobre 2026,
+Retour arrière : `update-hub.sh` remet aussi `mosquitto.conf` et `safehome.acl` d'avant (« Retour
+arrière des unités ») et redémarre Mosquitto avant les programmes : des programmes d'avant le 29 octobre 2026,
 sans mot de passe, retrouvent un broker ouvert. Un programme que le broker refuse (mot de passe
 faux, absent ou périmé) reste `active` et réessaie sans fin, sans voir aucun capteur : la phase 2
 compte comme un service qui ne tient pas un refus dans le journal des programmes ou de

@@ -38,11 +38,25 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if cmd.Name == "check" {
 		return check(ctx, cfg, stdout, stderr)
 	}
-	return runService(ctx, cfg, stderr)
+	return runService(ctx, cfg, openModule, stderr)
 }
 
 func openBoard(b powerconfig.Board) (*x728.Board, error) {
 	return x728.Open(x728.Options{GPIOChip: b.GPIOChip, MainsLine: b.MainsLine, CutLine: b.CutLine, CutPulse: b.CutPulse, I2CBus: b.I2CBus})
+}
+
+// module is the battery module the service reads: the X728 on a hub, a fake in a test.
+type module interface {
+	powerapp.Board
+	Close() error
+}
+
+func openModule(b powerconfig.Board) (module, error) {
+	board, err := openBoard(b)
+	if err != nil {
+		return nil, err
+	}
+	return board, nil
 }
 
 // check says what the service would do, then reads the module once. A module that
@@ -68,7 +82,7 @@ func check(ctx context.Context, cfg powerconfig.Result, stdout, stderr io.Writer
 	return 0
 }
 
-func runService(ctx context.Context, cfg powerconfig.Result, stderr io.Writer) int {
+func runService(ctx context.Context, cfg powerconfig.Result, open func(powerconfig.Board) (module, error), stderr io.Writer) int {
 	log := service.Logger(stderr, cfg.LogLevel)
 	store, release, err := service.OpenState(name, cfg.StateDir, pidName, log)
 	if err != nil {
@@ -77,7 +91,7 @@ func runService(ctx context.Context, cfg powerconfig.Result, stderr io.Writer) i
 	}
 	defer release()
 
-	board, err := openBoard(cfg.Board)
+	board, err := open(cfg.Board)
 	if err != nil {
 		log.Error("cannot reach the battery module", "err", err)
 		return 1

@@ -114,11 +114,13 @@ func TestEachNameOnTheBrokerHasItsRights(t *testing.T) {
 // Who writes and who reads each topic of the hub's broker, from the code
 // (~/.claude/etudes/safeHome/topics-par-programme.md, section 11, at 290072f). The operator
 // reads everything; an order (alarm/cmd, maint/cmd, config/set...) has its senders
-// alone. A topic added to the code and not here, or here and not in the ACL, fails.
+// alone. A topic whose writers or readers in the ACL differ from here fails, and so does
+// a line of the ACL that gives a name a topic no line here gives it. The test does not
+// read the code: a topic added there and not to the ACL is seen by the tests of cmd/.
 func TestEachTopicHasItsWritersAndReaders(t *testing.T) {
 	names, acl := readACL(t)
 	const s = "safehome/tg-lom-0001/"
-	for _, c := range []struct {
+	table := []struct {
 		topic, writers, readers string
 	}{
 		{s + "device/dev_door/event", "safehome-power safehome-zigbee", "operator safehome-agent safehome-console safehome-hub"},
@@ -160,12 +162,38 @@ func TestEachTopicHasItsWritersAndReaders(t *testing.T) {
 		{"zigbee2mqtt/bridge/state", "safehome-zigbee zigbee2mqtt", "operator safehome-zigbee zigbee2mqtt"},
 		{"zigbee2mqtt/0x00158d0001a2b3c4/set", "safehome-zigbee zigbee2mqtt", "operator safehome-zigbee zigbee2mqtt"},
 		{"elsewhere/x", "", ""},
-	} {
+	}
+	for _, c := range table {
 		if got, want := who(names, acl, c.topic, func(r *rights) []string { return r.write }), strings.Fields(c.writers); !slices.Equal(got, want) {
 			t.Errorf("%s written by %v, want %v", c.topic, got, want)
 		}
 		if got, want := who(names, acl, c.topic, func(r *rights) []string { return r.read }), strings.Fields(c.readers); !slices.Equal(got, want) {
 			t.Errorf("%s read by %v, want %v", c.topic, got, want)
+		}
+	}
+	// Each line of the ACL is needed by a topic the table gives that name that way.
+	needed := func(n, p string, writing bool) bool {
+		for _, c := range table {
+			who := c.readers
+			if writing {
+				who = c.writers
+			}
+			if matches(p, c.topic) && slices.Contains(strings.Fields(who), n) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, n := range names {
+		for _, p := range acl[n].write {
+			if !needed(n, p, true) {
+				t.Errorf("%s writes %s: no topic of the table needs it (add the topic to the table, or drop the line)", n, p)
+			}
+		}
+		for _, p := range acl[n].read {
+			if !needed(n, p, false) {
+				t.Errorf("%s reads %s: no topic of the table needs it (add the topic to the table, or drop the line)", n, p)
+			}
 		}
 	}
 }
@@ -188,6 +216,9 @@ func TestTheBrokerHoldsEachNameToItsRights(t *testing.T) {
 	}
 	if err := power.Publish(ctx, mqtt.Message{Topic: s + "device/dev_power/event", Payload: []byte("{}"), QoS: 1}); err != nil {
 		t.Errorf("safehome-power cannot send its own event: %v", err)
+	}
+	if err := power.Publish(ctx, mqtt.Message{Topic: s + "device/dev_power/state/mains", Payload: []byte("{}"), QoS: 1, Retain: true}); err != nil {
+		t.Errorf("safehome-power cannot keep its own state: %v", err)
 	}
 
 	// The Zigbee adapter clears a retained state of a device it removes.

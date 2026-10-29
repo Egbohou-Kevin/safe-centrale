@@ -296,7 +296,9 @@ Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent 
   `outboxtest`) ; `mqtttest.Start` lance le broker de la centrale avec l'ACL livrée
   (`deploy/mosquitto/safehome.acl`, lue, jamais recopiée), le programme testé connecté sous son
   nom ; `StartOpen`, un broker ouvert, sert au client MQTT lui-même et au cloud de l'agent
-  (29 octobre 2026) ;
+  (29 octobre 2026) : un test hors de `internal/adapter/mqtt` qui lance un broker ouvert sans
+  être de la liste fermée (`openBrokers`), ou un programme de `cmd/` qui passe par
+  `service.Local` sans aucun test sur `mqtttest.Start` sous son nom, fait échouer le test ;
 - si du code livré lance un programme (`os/exec`) hors d'un adaptateur ou d'un programme
   de `cmd/` (29 octobre 2026, étude de sécurité de la centrale) ;
 - si un programme de `cmd/` bâtit un `mqtt.Options` du broker local sans `service.Local`

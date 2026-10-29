@@ -1,9 +1,14 @@
 package archtest
 
 import (
+	"cmp"
 	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -135,5 +140,113 @@ func TestExecRuleIsNarrow(t *testing.T) {
 		if got := allowedExec(c.rel); got != c.want {
 			t.Errorf("allowedExec(%s) = %v, want %v", c.rel, got, c.want)
 		}
+	}
+}
+
+// openBrokers are the tests that may start an open broker (mqtttest.StartOpen or
+// StartOpenWith), with their number of calls: the MQTT client's own tests (the whole of
+// internal/adapter/mqtt) and the agent's cloud side. A program under test runs on the
+// hub's broker, with the shipped ACL (29 October 2026).
+var openBrokers = map[string]int{
+	filepath.Join("cmd", "safehome-agent", "run_test.go"): 1,
+}
+
+// brokerNames gives the name a program has on the hub's broker when it is not the name
+// of its folder: safehome-install connects as the operator (configfile.AsOperator).
+var brokerNames = map[string]string{"safehome-install": "operator"}
+
+// testBrokers counts the open brokers a test file starts and returns the names it
+// starts the hub's broker for (mqtttest.Start(t, "name"), a literal name only).
+func testBrokers(f *ast.File) (open int, names []string) {
+	ast.Inspect(f, func(n ast.Node) bool {
+		c, ok := n.(*ast.CallExpr)
+		switch {
+		case !ok:
+		case isSelector(c.Fun, "mqtttest", "StartOpen"), isSelector(c.Fun, "mqtttest", "StartOpenWith"):
+			open++
+		case isSelector(c.Fun, "mqtttest", "Start") && len(c.Args) == 2:
+			if lit, ok := c.Args[1].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				if name, err := strconv.Unquote(lit.Value); err == nil {
+					names = append(names, name)
+				}
+			}
+		}
+		return true
+	})
+	return open, names
+}
+
+// Each program's tests run it on the hub's broker with the shipped ACL, under its own
+// name (mqtttest.Start), so that a right forgotten in deploy/mosquitto/safehome.acl
+// leaves it deaf and a test fails. An open broker serves only the MQTT client's tests
+// and the agent's cloud side (openBrokers).
+func TestProgramsAreTestedOnTheHubsBrokerWithItsRights(t *testing.T) {
+	base := root(t)
+	started := map[string]bool{} // "dir/name": dir's tests start the hub's broker for name
+	open := map[string]int{}
+	err := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && path != base && d.Name() == ".claude" {
+			return filepath.SkipDir
+		}
+		if d.IsDir() || !strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(base, path)
+		n, names := testBrokers(f)
+		if n > 0 {
+			open[rel] = n
+		}
+		for _, name := range names {
+			started[filepath.Dir(rel)+"/"+name] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rel, n := range open {
+		if !strings.HasPrefix(rel, filepath.Join("internal", "adapter", "mqtt")+string(filepath.Separator)) && openBrokers[rel] != n {
+			t.Errorf("%s starts %d open broker(s), %d allowed: test a program on mqtttest.Start, under its name", rel, n, openBrokers[rel])
+		}
+	}
+	dirs, err := filepath.Glob(filepath.Join(base, "cmd", "safehome-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range dirs {
+		fset, files := parsePackage(t, dir)
+		local := 0
+		for _, f := range files {
+			n, _ := brokerOptions(fset, f)
+			local += n
+		}
+		program := filepath.Base(dir)
+		name := cmp.Or(brokerNames[program], program)
+		if local > 0 && !started[filepath.Join("cmd", program)+"/"+name] {
+			t.Errorf("no test of cmd/%s runs it on mqtttest.Start(t, %q): a right missing from the ACL would pass unseen", program, name)
+		}
+	}
+}
+
+// The witness of testBrokers: open brokers are counted, and only a literal name of
+// mqtttest.Start is taken.
+func TestTestBrokersSeesOpenBrokersAndNames(t *testing.T) {
+	_, f := parseSource(t, `package p
+func a(t *testing.T) { mqtttest.StartOpen(t) }
+func b(t *testing.T) { mqtttest.StartOpenWith(t, mqtttest.Options{TLS: &files}) }
+func c(t *testing.T) { mqtttest.Start(t, "safehome-hub") }
+func d(t *testing.T, name string) { mqtttest.Start(t, name) }
+func e(t *testing.T) { other.StartOpen(t) }
+`)
+	open, names := testBrokers(f)
+	if open != 2 || !slices.Equal(names, []string{"safehome-hub"}) {
+		t.Fatalf("open %d, names %v: want 2 and [safehome-hub]", open, names)
 	}
 }
