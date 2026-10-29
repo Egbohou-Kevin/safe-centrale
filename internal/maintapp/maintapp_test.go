@@ -237,8 +237,7 @@ func TestATunnelThatBreaksIsOpenedAgain(t *testing.T) {
 	r.steps("opening", "open")
 	r.tun.last().breaks()
 	drivertest.WaitFor(t, "the break said", func() bool { return strings.Contains(r.logs.String(), "tunnel stopped") })
-	r.settle()
-	r.clock.Advance(10 * time.Second)
+	r.clock.PassTimer(t, 10*time.Second) // the log comes before the break reaches the core
 	drivertest.WaitFor(t, "the second tunnel", func() bool { return r.tun.count() == 2 })
 	close(r.tun.last().up)
 	r.settle()
