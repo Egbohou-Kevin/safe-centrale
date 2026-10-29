@@ -39,6 +39,9 @@ BindReadOnlyPaths=/etc/safehome/power.json
 # Nor the Zigbee network's key (29 October 2026): /var/lib/zigbee2mqtt, absent on a hub
 # without Zigbee.
 InaccessiblePaths=-/var/lib/zigbee2mqtt
+# Nor the agent's key for the codes sealed with the cloud (29 October 2026): its folder
+# of the state, made by install.sh before any unit restarts.
+InaccessiblePaths=-/var/lib/safehome/agent
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 ProtectKernelModules=yes

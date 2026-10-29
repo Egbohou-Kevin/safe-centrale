@@ -16,6 +16,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"safehome/internal/agentconfig"
 )
 
 // etc is the programs' configuration folder.
@@ -249,5 +251,37 @@ func TestNoUnitSeesTheZigbeeNetworkKey(t *testing.T) {
 		if !slices.Contains(fields(u["Service"]["InaccessiblePaths"]), "-"+data) || u.sees(data+"/configuration.yaml") {
 			t.Errorf("%s: sees %s, or hides it without -", p, data)
 		}
+	}
+}
+
+// stateReaders lists the folders of the programs' state directory (/var/lib/safehome,
+// 29 October 2026, second phase) with the programs allowed to read them: every other
+// program's unit hides the folder. The names come from the code.
+var stateReaders = map[string][]string{
+	agentconfig.KeyFolder: {"agent"}, // the key for the codes sealed with the cloud
+}
+
+func TestEveryFolderOfTheStateIsHiddenFromTheOtherUnits(t *testing.T) {
+	// The state folder as the example names it (agentconfig.Load would want its secret).
+	b, err := os.ReadFile(filepath.Join("..", "config", "agent.example.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		StateDir string `json:"state_dir"`
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil || cfg.StateDir == "" {
+		t.Fatalf("agent.example.json: no state_dir (%v)", err)
+	}
+	for _, p := range programs(t) {
+		t.Run(p, func(t *testing.T) {
+			u := programUnit(t, p)
+			for _, d := range slices.Sorted(maps.Keys(stateReaders)) {
+				dir := filepath.Join(cfg.StateDir, d)
+				if seen, reader := u.sees(dir), slices.Contains(stateReaders[d], p); seen != reader {
+					t.Errorf("sees %s: %v, but it is for %v alone", dir, seen, stateReaders[d])
+				}
+			}
+		})
 	}
 }
