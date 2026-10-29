@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"safehome/internal/contract"
@@ -85,17 +86,22 @@ func (h *Hub) alarmMessage(m inbox.Message) {
 // the siren's schedule or the broker's goroutine. The engine is told at once that a
 // code is being checked (engine.CodeEntered): the end of an entry delay waits for it,
 // so that a right code typed in time does not set the alarm off because its check
-// ended late. While orders wait for the worker, the others queue behind them: the
-// engine gets the orders in the order they came, and an "arm" pressed right after a
-// "disarm" with its code is not carried out first. An expired order goes straight to
-// the engine, which answers so: its code is not checked, nor counted.
+// ended late. Each origin has its lane, a queue and a worker (the keypad, and the app
+// for any other origin, as the engine counts the lockouts): a flood of checks from the
+// app never delays nor refuses a code typed at the keypad. Within a lane, while orders
+// wait for the worker, the others queue behind them: the engine gets them in the order
+// they came, and an "arm" pressed right after a "disarm" with its code is not carried
+// out first. Between the two lanes the order is not kept: they are two people. An
+// expired order goes straight to the engine, which answers so: its code is not
+// checked, nor counted.
 func (h *Hub) command(o order) {
 	needs, expired := contract.NeedsCode(o.cmd.Command), h.expired(o)
 	if expired || !needs {
 		o.cmd.Args.Code = ""
 	}
 	o.check = needs && o.cmd.Args.Code != ""
-	if expired || (!o.check && h.checking.Load() == 0) {
+	l := h.lane(o.cmd.Origin)
+	if expired || (!o.check && l.checking.Load() == 0) {
 		h.submitCommand(o, engine.Auth{}) // no code checked: the engine counts a wrong one if it needed one
 		return
 	}
@@ -103,31 +109,55 @@ func (h *Hub) command(o order) {
 		err := h.alarm.loop.Submit(h.life, func(now time.Time) engine.Input { return engine.CodeEntered{Now: now, Ref: o.ref} })
 		h.submitFailed(err)
 	}
-	h.checking.Add(1)
+	l.checking.Add(1)
 	select {
-	case h.auth <- o:
+	case l.orders <- o:
 	default:
-		h.checking.Add(-1)
+		l.checking.Add(-1)
 		if !o.check {
 			h.submitCommand(o, engine.Auth{})
 			return
 		}
 		// A flood of code checks: refuse without spending the CPU, and count it as
-		// what it is, a wrong code.
-		h.log.Warn("too many code checks waiting, refusing this order")
+		// what it is, a wrong code of its origin.
+		h.log.Warn("too many code checks waiting, refusing this order", "origin", o.cmd.Origin)
 		o.cmd.Args.Code = ""
 		h.submitCommand(o, engine.Auth{Checked: true})
 	}
 }
 
-func (h *Hub) authWorker(ctx context.Context) {
+// lane is a queue of code checks and its worker's count: one for the keypad, one for
+// the app (any other origin).
+type lane struct {
+	orders chan order
+	// checking counts the orders handed to the worker and not yet queued for the
+	// engine: while there are some, the lane's orders without a code queue behind them.
+	checking atomic.Int32
+	// check checks an order and hands it to the engine (Hub.checkOrder); a field so
+	// that a test may hold a lane's worker.
+	check func(order)
+}
+
+func (h *Hub) newLane() *lane {
+	return &lane{orders: make(chan order, h.cfg.AuthQueue), check: h.checkOrder}
+}
+
+// lane is the lane of an origin: the keypad's, or the app's for any other.
+func (h *Hub) lane(origin string) *lane {
+	if origin == contract.OriginKeypad {
+		return h.keypadChecks
+	}
+	return h.appChecks
+}
+
+func (h *Hub) authWorker(ctx context.Context, l *lane) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case o := <-h.auth:
-			h.checkOrder(o)
-			h.checking.Add(-1) // once the order is queued for the engine: what follows keeps its place
+		case o := <-l.orders:
+			l.check(o)
+			l.checking.Add(-1) // once the order is queued for the engine: what follows keeps its place
 		}
 	}
 }
