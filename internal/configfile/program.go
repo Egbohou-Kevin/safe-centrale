@@ -103,11 +103,11 @@ func (p Program) LocalBroker() (url, clientID, username, password string) {
 }
 
 // AsOperator returns p as the operator on the local broker, for a tool run by hand
-// under sudo: the operator's name and the password in OperatorSecret. Without that
-// file (a computer that is not a hub), there is no password.
-func (p Program) AsOperator() (Program, error) { return p.asOperator(OperatorSecret) }
-
-func (p Program) asOperator(path string) (Program, error) {
+// under sudo: the operator's name and the password in the file at path, OperatorSecret
+// when empty (a test gives its own). Without that file (a computer that is not a hub),
+// there is no password.
+func (p Program) AsOperator(path string) (Program, error) {
+	path = cmp.Or(path, OperatorSecret)
 	password, err := readPassword(path, true)
 	if err != nil {
 		return Program{}, err

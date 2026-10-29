@@ -115,6 +115,7 @@ func newSide(t *testing.T, ctx context.Context, url, caFile string) *side {
 	t.Helper()
 	s := &side{t: t, ids: contract.NewIDGenerator()}
 	client, err := mqtt.Dial(ctx, mqtt.Options{
+		Username: mqtttest.Peer, Password: mqtttest.Password(mqtttest.Peer),
 		BrokerURL: url, CAFile: caFile, ClientID: fmt.Sprintf("side-%d", time.Now().UnixNano()),
 		// NoLocal: a side records what the agent publishes, not its own messages.
 		Subscriptions: []mqtt.Subscription{{Filter: "safehome/" + site + "/#", QoS: 1, NoLocal: true}},
@@ -256,9 +257,9 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	if testing.Short() {
 		t.Skip("end-to-end scenario of about 10 s: run without -short")
 	}
-	hubBroker := mqtttest.Start(t)
+	hubBroker := mqtttest.Start(t, "safehome-agent")
 	files := mqtttest.NewTLSFiles(t)
-	cloudBroker := mqtttest.StartWith(t, mqtttest.Options{TLS: &files})
+	cloudBroker := mqtttest.StartOpenWith(t, mqtttest.Options{TLS: &files})
 	link := startInternet(t, strings.TrimPrefix(cloudBroker.TLSURL(), "mqtts://"))
 	state := t.TempDir()
 	// A photo goes only to the cloud's hosts, on https's port or one its addresses name:

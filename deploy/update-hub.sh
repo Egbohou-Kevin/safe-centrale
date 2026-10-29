@@ -82,9 +82,10 @@ reboot_hub() {
 # until the unit is ready (Type=notify), so a unit that held is two minutes old: 100 s
 # then. After a boot the start is not timed: 60 s, the first minute left to it. A unit
 # that is not running at all is not listed: the hub must be. A program the broker
-# refuses (its password wrong, missing or stale, 29 October 2026) stays active and
-# retries for ever, deaf to every sensor: a refusal in the journal of the programs or of
-# Zigbee2MQTT during the two minutes counts as a unit that does not hold.
+# refuses (its password wrong, missing or stale, 29 October 2026; a topic its ACL does
+# not grant) stays active and retries for ever, deaf to every sensor: a refusal in the
+# journal of the programs or of Zigbee2MQTT during the two minutes counts as a unit that
+# does not hold.
 services_hold() {
 	held=$1
 	if ! t0=$(pi 'date +%s'); then
@@ -148,9 +149,12 @@ services_hold() {
 }
 
 # What a client the hub's broker refuses writes in the journal: our programs
-# (internal/adapter/mqtt) and Zigbee2MQTT ("Connection refused: Not authorized", or a
-# bad user name or password).
-refusal='mqtt broker refused the connection|not authori[sz]ed|bad user ?name or password'
+# (internal/adapter/mqtt: the connection; a subscription, internal/outbox: a message the
+# ACL does not let it write) and Zigbee2MQTT ("Connection refused: Not authorized", or a
+# bad user name or password). A topic the ACL does not let a program read leaves no
+# trace: Mosquitto grants the subscription and delivers nothing (the tests of cmd/ run
+# against the ACL for that).
+refusal='mqtt broker refused the connection|mqtt subscription refused|the broker refused a message|not authori[sz]ed|bad user ?name or password'
 
 wait_services() { services_hold 60 || die "the services do not hold"; }
 
@@ -162,18 +166,21 @@ mark() { pi "if [ ! -e $unconfirmed ]; then echo none; elif t=\$(sudo -n cat $un
 
 # restore_units: the units go back as this run saved them in $units_tgz before
 # install.sh (never an older archive): each one that differs is put back, each one the
-# archive did not hold is removed, with its links in *.wants. So does mosquitto.conf,
-# when it differs: programs from before 29 October 2026 have no password, and the
-# broker of the new one would refuse them all, Zigbee2MQTT too. Sets changed and
-# removed (unit names) and broker (mosquitto.conf, when put back); units_note says a
+# archive did not hold is removed, with its links in *.wants. So do mosquitto.conf and
+# its ACL, safehome.acl, each when it differs: programs from before 29 October 2026
+# have no password, and the broker of the new one would refuse them all, Zigbee2MQTT
+# too; the previous programs may use a topic the new ACL no longer grants. An ACL the
+# archive does not hold (a hub from before it) stays: the mosquitto.conf put back does
+# not name it. Sets changed and removed (unit names) and broker (mosquitto.conf,
+# safehome.acl, those put back); units_note says a
 # restoration that failed, naming the archive, and the caller goes on as for a restart
 # that failed. Nothing is reloaded or restarted here.
 restore_units() {
 	changed="" removed="" broker="" units_note=""
 	echo "== putting the units and mosquitto.conf back from $units_tgz"
-	sys=etc/systemd/system conf=etc/mosquitto/mosquitto.conf
+	sys=etc/systemd/system conf=etc/mosquitto/mosquitto.conf acl=etc/mosquitto/safehome.acl
 	# Called where set -e still stops: a failure is said, what was done still read.
-	if ! did=$(pi "sudo -n sh -c 'cd / && t=\$(mktemp -d /data/maintenance/restore.XXXXXX) || exit 1; trap \"rm -rf \$t\" EXIT; tar -xzf $units_tgz -C \$t || exit 1; rc=0; for f in $sys/safehome* $sys/zigbee2mqtt*; do { [ -e \"\$f\" ] || [ -L \"\$f\" ]; } || continue; { [ -e \"\$t/\$f\" ] || [ -L \"\$t/\$f\" ]; } && continue; n=\${f##*/}; if rm -rf \"\$f\" $sys/*.wants/\"\$n\"; then echo \"removed \$n\"; else rc=1; fi; done; for f in \$t/$sys/*; do { [ -e \"\$f\" ] || [ -L \"\$f\" ]; } || continue; n=\${f##*/}; diff -r \"\$f\" $sys/\"\$n\" >/dev/null 2>&1 && continue; if rm -rf $sys/\"\$n\" && cp -Rp \"\$f\" $sys/\"\$n\"; then echo \"restored \$n\"; else rc=1; fi; done; if [ -e \$t/$conf ] && ! diff \$t/$conf $conf >/dev/null 2>&1; then if cp -p \$t/$conf $conf; then echo \"broker mosquitto.conf\"; else rc=1; fi; fi; exit \$rc'"); then
+	if ! did=$(pi "sudo -n sh -c 'cd / && t=\$(mktemp -d /data/maintenance/restore.XXXXXX) || exit 1; trap \"rm -rf \$t\" EXIT; tar -xzf $units_tgz -C \$t || exit 1; rc=0; for f in $sys/safehome* $sys/zigbee2mqtt*; do { [ -e \"\$f\" ] || [ -L \"\$f\" ]; } || continue; { [ -e \"\$t/\$f\" ] || [ -L \"\$t/\$f\" ]; } && continue; n=\${f##*/}; if rm -rf \"\$f\" $sys/*.wants/\"\$n\"; then echo \"removed \$n\"; else rc=1; fi; done; for f in \$t/$sys/*; do { [ -e \"\$f\" ] || [ -L \"\$f\" ]; } || continue; n=\${f##*/}; diff -r \"\$f\" $sys/\"\$n\" >/dev/null 2>&1 && continue; if rm -rf $sys/\"\$n\" && cp -Rp \"\$f\" $sys/\"\$n\"; then echo \"restored \$n\"; else rc=1; fi; done; for f in $acl $conf; do if [ -e \$t/\$f ] && ! diff \$t/\$f \$f >/dev/null 2>&1; then if cp -p \$t/\$f \$f; then echo \"broker \${f##*/}\"; else rc=1; fi; fi; done; exit \$rc'"); then
 		units_note="the units could not all be put back from $units_tgz: compare them with it by hand"
 		echo "!! $units_note" >&2
 	fi
@@ -308,13 +315,14 @@ case "$phase" in
 	pi 'sudo -n mount -o remount,rw /'
 	dns_and_clock
 	stamp=$(date +%Y%m%d-%H%M)
-	# The units and mosquitto.conf are the only way back for them (no .prev): saved and
-	# read back, or no install.
+	# The units, mosquitto.conf and its ACL (once a hub has one) are the only way back
+	# for them (no .prev): saved and read back, or no install.
 	units_tgz=/data/maintenance/units-$stamp.tgz
-	pi "sudo -n sh -c 'mkdir -p /data/maintenance && cd / && tar -czf $units_tgz etc/systemd/system/safehome* etc/systemd/system/zigbee2mqtt* etc/mosquitto/mosquitto.conf'" ||
+	if ! saved_acl=$(pi "sudo -n sh -c 'mkdir -p /data/maintenance && cd / && acl= && { [ ! -e etc/mosquitto/safehome.acl ] || acl=etc/mosquitto/safehome.acl; } && tar -czf $units_tgz etc/systemd/system/safehome* etc/systemd/system/zigbee2mqtt* etc/mosquitto/mosquitto.conf \$acl && echo \$acl'"); then
 		die "the units could not be saved in $units_tgz: nothing installed"
+	fi
 	saved=$(pi "sudo -n tar -tzf $units_tgz") || die "$units_tgz cannot be read back: nothing installed"
-	for f in etc/systemd/system/safehome-hub.service etc/mosquitto/mosquitto.conf; do
+	for f in etc/systemd/system/safehome-hub.service etc/mosquitto/mosquitto.conf $saved_acl; do
 		printf '%s\n' "$saved" | grep -qx "$f" || die "$units_tgz does not hold ${f##*/}: nothing installed"
 	done
 	echo "== units and mosquitto.conf kept in $units_tgz, copying the bundle"

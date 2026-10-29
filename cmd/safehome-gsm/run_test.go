@@ -99,7 +99,7 @@ func TestTheGatewayEndToEndWithASimulatedModem(t *testing.T) {
 	if testing.Short() {
 		t.Skip("end-to-end scenario of about 10 s: run without -short")
 	}
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-gsm")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state)
 
@@ -110,6 +110,7 @@ func TestTheGatewayEndToEndWithASimulatedModem(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	client, err := mqtt.Dial(ctx, mqtt.Options{
+		Username: mqtttest.Peer, Password: mqtttest.Password(mqtttest.Peer),
 		BrokerURL: broker.URL(), ClientID: fmt.Sprintf("col-%d", time.Now().UnixNano()),
 		Subscriptions: []mqtt.Subscription{{Filter: "safehome/" + site + "/#", QoS: 1}},
 		OnMessage:     func(m mqtt.Message) { col.mu.Lock(); col.msgs = append(col.msgs, m); col.mu.Unlock() },
@@ -219,7 +220,7 @@ func TestTheGatewayEndToEndWithASimulatedModem(t *testing.T) {
 }
 
 func TestAMissingModemDoesNotStopTheGateway(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-gsm")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state)
 	replacePort(t, func(gsmconfig.Port) (io.ReadWriteCloser, error) { return nil, fmt.Errorf("no such device") })
@@ -318,7 +319,7 @@ func publishApplied(t *testing.T, broker string, version int) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	c, err := mqtt.Dial(ctx, mqtt.Options{BrokerURL: broker, ClientID: fmt.Sprintf("hub-%d", time.Now().UnixNano())})
+	c, err := mqtt.Dial(ctx, mqtt.Options{Username: mqtttest.Peer, Password: mqtttest.Password(mqtttest.Peer), BrokerURL: broker, ClientID: fmt.Sprintf("hub-%d", time.Now().UnixNano())})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +336,7 @@ func publishApplied(t *testing.T, broker string, version int) {
 }
 
 func TestTheGatewayRestartsForANewConfigurationFromTheCloud(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-gsm")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state)
 	replacePort(t, func(gsmconfig.Port) (io.ReadWriteCloser, error) { return nil, fmt.Errorf("no such device") })

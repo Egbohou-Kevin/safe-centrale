@@ -143,7 +143,7 @@ func TestCodesCommands(t *testing.T) {
 }
 
 func TestCodesSetWhileTheHubRunsTakeEffectWithoutARestart(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-hub")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state, "")
 	l := startLive(t, broker, state, cfg)

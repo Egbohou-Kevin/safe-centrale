@@ -91,6 +91,7 @@ func startAdapter(t *testing.T, ctx context.Context, broker string, devices []co
 	t.Helper()
 	a := &fakeAdapter{t: t, devices: devices}
 	c, err := mqtt.Dial(ctx, mqtt.Options{
+		Username: mqtttest.Peer, Password: mqtttest.Password(mqtttest.Peer),
 		BrokerURL: broker, ClientID: "fake-adapter-" + t.Name(), Ephemeral: true,
 		Subscriptions: []mqtt.Subscription{{Filter: contract.RegistryCmdTopic(site), QoS: 1}},
 		OnMessage:     func(m mqtt.Message) { go a.order(ctx, m) },
@@ -256,7 +257,7 @@ func TestWithoutBrokerOrAdapter(t *testing.T) {
 		t.Fatalf("%d %q", code, errb)
 	}
 
-	broker := mqtttest.Start(t)
+	broker := startBroker(t)
 	path := writeConfig(t, broker.URL())
 	if code, _, errb := cli(ctx, "devices", "-config", path); code != 1 || !strings.Contains(errb, "no device registry") {
 		t.Fatalf("%d %q", code, errb)
@@ -270,7 +271,7 @@ func TestWithoutBrokerOrAdapter(t *testing.T) {
 }
 
 func TestAnInstallation(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := startBroker(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	path := writeConfig(t, broker.URL())
@@ -417,7 +418,7 @@ func TestAnInstallation(t *testing.T) {
 // A room goes with the zone, by the name's rule; the zone given again without one
 // has none.
 func TestAZoneTakesARoom(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := startBroker(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	path := writeConfig(t, broker.URL())
@@ -453,7 +454,7 @@ func TestAZoneTakesARoom(t *testing.T) {
 // The removal went out without an answer: the adapter may still carry it out, so the
 // configuration stops using the device, and the tool says so and fails.
 func TestAnUnconfirmedRemovalLeavesTheConfiguration(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := startBroker(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	path := writeConfig(t, broker.URL())
@@ -471,7 +472,7 @@ func TestAnUnconfirmedRemovalLeavesTheConfiguration(t *testing.T) {
 }
 
 func TestWatchShowsEventsWithZoneNamesAndNoCode(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := startBroker(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	path := writeConfig(t, broker.URL())
@@ -509,4 +510,19 @@ func containsAll(s string, parts []string) bool {
 		}
 	}
 	return true
+}
+
+// startBroker starts the hub's broker, the tool connecting as the operator with the
+// password the test made, as under sudo on a hub.
+func startBroker(t *testing.T) *mqtttest.Broker {
+	t.Helper()
+	broker := mqtttest.Start(t, "operator")
+	path := filepath.Join(t.TempDir(), "operator.secret")
+	if err := os.WriteFile(path, []byte(mqtttest.Password("operator")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	was := operatorSecret
+	operatorSecret = path
+	t.Cleanup(func() { operatorSecret = was })
+	return broker
 }

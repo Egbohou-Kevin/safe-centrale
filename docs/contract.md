@@ -75,7 +75,7 @@ Tous les topics commencent par `safehome/{site}/`.
 | `.../device/{device_id}/ack` | Réponse à une commande | non |
 | `.../alarm/event` | Événements du cycle d'alarme (armée, déclenchée…) | non |
 | `.../alarm/state` | État courant du moteur | oui |
-| `.../alarm/cmd` | Ordre au moteur (armer, désarmer…), depuis l'application (seul le cloud y publie) | non |
+| `.../alarm/cmd` | Ordre au moteur (armer, désarmer…), depuis l'application (le cloud, par l'agent, y publie ; l'opérateur aussi, sous sudo, et le kit virtuel) | non |
 | `.../alarm/ack` | Réponse du moteur à un ordre | non |
 | `.../alert/request` | Demande d'envoi d'alerte (SMS, appel) de l'escalade vers les canaux | non |
 | `.../alert/result` | Résultat d'un envoi (envoyé, échoué, acquitté) | non |
@@ -104,7 +104,7 @@ Tous les topics commencent par `safehome/{site}/`.
 | `.../maint/cmd` | Ouvrir ou fermer un tunnel de maintenance (cloud vers centrale) | non |
 | `.../maint/session` | Étapes d'une session de maintenance, vues par le propriétaire | non |
 | `.../install/mode` | Mode installation ouvert ou fermé, publié par la centrale | oui |
-| `.../install/cmd` | Fin du mode installation, depuis la console locale, **local seulement** | non |
+| `.../install/cmd` | Fin du mode installation, depuis la console locale ou `safehome-install` (l'opérateur), **local seulement** | non |
 
 ### Qualité de service sur le broker du cloud
 

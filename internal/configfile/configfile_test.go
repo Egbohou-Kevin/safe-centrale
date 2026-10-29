@@ -247,17 +247,17 @@ func TestTheOperatorReadsItsPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "operator.secret")
-	if op, err := p.asOperator(path); err != nil || op.Username != "operator" || op.Password != "" {
+	if op, err := p.AsOperator(path); err != nil || op.Username != "operator" || op.Password != "" {
 		t.Fatalf("without the file: %+v %v", op, err)
 	}
 	os.WriteFile(path, []byte("op-secret\n"), 0o600)
-	op, err := p.asOperator(path)
+	op, err := p.AsOperator(path)
 	if err != nil || op.Username != "operator" || op.Password.Reveal() != "op-secret" || op.ClientID != p.ClientID {
 		t.Fatalf("%+v %v", op, err)
 	}
 	if os.Getuid() != 0 {
 		os.Chmod(path, 0o000)
-		if _, err := p.asOperator(path); err == nil || !strings.Contains(err.Error(), path) || strings.Contains(err.Error(), "op-secret") {
+		if _, err := p.AsOperator(path); err == nil || !strings.Contains(err.Error(), path) || strings.Contains(err.Error(), "op-secret") {
 			t.Errorf("unreadable: %v", err)
 		}
 	}

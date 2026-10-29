@@ -293,6 +293,7 @@ Chien de garde : si le système ne répond plus pendant 15 s, la carte redémarr
 ### 6. Mosquitto
 
 ```bash
+sudo install -m 0640 -o mosquitto -g mosquitto deploy/mosquitto/safehome.acl /etc/mosquitto/safehome.acl
 sudo cp deploy/mosquitto/mosquitto.conf /etc/mosquitto/mosquitto.conf
 sudo chown mosquitto:mosquitto /data/mosquitto
 sudo systemctl restart mosquitto
@@ -320,10 +321,42 @@ programme lit dans `$CREDENTIALS_DIRECTORY` ; Zigbee2MQTT reçoit le sien par
 L'opérateur : `sudo mosquitto_sub …` et `sudo mosquitto_pub …` lisent leurs options dans
 `/root/.config/`, sans mot de passe tapé, et `safehome-install` (sous sudo) lit
 `/etc/safehome/mqtt/operator.secret`. Aucun mot de passe ne passe sur une ligne de commande, ni
-dans un journal ou une erreur. Les droits par topic (ACL) viennent dans un lot suivant : pour
-l'instant, tout nom connu garde tous les topics. Mosquitto ne démarre pas sans
-`/etc/mosquitto/safehome.passwd` : copier `mosquitto.conf` à la main (ci-dessus) seulement après
-un premier passage d'`install.sh`, qui le pose lui-même.
+dans un journal ou une erreur. Mosquitto ne démarre pas sans `/etc/mosquitto/safehome.passwd` ni
+`/etc/mosquitto/safehome.acl` : l'ACL se pose avant `mosquitto.conf`, toujours avec lui (ci-dessus),
+et copier `mosquitto.conf` à la main seulement après un premier passage d'`install.sh`, qui pose le
+fichier des mots de passe.
+
+**Chaque nom n'a que ses topics** (29 octobre 2026). `deploy/mosquitto/safehome.acl`, posé par
+`install.sh` en `/etc/mosquitto/safehome.acl` (à mosquitto, 0640, sans secret) **avant**
+`mosquitto.conf`, qui le nomme (`acl_file`), donne à chaque nom exactement ce que son code lit et
+écrit, rien d'autre : un programme compromis (`safehome-power`, `safehome-video`…) ne publie plus
+`alarm/cmd`, `maint/cmd` ni `config/set`. Le site et les identifiants d'appareils y sont `+`,
+aucun programme n'écrit un arbre (`#`) sous `safehome/`, aucune règle `pattern` ni section
+anonyme. Les ordres n'ont que leurs vrais producteurs : `alarm/cmd` l'agent (relais du cloud) et
+l'opérateur ; `maint/cmd`, `config/set`, `video/cmd`, `alert/seen` l'agent ; `alert/result`,
+`alert/ack` l'agent et `safehome-gsm` ; `install/cmd`, `registry/cmd` la console et l'opérateur ;
+`device/+/cmd` la centrale. `zigbee2mqtt` n'a que `zigbee2mqtt/#` ; `safehome-zigbee` y lit et
+écrit aussi, et écrit `device/+/state/+` (il efface les états retenus d'un appareil retiré).
+L'opérateur lit tout (`safehome/#`, `zigbee2mqtt/#`) et n'écrit que `registry/cmd`, `install/cmd`
+et `alarm/cmd` (`safehome-install`, le kit virtuel).
+
+Ce que fait Mosquitto 2.1.2 d'un droit absent (mesuré le 29 octobre 2026) : une publication
+refusée reçoit un PUBACK 0x87 en QoS 1 (le client rend `ErrRefused`, l'outbox journalise « the
+broker refused a message »), rien en QoS 0 ; un abonnement à un topic non lisible est **accepté**
+(SUBACK 0x01) et rien n'y est jamais livré. Un droit de lecture oublié rend donc un programme
+sourd sans aucune trace, lien « up » : c'est le défaut à ne pas laisser passer. Les tests de
+`cmd/` le gardent : `mqtttest.Start` lance Mosquitto avec des mots de passe de test et **le
+fichier `safehome.acl` du dépôt**, et chaque programme testé s'y connecte sous son nom (son mot de
+passe par `CREDENTIALS_DIRECTORY`, comme sous systemd). `deploy/acl_test.go` tient la table de qui
+écrit et qui lit chaque topic, et vérifie sur le vrai Mosquitto que `safehome-power` ne peut écrire
+ni `alarm/cmd`, ni `maint/cmd`, ni `config/set`, et que `safehome-video` ne reçoit pas `maint/cmd`.
+
+**Ajouter un topic** : le code d'abord, puis la ligne dans `deploy/mosquitto/safehome.acl` pour
+chaque programme qui le lit ou l'écrit, puis la ligne de la table de `deploy/acl_test.go`. Sans la
+ligne d'ACL, les tests de bout en bout du programme rougissent (il n'entend plus le topic, ou sa
+publication est refusée) ; une ligne d'ACL sans sa ligne de table, ou dont la table ne donne pas le
+topic à ce nom dans ce sens, fait rougir `deploy/acl_test.go`. Le test ne lit pas le code : un
+topic ajouté au code seul, sans ligne d'ACL, ne se voit que par les tests de bout en bout.
 
 **Le code d'accès n'attend pas dans le broker.** Les programmes gardent leur session
 un jour : en QoS 1, Mosquitto garde pour un programme absent (un redémarrage pour une
@@ -743,8 +776,10 @@ jamais `failed` : `Restart=always` sans limite le laisse `activating`), si `safe
 ne tourne pas du tout (une unité arrêtée n'est pas listée), ou si une unité n'est pas active
 depuis au moins 100 s, ou si le broker refuse un programme pendant ces deux minutes (29 octobre
 2026 : le journal des unités `safehome-*` et `zigbee2mqtt`, lu depuis le début de l'attente,
-contient « mqtt broker refused the connection », écrit par notre client MQTT, ou « Not
-authorized » / « Bad User Name or Password », écrits par Zigbee2MQTT ; un journal illisible
+contient « mqtt broker refused the connection », « mqtt subscription refused » ou « the broker
+refused a message », écrits par notre client MQTT et sa file d'envoi (ces deux derniers : un topic
+que l'ACL n'accorde pas), ou « Not authorized » / « Bad User Name or Password », écrits par
+Zigbee2MQTT ; un journal illisible
 compte comme un refus, une connexion simplement impossible non), le retour joue aussi. Un
 programme refusé reste `active` et réessaie sans fin, sans voir aucun capteur : sans ce
 contrôle, ses unités paraîtraient tenir. Le point des 100 s attrape un programme qui plante
@@ -774,9 +809,12 @@ effacé ensuite), chaque unité `safehome*` ou `zigbee2mqtt*` qui diffère de la
 remise telle quelle, chaque unité que l'archive n'avait pas (une unité neuve du paquet) est retirée
 avec ses liens dans `*.wants`, puis arrêtée après `daemon-reload`. L'archive garde aussi
 `/etc/mosquitto/mosquitto.conf` (29 octobre 2026 ; la phase 2 n'installe rien si elle ne le tient
-pas) : s'il diffère, il est remis, et Mosquitto redémarre après `daemon-reload`, avant les
-programmes (« mosquitto.conf put back as it was », « mosquitto restarted on its previous
-configuration »). Des programmes d'avant les mots de passe du broker retrouvent ainsi un broker
+pas), avec `/etc/mosquitto/safehome.acl` dès que la centrale en a un : chacun, s'il diffère, est
+remis, et Mosquitto redémarre après `daemon-reload`, avant les programmes (« safehome.acl put back
+as it was », « mosquitto.conf put back as it was », « mosquitto restarted on its previous
+configuration ») ; les deux vont ensemble, Mosquitto refusant de démarrer sur un `mosquitto.conf`
+qui nomme une ACL absente. Une ACL que l'archive ne contient pas (centrale d'avant l'ACL) reste :
+le `mosquitto.conf` remis ne la nomme pas. Des programmes d'avant les mots de passe du broker retrouvent ainsi un broker
 qui les accepte, Zigbee2MQTT compris ; `safehome.passwd` et les secrets restent, sans effet. Les services activés parmi les
 programmes revenus et les unités remises redémarrent, chacun une fois ; une unité identique n'est
 ni touchée ni redémarrée, et une unité remise qui n'est pas un démon (son `Type` lu par
@@ -960,8 +998,24 @@ lus sur le broker local (`mosquitto-clients` installé sur l'overlay, donc parti
 5. `sudo ls -l /etc/safehome/mqtt /etc/mosquitto/safehome.passwd` : dossier `drwx------ root`,
    fichiers `-rw------- root` ; le fichier haché à `mosquitto`.
 
-Retour arrière : `update-hub.sh` remet aussi `mosquitto.conf` d'avant (« Retour arrière des
-unités ») et redémarre Mosquitto avant les programmes : des programmes d'avant le 29 octobre 2026,
+À vérifier sur le Pi au premier déploiement de l'ACL (29 octobre 2026) :
+
+1. `sudo journalctl -u 'safehome-*' -u zigbee2mqtt -b | grep -iE 'refused|not authori'` vide
+   après dix minutes de fonctionnement, et `journalctl -u mosquitto -b` sans erreur sur l'ACL ;
+2. `sudo ls -l /etc/mosquitto/safehome.acl` : `-rw-r----- mosquitto mosquitto`, identique à
+   `deploy/mosquitto/safehome.acl` du paquet ;
+3. un capteur déclenché arrive à la centrale (Zigbee2MQTT et `safehome-zigbee` sous l'ACL), un
+   armement depuis l'application arrive (`alarm/cmd` relayé par l'agent), le GSM et la vidéo
+   reçoivent `alarm/event`, et `sudo safehome-install devices` répond ;
+4. ce que Zigbee2MQTT réel lit et écrit reste sous `zigbee2mqtt/` :
+   `sudo mosquitto_sub -t 'zigbee2mqtt/#' -v -C 20 -W 60` (l'étude des topics ne l'a vu que dans
+   le kit virtuel) ;
+5. l'ACL refuse vraiment : l'opérateur n'écrit pas `maint/cmd`, donc
+   `sudo mosquitto_pub -V mqttv5 -d -q 1 -t 'safehome/<site>/maint/cmd' -m '{}'` montre
+   `received PUBACK (Mid: 1, RC:135)`, et `safehome-maint` ne journalise rien.
+
+Retour arrière : `update-hub.sh` remet aussi `mosquitto.conf` et `safehome.acl` d'avant (« Retour
+arrière des unités ») et redémarre Mosquitto avant les programmes : des programmes d'avant le 29 octobre 2026,
 sans mot de passe, retrouvent un broker ouvert. Un programme que le broker refuse (mot de passe
 faux, absent ou périmé) reste `active` et réessaie sans fin, sans voir aucun capteur : la phase 2
 compte comme un service qui ne tient pas un refus dans le journal des programmes ou de

@@ -16,7 +16,7 @@ import (
 )
 
 func TestTheHubEndToEndOverARealBroker(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-hub")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state, "")
 	if code, _, errb := cli(t, "482915\n", "codes", "-config", cfg, "set", "u_owner"); code != 0 {
@@ -73,7 +73,7 @@ func TestTheHubEndToEndOverARealBroker(t *testing.T) {
 }
 
 func TestTheStateSurvivesARestart(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-hub")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state, "")
 	l := startLive(t, broker, state, cfg)
@@ -107,7 +107,7 @@ func TestTheStateSurvivesARestart(t *testing.T) {
 }
 
 func TestTheHubLearnsOpenDoorsFromRetainedStatesAtBoot(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-hub")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state, "")
 
@@ -128,7 +128,7 @@ func TestTheHubLearnsOpenDoorsFromRetainedStatesAtBoot(t *testing.T) {
 }
 
 func TestTheHubWaitsForTheBrokerAndCatchesUp(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-hub")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state, "")
 	broker.Stop() // the broker is not up when the hub starts
@@ -150,7 +150,7 @@ func TestTheHubWaitsForTheBrokerAndCatchesUp(t *testing.T) {
 }
 
 func TestTheHubRefusesToStartOnADamagedState(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-hub")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state, "")
 	os.WriteFile(filepath.Join(state, "engine.json"), []byte(`{"mode": [`), 0o600)
@@ -195,7 +195,7 @@ func TestASecondHubOnTheSameStateIsRefused(t *testing.T) {
 }
 
 func TestAnAcknowledgementOverTheBrokerEndsTheEscalation(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-hub")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state, "")
 	l := startLive(t, broker, state, cfg)

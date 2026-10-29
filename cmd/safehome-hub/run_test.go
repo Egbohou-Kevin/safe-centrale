@@ -134,7 +134,7 @@ func TestTheCheckWarnsOfARoomLeftAside(t *testing.T) {
 // A room the hub clears is journaled at the start, one line per zone, naming the zone
 // and never quoting the room: its text may hold control characters (28 October 2026).
 func TestTheHubJournalsARoomLeftAside(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-hub")
 	state := t.TempDir()
 	devices := `{"zones": {
 		"dev_door": {"name": "Entrance", "kind": "entry", "room": "` + strings.Repeat("x", 40) + `"},
@@ -217,7 +217,7 @@ func fakeSystemd(t *testing.T) func() []string {
 
 func TestTheHubTellsSystemdItIsReadyAndStillWorks(t *testing.T) {
 	said := fakeSystemd(t)
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-hub")
 	state := t.TempDir()
 	l := startLive(t, broker, state, writeConfig(t, broker.URL(), state, ""))
 	l.waitState("disarmed")

@@ -48,6 +48,7 @@ func dialTestClient(t *testing.T, url string, l *live) *mqtt.Client {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	c, err := mqtt.Dial(ctx, mqtt.Options{
+		Username: mqtttest.Peer, Password: mqtttest.Password(mqtttest.Peer),
 		BrokerURL: url, ClientID: fmt.Sprintf("test-client-%d", time.Now().UnixNano()),
 		Subscriptions: []mqtt.Subscription{{Filter: "safehome/" + site + "/#", QoS: 1}},
 		OnMessage: func(m mqtt.Message) {

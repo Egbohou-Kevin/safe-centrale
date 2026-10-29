@@ -23,7 +23,7 @@ func (c *command) online(ctx context.Context, fn func(context.Context, *install.
 	}
 	// The operator's name and password on the hub's broker (run under sudo), and a
 	// client id of this run's own.
-	operator, err := c.cfg.AsOperator()
+	operator, err := c.cfg.AsOperator(operatorSecret)
 	if err != nil {
 		return err
 	}
@@ -54,6 +54,10 @@ func (c *command) online(ctx context.Context, fn func(context.Context, *install.
 	}
 	return fn(ctx, s)
 }
+
+// operatorSecret is the file of the operator's password: empty, the hub's; a test
+// points it at its own.
+var operatorSecret string
 
 // clientID is unique for each run: two tools may run at once (watch in one terminal,
 // pair in another) without pushing each other off the broker.

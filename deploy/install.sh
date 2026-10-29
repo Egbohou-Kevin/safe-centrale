@@ -287,6 +287,11 @@ chown -R root:root "$MQTT"
 chmod 600 "$MQTT"/*
 put "$BUNDLE/deploy/system/journald-safehome.conf" "$ROOT/etc/systemd/journald.conf.d/safehome.conf" 644
 put "$BUNDLE/deploy/system/watchdog-safehome.conf" "$ROOT/etc/systemd/system.conf.d/safehome-watchdog.conf" 644
+# What each name may read and write (29 October 2026): no secret, but Mosquitto's own,
+# as its file of names. Put before mosquitto.conf, which names it: one without the
+# other, Mosquitto would not start, or would refuse the programs.
+put "$BUNDLE/deploy/mosquitto/safehome.acl" "$ROOT/etc/mosquitto/safehome.acl" 640
+chown mosquitto:mosquitto "$ROOT/etc/mosquitto/safehome.acl"
 put "$BUNDLE/deploy/mosquitto/mosquitto.conf" "$ROOT/etc/mosquitto/mosquitto.conf" 644
 if has console; then
 	# The console makes its network through NetworkManager, as the service's user,
