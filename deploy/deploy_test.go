@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"safehome/internal/adapter/sysclock"
 )
 
 // unit is a systemd unit: section -> key -> values (a key may repeat).
@@ -554,10 +556,8 @@ func TestTheClockAtBootIsTakenBeforeNTP(t *testing.T) {
 	}
 	hub := readUnit(t, filepath.Join("systemd", "safehome-hub.service"))
 	// ProtectProc and ProcSubset touch /proc only, not /run.
-	for _, k := range []string{"InaccessiblePaths", "TemporaryFileSystem"} {
-		if v, ok := hub["Service"][k]; ok {
-			t.Errorf("the hub's unit sets %s=%q: check it still reads /run/safehome-boot-clock", k, v)
-		}
+	if !hub.sees(sysclock.BootClockPath) {
+		t.Errorf("the hub's unit hides %s", sysclock.BootClockPath)
 	}
 
 	// The script, its paths and date replaced: it writes the time, then the uptime.

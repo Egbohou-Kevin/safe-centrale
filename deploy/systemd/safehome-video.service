@@ -61,6 +61,9 @@ ProtectHostname=yes
 TemporaryFileSystem=/etc/safehome:ro /var/lib/safehome:ro
 BindReadOnlyPaths=/etc/safehome/video.json /var/lib/safehome/site
 BindPaths=/var/lib/safehome/video /var/lib/safehome/photos
+# Nor the Zigbee network's key (29 October 2026): /var/lib/zigbee2mqtt, absent on a hub
+# without Zigbee.
+InaccessiblePaths=-/var/lib/zigbee2mqtt
 
 [Install]
 WantedBy=multi-user.target
