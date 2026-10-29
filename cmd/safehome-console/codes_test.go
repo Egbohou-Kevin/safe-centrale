@@ -37,7 +37,7 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 		t.Fatalf("%+v %v", people, err)
 	}
 
-	store, err := filestore.Open(cfg.StateDir, nil)
+	store, err := filestore.Open(hubconfig.CodesDir(cfg.StateDir), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,5 +153,51 @@ func TestCodesSetAtOnceAreAllKept(t *testing.T) {
 		if (p.ID == "u_owner" || p.ID == "u_deputy") && !p.HasCode {
 			t.Fatalf("%s's code was lost: %+v", p.ID, people)
 		}
+	}
+}
+
+// The codes go to their own folder, under the lock in it, the folder absent at first;
+// those not moved there yet are still read where they were, in the state folder.
+func TestCodesGoToTheirFolderUnderItsLock(t *testing.T) {
+	_, hubPath, _ := setup(t, "mqtt://127.0.0.1:1883", 80)
+	cfg, err := hubconfig.Load(hubPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flat, err := filestore.Open(cfg.StateDir, nil) // where the codes were kept before
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, err := hub.OpenSiteCodes(cfg.Hub, flat, driver.SystemClock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tool.Set(hub.InstallerUser, "3691"); err != nil {
+		t.Fatal(err)
+	}
+	folder := hubconfig.CodesDir(cfg.StateDir)
+	if _, err := os.Stat(folder); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the folder is there before the console: %v", err)
+	}
+
+	c := codes{hubConfig: hubPath, log: slog.New(slog.DiscardHandler)}
+	if err := c.Set("u_owner", "3691"); !errors.Is(err, consoleapp.ErrCodeTaken) {
+		t.Fatalf("the installer's code kept in the state folder is not read: %v", err)
+	}
+	if err := c.Set("u_owner", "2580"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{hubconfig.CodesLock, "access.json", "codes-taken.json"} {
+		if info, err := os.Lstat(filepath.Join(folder, name)); err != nil || !info.Mode().IsRegular() {
+			t.Errorf("%s is not in the codes' folder: %v", name, err)
+		}
+	}
+	for _, name := range []string{hubconfig.CodesLock, "access.json", "codes-taken.json"} {
+		if _, err := os.Lstat(filepath.Join(cfg.StateDir, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s is written in the state folder: %v", name, err)
+		}
+	}
+	if people, _, err := c.People(); err != nil || people[0].ID != "u_owner" || !people[0].HasCode {
+		t.Fatalf("%+v %v", people, err)
 	}
 }

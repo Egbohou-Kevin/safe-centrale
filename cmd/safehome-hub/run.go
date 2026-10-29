@@ -10,6 +10,7 @@ import (
 	"slices"
 	"syscall"
 
+	"safehome/internal/adapter/filestore"
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/sysclock"
 	"safehome/internal/configapp"
@@ -123,7 +124,7 @@ func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
 
-	store, release, err := service.OpenState(name, cfg.StateDir, pidName, log)
+	store, codes, release, err := openState(cfg.StateDir, log)
 	if err != nil {
 		log.Error("cannot start", "err", err)
 		return 1
@@ -139,7 +140,7 @@ func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr
 	ids := contract.NewIDGenerator()
 	pub := &service.Publisher{}
 	restart := service.NewRestart()
-	h, err := newHub(cfg, configPath, hub.Deps{Store: store, Publisher: pub, NewID: ids.New, Logger: log})
+	h, err := newHub(cfg, configPath, hub.Deps{Store: store, Codes: codes, Publisher: pub, NewID: ids.New, Logger: log})
 	if err != nil {
 		log.Error("cannot start the hub", "err", err)
 		return 1
@@ -267,4 +268,17 @@ func reloadCodes(ctx context.Context, h *hub.Hub, hup <-chan os.Signal, log *slo
 			}
 		}
 	}
+}
+
+// openState opens the hub's state folder dir, holding its pid file until release, and
+// the folder of the access codes in it.
+func openState(dir string, log *slog.Logger) (store, codes *filestore.Store, release func(), err error) {
+	if store, release, err = service.OpenState(name, dir, pidName, log); err != nil {
+		return nil, nil, nil, err
+	}
+	if codes, err = openCodesStore(dir, log); err != nil {
+		release()
+		return nil, nil, nil, err
+	}
+	return store, codes, release, nil
 }

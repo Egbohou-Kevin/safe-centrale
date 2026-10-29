@@ -119,8 +119,11 @@ func (c Config) healthConfig() health.Config {
 
 // Deps are the ports the hub needs.
 type Deps struct {
-	Clock     driver.Clock
-	Store     driver.Store
+	Clock driver.Clock
+	Store driver.Store
+	// Codes keeps the access codes, apart from the rest of Store: the other services
+	// of the hub must not read them. Nil keeps them in Store.
+	Codes     driver.Store
 	Publisher outbox.Publisher
 	NewID     func() string // message and incident identifiers (ULIDs)
 	Logger    *slog.Logger
