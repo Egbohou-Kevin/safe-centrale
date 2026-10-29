@@ -1002,6 +1002,14 @@ le cloud, à chaque changement et de nouveau chaque minute même sans changement
   elle est mise de côté en `code-key.damaged` et remplacée par une nouvelle plutôt que
   d'arrêter l'agent, qui porte les alarmes : les téléphones reçoivent la nouvelle par
   `key`, et un sceau fait pour l'ancienne est refusé `bad_seal` (28/10/2026).
+  Depuis le 29/10/2026, la clé est dans `agent/code-key`, sous-dossier du dossier d'état
+  (`/var/lib/safehome/agent`, créé en 0700 par l'agent s'il manque), que les unités des
+  autres programmes cacheront. Si elle n'y est pas, l'agent lit `code-key` à l'ancien
+  endroit, à plat dans le dossier d'état (fichier, ou lien laissé par l'installation), et
+  ne tire **jamais** de clé neuve tant que celle-ci existe : une clé neuve casse tous les
+  sceaux faits pour l'ancienne. Il n'en tire une que si les deux manquent, et la range dans
+  `agent/`. L'agent ne déplace rien : la copie vers `agent/` et le lien à l'ancien endroit
+  sont le travail de l'installation. Abîmée, la clé est mise de côté là où elle était.
 - Le même message, avec `uplink` à `down` et `seq` à 0, est le « dernier message »
   (Last Will) que le broker du cloud publie si la connexion se coupe sans prévenir.
   L'agent le publie lui-même quand il s'arrête proprement.

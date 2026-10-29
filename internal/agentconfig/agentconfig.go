@@ -46,7 +46,12 @@ type Result struct {
 	App                agentapp.Config
 	Cloud              Cloud
 	PhotoDir           string // the photos the video service took, for the agent to send
+	KeyDir             string // the agent's own folder, KeyFolder in the state directory
 }
+
+// KeyFolder is the agent's own folder in the state directory, made 0700 and hidden from the
+// other programs' units: it holds the key for the sealed codes.
+const KeyFolder = "agent"
 
 type file struct {
 	configfile.ProgramFile
@@ -99,6 +104,7 @@ func build(f file, dir string) (Result, error) {
 	r := Result{
 		Program:  p,
 		PhotoDir: filepath.Join(f.StateDir, "photos"), // the same folder as the video service's (videoconfig)
+		KeyDir:   filepath.Join(f.StateDir, KeyFolder),
 	}
 	if r.Cloud, err = cloud(f.Cloud, f.Site, dir); err != nil {
 		return Result{}, err
