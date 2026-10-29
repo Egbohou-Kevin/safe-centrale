@@ -1182,7 +1182,8 @@ Puis :
    `sudo ls -la /var/lib/safehome | grep -e ' -> ' -e ' agent$' -e ' codes$'` montre
    `code-key -> agent/code-key`, `access.json -> codes/access.json` (de même `installer.json`,
    `codes-taken.json` et les `.prev` présents), et `agent`, `codes` en `drwx------ safehome safehome` ;
-   `sudo ls -l /var/lib/safehome/codes` montre `moved-by-install` et `codes.lock`. Témoin
+   `sudo ls -l /var/lib/safehome/codes` montre `moved-by-install` et `access.json`
+   (`codes.lock` n'y apparaît qu'au premier changement de code : il manquait le 29 octobre 2026). Témoin
    positif : `sudo -u safehome head -c0 /var/lib/safehome/access.json && echo ouvert` passe par
    le lien et dit `ouvert` ;
 2. ce que voit chaque service, dans son espace, sous `safehome` (`-S`/`-G` comme pour
@@ -1207,7 +1208,12 @@ Puis :
    `install.sh: the codes did not move; started again: …`. Cet écart est la fenêtre sans alarme
    (0,083 s sur le Mac, 0,3 à 1 s projeté sur le Pi) : le noter ici. Si aucun fichier à plat
    n'a été noté, seuls des redémarrages de quelques millisecondes doivent apparaître ; une
-   paire plus longue serait à comprendre avant d'aller plus loin ;
+   paire plus longue serait à comprendre avant d'aller plus loin. **Lire ce journal juste après
+   la phase 2 d'`update-hub.sh`, avant la phase 3** : le journal du démarrage de maintenance
+   est perdu au redémarrage de la phase 3 (`journalctl --list-boots` n'en montre qu'un). Le
+   29 octobre 2026, il a été lu après la phase 4 et l'écart n'a pas pu être mesuré. Les codes
+   avaient pourtant bien changé de place, et la sortie d'`install.sh` ne contenait pas la ligne
+   « did not move » ;
 4. un code juste accepté après le déplacement : le changer à la console
    (`journalctl -u safehome-hub -b | grep "access codes reloaded"`), puis le taper au clavier ou
    dans l'application : il désarme ; un code faux est refusé (témoin positif). `access.json` à
