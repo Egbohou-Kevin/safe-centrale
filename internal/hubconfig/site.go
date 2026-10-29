@@ -30,6 +30,14 @@ const PidFile = "hub.pid"
 // would drop the first one's code.
 const CodesLock = "codes.lock"
 
+// CodesFolder is the folder of the hub's state folder that keeps the access codes
+// (hashed) and their lock: the other services of the hub are kept out of it.
+const CodesFolder = "codes"
+
+// CodesDir is the folder of the access codes in the state folder stateDir: the only
+// place that makes its path.
+func CodesDir(stateDir string) string { return filepath.Join(stateDir, CodesFolder) }
+
 // devicesFile is the form of DevicesFile: what the installer's tools change, the zones
 // and the sirens with their names (install.Site). Everything else (contacts,
 // delays...) is written by hand or sent by the cloud. A file without siren names is

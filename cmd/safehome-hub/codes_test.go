@@ -111,7 +111,7 @@ func TestCodesCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := filestore.Open(state, nil)
+	store, err := filestore.Open(hubconfig.CodesDir(state), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,13 +132,99 @@ func TestCodesCommands(t *testing.T) {
 		t.Fatalf("%d %q", code, out)
 	}
 
-	// The codes are saved hashed: nothing in the state directory holds a code.
-	entries, _ := os.ReadDir(state)
-	for _, e := range entries {
-		b, _ := os.ReadFile(filepath.Join(state, e.Name()))
-		if strings.Contains(string(b), "482915") {
-			t.Errorf("%s holds a code in clear", e.Name())
+	// The codes are saved hashed: nothing in the state directory holds a code, nor in
+	// the codes' folder; a code in clear slipped in on purpose shows.
+	read, clear := inClear(t, state, "482915")
+	if len(clear) != 0 || !slices.Contains(read, filepath.Join(hubconfig.CodesFolder, "access.json")) {
+		t.Fatalf("read %v, holding a code in clear %v", read, clear)
+	}
+	// The tool writes them in their folder, under the lock in it.
+	for _, name := range []string{"access.json", "installer.json", "codes-taken.json", hubconfig.CodesLock} {
+		if !slices.Contains(read, filepath.Join(hubconfig.CodesFolder, name)) || slices.Contains(read, name) {
+			t.Errorf("%s is not in the codes' folder alone: %v", name, read)
 		}
+	}
+	planted := filepath.Join(hubconfig.CodesDir(state), "planted.json")
+	if err := os.WriteFile(planted, []byte(`["482915"]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, clear := inClear(t, state, "482915"); !slices.Equal(clear, []string{filepath.Join(hubconfig.CodesFolder, "planted.json")}) {
+		t.Fatalf("the code slipped in is not seen: %v", clear)
+	}
+}
+
+// inClear reads every file of the state folder dir and of its folders, and returns
+// those read, and those holding code, by their path in dir.
+func inClear(t *testing.T, dir, code string) (read, clear []string) {
+	t.Helper()
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(dir, path)
+		read = append(read, rel)
+		if strings.Contains(string(b), code) {
+			clear = append(clear, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return read, clear
+}
+
+// The hub starts with the codes wherever they are: still in the state folder, where
+// they were kept before (install.sh moves them), or in their own folder, which wins
+// when both hold them. A hub started without its codes could not be disarmed.
+func TestTheHubStartsWithItsCodesWhereverTheyAre(t *testing.T) {
+	for name, c := range map[string]struct {
+		flat, folder string // u_owner's code kept there, "" for none
+		right, wrong string
+	}{
+		"in the state folder only": {flat: "482915", right: "482915", wrong: "111122"},
+		"in their folder only":     {folder: "730264", right: "730264", wrong: "111122"},
+		"in both":                  {flat: "482915", folder: "730264", right: "730264", wrong: "482915"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			broker := mqtttest.Start(t, "safehome-hub")
+			state := t.TempDir()
+			cfg := writeConfig(t, broker.URL(), state, "")
+			loaded, err := hubconfig.Load(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for dir, code := range map[string]string{state: c.flat, hubconfig.CodesDir(state): c.folder} {
+				if code == "" {
+					continue
+				}
+				store, err := filestore.Open(dir, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				site, err := hub.OpenSiteCodes(loaded.Hub, store, driver.SystemClock())
+				if err != nil || site.Set("u_owner", code) != nil {
+					t.Fatal(err)
+				}
+			}
+			l := startLive(t, broker, state, cfg)
+			l.waitState("disarmed")
+			l.event("dev_keypad", contract.CapKeypad, "arm", "")
+			l.waitState("arming")
+			l.event("dev_keypad", contract.CapKeypad, "arm_now", "")
+			l.waitState("armed")
+			l.event("dev_keypad", contract.CapKeypad, "disarm", c.wrong)
+			l.waitCount(contract.TypeAlarmAuthFailed, 1)
+			l.event("dev_keypad", contract.CapKeypad, "disarm", c.right)
+			l.waitState("disarmed")
+			if n := len(l.seen(contract.TypeAlarmAuthFailed)); n != 1 {
+				t.Fatalf("%d codes refused", n)
+			}
+		})
 	}
 }
 

@@ -35,12 +35,16 @@ func (c codes) change(do func(*hub.SiteCodes) error) error {
 	if err != nil {
 		return fmt.Errorf("the hub's configuration: %w", err)
 	}
-	release, err := filelock.Hold(cfg.StateDir, hubconfig.CodesLock, codesWait)
+	store, err := openStore(cfg) // makes the folder the lock is in
+	if err != nil {
+		return err
+	}
+	release, err := filelock.Hold(hubconfig.CodesDir(cfg.StateDir), hubconfig.CodesLock, codesWait)
 	if err != nil {
 		return err
 	}
 	defer release()
-	site, _, err := c.open()
+	site, err := hub.OpenSiteCodes(cfg.Hub, store, driver.SystemClock())
 	if err != nil {
 		return err
 	}
@@ -51,23 +55,32 @@ func (c codes) change(do func(*hub.SiteCodes) error) error {
 	return nil
 }
 
-func (c codes) open() (*hub.SiteCodes, string, error) {
+func (c codes) open() (*hub.SiteCodes, error) {
 	cfg, err := hubconfig.Load(c.hubConfig)
 	if err != nil {
-		return nil, "", fmt.Errorf("the hub's configuration: %w", err)
+		return nil, fmt.Errorf("the hub's configuration: %w", err)
 	}
-	store, err := filestore.Open(cfg.StateDir, nil)
+	store, err := openStore(cfg)
 	if err != nil {
-		return nil, "", fmt.Errorf("the state directory: %w", err)
+		return nil, err
 	}
-	site, err := hub.OpenSiteCodes(cfg.Hub, store, driver.SystemClock())
-	return site, cfg.StateDir, err
+	return hub.OpenSiteCodes(cfg.Hub, store, driver.SystemClock())
+}
+
+// openStore opens the folder of the hub's access codes. The codes not moved there
+// yet (by install.sh) are read where they were, in the state folder itself.
+func openStore(cfg hubconfig.Result) (*filestore.Store, error) {
+	store, err := filestore.OpenMoved(hubconfig.CodesDir(cfg.StateDir), cfg.StateDir, nil)
+	if err != nil {
+		return nil, fmt.Errorf("the state directory: %w", err)
+	}
+	return store, nil
 }
 
 // People lists the contacts, and the users of the codes who are not contacts: the
 // hub leaves those codes aside.
 func (c codes) People() (contacts []consoleapp.Person, leftovers []string, err error) {
-	site, _, err := c.open()
+	site, err := c.open()
 	if err != nil {
 		return nil, nil, err
 	}

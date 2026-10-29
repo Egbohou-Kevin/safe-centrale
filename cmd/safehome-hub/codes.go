@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -70,17 +71,15 @@ const codesWait = 30 * time.Second
 // openCodes reads the access codes; to change them, under their lock (see
 // hubconfig.CodesLock), held from the read to the write until release.
 func openCodes(cfg hubconfig.Result, change bool) (*hub.SiteCodes, func(), error) {
+	store, err := openCodesStore(cfg.StateDir, nil) // makes the folder the lock is in
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot open the state directory: %w", err)
+	}
 	release := func() {}
 	if change {
-		var err error
-		if release, err = filelock.Hold(cfg.StateDir, hubconfig.CodesLock, codesWait); err != nil {
+		if release, err = filelock.Hold(hubconfig.CodesDir(cfg.StateDir), hubconfig.CodesLock, codesWait); err != nil {
 			return nil, nil, fmt.Errorf("the access codes are being changed elsewhere: %w", err)
 		}
-	}
-	store, err := filestore.Open(cfg.StateDir, nil)
-	if err != nil {
-		release()
-		return nil, nil, fmt.Errorf("cannot open the state directory: %w", err)
 	}
 	site, err := hub.OpenSiteCodes(cfg.Hub, store, driver.SystemClock())
 	if err != nil {
@@ -88,6 +87,12 @@ func openCodes(cfg hubconfig.Result, change bool) (*hub.SiteCodes, func(), error
 		return nil, nil, fmt.Errorf("cannot read the access codes: %w", err)
 	}
 	return site, release, nil
+}
+
+// openCodesStore opens the folder of the access codes in the state folder dir. The
+// codes not moved there yet (by install.sh) are read where they were, in dir itself.
+func openCodesStore(dir string, log *slog.Logger) (*filestore.Store, error) {
+	return filestore.OpenMoved(hubconfig.CodesDir(dir), dir, log)
 }
 
 func list(l hub.CodeList, stdout io.Writer) {

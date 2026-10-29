@@ -250,3 +250,103 @@ func ownerOf(info os.FileInfo) int {
 	}
 	return -1
 }
+
+func TestAMovedDocumentIsReadWhereItWasKeptUntilTheFolderHoldsIt(t *testing.T) {
+	old := filepath.Join(t.TempDir(), "state")
+	flat, err := Open(old, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := flat.Save("access", []byte(`["flat"]`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := flat.Save("installer", []byte(`["flat"]`)); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(old, "codes")
+	s, err := OpenMoved(dir, old, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
+		t.Fatalf("the folder: %v %v", info, err)
+	}
+	if got, found, err := s.Load("access"); err != nil || !found || string(got) != `["flat"]` {
+		t.Fatalf("not yet moved: %q %v %v", got, found, err)
+	}
+
+	// A write goes to the folder, which then wins over the old place, document by document.
+	if err := s.Save("access", []byte(`["moved"]`)); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(old, "access.json")); err != nil || string(b) != `["flat"]` {
+		t.Fatalf("the old place is left as it was: %q %v", b, err)
+	}
+	if got, _, _ := s.Load("access"); string(got) != `["moved"]` {
+		t.Fatalf("both places: %q", got)
+	}
+	if got, _, _ := s.Load("installer"); string(got) != `["flat"]` {
+		t.Fatalf("another document still at the old place: %q", got)
+	}
+	if _, found, err := s.Load("codes-taken"); found || err != nil {
+		t.Fatalf("in neither place: %v %v", found, err)
+	}
+
+	// The old place left as a link to the folder (what the installation does) reads the same.
+	if err := os.Remove(filepath.Join(old, "access.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("codes/access.json", filepath.Join(old, "access.json")); err != nil {
+		t.Fatal(err)
+	}
+	again, err := OpenMoved(dir, old, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := again.Load("access"); string(got) != `["moved"]` {
+		t.Fatalf("through the link: %q", got)
+	}
+}
+
+func TestADamagedMovedDocumentIsNeverReadWhereItWasKept(t *testing.T) {
+	old := t.TempDir()
+	if err := os.WriteFile(filepath.Join(old, "access.json"), []byte(`["flat"]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(old, "codes")
+	s, err := OpenMoved(dir, old, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "access.json"), []byte(`{broken`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Load("access"); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("an older copy is not the previous version: %v", err)
+	}
+}
+
+func TestAMovedFolderGetsTheOwnerOfTheOldOne(t *testing.T) {
+	old := t.TempDir()
+	dir := filepath.Join(old, "codes")
+	if _, err := OpenMoved(dir, old, nil); err != nil {
+		t.Fatal(err)
+	}
+	o, _ := os.Stat(old)
+	d, _ := os.Stat(dir)
+	if ownerOf(o) != ownerOf(d) {
+		t.Fatalf("%d, not %d", ownerOf(d), ownerOf(o))
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root may give a folder away")
+	}
+	// A folder to give to another user is refused to whoever is not root.
+	if err := ownedLike(dir, fakeOwner{o}); err == nil {
+		t.Fatal("a folder given away by a user who is not root")
+	}
+}
+
+// fakeOwner is the information of a folder owned by root.
+type fakeOwner struct{ os.FileInfo }
+
+func (fakeOwner) Sys() any { return &syscall.Stat_t{Uid: 0, Gid: 0} }

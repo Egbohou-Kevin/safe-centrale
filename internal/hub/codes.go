@@ -197,11 +197,19 @@ var errReadOnly = errors.New("hub: the access codes are changed by the installer
 // contacts only. It never writes them, so a code left aside stays on disk for the
 // installer to see and remove.
 func (h *Hub) openPeopleCodes() (*access.Registry, error) {
-	records, err := loadCodes(h.deps.Store, keyAccess)
+	records, err := loadCodes(h.codesStore(), keyAccess)
 	if err != nil {
 		return nil, err
 	}
 	return access.New(h.cfg.Access, h.contactsOnly(records), func([]access.Record) error { return errReadOnly })
+}
+
+// codesStore is where the hub reads the access codes.
+func (h *Hub) codesStore() driver.Store {
+	if h.deps.Codes != nil {
+		return h.deps.Codes
+	}
+	return h.deps.Store
 }
 
 // contactsOnly leaves aside the codes of users who are not contacts of the site: a
@@ -242,11 +250,11 @@ func (h *Hub) contactIDs() []string {
 func (h *Hub) ReloadCodes() error {
 	h.reloading.Lock()
 	defer h.reloading.Unlock()
-	records, err := loadCodes(h.deps.Store, keyAccess)
+	records, err := loadCodes(h.codesStore(), keyAccess)
 	if err != nil {
 		return err
 	}
-	installer, err := loadCodes(h.deps.Store, keyInstaller)
+	installer, err := loadCodes(h.codesStore(), keyInstaller)
 	if err != nil {
 		return err
 	}
