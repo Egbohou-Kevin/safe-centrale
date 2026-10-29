@@ -162,7 +162,7 @@ passerelle muette reste une panne.
 | `fire` | fumée | Tous les contacts tout de suite |
 | `panic` | bouton panique | Tous les contacts tout de suite, sans sirène |
 | `tamper` | sabotage | Premier contact (responsable ou propriétaire) tout de suite |
-| `auth_failed` | codes faux répétés : 3 en 10 minutes (le désarmement se verrouille), ou tous les 3 depuis le dernier bon code, sans verrouillage (voir `engine.md`) | Premier contact (responsable ou propriétaire) tout de suite |
+| `auth_failed` | codes faux répétés : 3 d'une même origine en 10 minutes (le désarmement se verrouille pour cette origine), ou tous les 3 depuis le dernier bon code, sans verrouillage (voir `engine.md`) | Premier contact (responsable ou propriétaire) tout de suite |
 | `arming_bypassed` | armement automatique avec une zone ouverte, ou fin d'un délai de sortie (ou `arm_now`) avec une zone `instant` restée ouverte (zone contournée) | Premier contact (responsable ou propriétaire) tout de suite |
 | `mains_lost` | coupure du secteur | Aucune alerte en soi, voir « Coupures de courant » |
 | `battery_low_hub` | batterie de la centrale à 40 % (urgence `high`), puis à 10 % (`critical`), seulement pendant une coupure | Premier contact (responsable ou propriétaire), une alerte à chaque seuil (voir « Coupures de courant ») |

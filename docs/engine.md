@@ -406,11 +406,14 @@ doit aussi connaître le code.
   heure. Un code faux ne lève jamais deux alertes : quand le 3e code faux verrouille
   aussi, une seule part. Au pire (un verrouillage qui ne tombe pas sur un multiple de
   3), deux alertes pour trois codes faux.
-- Le même contrôle s'applique au clavier, avec le même compte : codes faux du clavier
-  et de l'application s'ajoutent, et le verrouillage vaut pour les deux.
+- Le même contrôle s'applique au clavier, avec son propre compte et son propre
+  verrouillage (29 octobre 2026) : les codes faux du clavier ne verrouillent que le
+  clavier, ceux de l'application que l'application. Seul le compte depuis le dernier
+  bon code (`wrong_codes`, qui lève l'alerte tous les 3 codes faux) additionne clavier
+  et application.
 - La fenêtre n'est pas un réglage : le cloud borne chaque téléphone à 2 codes faux en
-  10 minutes, ce qui ne garde un téléphone sous le verrouillage du site que si les deux
-  fenêtres sont les mêmes. Le nombre de codes (`lockout_attempts`, 3) et la durée du
+  10 minutes, ce qui ne garde un téléphone sous le verrouillage de l'application que si
+  les deux fenêtres sont les mêmes. Le nombre de codes (`lockout_attempts`, 3) et la durée du
   verrouillage (`lockout_duration`, 10 minutes) restent réglables dans `hub.json`.
 
 Idée pour plus tard, hors v1 : un code de contrainte, qui désarme normalement
@@ -421,7 +424,8 @@ mais envoie une alerte silencieuse, utile en cas de braquage.
 Chaque personne autorisée (5 au maximum) a son propre code, lié à son identifiant
 (`user`). Le moteur sait donc **qui** arme, désarme ou coupe la sirène, et l'inscrit
 dans les événements. Retirer l'accès d'une personne revient à supprimer son code, sans
-changer celui des autres. Le verrouillage après 3 codes faux en 10 minutes s'applique au site entier.
+changer celui des autres. Le verrouillage après 3 codes faux en 10 minutes s'applique à
+l'origine du code (clavier ou application), pas au site entier (29 octobre 2026).
 
 ### Armement automatique et report
 
@@ -874,9 +878,10 @@ Décidé :
 - Armement automatique à l'heure de fermeture, avec possibilité de report.
 
 - Sirène : 3 cycles au maximum.
-- Verrouillage après 3 codes faux en 10 minutes (fenêtre glissante), pendant 10
-  minutes. Alerte aux contacts, sans verrouillage, tous les 3 codes faux depuis le
-  dernier bon code.
+- Verrouillage après 3 codes faux d'une même origine (clavier ou application) en 10
+  minutes (fenêtre glissante), pendant 10 minutes, pour cette origine seulement. Alerte
+  aux contacts, sans verrouillage, tous les 3 codes faux depuis le dernier bon code,
+  toutes origines confondues.
 - Armement automatique : préavis de 10 min, report de 30 min, 3 reports au
   maximum.
 - Pas d'armement ni de désarmement par SMS dans la v1.
