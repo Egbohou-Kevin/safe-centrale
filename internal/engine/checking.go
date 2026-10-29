@@ -7,10 +7,11 @@ import (
 
 // CodeCheckHold is how long the end of an entry delay waits for the check of a code
 // typed in its last moments (see CodeEntered). The hub checks every stored code with a
-// deliberately slow hash, about a second each on its board, one order at a time: a
-// right code typed a second before the end would otherwise reach the engine after it,
-// and set off the siren and the alerts for nothing. It is not a setting: it only has
-// to cover the check, and it bounds what a stream of wrong codes can add to the delay.
+// deliberately slow hash, about a second each on its board (projected, not measured),
+// one order at a time in each origin's lane, so two hashes may run at once: a right
+// code typed a second before the end would otherwise reach the engine after it, and set
+// off the siren and the alerts for nothing. It is not a setting: it only has to cover
+// the check, and it bounds what a stream of wrong codes can add to the delay.
 const CodeCheckHold = 10 * time.Second
 
 // codeEntered records a code being checked.

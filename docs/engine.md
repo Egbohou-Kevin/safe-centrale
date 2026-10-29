@@ -139,7 +139,7 @@ zone qu'il ne peut pas déclencher.
 | Réglage | Défaut | Remarque |
 |---|---|---|
 | Délai de sortie | 2 min | Le client peut armer tout de suite sans attendre (voir « Armement et délai de sortie ») |
-| Délai d'entrée | 45 s | Le temps de désarmer au clavier ; un code tapé avant la fin est attendu pendant sa vérification, 10 s au plus (voir « Désarmement à distance avec un code ») |
+| Délai d'entrée | 45 s | Le temps de désarmer au clavier ; un code tapé avant la fin est attendu pendant sa vérification, 10 s au plus ; le code du clavier n'attend que sa propre file (voir « Désarmement à distance avec un code ») |
 | Durée d'un cycle de sirène | 5 min | Voir « Reprise de la sirène » |
 | Pause entre deux cycles | 2 min | |
 | Nombre de cycles | 3 | À confirmer : plafond pour limiter le bruit et la batterie |
@@ -330,6 +330,15 @@ doit aussi connaître le code.
   quel code, ne peut plus empêcher les employés de désarmer au clavier pendant une
   intrusion ou une fausse alerte ; et quelqu'un qui essaie des codes au clavier ne
   bloque pas l'application du propriétaire. Décidé seul en autonomie, à relire.
+- Chaque origine a aussi **sa file de vérification** (29 octobre 2026) : le clavier sa
+  file et son fil, l'application (toute autre origine) les siens, de `AuthQueue` places
+  chacune (16). Un cloud qui envoie 20 ordres d'un coup puis un par seconde, chacun
+  avec un code faux à vérifier, remplit la file de l'application seulement : un bon
+  code tapé au clavier n'attend pas derrière ses vérifications (il arrive avant la fin
+  du délai d'entrée) et n'est jamais refusé « trop de vérifications en attente ». Une
+  file pleine refuse l'ordre suivant sans le vérifier et le compte code faux **de son
+  origine** : une inondation de l'application verrouille l'application, jamais le
+  clavier. Suite de la remarque 5, décidé seul en autonomie, à relire.
 - Les 10 minutes glissent : seuls comptent les codes faux de la même origine des 10
   dernières minutes (`engine.LockoutWindow`). Deux codes faux, puis un troisième 11
   minutes après le premier, ne verrouillent pas ; trois codes faux espacés de quelques
@@ -392,10 +401,12 @@ doit aussi connaître le code.
   faux peut ajouter au délai). Un code faux ne retient plus rien une fois vérifié :
   l'alarme part aussitôt. Un code tapé après la fin ne retient rien. Corrigé le 25
   octobre 2026 après une revue.
-- Les ordres arrivent au moteur dans l'ordre où ils arrivent à la centrale : un ordre
-  sans code (armer, reporter) tapé pendant qu'un code est vérifié attend derrière lui.
-  Un « armer » tapé juste après un « désarmer » avec son code n'est donc plus fait en
-  premier.
+- Les ordres d'une origine arrivent au moteur dans l'ordre où ils arrivent à la
+  centrale : un ordre sans code (armer, reporter) tapé pendant qu'un code de la même
+  origine est vérifié attend derrière lui. Un « armer » tapé juste après un
+  « désarmer » avec son code n'est donc plus fait en premier. Entre le clavier et
+  l'application, l'ordre n'est plus garanti depuis le 29 octobre 2026 (une file par
+  origine) : ce sont deux personnes, et le clavier n'attend plus l'application.
 - Une alerte tous les 3 codes faux, pas à chaque code faux : c'est le rythme
   d'avant la fenêtre (le 3e code faux de suite verrouillait et alertait), et la limite
   par contact et par heure de l'escalade (20 messages, `escalation.md`) est partagée
@@ -958,10 +969,11 @@ branchement (ci-dessous).
 
 Codé et testé dans `internal/hub` et `cmd/safehome-hub` (le branchement de bout en bout,
 voir `operations.md`) : messages MQTT vers les domaines, enveloppes et topics en sortie,
-vérification des codes sur un fil à part, commande de la sirène, clavier, démarrage avec
-les états retenus, battement de cœur. Un test lance la centrale entière contre un vrai
-broker : armement au clavier, porte forcée, sirène, mauvais code puis bon code,
-redémarrage qui garde l'état armé, rechargement des codes sans redémarrage.
+vérification des codes sur un fil à part (un par origine depuis le 29 octobre 2026),
+commande de la sirène, clavier, démarrage avec les états retenus, battement de cœur. Un
+test lance la centrale entière contre un vrai broker : armement au clavier, porte forcée,
+sirène, mauvais code puis bon code, redémarrage qui garde l'état armé, rechargement des
+codes sans redémarrage.
 
 Codé dans `internal/hub` : l'avertissement à l'armement. Le moteur ne connaît pas la
 santé des appareils ; la centrale garde le dernier résumé de la supervision et ajoute

@@ -71,10 +71,8 @@ type Hub struct {
 	// starts names the silent devices and the weak batteries.
 	faults atomic.Pointer[health.Status]
 
-	auth chan order
-	// checking counts the orders handed to the auth worker and not yet queued for the
-	// engine: while there are some, the orders without a code queue behind them.
-	checking atomic.Int32
+	// The code checks, a lane per origin (Hub.command).
+	keypadChecks, appChecks *lane
 
 	// life ends with Run: the loops run on it, and work handed to them after it ended
 	// is given up quietly.
@@ -142,8 +140,8 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 		bootID:  deps.NewID(),
 		started: now,
 		startup: bootState{open: true, linkUp: make(chan struct{}), states: map[string]contract.DeviceEventData{}},
-		auth:    make(chan order, cfg.AuthQueue),
 	}
+	h.keypadChecks, h.appChecks = h.newLane(), h.newLane()
 	h.life, h.stop = context.WithCancel(context.Background())
 	h.escal.life, h.escal.stop = context.WithCancel(context.Background())
 	h.mode.Store(string(engine.ModeDisarmed))
@@ -302,7 +300,8 @@ func (h *Hub) Run(ctx context.Context) error {
 	rest.Go(func() { h.escal.loop.Run(h.escal.life) })
 	for _, run := range []func(context.Context){
 		h.out.Run,
-		h.authWorker,
+		func(c context.Context) { h.authWorker(c, h.keypadChecks) },
+		func(c context.Context) { h.authWorker(c, h.appChecks) },
 		func(c context.Context) { driver.Every(c, h.deps.Clock, h.cfg.HeartbeatEvery, h.publishHeartbeat) },
 	} {
 		rest.Go(func() { run(h.life) })

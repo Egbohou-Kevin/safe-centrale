@@ -39,7 +39,7 @@ type Config struct {
 
 	DedupeSize int // message ids remembered
 	Outbox     outbox.Settings
-	AuthQueue  int // code checks that may wait
+	AuthQueue  int // code checks that may wait, in each origin's lane (keypad, app)
 
 	Versions map[string]string // component -> version, for the heartbeat
 }
