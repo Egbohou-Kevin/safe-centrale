@@ -283,6 +283,38 @@ func TestABadProfileWithoutSiteFolderPutsThePreviousOnesBack(t *testing.T) {
 	}
 }
 
+// The backup of /etc/safehome holds every secret and no unit hides it: root's alone
+// from the start, and the folder put back after a refused configuration keeps its modes.
+func TestTheBackupOfTheConfigurationIsRootsAlone(t *testing.T) {
+	r := newRig(t)
+	r.minimalSite()
+	r.mustRun()
+
+	seen := filepath.Join(t.TempDir(), "seen")
+	writeScript(t, filepath.Join(r.bundle, "bin", "safehome-hub"),
+		`[ "$1" = check ] && ls -ld "$ROOT/etc/safehome.prev" > "`+seen+`"; exit 1`)
+	if out, _, err := r.run(); err == nil {
+		t.Fatalf("install.sh accepted a refused configuration:\n%s", out)
+	}
+	b, err := os.ReadFile(seen)
+	if err != nil {
+		t.Fatalf("the check did not see the backup: %v", err)
+	}
+	if mode := strings.Fields(string(b))[0]; !strings.HasPrefix(mode, "drwx------") {
+		t.Errorf("the backup of the configuration is %s, not root's alone (drwx------)", mode)
+	}
+	fi, err := os.Stat(r.path("etc/safehome"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o750 {
+		t.Errorf("/etc/safehome put back as %v, want 0750 for the safehome group", fi.Mode())
+	}
+	if !r.exists("etc/safehome/cloud.secret") || r.exists("etc/safehome.prev") {
+		t.Error("the previous configuration is not back, or its backup is left behind")
+	}
+}
+
 func TestInstallRefusesWhatWouldBreakTheSite(t *testing.T) {
 	cases := []struct {
 		name string

@@ -29,6 +29,19 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ReadWritePaths=/var/lib/safehome
+# It sees no file of /etc/safehome but its own (29 October 2026, the security study's
+# remark 3): each other one inaccessible, - for a file the site does not have. Not an
+# empty folder with its files bound back: it reads hub.json again while it runs (the
+# contacts, each configuration from the cloud checked against it), and a bound file
+# replaced by rename would stay the old one, in silence.
+InaccessiblePaths=-/etc/safehome/agent.json -/etc/safehome/cloud.secret -/etc/safehome/gsm.json
+InaccessiblePaths=-/etc/safehome/zigbee.json -/etc/safehome/profiles -/etc/safehome/power.json
+InaccessiblePaths=-/etc/safehome/maint.json -/etc/safehome/maint.key -/etc/safehome/maint.key.pub
+InaccessiblePaths=-/etc/safehome/maint_known_hosts -/etc/safehome/console.json -/etc/safehome/console.secret
+InaccessiblePaths=-/etc/safehome/video.json -/etc/safehome/mqtt
+# Nor the Zigbee network's key (29 October 2026): /var/lib/zigbee2mqtt, absent on a hub
+# without Zigbee.
+InaccessiblePaths=-/var/lib/zigbee2mqtt
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 ProtectKernelModules=yes

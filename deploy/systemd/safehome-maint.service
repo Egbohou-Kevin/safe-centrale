@@ -31,6 +31,18 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ReadWritePaths=/var/lib/safehome
+# It sees no file of /etc/safehome but its own (29 October 2026, the security study's
+# remark 3): each other one inaccessible, - for a file the site does not have. Not an
+# empty folder with its files bound back: ssh reads the key and the bastion's host key
+# again at each tunnel, and a bound file replaced by rename would stay the old one, in
+# silence.
+InaccessiblePaths=-/etc/safehome/hub.json -/etc/safehome/agent.json -/etc/safehome/cloud.secret
+InaccessiblePaths=-/etc/safehome/gsm.json -/etc/safehome/zigbee.json -/etc/safehome/profiles
+InaccessiblePaths=-/etc/safehome/power.json -/etc/safehome/console.json -/etc/safehome/console.secret
+InaccessiblePaths=-/etc/safehome/video.json -/etc/safehome/mqtt
+# Nor the Zigbee network's key (29 October 2026): /var/lib/zigbee2mqtt, absent on a hub
+# without Zigbee.
+InaccessiblePaths=-/var/lib/zigbee2mqtt
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 ProtectKernelModules=yes

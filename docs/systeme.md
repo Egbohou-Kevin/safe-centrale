@@ -113,6 +113,59 @@ récente et différente (écrite seule par une centrale remise par un retour arr
 `deploy` lit ces dossiers dans le code (`videoconfig`, `siteconfig`) et rougit si la vidéo voit
 `code-key` ou `access.json`.
 
+Depuis le 29 octobre 2026 (remarque 3 de l'étude de sécurité, première phase), **chaque service
+ne voit de `/etc/safehome` que ses fichiers**, et aucun ne voit `/var/lib/zigbee2mqtt` (la clé du
+réseau Zigbee : `InaccessiblePaths=-/var/lib/zigbee2mqtt`, le `-` pour une centrale sans Zigbee).
+Tous tournent toujours sous `safehome`, dont le groupe lit tout le dossier : c'est systemd qui
+cache le reste à chaque unité, de deux façons.
+
+| Service | Voit de `/etc/safehome` | Comment |
+|---|---|---|
+| `safehome-hub` | `hub.json` | liste noire : `InaccessiblePaths=` de chaque autre fichier |
+| `safehome-console` | `console.json`, `hub.json`, `console.secret` | liste noire |
+| `safehome-maint` | `maint.json`, `maint.key` (et `.pub`), `maint_known_hosts` | liste noire |
+| `safehome-agent` | `agent.json`, `cloud.secret` | liste blanche : un dossier vide (`TemporaryFileSystem=`), ses fichiers remontés (`BindReadOnlyPaths=`) |
+| `safehome-gsm` | `gsm.json` | liste blanche |
+| `safehome-zigbee` | `zigbee.json`, `profiles/` | liste blanche |
+| `safehome-power` | `power.json` | liste blanche |
+| `safehome-video` | `video.json` | liste blanche (depuis le 28 octobre 2026) |
+
+La liste blanche est la plus sûre (un fichier ajouté plus tard reste caché), mais un fichier
+remonté seul garde l'inode qu'il avait au démarrage : remplacé par renommage (un éditeur, ou
+`install.sh` qui remet le dossier d'avant après une configuration refusée), il resterait l'ancien
+pour l'unité, sans un mot. Elle ne sert donc qu'aux programmes qui lisent leurs fichiers au seul
+démarrage (`install.sh` les redémarre après les avoir changés). Trois relisent un fichier en
+marche : la centrale relit `hub.json` (les contacts, et chaque configuration venue du cloud est
+vérifiée contre lui), la console le relit à chaque code changé, et ssh relit la clé et celle du
+bastion à chaque tunnel. Ceux-là voient le vrai dossier, chaque fichier des autres rendu
+inaccessible, chacun avec `-` (un fichier que le site n'a pas n'empêche pas l'unité de démarrer).
+Leur faiblesse : un fichier que la liste ne nomme pas leur reste visible.
+
+Les deux tables sont dans `deploy/separation_test.go` : `mustSee` (ce que le code de chaque
+programme lit ; rouge si une unité le cache, la centrale ne démarrerait pas) et `readers` (chaque
+fichier de `/etc/safehome` et les programmes qui ont le droit de le lire ; rouge si une autre
+unité le voit). Le test rougit aussi quand `install.sh` crée dans `/etc/safehome` un fichier que
+`readers` ne nomme pas, quand l'exemple d'un programme (`config/*.example.json`) nomme un fichier
+que `mustSee` ne lui donne pas, et quand une unité qui relit un fichier le remonte seul.
+
+**Ajouter un fichier de réglage** : d'abord l'unité (le remonter dans `BindReadOnlyPaths=` d'une
+liste blanche, ou l'ajouter à l'`InaccessiblePaths=` des trois listes noires qui n'en ont pas
+besoin), puis les deux tables du test ; sans elles, il rougit. Un `cloud.ca_file` (vide dans
+l'exemple) se remonte ainsi dans l'unité de l'agent : sinon l'agent refuse de démarrer
+(« cloud.ca_file: … no such file »), ce qui se voit dans `systemctl status`.
+
+`/var/lib/safehome` ne change pas : l'état est à plat, et `code-key` et `access.json` restent
+lisibles des unités autres que la vidéo jusqu'à la deuxième phase (un dossier d'état par
+programme, `security-install.md`). Pendant `install.sh`, la copie de secours de `/etc/safehome`
+(tous les secrets) est `/etc/safehome.prev/safehome`, dans un dossier à root seul (0700) dès sa
+création : aucune unité ne la cache, mais aucun service ne la lit, même si `install.sh` est coupé
+avant de l'effacer (témoin : `TestTheBackupOfTheConfigurationIsRootsAlone`, 29 octobre 2026) ;
+après une configuration refusée,
+`install.sh` remplace tout `/etc/safehome` par cette copie sans rien redémarrer : le noyau défait
+alors dans chaque unité les montages posés sur l'ancien dossier (liste noire comme liste blanche),
+et chaque service en marche voit tout le dossier jusqu'à son prochain démarrage (ce que fait le
+noyau depuis Linux 3.18 ; pas essayé sur le Pi).
+
 ## Disposition de la carte SD (32 Go)
 
 | Partition | Taille | Contenu | Montée |
@@ -1020,6 +1073,31 @@ sans mot de passe, retrouvent un broker ouvert. Un programme que le broker refus
 faux, absent ou périmé) reste `active` et réessaie sans fin, sans voir aucun capteur : la phase 2
 compte comme un service qui ne tient pas un refus dans le journal des programmes ou de
 Zigbee2MQTT pendant ses deux minutes d'attente (« Retour arrière des programmes »).
+
+À vérifier sur le Pi au premier déploiement de la vue par service de `/etc/safehome` (29 octobre
+2026, « Ce qui tourne ») ; une unité qui ne trouve pas un fichier qu'elle remonte ne démarre pas
+(`status=226/NAMESPACE`), reste en redémarrage, et `update-hub.sh` la compte comme un service qui
+ne tient pas, donc remet les unités d'avant :
+
+1. `systemctl status safehome-hub safehome-agent safehome-gsm safehome-zigbee safehome-power safehome-maint safehome-console safehome-video`
+   : chaque service activé `active (running)`, aucun `226/NAMESPACE` ;
+   `systemd-analyze verify /etc/systemd/system/safehome-*.service` ne dit rien ;
+2. ce que voit chaque service, dans son propre espace : `sudo -u safehome ls /etc/safehome` ne
+   suffit pas (il tourne hors de l'unité et voit tout), mais
+   `sudo nsenter -t $(systemctl show -p MainPID --value safehome-console) -m ls -l /etc/safehome`
+   montre les fichiers des autres en mode 000 (liste noire), et
+   `sudo nsenter -t $(systemctl show -p MainPID --value safehome-console) -m -S $(id -u safehome) -G $(id -g safehome) cat /etc/safehome/cloud.secret`
+   échoue (`Permission denied`), alors que la même commande sur `/etc/safehome/hub.json` le lit
+   (témoin positif : sans `-G`, le groupe resterait 0 et les deux échoueraient, fichiers
+   root:safehome 0640, ce qui ne prouverait rien) ; pour l'agent, `ls /etc/safehome` dans son espace ne montre que
+   `agent.json` et `cloud.secret` (liste blanche) ; pour chacun,
+   `ls /var/lib/zigbee2mqtt` dans son espace échoue ;
+3. la centrale relit `hub.json` en marche : un code changé depuis la console arrive à la centrale
+   (`journalctl -u safehome-hub -b | grep "access codes reloaded"`), et une configuration réglée
+   depuis l'application est appliquée (`config.applied`) ;
+4. la maintenance ouvre son tunnel sur demande (ssh lit `maint.key` et `maint_known_hosts`) ;
+5. un capteur déclenché arrive à la centrale (`safehome-zigbee` lit ses profils), le GSM (si posé)
+   envoie un SMS d'essai, l'agent rejoint le cloud (`cloud.secret`).
 
 Conséquence : **pas de mises à jour automatiques** (elles seraient effacées au
 redémarrage). La centrale n'est pas joignable depuis internet (derrière la box ou

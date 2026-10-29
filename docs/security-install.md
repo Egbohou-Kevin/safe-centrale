@@ -452,6 +452,23 @@ Reste à ajouter : les événements de journal `audit.config_applied`,
   `registry/cmd`, `device/+/cmd`) n'ont que leurs vrais producteurs. Le risque inverse, un
   droit oublié qui rendrait un programme sourd (Mosquitto accepte l'abonnement et ne livre
   rien), est tenu par les tests : chaque programme y tourne contre l'ACL livrée, sous son nom.
+- Chaque service ne voit de `/etc/safehome` que ses fichiers (29 octobre 2026, remarque 3 de
+  l'étude de sécurité de la centrale, **en partie close** : première phase) : la console,
+  exposée au Wi-Fi du magasin, ne lit plus `cloud.secret`, `maint.key`, `video.json` ni
+  `gsm.json`, et aucun service safeHome ne lit plus `/var/lib/zigbee2mqtt` (la clé du réseau
+  Zigbee). Même utilisateur `safehome` pour tous, la séparation est faite par systemd (option
+  b de l'étude `fichiers-par-service`, choisie sans Kevin sur sa recommandation, à relire) ;
+  le détail, et comment ajouter un fichier de réglage, dans `systeme.md` (« Ce qui tourne »).
+  Reste ouvert :
+  - **deuxième phase** : l'état (`/var/lib/safehome`) est à plat, donc `code-key` (agent) et
+    `access.json` (empreintes des codes, centrale et console) restent lisibles et inscriptibles
+    par toutes les unités sauf la vidéo. Il faut un dossier d'état par programme
+    (`state_dir`), la centrale et la console partageant celui des codes ;
+  - **option a** (un utilisateur Unix par groupe de services) : écartée pour l'instant, elle
+    casse le SIGHUP de la console à la centrale (même uid exigé), le dossier d'état partagé
+    des codes et les photos de la vidéo à l'agent, et oblige à migrer la partition d'une
+    alarme en service. Même uid, un service compromis qui sortirait de son espace de montage
+    garderait les droits de `safehome` sur tout : à reprendre, pour la seule console d'abord.
 - Le code ne se change que sur place (clavier ou console locale), jamais à distance
   depuis l'application en v1. À reconsidérer quand le chiffrement de bout en bout
   existera.

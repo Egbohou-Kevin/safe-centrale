@@ -191,9 +191,13 @@ fi
 
 mkdir -p "$ETC"
 # Always: the profiles below are replaced even without a site/ folder.
+# The copy holds every secret and no unit hides it: it sits in a folder of root's
+# alone from the start, which a killed install leaves as closed. The copy inside keeps
+# its owners and modes, so the folder put back is the one the services read.
 backup="$ETC.prev"
 rm -rf "$backup"
-cp -a "$ETC" "$backup"
+mkdir -m 700 "$backup"
+cp -a "$ETC" "$backup/safehome"
 # The device profiles come with the programs; a site may add its own.
 rm -rf "$ETC/profiles"
 cp -R "$BUNDLE/config/profiles" "$ETC/profiles"
@@ -222,7 +226,8 @@ for p in $enabled; do
 done
 if [ -n "$failed" ]; then
 	rm -rf "$ETC"
-	mv "$backup" "$ETC"
+	mv "$backup/safehome" "$ETC"
+	rm -rf "$backup"
 	fail "bad configuration:$failed. The previous files are back; nothing was restarted"
 fi
 rm -rf "$backup"

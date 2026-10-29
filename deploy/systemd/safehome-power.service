@@ -31,6 +31,14 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ReadWritePaths=/var/lib/safehome
+# It sees no file of /etc/safehome but its own (29 October 2026, the security study's
+# remark 3): an empty folder over it, its files bound back read-only. It reads them
+# at start only; install.sh restarts it after changing them.
+TemporaryFileSystem=/etc/safehome:ro
+BindReadOnlyPaths=/etc/safehome/power.json
+# Nor the Zigbee network's key (29 October 2026): /var/lib/zigbee2mqtt, absent on a hub
+# without Zigbee.
+InaccessiblePaths=-/var/lib/zigbee2mqtt
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 ProtectKernelModules=yes
