@@ -192,6 +192,29 @@ func TestState(t *testing.T) {
 	}
 }
 
+// Every state says the exit delay an arming would take now, the configuration's own,
+// so that the app can say it before arming.
+func TestStateSaysTheExitDelayInEveryMode(t *testing.T) {
+	for _, delay := range []time.Duration{DefaultConfig().ExitDelay, 45 * time.Second} {
+		h := newHarness(t, func(c *Config) { c.ExitDelay = delay })
+		check := func(want Mode) {
+			t.Helper()
+			if s := h.e.State(h.now); s.Mode != want || s.ExitDelay != delay {
+				t.Fatalf("%v: %+v, want %v in %s", delay, s, delay, want)
+			}
+		}
+		check(ModeDisarmed)
+		h.arm()
+		check(ModeArming)
+		h.advance(delay)
+		check(ModeArmed)
+		h.open(door)
+		check(ModeEntryDelay)
+		h.breakWindow()
+		check(ModeTriggered)
+	}
+}
+
 // sirenAt is where the published state of a triggered alarm says the siren schedule
 // stands: cycle, in a cycle or in the pause, and when that ends (since the alarm).
 type sirenAt struct {

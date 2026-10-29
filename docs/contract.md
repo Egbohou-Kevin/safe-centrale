@@ -419,7 +419,18 @@ de partir.
 `incident` et `siren` (triggered), `locked_until` (si le désarmement depuis
 l'application est verrouillé ; le verrouillage du clavier n'est pas publié, le clavier
 le dit par son refus `locked_out`, 29 octobre 2026), `next_scheduled` (prochain
-armement automatique).
+armement automatique). Dans tous les états, il porte `exit_delay_s` (29 octobre 2026).
+
+`exit_delay_s` est le délai de sortie, en secondes entières, que prendrait un armement
+fait maintenant. Il vient de la configuration en cours du moteur : `exit_delay` de
+`hub.json`, ou l'`exit_delay_s` d'un `config.set` du cloud, qui le remplace au
+redémarrage qui l'applique. Il est présent dans tous les états, parce que l'application
+l'annonce avant d'armer (« Sortez · 30 s »). Pendant un délai de sortie, la fin du délai
+en cours reste `ends_at`. Une fraction de seconde (`"1500ms"` dans `hub.json`) compte
+pour une seconde entière : le compte à rebours ne dit jamais moins que le délai. Le
+champ est absent si le moteur ne connaît pas le délai, et chez une centrale antérieure
+au 29 octobre 2026 ; il ne vaut jamais 0 (`minimum` 1 dans le schéma). L'application
+dit alors « Sortez » sans durée.
 
 `since` est l'heure d'entrée dans l'état, à une exception près : en `armed`, c'est
 l'heure de l'armement (la fin du délai de sortie), même après un délai d'entrée ou une
@@ -1115,6 +1126,17 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **29 octobre 2026, le délai de sortie dans l'état** : `alarm.state` porte
+  `exit_delay_s` (facultatif, entier, au moins 1), le délai de sortie que prendrait un
+  armement maintenant, d'après la configuration en cours du moteur (celle venue du cloud
+  comprise), dans tous les états (voir « Événements d'alarme »). Pour la confirmation
+  d'« Armer » de l'application : « Sortez · 30 s » avant que l'armement parte ; elle ne
+  connaissait jusque-là que `ends_at` d'un délai déjà lancé. Décidé par Kevin le
+  29 octobre 2026. Absent quand le moteur ne le connaît pas, jamais 0. Un cloud qui ne
+  connaît pas encore le champ l'accepte (un champ inconnu est permis), et un cloud à
+  jour accepte l'état d'une centrale antérieure, qui ne le porte pas : l'ordre de mise à
+  jour est libre, à condition que le cloud recopie `alarm-state.json` à l'octet et lise
+  le champ comme facultatif (`null` quand il manque, jamais 0).
 - **29 octobre 2026, la centrale sans module batterie** : `mains` de `system.health` peut
   valoir `none`, sur une centrale sans module batterie par choix (`without_power` dans
   `hub.json`), et `hub_battery` est alors absent (voir « `system.health` ») ; le schéma

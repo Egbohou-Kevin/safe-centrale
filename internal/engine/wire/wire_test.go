@@ -138,6 +138,38 @@ func TestStateData(t *testing.T) {
 	}
 }
 
+// The exit delay goes out in whole seconds, a fraction counting as a full second; an
+// unknown one is left out, never said as 0 (the app would say a countdown of 0 s).
+func TestStateDataSaysTheExitDelay(t *testing.T) {
+	for delay, want := range map[time.Duration]int{
+		30 * time.Second:        30,
+		2 * time.Minute:         120,
+		1500 * time.Millisecond: 2,
+		0:                       0,
+	} {
+		for _, s := range []engine.State{
+			{Mode: engine.ModeDisarmed, Since: t0, ExitDelay: delay},
+			{Mode: engine.ModeEntryDelay, Since: t0, EndsAt: t0.Add(45 * time.Second), ExitDelay: delay},
+		} {
+			got, err := StateData(s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.ExitDelayS != want {
+				t.Errorf("%v in %s: exit_delay_s %d, want %d", delay, s.Mode, got.ExitDelayS, want)
+			}
+			schematest.Validate(t, "alarm-state.json", got)
+			raw, err := json.Marshal(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if said := strings.Contains(string(raw), `"exit_delay_s"`); said != (want != 0) {
+				t.Errorf("%v in %s: %s", delay, s.Mode, raw)
+			}
+		}
+	}
+}
+
 func TestTranslateRefusesUnknownThings(t *testing.T) {
 	type alien struct{ engine.Event }
 	for name, a := range map[string]engine.Action{
@@ -343,6 +375,9 @@ func TestEverythingTheEnginePublishesMatchesTheSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 	schematest.Validate(t, "alarm-state.json", state)
+	if state.ExitDelayS != int(cfg.ExitDelay/time.Second) {
+		t.Errorf("exit_delay_s %d, the configuration says %v", state.ExitDelayS, cfg.ExitDelay)
+	}
 	envelope(contract.TypeAlarmState, state)
 }
 

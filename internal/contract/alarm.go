@@ -186,7 +186,8 @@ type PostponedData struct {
 // the incident that is ringing, Siren says whether its schedule is in a cycle
 // (SirenOn) or in the pause between two (SirenPaused), and EndsAt when that cycle or
 // pause ends. Siren is the engine's schedule, not the siren itself: a silent siren is
-// told by alarm.siren_failed.
+// told by alarm.siren_failed. ExitDelayS is the exit delay the next arming would
+// take, in every state, absent when the hub does not know it (never 0).
 type AlarmStateData struct {
 	State         string     `json:"state"`
 	Since         Timestamp  `json:"since"`
@@ -197,4 +198,5 @@ type AlarmStateData struct {
 	Of            int        `json:"of,omitempty"`
 	LockedUntil   *Timestamp `json:"locked_until,omitempty"`
 	NextScheduled *Timestamp `json:"next_scheduled,omitempty"`
+	ExitDelayS    int        `json:"exit_delay_s,omitempty"`
 }

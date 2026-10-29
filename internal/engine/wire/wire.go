@@ -258,6 +258,7 @@ func StateData(s engine.State) (contract.AlarmStateData, error) {
 		LockedUntil: contract.TSPtr(s.LockedUntil),
 
 		NextScheduled: contract.TSPtr(s.NextScheduled),
+		ExitDelayS:    exitDelayS(s.ExitDelay),
 	}
 	if s.Incident != "" { // triggered
 		d.Incident, d.Siren = s.Incident, contract.SirenPaused
@@ -266,4 +267,14 @@ func StateData(s engine.State) (contract.AlarmStateData, error) {
 		}
 	}
 	return d, nil
+}
+
+// exitDelayS is the exit delay in whole seconds, a fraction counting as a full
+// second (the countdown never says less than the delay); 0, which the JSON leaves
+// out, when unknown.
+func exitDelayS(d time.Duration) int {
+	if d <= 0 {
+		return 0
+	}
+	return int((d + time.Second - 1) / time.Second)
 }
