@@ -17,7 +17,7 @@ passe si une centrale est volée, détruite ou remplacée.
 | Un appareil pirate est ajouté au site | L'appairage se fait seulement en local, et seuls les modèles connus sont acceptés (voir `adapter-zigbee.md`). |
 | Le cloud est compromis | Le cloud ne peut envoyer que des ordres d'alarme, de vidéo, de maintenance et de configuration, et les résultats des alertes. Il ne commande ni la sirène ni les appareils. |
 | Faux SMS d'acquittement | Il ne peut qu'arrêter l'escalade, et l'incident reste visible (voir `gsm-gateway.md`). |
-| Un processus de la centrale publie un faux ordre sur le broker local | Depuis le 29 octobre 2026, le broker de la centrale exige un nom et un mot de passe par programme (plus Zigbee2MQTT et l'opérateur), faits par `install.sh` et donnés à chaque service par systemd, lisibles de lui seul (voir `systeme.md`, « Mosquitto »). Les droits par topic (ACL) viennent ensuite : pour l'instant, tout nom connu garde tous les topics. |
+| Un processus de la centrale publie un faux ordre sur le broker local | Depuis le 29 octobre 2026, le broker de la centrale exige un nom et un mot de passe par programme (plus Zigbee2MQTT et l'opérateur), faits par `install.sh` et donnés à chaque service par systemd, lisibles de lui seul, et chaque nom ne lit et n'écrit que ses topics (`deploy/mosquitto/safehome.acl`) : un programme compromis (la batterie, la vidéo) ne publie ni `alarm/cmd`, ni `maint/cmd`, ni `config/set` (voir `systeme.md`, « Mosquitto »). |
 | Brouillage radio du Zigbee | Limite connue en v1. Une disparition simultanée de tous les capteurs est un signal à surveiller plus tard. |
 
 ## Identités
@@ -444,8 +444,14 @@ Reste à ajouter : les événements de journal `audit.config_applied`,
   anonyme, un nom par programme (`safehome-hub`…), plus `zigbee2mqtt` et `operator`. Le mot
   de passe d'un service lui vient de systemd (`LoadCredential`), jamais d'un fichier lisible
   des autres unités, et n'apparaît dans aucun journal, aucune erreur, aucune ligne de
-  commande. Les droits par topic (ACL), puis un utilisateur Unix par groupe de services,
-  viennent dans les lots suivants.
+  commande. Un utilisateur Unix par groupe de services vient dans un lot suivant.
+- Le broker local donne à chaque nom ses seuls topics (29 octobre 2026, décision de Kevin
+  sur la remarque 4 de l'étude de sécurité de la centrale, désormais close) : une ACL
+  (`deploy/mosquitto/safehome.acl`) tirée du code, programme par programme ; les ordres
+  (`alarm/cmd`, `maint/cmd`, `config/set`, `install/cmd`, `video/cmd`, `alert/*`,
+  `registry/cmd`, `device/+/cmd`) n'ont que leurs vrais producteurs. Le risque inverse, un
+  droit oublié qui rendrait un programme sourd (Mosquitto accepte l'abonnement et ne livre
+  rien), est tenu par les tests : chaque programme y tourne contre l'ACL livrée, sous son nom.
 - Le code ne se change que sur place (clavier ou console locale), jamais à distance
   depuis l'application en v1. À reconsidérer quand le chiffrement de bout en bout
   existera.
