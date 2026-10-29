@@ -37,7 +37,13 @@ Les codes ne s'affichent jamais, ni en succès ni en erreur. Exemple :
 La centrale ignore le code d'une personne qui n'est plus contact du site (journalisé
 sans le code). `codes set` refuse un utilisateur qui n'est pas un contact (ni
 `installer`) ; `codes list` signale ces codes restants, à retirer avec `codes remove`
-ou depuis la console (« Codes d'anciens contacts »). Les fichiers d'état écrits par un
+ou depuis la console (« Codes d'anciens contacts »). Depuis le 29 octobre 2026, les codes
+sont dans leur dossier, `/var/lib/safehome/codes/` (`access.json`, `installer.json`,
+`codes-taken.json`, leurs `.prev` et le verrou `codes.lock`), vu de la centrale et de la
+console seules ; l'ancienne place à plat (`/var/lib/safehome/access.json`…) reste valable,
+c'est un lien vers le dossier. De même la clé de l'agent, `/var/lib/safehome/agent/code-key`
+(lien `code-key` à plat). Détail dans `systeme.md` (« Ce qui tourne », les dossiers d'état).
+Les fichiers d'état écrits par un
 outil lancé avec `sudo` prennent le propriétaire du dossier, le verrou des codes
 (`codes.lock`) aussi ; sinon l'outil échoue en le disant (il faut alors le lancer avec
 `sudo -u safehome`).

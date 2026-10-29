@@ -78,7 +78,7 @@ Un code faible (chiffres répétés, suite) ou déjà pris est refusé, 5 person
 maximum. Un code refusé parce qu'il est déjà pris dit qu'il ouvre le site : après 3
 refus de ce genre en 10 minutes, la ligne de commande et la console refusent tout
 nouveau code pendant 10 minutes, pour qu'elles ne servent pas à essayer les codes l'un
-après l'autre (les refus sont gardés dans le dossier d'état, `codes-taken.json`). Si la centrale tourne, elle recharge les codes toute seule (signal SIGHUP).
+après l'autre (les refus sont gardés dans le dossier d'état, `codes/codes-taken.json`). Si la centrale tourne, elle recharge les codes toute seule (signal SIGHUP).
 La centrale ignore le code d'une personne qui n'est plus contact du site (elle le
 journalise, sans le code). Elle prend les contacts tels qu'ils sont enregistrés au
 moment où elle relit les codes (fichier de la centrale et configuration venue du
@@ -453,17 +453,27 @@ Reste à ajouter : les événements de journal `audit.config_applied`,
   droit oublié qui rendrait un programme sourd (Mosquitto accepte l'abonnement et ne livre
   rien), est tenu par les tests : chaque programme y tourne contre l'ACL livrée, sous son nom.
 - Chaque service ne voit de `/etc/safehome` que ses fichiers (29 octobre 2026, remarque 3 de
-  l'étude de sécurité de la centrale, **en partie close** : première phase) : la console,
+  l'étude de sécurité de la centrale, **en partie close** : première phase, et deuxième phase pour la clé de l'agent et les codes) : la console,
   exposée au Wi-Fi du magasin, ne lit plus `cloud.secret`, `maint.key`, `video.json` ni
   `gsm.json`, et aucun service safeHome ne lit plus `/var/lib/zigbee2mqtt` (la clé du réseau
   Zigbee). Même utilisateur `safehome` pour tous, la séparation est faite par systemd (option
   b de l'étude `fichiers-par-service`, choisie sans Kevin sur sa recommandation, à relire) ;
   le détail, et comment ajouter un fichier de réglage, dans `systeme.md` (« Ce qui tourne »).
+  - **Deuxième phase close pour la clé de l'agent et les codes** (29 octobre 2026) : `code-key`
+    est dans `/var/lib/safehome/agent/`, vu de l'agent seul ; les codes (`access.json`,
+    `installer.json`, `codes-taken.json`, leurs `.prev`, `codes.lock`) dans
+    `/var/lib/safehome/codes/`, vus de la centrale et de la console seules
+    (`InaccessiblePaths=` dans les autres unités). `install.sh` les déplace (copie, puis un lien
+    relatif à l'ancienne place, pour un retour arrière) ; le détail, la règle du déplacement et
+    la liste à vérifier sur le Pi dans `systeme.md` (« Ce qui tourne », les dossiers d'état).
+    **À relire** : quand le dossier gagne, un fichier à plat sans équivalent dans le dossier
+    (un vieux `.prev`) est supprimé (choix du constructeur, pas de Kevin).
+
   Reste ouvert :
-  - **deuxième phase** : l'état (`/var/lib/safehome`) est à plat, donc `code-key` (agent) et
-    `access.json` (empreintes des codes, centrale et console) restent lisibles et inscriptibles
-    par toutes les unités sauf la vidéo. Il faut un dossier d'état par programme
-    (`state_dir`), la centrale et la console partageant celui des codes ;
+  - **le reste de l'état** est à plat : lisible et inscriptible par toutes les unités safeHome
+    sauf la vidéo. `engine.json` (lot 6) est reporté ;
+  - **la centrale et la console partagent `codes/`** : une console compromise lit les
+    empreintes des codes (cassables hors ligne) et peut les réécrire ;
   - **option a** (un utilisateur Unix par groupe de services) : écartée pour l'instant, elle
     casse le SIGHUP de la console à la centrale (même uid exigé), le dossier d'état partagé
     des codes et les photos de la vidéo à l'agent, et oblige à migrer la partition d'une
