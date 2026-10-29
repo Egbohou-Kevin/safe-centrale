@@ -61,10 +61,15 @@ type GSMHealth struct {
 	Lines []GSMLine `json:"lines"`
 }
 
+// MainsNone is the mains of system.health on a hub without a battery module, by
+// choice: nothing tells its mains nor its battery, and that is no fault. A device
+// never says it (its mains are ValPresent or ValLost).
+const MainsNone = "none"
+
 // HealthData is the payload of system.health, published retained at every change.
 type HealthData struct {
-	Mains      string            `json:"mains,omitempty"`       // "present" or "lost"
-	HubBattery *int              `json:"hub_battery,omitempty"` // percent, absent if unknown
+	Mains      string            `json:"mains,omitempty"`       // "present", "lost" or "none" (MainsNone)
+	HubBattery *int              `json:"hub_battery,omitempty"` // percent, absent if unknown or without a module
 	Links      map[string]string `json:"links"`                 // zigbee, gsm, internet -> ok, down...
 	GSM        *GSMHealth        `json:"gsm,omitempty"`
 }

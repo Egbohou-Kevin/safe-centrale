@@ -226,6 +226,32 @@ func TestWithoutASiren(t *testing.T) {
 	}
 }
 
+// A hub without a battery module says so in one key; by default, the module is
+// expected. Its thresholds would be a module's: the key refuses them.
+func TestWithoutPower(t *testing.T) {
+	r, err := parse([]byte(minimal))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Hub.Health.WithoutPower {
+		t.Fatal("a battery module is expected unless the file says otherwise")
+	}
+	r = with(t, `"without_power": true`)
+	if !r.Hub.Health.WithoutPower {
+		t.Fatal("without_power must reach the monitor")
+	}
+	r = with(t, `"without_power": true, "health": {"summary_at": "07:30"}`)
+	if !r.Hub.Health.WithoutPower {
+		t.Fatal("without_power must hold with a health section")
+	}
+	for _, key := range []string{"hub_battery_warn", "hub_battery_critical", "hub_battery_rearm"} {
+		_, err := parse([]byte(strings.Replace(minimal, `"site":`, `"without_power": true, "health": {"`+key+`": 50}, "site":`, 1)))
+		if err == nil || !strings.Contains(err.Error(), "without_power") {
+			t.Fatalf("%s: %v, want a refusal", key, err)
+		}
+	}
+}
+
 func TestOverrides(t *testing.T) {
 	r := with(t, `"alarm": {"exit_delay": "90s", "entry_delay": "1m", "siren_cycles": 2, "panic_siren": true, "postpone_max": 0},
 		"health": {"hub_battery_warn": 50, "summary_at": "07:30", "gsm_degraded_after": "15m", "gsm_silent_after": "5m",

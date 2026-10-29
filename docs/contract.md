@@ -823,6 +823,19 @@ pas) :
 }
 ```
 
+`mains` et `hub_battery` viennent du module batterie de la centrale (`safehome-power`,
+appareil `hub_device_id`). `mains` vaut `present`, `lost` (coupure de courant : la
+centrale tient sur sa batterie) ou `none` sur une centrale **sans module batterie par
+choix** (`without_power` dans `hub.json`, voir `operations.md`) : rien ne dit son
+courant ni sa batterie, ce n'est pas une panne, et `hub_battery` est alors toujours
+absent. Elle ne lève jamais `battery_low_hub` ni `mains_restored`, et un `mains` ou
+une batterie de la centrale reçus quand même (un module lancé contre la configuration)
+sont ignorés et journalisés. Sinon, `mains` est absent tant que le module n'a jamais
+parlé, et `hub_battery` tant que sa batterie n'est pas connue. Un lecteur distingue donc
+`none` (pas de module, c'est voulu) de `lost` (une vraie coupure). Avant le 29 octobre
+2026, une centrale sans module n'envoyait ni `mains` ni `hub_battery`, comme un module
+pas encore entendu.
+
 Le lien `gsm` et les lignes viennent du message `gsm.status` de la passerelle. Le lien
 `gsm` vaut `ok`, `down` (la passerelle dit qu'elle ne peut pas envoyer) ou `silent`
 (elle ne donne plus de nouvelles depuis `gsm_silent_after`, 3 minutes par défaut). Il
@@ -1097,6 +1110,14 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
   dans les journaux.
 
 Changements depuis la v1 validée, sans changement de `v` :
+
+- **29 octobre 2026, la centrale sans module batterie** : `mains` de `system.health` peut
+  valoir `none`, sur une centrale sans module batterie par choix (`without_power` dans
+  `hub.json`), et `hub_battery` est alors absent (voir « `system.health` ») ; le schéma
+  `system-health.json` ajoute `none` à l'énumération de `mains`. Un `device.event`
+  `mains` reste `present` ou `lost`. Un cloud qui ne connaît pas `none` le lit comme
+  inconnu, comme avant le `mains` absent : il doit être à jour avant que la centrale
+  pose `without_power` pour que l'application le montre.
 
 - **26 octobre 2026, la fin d'une alarme et le site sans sirène** (deuxième essai sur la
   vraie centrale, une sirène configurée jamais appairée) : la fin de l'alarme par une

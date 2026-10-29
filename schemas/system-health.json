@@ -9,8 +9,10 @@
       "type": "string",
       "enum": [
         "present",
-        "lost"
-      ]
+        "lost",
+        "none"
+      ],
+      "description": "none : centrale sans module batterie, par choix (without_power) ; hub_battery est alors absent"
     },
     "hub_battery": {
       "type": "integer",

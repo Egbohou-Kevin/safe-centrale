@@ -48,6 +48,32 @@ func TestHubBatteryAlertsAndHealth(t *testing.T) {
 	r.validateAll()
 }
 
+// A hub without a battery module says mains "none" and no battery, and a module run
+// against the configuration raises nothing: its cut is not the site's.
+func TestAHubWithoutPowerModuleSaysNoneAndNeverAlertsOnPower(t *testing.T) {
+	r := newRig(t, nil, func(c *Config) { c.Health.WithoutPower = true })
+	r.start()
+	r.device(devHub, contract.CapBattery, "100")
+	r.device(devHub, contract.CapMains, "lost")
+	r.device(devHub, contract.CapBattery, "5")
+	r.device(devHub, contract.CapMains, "present")
+	r.settle()
+
+	if alerts := eventsOf(r, contract.TypeAlertRequest); len(alerts) != 0 {
+		t.Fatalf("alerts: %d, want none", len(alerts))
+	}
+	h := r.broker.On(contract.HealthTopic(site))
+	for _, p := range h {
+		if d := dataOf[contract.HealthData](t, p); d.Mains != contract.MainsNone || d.HubBattery != nil {
+			t.Fatalf("%+v, want mains none without a battery", d)
+		}
+	}
+	if logs := r.logs.String(); strings.Count(logs, "no battery module") != 1 {
+		t.Fatalf("the ignored module must be logged once:\n%s", logs)
+	}
+	r.validateAll()
+}
+
 func TestDailySummaryOfFaultsFromTheClock(t *testing.T) {
 	r := newRig(t, nil)
 	r.start()
