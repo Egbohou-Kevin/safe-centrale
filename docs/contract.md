@@ -1170,8 +1170,8 @@ Changements depuis la v1 validée, sans changement de `v` :
   `system-health.json` ajoute la propriété. Un cloud dont la copie du schéma ne la
   connaît pas refuse le `system.health` **en entier** : ordre obligatoire, le cloud à
   jour d'abord, puis la centrale. Un cloud à jour accepte le `system.health` d'une
-  centrale antérieure, qui ne le porte pas (le champ est facultatif, `null` quand il
-  manque).
+  centrale antérieure, qui ne le porte pas (le champ est facultatif : absent hors
+  mise à jour, jamais `null`, que le schéma refuse).
 - **29 octobre 2026, le délai de sortie dans l'état** : `alarm.state` porte
   `exit_delay_s` (facultatif, entier, au moins 1), le délai de sortie que prendrait un
   armement maintenant, d'après la configuration en cours du moteur (celle venue du cloud
