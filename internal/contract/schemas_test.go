@@ -214,7 +214,7 @@ func TestSchemaEnumsMatchConstants(t *testing.T) {
 	check("device-command.json", "command", deviceCommands)
 	check("device-command-ack.json", "status", []string{CmdAccepted, CmdDone, CmdFailed, CmdExpired})
 	check("system-heartbeat.json", "engine", []string{StateDisarmed, StateArming, StateArmed, StateEntryDelay, StateTriggered})
-	check("system-health.json", "mains", []string{ValPresent, ValLost})
+	check("system-health.json", "mains", []string{ValPresent, ValLost, MainsNone})
 	check("alert-request.json", "kind", []string{AlertIntrusion, AlertFire, AlertPanic, AlertTamper,
 		AlertAuthFailed, AlertArmingBypassed, AlertBatteryLowHub, AlertMainsRestored, AlertDeviceOffline, AlertBatteryLow, AlertGSMDegraded, AlertZigbeeDown, AlertSirenFailed})
 	check("alert-request.json", "urgency", []string{UrgencyCritical, UrgencyHigh, UrgencyLow})
@@ -344,6 +344,7 @@ func TestSchemasAcceptValidMessages(t *testing.T) {
 	schematest.Validate(t, "device-event.json", DeviceEventData{DeviceID: "dev_kp", Capability: CapKeypad, Value: json.RawMessage(`"disarm"`), Code: "482915"})
 	schematest.Validate(t, "device-command.json", DeviceCommandData{DeviceID: "dev_s3x9", Command: CmdSirenOff})
 	schematest.Validate(t, "system-health.json", HealthData{Links: map[string]string{}}) // the smallest valid health
+	schematest.Validate(t, "system-health.json", HealthData{Mains: MainsNone, Links: map[string]string{}})
 	for _, c := range []struct {
 		capability string
 		value      string

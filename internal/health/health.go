@@ -86,6 +86,9 @@ type Status struct {
 	GSM             LinkState
 	Zigbee          LinkState
 	Internet        LinkState
+	// WithoutPower: the hub has no battery module, by choice (Config.WithoutPower):
+	// MainsLost and HubBatteryKnown are then false.
+	WithoutPower bool
 }
 
 // Monitor is the health monitor.
@@ -161,6 +164,16 @@ func (m *Monitor) NextWake() time.Time {
 
 // Status returns the public summary.
 func (m *Monitor) Status() Status {
+	if m.cfg.WithoutPower {
+		st := m.status()
+		st.MainsLost, st.HubBatteryKnown, st.HubBattery = false, false, 0
+		st.WithoutPower = true
+		return st
+	}
+	return m.status()
+}
+
+func (m *Monitor) status() Status {
 	return Status{
 		MainsLost:       m.s.MainsLost,
 		HubBatteryKnown: m.s.HubBatteryKnown,
@@ -182,7 +195,9 @@ func (m *Monitor) Handle(in Input) []Action {
 	out := m.tick(in.at())
 	switch v := in.(type) {
 	case Mains:
-		out = append(out, m.mains(v)...)
+		if !m.cfg.WithoutPower { // a module run against the configuration says nothing
+			out = append(out, m.mains(v)...)
+		}
 	case Battery:
 		out = append(out, m.battery(v)...)
 	case Availability:
@@ -291,6 +306,9 @@ func (m *Monitor) battery(b Battery) []Action {
 		return nil // not a reading
 	}
 	if b.DeviceID == m.cfg.HubDeviceID {
+		if m.cfg.WithoutPower {
+			return nil // no module: a reading from one run against the configuration says nothing
+		}
 		return m.hubBattery(b.Percent)
 	}
 	switch {

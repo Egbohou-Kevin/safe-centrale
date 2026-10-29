@@ -98,6 +98,9 @@ func check(cfg hubconfig.Result, stdout, stderr io.Writer) int {
 	if cfg.Hub.Escalation.WithoutGSM {
 		withoutGSM(cfg.Hub.Escalation.Contacts, stdout)
 	}
+	if cfg.Hub.Health.WithoutPower {
+		fmt.Fprintln(stdout, "no battery module (without_power): no power cut nor battery alert is ever raised")
+	}
 	return 0
 }
 

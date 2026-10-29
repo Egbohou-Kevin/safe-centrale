@@ -192,7 +192,7 @@ func hubConfig(f file) (hub.Config, error) {
 	if err := applyAlarm(&cfg.Engine, f.Alarm); err != nil {
 		return hub.Config{}, err
 	}
-	if err := applyHealth(&cfg.Health, f.Health); err != nil {
+	if err := applyHealth(&cfg.Health, f.Health, f.WithoutPower); err != nil {
 		return hub.Config{}, err
 	}
 	if err := applyEscalation(&cfg, f); err != nil {

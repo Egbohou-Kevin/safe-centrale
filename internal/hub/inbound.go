@@ -182,11 +182,26 @@ func (h *Hub) feedHealth(d contract.DeviceEventData) {
 	if _, ok := healthwire.Input(d, time.Time{}); !ok {
 		return
 	}
+	if h.cfg.Health.WithoutPower && h.isPowerReading(d) {
+		// A module run against the site's configuration: said once, since a module
+		// that is there must not stay hidden by the flag.
+		if !h.powerIgnored.Swap(true) {
+			h.log.Warn("ignoring the hub's mains and battery: the site has no battery module (without_power)",
+				"device", d.DeviceID, "capability", d.Capability)
+		}
+		return
+	}
 	err := h.monitor.loop.Submit(h.life, func(now time.Time) health.Input {
 		in, _ := healthwire.Input(d, now)
 		return in
 	})
 	h.submitFailed(err)
+}
+
+// isPowerReading tells whether a device message is the hub's mains or battery, which
+// only its battery module says.
+func (h *Hub) isPowerReading(d contract.DeviceEventData) bool {
+	return d.Capability == contract.CapMains || (d.Capability == contract.CapBattery && d.DeviceID == h.cfg.HubDeviceID)
 }
 
 // registryMessage takes a device removed from the site: the engine and the monitor

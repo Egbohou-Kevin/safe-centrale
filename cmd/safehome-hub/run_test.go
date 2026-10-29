@@ -101,6 +101,21 @@ func TestTheCheckSaysASiteHasNoGSMLine(t *testing.T) {
 	}
 }
 
+// A site without a battery module says so at the check: a key set by mistake would
+// hide a real power cut, and only the check shows it to the installer.
+func TestTheCheckSaysASiteHasNoBatteryModule(t *testing.T) {
+	const line = "no battery module (without_power): no power cut nor battery alert is ever raised"
+	path := writeConfig(t, "mqtt://127.0.0.1:1883", t.TempDir(), `, "without_power": true`)
+	code, out, errb := cli(t, "", "check", "-config", path)
+	if code != 0 || !strings.Contains(out, line) {
+		t.Fatalf("%d %q %q", code, out, errb)
+	}
+	path = writeConfig(t, "mqtt://127.0.0.1:1883", t.TempDir(), "")
+	if code, out, errb := cli(t, "", "check", "-config", path); code != 0 || strings.Contains(out, "without_power") {
+		t.Fatalf("a site with its module: %d %q %q", code, out, errb)
+	}
+}
+
 // Zones set by the installer's tools that the hub would leave aside stop the
 // installation script: the hub would watch the configuration file's older ones.
 func TestTheCheckFailsWhenTheDevicesFileIsLeftAside(t *testing.T) {

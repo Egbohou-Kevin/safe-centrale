@@ -126,6 +126,24 @@ nomme les contacts qui n'acceptent que SMS et appel : personne ne les prévient.
 clé, la ligne SMS est attendue, et une passerelle muette est une panne (voir
 `escalation.md`, « Une centrale sans ligne SMS »).
 
+`without_power` (faux par défaut) : à `true`, la centrale n'a **aucun module batterie,
+par choix** (29 octobre 2026), comme tg-lom-0500. Elle ne suit ni son courant ni sa
+batterie, ne lève jamais `battery_low_hub` ni `mains_restored`, et dit `none` pour
+`mains` de `system.health`, sans `hub_battery` : l'application montrera « Pas de batterie
+de secours » en gris au lieu de « non signalé » (elle ne le fait pas encore). Le site n'a alors pas de `power.json`
+ni de `safehome-power`. Un `mains` ou une batterie de la centrale reçus quand même sont
+ignorés, et le journal le dit une fois par démarrage (« the site has no battery
+module ») : un module présent ne doit jamais rester caché par la clé, qui ne se pose
+donc que sur une centrale qui n'en a vraiment pas. La centrale refuse la clé avec un
+seuil `health.hub_battery_*`, qui serait celui d'un module. Sans la clé, le module est
+attendu, et une coupure ou une batterie faible alertent comme avant (voir
+`alimentation.md`). `install.sh` ne la pose pas encore quand `power.json` manque.
+Ne la poser qu'après le déploiement d'un cloud qui connaît `mains: "none"` : un cloud plus
+ancien refuse tout le `system.health` (sa copie du schéma ferme `mains` sur `present` et
+`lost`), et le tableau de bord ne dit plus rien de la santé, liens `zigbee` et `gsm`
+compris (voir `contract.md`). Quand `install.sh` la posera (lot 4), il ne la posera pas
+sans ce cloud à jour.
+
 À noter : `timezone` (Lomé : `Africa/Lome`, UTC), `zones` (le rôle de chaque appareil :
 `name`, `kind`, et `room`, facultatif depuis le 28 octobre 2026, la pièce que la liste
 des appareils montre au propriétaire, même règle que `name` ; une centrale plus
