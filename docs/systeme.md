@@ -154,9 +154,66 @@ besoin), puis les deux tables du test ; sans elles, il rougit. Un `cloud.ca_file
 l'exemple) se remonte ainsi dans l'unité de l'agent : sinon l'agent refuse de démarrer
 (« cloud.ca_file: … no such file »), ce qui se voit dans `systemctl status`.
 
-`/var/lib/safehome` ne change pas : l'état est à plat, et `code-key` et `access.json` restent
-lisibles des unités autres que la vidéo jusqu'à la deuxième phase (un dossier d'état par
-programme, `security-install.md`). Pendant `install.sh`, la copie de secours de `/etc/safehome`
+**Les dossiers d'état** (29 octobre 2026, deuxième phase, `security-install.md` remarque 3).
+Dans `/var/lib/safehome` (S ci-dessous), la clé de l'agent et les codes d'accès ont chacun un
+dossier (`safehome`, 0700), que les unités des autres programmes cachent
+(`InaccessiblePaths=-/var/lib/safehome/<dossier>`, le `-` pour un site où il manque) :
+
+| Dossier | Programmes qui le voient | Ce qu'il tient |
+|---|---|---|
+| `agent/` | `safehome-agent` | `code-key`, la clé des codes scellés avec le cloud |
+| `codes/` | `safehome-hub`, `safehome-console` (et l'outil `safehome-hub codes`, lancé hors unité) | les codes d'accès : `access.json` (les empreintes), `installer.json`, `codes-taken.json`, leurs `.prev`, le verrou `codes.lock`, la marque `moved-by-install` |
+| la racine | toutes les unités safeHome sauf la vidéo (trois dossiers seulement, ci-dessus) | le reste de l'état, à plat (`hub.pid`, `site-devices.json`…), et un lien relatif par fichier déplacé |
+
+`agent/` est caché du hub, de zigbee, du GSM, de l'alimentation, de la maintenance et de la
+console ; `codes/` de l'agent, du GSM, de zigbee, de l'alimentation et de la maintenance. La vidéo
+ne voit ni l'un ni l'autre (liste blanche, ci-dessus). Le hub et la console partagent `codes/` :
+la console change les codes, le hub les lit.
+
+Le déplacement, fait par `install.sh` (`move_to_folder`) à la mise à jour, avant le redémarrage
+des unités :
+
+- **copie, puis lien** : chaque fichier, son `.prev` d'abord, est copié dans le dossier
+  (`cp -p` vers `.new`, puis `mv -f`), puis sa place à plat devient un lien relatif
+  (`code-key -> agent/code-key`, `access.json -> codes/access.json`…). Un programme remis par un
+  retour arrière lit donc le même fichier. Coupé en route, le passage laisse le fichier à plat
+  ou le lien, jamais un lien vers rien ; le passage suivant reprend. `hub.pid` reste à plat ;
+  `codes.lock` n'existe que dans le dossier ;
+- **le dossier gagne** : s'il tient déjà le fichier (ou son `.prev`), rien n'est copié, la copie
+  à plat (périmée dès la première écriture des programmes) devient un lien. Un fichier à plat
+  sans équivalent dans le dossier (un vieux `.prev`) est supprimé : choix du constructeur du
+  lot 4, **à relire par Kevin** ;
+- **la marque** (codes seulement) : `S/codes/moved-by-install` est posée une fois tous les liens
+  en place. Après elle, un fichier régulier à plat a été écrit par un programme d'avant, remis
+  par un retour arrière (il a remplacé le lien) : ce fichier-là gagne et est recopié dans le
+  dossier, son `.prev` d'abord ;
+- **arrêt court du hub et de la console** : s'il reste un fichier régulier des codes à plat,
+  `install.sh` arrête la console et le hub juste avant le déplacement, pour qu'aucun n'écrive
+  entre le choix de la copie et la copie, puis les relance (le hub d'abord), même si le
+  déplacement échoue (`trap start_codes_stopped EXIT`) : jamais une maison laissée sans
+  alarme. La fenêtre sans alarme : 0,083 s mesurés sur le Mac ; sur le Pi, projeté, non mesuré
+  (0,3 à 1 s), **à mesurer** (liste ci-dessous). Une fois les liens posés, plus d'arrêt : les
+  programmes n'écrivent que dans le dossier.
+
+**Ajouter un dossier d'état** : d'abord les unités (l'`InaccessiblePaths=-` du dossier dans
+chaque unité qui n'en a pas besoin), puis `stateReaders` dans `deploy/separation_test.go` (le
+dossier, nommé par le code, et les programmes qui le lisent) ; le test
+(`TestEveryFolderOfTheStateIsHiddenFromTheOtherUnits`) rougit si une unité le voit sans être
+nommée, ou le cache en l'étant. Puis `move_to_folder` dans `install.sh` pour les fichiers qu'il
+reprend.
+
+**Retour arrière entre deux versions de cette phase** (déduit des règles ci-dessus, pas
+essayé). Le hub du lot 3 lit et écrit les codes dans `codes/`, et le lien à plat n'arrive
+qu'avec l'`install.sh` du lot 4. Un hub d'avant le lot 3, remis sur une centrale passée au
+lot 3 mais pas au lot 4, lit donc l'`access.json` à plat, **périmé** : les codes changés sous le
+lot 3 n'y sont pas. Et sans marque, à la remise à jour, le dossier gagne : un code changé
+pendant ce retour arrière est perdu. Que faire : ne pas s'arrêter entre les lots 3 et 4 (les
+installer ensemble). Sinon, avant de remettre l'ancien hub, recopier à plat les fichiers de
+`codes/` (`cp -p`, hub et console arrêtés), puis, après la remise à jour, refaire au clavier ou
+à la console les codes changés pendant le retour arrière. Après le lot 4, plus rien à faire :
+la marque fait gagner le fichier à plat qu'un retour arrière a écrit.
+
+Pendant `install.sh`, la copie de secours de `/etc/safehome`
 (tous les secrets) est `/etc/safehome.prev/safehome`, dans un dossier à root seul (0700) dès sa
 création : aucune unité ne la cache, mais aucun service ne la lit, même si `install.sh` est coupé
 avant de l'effacer (témoin : `TestTheBackupOfTheConfigurationIsRootsAlone`, 29 octobre 2026) ;
@@ -1098,6 +1155,45 @@ ne tient pas, donc remet les unités d'avant :
 4. la maintenance ouvre son tunnel sur demande (ssh lit `maint.key` et `maint_known_hosts`) ;
 5. un capteur déclenché arrive à la centrale (`safehome-zigbee` lit ses profils), le GSM (si posé)
    envoie un SMS d'essai, l'agent rejoint le cloud (`cloud.secret`).
+
+À vérifier sur le Pi au premier déploiement des dossiers d'état (29 octobre 2026, « Ce qui
+tourne », les dossiers d'état) ; S = `/var/lib/safehome`. Aucun fichier ne s'affiche : on ouvre
+(`head -c0`), on ne lit pas. Noter l'heure du début de la phase 2 (`date`) :
+
+1. les liens, les dossiers et la marque :
+   `sudo ls -la /var/lib/safehome | grep -e ' -> ' -e ' agent$' -e ' codes$'` montre
+   `code-key -> agent/code-key`, `access.json -> codes/access.json` (de même `installer.json`,
+   `codes-taken.json` et les `.prev` présents), et `agent`, `codes` en `drwx------ safehome safehome` ;
+   `sudo ls -l /var/lib/safehome/codes` montre `moved-by-install` et `codes.lock`. Témoin
+   positif : `sudo -u safehome head -c0 /var/lib/safehome/access.json && echo ouvert` passe par
+   le lien et dit `ouvert` ;
+2. ce que voit chaque service, dans son espace, sous `safehome` (`-S`/`-G` comme pour
+   `cloud.secret` ci-dessus : sans `-G` le groupe reste 0 et tout échouerait sans rien prouver) :
+   `A=$(systemctl show -p MainPID --value safehome-agent)` puis
+   `sudo nsenter -t $A -m -S $(id -u safehome) -G $(id -g safehome) head -c0 /var/lib/safehome/codes/access.json`
+   échoue, de même par le lien `/var/lib/safehome/access.json`, alors que
+   `sudo nsenter -t $A -m -S $(id -u safehome) -G $(id -g safehome) head -c0 /var/lib/safehome/agent/code-key && echo ouvert`
+   dit `ouvert` (témoin positif) ; dans l'espace de la console
+   (`C=$(systemctl show -p MainPID --value safehome-console)`), l'inverse :
+   `/var/lib/safehome/agent/code-key` (et le lien `code-key`) échoue,
+   `/var/lib/safehome/codes/access.json` s'ouvre ; dans celui du hub, comme la console ;
+3. l'arrêt réel du hub pendant le déplacement :
+   `journalctl -u safehome-hub -o short-precise --since "<heure notée>" | grep -e Stopp -e Started`
+   ; l'écart entre `Stopped` et le `Started` suivant est la fenêtre sans alarme (0,083 s sur le
+   Mac, 0,3 à 1 s projeté sur le Pi) : le noter ici. Témoin positif : les deux lignes existent (il
+   restait un fichier à plat) ; sinon le déplacement était déjà fait, sans arrêt ;
+4. un code juste accepté après le déplacement : le changer à la console
+   (`journalctl -u safehome-hub -b | grep "access codes reloaded"`), puis le taper au clavier ou
+   dans l'application : il désarme ; un code faux est refusé (témoin positif). `access.json` à
+   plat reste un lien (`ls -l`), `codes/access.json` a pris l'heure du changement ;
+5. un retour arrière : la mise à jour (`update-hub.sh` 1 à 4) avec le paquet de la version
+   d'avant, un code changé à la console, puis la remise à jour avec le paquet courant ; le code
+   changé est gardé (la marque fait gagner le fichier à plat) : il désarme, et
+   `access.json` à plat est de nouveau un lien. Avant la remise à jour, vérifier ce que fait
+   `os.Link` sur un lien symbolique (la sauvegarde `.prev` de l'ancien programme) :
+   `sudo ls -l /var/lib/safehome/access.json.prev` doit montrer un lien
+   (`-> codes/access.json`, un lien dur vers le lien, pas vers son fichier) ; sinon le noter, la
+   reprise du `.prev` serait à revoir.
 
 Conséquence : **pas de mises à jour automatiques** (elles seraient effacées au
 redémarrage). La centrale n'est pas joignable depuis internet (derrière la box ou
