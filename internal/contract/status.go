@@ -72,6 +72,12 @@ type HealthData struct {
 	HubBattery *int              `json:"hub_battery,omitempty"` // percent, absent if unknown or without a module
 	Links      map[string]string `json:"links"`                 // zigbee, gsm, internet -> ok, down...
 	GSM        *GSMHealth        `json:"gsm,omitempty"`
+	// UpdatingUntil: the hub is being updated (deploy/update-hub.sh) until then, 20
+	// minutes at most after the update said so (since 29 October 2026). Present only
+	// while it holds; past it, a reader ignores it, even when it is still there (an
+	// update cut short never withdraws it). The app then says the hub is being updated
+	// instead of its sensors not heard; the alarm and the alerts are shown as ever.
+	UpdatingUntil *Timestamp `json:"updating_until,omitempty"`
 }
 
 // DevicesData is the payload of system.devices: the health of each registered device,

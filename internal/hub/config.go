@@ -36,6 +36,9 @@ type Config struct {
 	// window only makes sense once the subscriptions are active. Zero does not wait.
 	LinkWait        time.Duration
 	SirenCommandTTL time.Duration // a siren command not carried out within this is void
+	// UpdatingPoll is how often the update announcement is read (Deps.Updating): the
+	// update script waits for system.health to say it before it stops anything.
+	UpdatingPoll time.Duration
 
 	DedupeSize int // message ids remembered
 	Outbox     outbox.Settings
@@ -51,7 +54,8 @@ func DefaultConfig(site, hubDeviceID string, sirenIDs ...string) Config {
 		Engine: engine.DefaultConfig(), Health: health.DefaultConfig(), Access: access.DefaultConfig(),
 		Escalation:     escalation.DefaultConfig(site, nil),
 		HeartbeatEvery: time.Minute, BootWindow: 2 * time.Second, LinkWait: 30 * time.Second, SirenCommandTTL: 30 * time.Second,
-		DedupeSize: 2048, Outbox: outbox.DefaultSettings(2000), AuthQueue: 16,
+		UpdatingPoll: 2 * time.Second,
+		DedupeSize:   2048, Outbox: outbox.DefaultSettings(2000), AuthQueue: 16,
 	}
 }
 
@@ -78,7 +82,7 @@ func (c Config) validate() error {
 		return fmt.Errorf("hub: invalid site %q", c.Site)
 	case c.HubDeviceID == "":
 		return errors.New("hub: HubDeviceID is required")
-	case c.HeartbeatEvery <= 0 || c.SirenCommandTTL <= 0:
+	case c.HeartbeatEvery <= 0 || c.SirenCommandTTL <= 0 || c.UpdatingPoll <= 0:
 		return errors.New("hub: durations must be positive")
 	case c.BootWindow < 0:
 		return errors.New("hub: BootWindow must not be negative")
@@ -145,6 +149,12 @@ type Deps struct {
 	// hub runs: during the installation mode it does not restart for it. Nil keeps the
 	// contacts of Config.Escalation.
 	Contacts func() ([]string, error)
+	// Updating reads the update announcement deploy/update-hub.sh leaves for the hub
+	// (docs/operations.md): until when the hub is being updated, and when that was
+	// written; both zero when there is none. The hub reads it at start and every
+	// Config.UpdatingPoll, and system.health says it while it holds. It changes nothing
+	// of the alarm. Nil: the hub never announces an update.
+	Updating func() (until, made time.Time, err error)
 }
 
 func (d Deps) validate() error {

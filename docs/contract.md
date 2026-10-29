@@ -869,6 +869,39 @@ plus de nouvelles depuis `internet_silent_after`, 3 minutes par défaut). Person
 prévenu d'une coupure d'internet : l'escalade passe simplement aux canaux GSM sans
 attendre le cloud.
 
+`updating_until` (facultatif, depuis le 29 octobre 2026) : la centrale est **en mise à
+jour** jusqu'à cette heure (UTC, à la milliseconde), annoncée par `deploy/update-hub.sh`
+avant qu'il n'arrête quoi que ce soit (voir `operations.md`, « La mise à jour
+annoncée ») :
+
+```json
+{
+  "type": "system.health",
+  "data": {
+    "links": { "zigbee": "down", "internet": "ok" },
+    "updating_until": "2026-10-29T20:53:00.000Z"
+  }
+}
+```
+
+Il est présent seulement pendant une mise à jour annoncée, et jamais plus de 20 minutes
+après l'annonce. Le script le retire à la fin de la mise à jour ; une mise à jour qui
+s'arrête en route le laisse expirer seul. **Au-delà de cette heure, l'annonce ne vaut
+plus rien**, même si personne ne l'a retirée : la centrale cesse de la publier (un
+nouveau `system.health` sans le champ part à cette heure), et un lecteur qui l'a gardée
+l'ignore, en la comparant à sa propre horloge. Une centrale qui redémarre pendant la mise
+à jour le republie dès son démarrage tant qu'il vaut. Pour l'application : tant que son
+heure n'est pas passée, elle dit « Centrale en mise à jour » au lieu de « La centrale
+n'entend plus ses capteurs » ou « injoignable » ; l'alarme et les alertes, elles,
+s'affichent comme d'habitude. L'annonce ne change rien d'autre : le moteur, l'escalade et
+les alertes (un `zigbee_down` compris) font pendant une mise à jour ce qu'ils font sans
+elle. Absent d'une centrale d'avant le 29 octobre 2026, comme hors mise à jour.
+
+**Ordre de déploiement obligatoire** : comme pour `mains: none`, la copie du schéma du
+cloud ferme `system-health.json` (aucun champ inconnu). Un cloud qui ne connaît pas
+`updating_until` refuse **tout** le `system.health` qui le porte, liens compris. Le cloud
+qui le lit est donc déployé avant la première centrale qui l'envoie.
+
 ### `system.contacts`
 
 Publié par la centrale (`src` : `escalation`), retenu sur `system/contacts`, à son démarrage :
@@ -1126,6 +1159,19 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **29 octobre 2026, la centrale en mise à jour** : `system.health` porte
+  `updating_until` (facultatif, une date-heure UTC), présent seulement pendant une mise
+  à jour annoncée par `deploy/update-hub.sh`, 20 minutes au plus ; au-delà de son heure,
+  la centrale cesse de le publier et un lecteur l'ignore, même s'il est resté (voir
+  « `system.health` »). Pour que l'application dise « Centrale en mise à jour » au lieu
+  de capteurs ou d'une centrale injoignables pendant la mise à jour (le 29 octobre 2026 à
+  20:33, la vraie centrale l'a dit pendant la sienne) ; l'alarme et les alertes ne
+  changent pas. Décidé par Kevin le 29 octobre 2026 à 20:36. Le schéma
+  `system-health.json` ajoute la propriété. Un cloud dont la copie du schéma ne la
+  connaît pas refuse le `system.health` **en entier** : ordre obligatoire, le cloud à
+  jour d'abord, puis la centrale. Un cloud à jour accepte le `system.health` d'une
+  centrale antérieure, qui ne le porte pas (le champ est facultatif, `null` quand il
+  manque).
 - **29 octobre 2026, le délai de sortie dans l'état** : `alarm.state` porte
   `exit_delay_s` (facultatif, entier, au moins 1), le délai de sortie que prendrait un
   armement maintenant, d'après la configuration en cours du moteur (celle venue du cloud

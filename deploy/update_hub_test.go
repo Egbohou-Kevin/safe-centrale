@@ -71,6 +71,7 @@ case "$cmd" in
 	[ -z "$FAKE_INSTALL" ] ;;
 *"systemctl restart"*) [ -z "$FAKE_RESTART" ] ;;
 */usr/local/bin*) bash -c "$(printf '%s' "$cmd" | sed "s#/usr/local/bin#$HUB/usr/local/bin#g")" ;;
+*/var/lib/safehome/updating-until*) bash -c "$(printf '%s' "$cmd" | sed "s#/var/lib/safehome#$HUB/var/lib/safehome#g")" ;;
 */data/maintenance*) bash -c "$(printf '%s' "$cmd" | sed -e "s#/data/maintenance#$HUB/data/maintenance#g" -e "s#cd / #cd $HUB/ #")" ;;
 *"cd ~/safehome"*) HOME="$HUB/home" bash -c "$cmd" ;;
 *boot_id*)
@@ -93,6 +94,8 @@ case "$cmd" in
 Oct 29 15:00:01 hub safehome-zigbee[43]: level=WARN msg="mqtt connection attempt failed" err="dial tcp 127.0.0.1:1883: connect: connection refused"'
 	if among "$FAKE_REFUSED"; then journal="$journal
 $FAKE_REFUSAL"; fi
+	if [ -e "$HUB/var/lib/safehome/updating-until" ] && [ -z "$FAKE_UNANNOUNCED" ]; then journal="$journal
+Oct 29 15:00:02 hub safehome-hub[41]: level=INFO msg=\"update announced\" until=$(cat "$HUB/var/lib/safehome/updating-until")"; fi
 	JOURNAL="$journal" bash -c "$cmd" ;;
 *journalctl*)
 	if [ -n "$FAKE_NO_CLOUD" ]; then exit 1; fi
@@ -100,6 +103,9 @@ $FAKE_REFUSAL"; fi
 *nameserver*) echo 1 ;;
 *NTPSynchronized*) echo yes ;;
 "date +%s") date +%s ;;
+"date -u -d @"*)
+	n=${cmd#date -u -d @} n=${n%% *}
+	date -u -r "$n" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$n" +%Y-%m-%dT%H:%M:%SZ ;;
 *list-units*)
 	if crashing; then
 		echo "safehome-hub.service loaded activating auto-restart safeHome hub"
@@ -458,6 +464,9 @@ exec /usr/bin/tar "$@"`)
 		writeFile(t, filepath.Join(hub, "etc", "systemd", "system", unit), "[Unit]")
 	}
 	writeFile(t, filepath.Join(hub, "etc", "mosquitto", "mosquitto.conf"), "allow_anonymous true")
+	if err := os.MkdirAll(filepath.Join(hub, "var", "lib", "safehome"), 0o700); err != nil { // the hub's state folder
+		t.Fatal(err)
+	}
 	writeScript(t, filepath.Join(stubs, "journalctl"), `[ -z "$FAKE_JOURNAL_FAILS" ] || { echo "Failed to open the journal" >&2; exit 1; }
 printf '%s\n' "$JOURNAL"`)
 	// $FAKE_CUT: the power is cut while tee writes, its file left half written;

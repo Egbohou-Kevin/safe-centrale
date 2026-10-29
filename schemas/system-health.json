@@ -25,6 +25,11 @@
         "type": "string"
       }
     },
+    "updating_until": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, à la milliseconde. Présent seulement pendant une mise à jour annoncée (deploy/update-hub.sh), 20 minutes au plus ; au-delà de cette heure, un lecteur l'ignore, même s'il est encore là. Depuis le 29 octobre 2026."
+    },
     "gsm": {
       "type": "object",
       "properties": {

@@ -16,7 +16,9 @@
 #   -v VERSION  the bundle's version, checked after the install (phase 2)
 #
 # Nothing is ever disarmed. Each phase stops at the first surprise. Phases 1 and 3
-# reboot the hub: about a minute without alarm each.
+# reboot the hub: about a minute without alarm each. Phase 1 announces the update
+# before anything stops, for 20 minutes at most, and phase 4 withdraws it once the hub
+# holds: meanwhile system.health says the hub is being updated (docs/operations.md).
 set -euo pipefail
 
 usage() {
@@ -273,6 +275,47 @@ roll_back() {
 	die "$1; $what are back and their services hold${units_note:+; $units_note}"
 }
 
+# The update announcement (docs/operations.md, "La mise à jour annoncée"): the hub
+# reads it from its state folder (on /data: it survives the reboots) and says in
+# system.health that it is being updated until its time, so that the app shows that
+# rather than sensors not heard. 20 minutes, the hub's own clock, and never more: an
+# update cut short leaves it to expire, it never hides a real fault for longer.
+announcement=/var/lib/safehome/updating-until
+
+# announce_update: written whole (beside it, then renamed), then the hub's journal is
+# read until it says the announcement went out (30 s at most). It never stops the
+# update: a hub from before 29 October 2026 knows no announcement, and the app then
+# says the sensors are not heard, as before.
+announce_update() {
+	if ! asked=$(pi 'date +%s') || ! ends=$(pi "date -u -d @$((asked + 1200)) +%Y-%m-%dT%H:%M:%SZ"); then
+		echo "!! the hub's clock cannot be read: the update is not announced, going on" >&2
+		return 0
+	fi
+	if ! pi "printf '%s\n' $ends | sudo -n tee $announcement.new >/dev/null && sudo -n chmod 644 $announcement.new && sudo -n mv -f $announcement.new $announcement"; then
+		echo "!! the update announcement could not be written: the update is not announced, going on" >&2
+		return 0
+	fi
+	echo "== update announced until $ends (the hub's clock), waiting for the hub to say it (30 s at most)"
+	for i in $(seq 1 10); do
+		if pi "sudo -n journalctl -u safehome-hub --since=@$asked --no-pager -o cat | grep -qF 'msg=\"update announced\"'"; then
+			echo "   said by the hub"
+			return 0
+		fi
+		[ "$i" = 10 ] || sleep 3
+	done
+	echo "!! the hub has not said the update after 30 s (a hub from before 29 October 2026 knows no announcement): the app will say its sensors are not heard; going on" >&2
+}
+
+# withdraw_update: the update is over and the hub holds. One that cannot be removed
+# expires by itself, 20 minutes after phase 1.
+withdraw_update() {
+	if pi "sudo -n rm -f $announcement"; then
+		echo "== update announcement withdrawn"
+	else
+		echo "!! the update announcement could not be removed: it expires by itself, 20 minutes after phase 1" >&2
+	fi
+}
+
 # Out of read-only mode, / is still read-only at boot: NetworkManager cannot write
 # /etc/resolv.conf, and without DNS the clock never syncs (28 October 2026).
 dns_and_clock() {
@@ -296,6 +339,7 @@ case "$phase" in
 	grep -q 'overlayroot=tmpfs:recurse=0 ' "$work/cmdline.txt" || die "cmdline.txt has no overlayroot"
 	mode >"$work/mode"
 	echo "== saved in $work: cmdline.txt, alarm mode $(cat "$work/mode") (left as it is)"
+	announce_update
 	pi "sudo -n sed -i 's/overlayroot=tmpfs[^ ]* //' /boot/firmware/cmdline.txt"
 	[ "$(pi 'grep -c overlayroot /boot/firmware/cmdline.txt || true')" = 0 ] || die "overlayroot still in cmdline.txt"
 	echo "== read-only removed from cmdline.txt, rebooting"
@@ -405,6 +449,7 @@ case "$phase" in
 	pi 'sudo -n journalctl -u safehome-agent -b --no-pager -o cat | grep -m1 "connected to the cloud"' ||
 		die "the agent has not reached the cloud"
 	echo "   $(pi '/usr/local/bin/safehome-hub version')"
+	withdraw_update
 	;;
 *)
 	usage
