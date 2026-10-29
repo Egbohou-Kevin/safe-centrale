@@ -121,6 +121,9 @@ func (e *Engine) State(now time.Time) State {
 	if now.Before(e.s.LockedUntil) {
 		st.LockedUntil = e.s.LockedUntil
 	}
+	if now.Before(e.s.KeypadLockedUntil) {
+		st.KeypadLockedUntil = e.s.KeypadLockedUntil
+	}
 	if e.s.Mode == ModeDisarmed && e.s.Schedule != nil {
 		st.NextScheduled = e.s.Schedule.At
 	}
@@ -159,8 +162,8 @@ func (e *Engine) Handle(in Input) []Action {
 // last time it knew, hours late after a power cut, and NTP sets it forward once
 // internet is there. What the engine times moves with the clock, so that each keeps the
 // time that really passed: the exit or entry delay, the siren cycle or pause, an entry
-// delay an alarm interrupted, the codes being checked, the lockout and the wrong codes
-// of its window, and the start of the incident (its duration). Otherwise an exit delay
+// delay an alarm interrupted, the codes being checked, both lockouts and the wrong codes
+// of their windows, and the start of the incident (its duration). Otherwise an exit delay
 // would arm at once, an intrusion during an entry delay would ring at once and a siren
 // would stop. The automatic arming is a time of day, not a wait: it stays, and so do
 // the times the engine only says (since, armed since, the last alarm) or compares with
@@ -174,8 +177,11 @@ func (e *Engine) Stepped(d time.Duration) {
 		e.s.Deadline = moved(e.s.Deadline, d)
 	}
 	e.s.EntryEnds, e.s.LockedUntil = moved(e.s.EntryEnds, d), moved(e.s.LockedUntil, d)
-	for i, at := range e.s.Failures {
-		e.s.Failures[i] = moved(at, d)
+	e.s.KeypadLockedUntil = moved(e.s.KeypadLockedUntil, d)
+	for _, failures := range [][]time.Time{e.s.Failures, e.s.KeypadFailures} {
+		for i, at := range failures {
+			failures[i] = moved(at, d)
+		}
 	}
 	for ref, at := range e.s.Checking {
 		e.s.Checking[ref] = moved(at, d)

@@ -116,6 +116,10 @@ func TestStateData(t *testing.T) {
 		t.Fatalf("%+v", locked)
 	}
 	schematest.Validate(t, "alarm-state.json", locked)
+	// The keypad's lockout is not published: the keypad hears of it by its refusal.
+	if keypad, err := StateData(engine.State{Mode: engine.ModeArmed, Since: t0, KeypadLockedUntil: ends}); err != nil || keypad.LockedUntil != nil {
+		t.Fatalf("the keypad's lockout published: %+v, %v", keypad, err)
+	}
 
 	// A ringing alarm says its incident, and whether its siren is in a cycle or paused.
 	for on, siren := range map[bool]string{true: contract.SirenOn, false: contract.SirenPaused} {

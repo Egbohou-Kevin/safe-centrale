@@ -63,14 +63,15 @@ func (h *Hub) installerCode(cmd contract.AlarmCommandData) bool {
 	return ok && user == InstallerUser
 }
 
-// openInstall opens the mode, if the alarm is disarmed and the keypad not locked.
-// Otherwise the code counts as a wrong one: it is nobody's, and must not help guess.
+// openInstall opens the mode, if the alarm is disarmed and neither the keypad nor the
+// app locked. Otherwise the code counts as a wrong one: it is nobody's, and must not
+// help guess.
 func (h *Hub) openInstall(o order) {
 	o.cmd.Args.Code = ""
 	err := h.alarm.loop.Post(h.life, func(now time.Time) []engine.Action {
 		st := h.alarm.eng.State(now)
-		if st.Mode != engine.ModeDisarmed || !st.LockedUntil.IsZero() {
-			h.log.Warn("installer code refused: the alarm is not disarmed, or the keypad is locked", "alarm", st.Mode)
+		if st.Mode != engine.ModeDisarmed || !st.LockedUntil.IsZero() || !st.KeypadLockedUntil.IsZero() {
+			h.log.Warn("installer code refused: the alarm is not disarmed, or disarming is locked", "alarm", st.Mode)
 			return h.alarm.eng.Handle(h.engineCommand(o, now, engine.Auth{Checked: true}))
 		}
 		h.startInstall(now)

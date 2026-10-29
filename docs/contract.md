@@ -384,7 +384,7 @@ cause). Chaque contournement lève une alerte `arming_bypassed` qui liste les ap
 | `alarm.cleared` | L'alarme est arrêtée | `incident`, `origin` (`user` ou `timeout`), `user`, `duration_s` ; `ended` (vrai) quand une personne l'a terminée avec `alarm.end` |
 | `alarm.arming_scheduled` | Annonce de l'armement automatique | `scheduled_for` |
 | `alarm.postponed` | L'armement automatique est reporté | `scheduled_for`, `count`, `max` |
-| `alarm.auth_failed` | Code faux | `origin`, `attempts` (codes faux des 10 dernières minutes, celui-ci compris, clavier et application ensemble), `locked_until` (si verrouillé) |
+| `alarm.auth_failed` | Code faux | `origin`, `attempts` (codes faux de cette origine des 10 dernières minutes, celui-ci compris : le clavier et l'application comptent chacun les leurs depuis le 29 octobre 2026), `locked_until` (si ce code verrouille cette origine) |
 
 `device_name` (facultatif) est le nom que la configuration du site donne à l'appareil
 (« Porte d'entrée »), 32 caractères au plus (un nom plus long est coupé). Il est absent
@@ -416,8 +416,10 @@ de partir.
 `alarm.state` (retenu) contient l'état courant : `disarmed`, `arming`, `armed`,
 `entry_delay`, `triggered`. Il porte aussi `since`, et selon l'état :
 `ends_at` (arming, entry_delay, triggered), `cycle` et `of` (triggered),
-`incident` et `siren` (triggered), `locked_until` (si le désarmement est
-verrouillé), `next_scheduled` (prochain armement automatique).
+`incident` et `siren` (triggered), `locked_until` (si le désarmement depuis
+l'application est verrouillé ; le verrouillage du clavier n'est pas publié, le clavier
+le dit par son refus `locked_out`, 29 octobre 2026), `next_scheduled` (prochain
+armement automatique).
 
 `since` est l'heure d'entrée dans l'état, à une exception près : en `armed`, c'est
 l'heure de l'armement (la fin du délai de sortie), même après un délai d'entrée ou une

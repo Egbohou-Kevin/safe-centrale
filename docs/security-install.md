@@ -13,7 +13,7 @@ passe si une centrale est volée, détruite ou remplacée.
 |---|---|
 | La centrale est volée ou détruite pendant un cambriolage | Le site devient muet : le cloud alerte le propriétaire (voir `agent.md`). Les identifiants de la centrale sont révoqués. |
 | Quelqu'un coupe le courant ou internet | La centrale continue sur batterie et par GSM (voir `escalation.md`). |
-| Un voleur a le téléphone du propriétaire | Le désarmement exige le code du site. Le cloud borne un téléphone à 2 codes faux en 10 minutes, et la centrale verrouille après 3 codes faux en 10 minutes : un téléphone seul n'atteint donc jamais le verrouillage. Ce qui arrête un voleur patient, c'est l'alerte : tous les 3 codes faux depuis le dernier bon code, les contacts sont prévenus (une alerte toutes les 15 minutes à son rythme), et ils retirent l'accès du téléphone ou changent les codes (voir `engine.md`). |
+| Un voleur a le téléphone du propriétaire | Le désarmement exige le code du site. Le cloud borne un téléphone à 2 codes faux en 10 minutes, et la centrale verrouille l'application après 3 codes faux de l'application en 10 minutes : un téléphone seul n'atteint donc jamais le verrouillage. Depuis le 29 octobre 2026, le verrouillage de l'application ne bloque pas le clavier (ni l'inverse) : un cloud compromis qui enverrait des codes faux n'empêche pas les employés de désarmer sur place. Ce qui arrête un voleur patient, c'est l'alerte : tous les 3 codes faux depuis le dernier bon code, les contacts sont prévenus (une alerte toutes les 15 minutes à son rythme), et ils retirent l'accès du téléphone ou changent les codes (voir `engine.md`). |
 | Un appareil pirate est ajouté au site | L'appairage se fait seulement en local, et seuls les modèles connus sont acceptés (voir `adapter-zigbee.md`). |
 | Le cloud est compromis | Le cloud ne peut envoyer que des ordres d'alarme, de vidéo, de maintenance et de configuration, et les résultats des alertes. Il ne commande ni la sirène ni les appareils. |
 | Faux SMS d'acquittement | Il ne peut qu'arrêter l'escalade, et l'incident reste visible (voir `gsm-gateway.md`). |
@@ -52,14 +52,18 @@ difficile à deviner.
   Il n'est jamais dans le cloud, ni sur son broker : l'agent de liaison lit les ordres
   de l'application (`alarm/cmd`) en QoS 0, et le broker n'en garde aucun pour une
   centrale absente (voir `agent.md`).
-- **Vérification** : toujours par le moteur, sur le site. Trois codes faux en
-  10 minutes verrouillent le désarmement pendant 10 minutes, pour tout le site : le
-  clavier et l'application comptent ensemble. Un code faux de plus de 10 minutes ne
+- **Vérification** : toujours par le moteur, sur le site. Trois codes faux d'une même
+  origine en 10 minutes verrouillent le désarmement depuis cette origine pendant
+  10 minutes : le clavier et l'application comptent chacun les leurs (29 octobre 2026).
+  Le verrouillage de l'application laisse le clavier libre, et inversement : un cloud
+  compromis ou défaillant, qui sait sceller n'importe quel code, ne peut pas empêcher
+  les employés de désarmer au clavier pendant une intrusion. Un code faux de plus de 10 minutes ne
   compte plus : des erreurs éparses dans la journée ne verrouillent pas, et un
   téléphone que le cloud borne à 2 codes faux en 10 minutes ne peut pas, seul, tenir
   le site verrouillé. En revanche, les codes faux depuis le dernier bon code se
-  comptent sans limite de temps : au 3e, au 6e, au 9e..., les contacts reçoivent
-  l'alerte `auth_failed`, sans verrouillage. Un voleur patient, à 2 essais toutes les
+  comptent sans limite de temps et pour tout le site, clavier et application
+  ensemble : au 3e, au 6e, au 9e..., les contacts reçoivent l'alerte `auth_failed`,
+  sans verrouillage (deux essais à l'application et un au clavier suffisent). Un voleur patient, à 2 essais toutes les
   10 minutes (288 par jour), mettrait en moyenne près de 6 jours à tomber sur l'un de
   5 codes de 4 chiffres ; les contacts le savent dès son 3e essai.
 - **Limite connue** : avec 6 chiffres, un code se retrouve vite par essais si le fichier

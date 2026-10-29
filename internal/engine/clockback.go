@@ -29,11 +29,7 @@ func (e *Engine) pullBack(now time.Time) {
 		e.pullSinceBack(now)
 	}
 	e.seen = later(e.seen, now)
-	for i, at := range e.s.Failures {
-		if at.After(now) {
-			e.s.Failures[i] = now
-		}
-	}
+	e.pullCodesBack(now)
 	for ref, at := range e.s.Checking {
 		if at.After(now) {
 			e.s.Checking[ref] = now
@@ -57,14 +53,29 @@ func (e *Engine) pullBack(now time.Time) {
 			delete(e.s.Heard, key)
 		}
 	}
-	if latest := now.Add(e.cfg.LockoutDuration); e.s.LockedUntil.After(latest) {
-		e.s.LockedUntil = latest
-	}
 	if step := e.step(); step > 0 && e.s.Deadline.After(now.Add(step)) {
 		e.s.Deadline = now.Add(step)
 	}
 	if latest := now.Add(e.cfg.EntryDelay); e.s.EntryEnds.After(latest) {
 		e.s.EntryEnds = latest
+	}
+}
+
+// pullCodesBack counts as entered now the wrong codes stamped in the future, and ends
+// both lockouts, the keypad's and the app's, at most LockoutDuration from now.
+func (e *Engine) pullCodesBack(now time.Time) {
+	for _, failures := range [][]time.Time{e.s.Failures, e.s.KeypadFailures} {
+		for i, at := range failures {
+			if at.After(now) {
+				failures[i] = now
+			}
+		}
+	}
+	latest := now.Add(e.cfg.LockoutDuration)
+	for _, until := range []*time.Time{&e.s.LockedUntil, &e.s.KeypadLockedUntil} {
+		if until.After(latest) {
+			*until = latest
+		}
 	}
 }
 
