@@ -906,6 +906,13 @@ illisible. 6 : site sans caméra, la vidéo ne tourne pas, rien à vérifier. 7 
 démarrage cohérente, `safehome-hub` sans `ProtectClock` ni filtre d'appels ; le `clock_ok` du battement de cœur
 n'a pas été lu (pas de `mosquitto_sub` sur la centrale). 8 : ni batterie ni GSM posées.
 
+Relevé du 29 octobre 2026, l'après-midi : mise à jour de `0.2.3-7e0a668` vers `0.2.4-d820900` (verrou des codes
+et file de vérification par origine), phases 1 à 4 en exit 0, de 13:05 à 13:12, désarmée avant et après. Mêmes
+résultats aux huit vérifications, mêmes scores (hub 2.8, Zigbee2MQTT 8.3, vidéo 3.3) ; cloud joint en wss à
+13:09:57, les 7 messages en attente partis. Le capteur essayé : la porte d'entrée (`dev_2dyw`) ouverte à 13:13:25
+et refermée à 13:13:44, vue par Zigbee2MQTT, par `safehome-zigbee` (`contact` `closed` depuis 13:13:44) et par le
+moteur (`engine.json` réécrit à 13:13:44, aucune zone ouverte). Le `clock_ok` reste non lu.
+
 Conséquence : **pas de mises à jour automatiques** (elles seraient effacées au
 redémarrage). La centrale n'est pas joignable depuis internet (derrière la box ou
 l'opérateur 4G), ce qui limite le risque ; prévoir une maintenance par mois au début.
