@@ -141,3 +141,28 @@ func TestTheBrokerPasswordsAreMadeOnceAndKeptPrivate(t *testing.T) {
 		}
 	}
 }
+
+// install.sh puts the ACL, Mosquitto's alone, before mosquitto.conf, which names it
+// (29 October 2026): one without the other, Mosquitto would not start or would refuse
+// the programs.
+func TestInstallPutsTheACLBeforeTheBrokerConfiguration(t *testing.T) {
+	script := string(must(os.ReadFile("install.sh")))
+	acl, conf := strings.Index(script, `put "$BUNDLE/deploy/mosquitto/safehome.acl"`), strings.Index(script, `put "$BUNDLE/deploy/mosquitto/mosquitto.conf"`)
+	if acl < 0 || conf < acl {
+		t.Errorf("install.sh puts safehome.acl at %d, mosquitto.conf at %d: want the ACL first", acl, conf)
+	}
+	r := newRig(t)
+	r.minimalSite()
+	cmds := r.mustRun()
+	const path = "etc/mosquitto/safehome.acl"
+	if got, want := string(must(os.ReadFile(r.path(path)))), string(must(os.ReadFile(filepath.Join("mosquitto", "safehome.acl")))); got != want {
+		t.Errorf("%s is not deploy/mosquitto/safehome.acl", path)
+	}
+	if m := r.mode(path); m != 0o640 {
+		t.Errorf("%s mode %v, want 0640", path, m)
+	}
+	given, broker := slices.Index(cmds, "chown mosquitto:mosquitto /"+path), slices.Index(cmds, "systemctl restart mosquitto")
+	if given < 0 || broker < given {
+		t.Errorf("%s given to mosquitto at %d, the broker restarted at %d: want both, in this order", path, given, broker)
+	}
+}

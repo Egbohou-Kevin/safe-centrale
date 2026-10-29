@@ -170,7 +170,7 @@ func TestTheServiceEndToEndWithASimulatedGo2rtc(t *testing.T) {
 		t.Skip("end-to-end scenario of about 10 s: run without -short")
 	}
 	go2rtctest.Enable(t)
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-video")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), os.Args[0], state, `, "uplink": "mobile", "quota_mb": 100`)
 
@@ -178,6 +178,7 @@ func TestTheServiceEndToEndWithASimulatedGo2rtc(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	client, err := mqtt.Dial(ctx, mqtt.Options{
+		Username: mqtttest.Peer, Password: mqtttest.Password(mqtttest.Peer),
 		BrokerURL: broker.URL(), ClientID: fmt.Sprintf("cloud-%d", time.Now().UnixNano()),
 		Subscriptions: []mqtt.Subscription{{Filter: "safehome/" + site + "/video/#", QoS: 1, NoLocal: true}},
 		OnMessage: func(m mqtt.Message) {
@@ -282,7 +283,7 @@ func publishApplied(t *testing.T, broker string, version int) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	c, err := mqtt.Dial(ctx, mqtt.Options{BrokerURL: broker, ClientID: fmt.Sprintf("hub-%d", time.Now().UnixNano())})
+	c, err := mqtt.Dial(ctx, mqtt.Options{Username: mqtttest.Peer, Password: mqtttest.Password(mqtttest.Peer), BrokerURL: broker, ClientID: fmt.Sprintf("hub-%d", time.Now().UnixNano())})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +301,7 @@ func publishApplied(t *testing.T, broker string, version int) {
 
 func TestTheServiceRestartsForANewConfigurationFromTheCloud(t *testing.T) {
 	go2rtctest.Enable(t)
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-video")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), os.Args[0], state, `, "uplink": "mobile"`)
 	start := func(logs *drivertest.SyncBuffer) (context.CancelFunc, chan int) {
@@ -352,7 +353,7 @@ func TestTheServiceRestartsForANewConfigurationFromTheCloud(t *testing.T) {
 
 func TestAnAlarmIsPhotographed(t *testing.T) {
 	go2rtctest.Enable(t)
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-video")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), os.Args[0], state, `, "uplink": "mobile"`)
 
@@ -361,6 +362,7 @@ func TestAnAlarmIsPhotographed(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	client, err := mqtt.Dial(ctx, mqtt.Options{
+		Username: mqtttest.Peer, Password: mqtttest.Password(mqtttest.Peer),
 		BrokerURL: broker.URL(), ClientID: fmt.Sprintf("engine-%d", time.Now().UnixNano()),
 		Subscriptions: []mqtt.Subscription{{Filter: contract.PhotoTakenTopic(site), QoS: 1}},
 		OnMessage: func(m mqtt.Message) {

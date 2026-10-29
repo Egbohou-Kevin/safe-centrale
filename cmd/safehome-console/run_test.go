@@ -122,6 +122,7 @@ func newHubSide(t *testing.T, ctx context.Context, broker string) *hubSide {
 	t.Helper()
 	h := &hubSide{t: t, ids: contract.NewIDGenerator()}
 	c, err := mqtt.Dial(ctx, mqtt.Options{
+		Username: mqtttest.Peer, Password: mqtttest.Password(mqtttest.Peer),
 		BrokerURL: broker, ClientID: "hub-side-" + t.Name(), Ephemeral: true,
 		Subscriptions: []mqtt.Subscription{{Filter: contract.InstallCmdTopic(site), QoS: 1}},
 		OnMessage: func(m mqtt.Message) {
@@ -173,7 +174,7 @@ func TestTheConsoleEndToEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("end-to-end scenario of about 10 s: run without -short")
 	}
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-console")
 	port := freePort(t)
 	consolePath, hubPath, nmcliLog := setup(t, broker.URL(), port)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

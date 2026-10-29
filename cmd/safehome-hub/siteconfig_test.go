@@ -14,7 +14,7 @@ import (
 )
 
 func TestAConfigurationFromTheCloudRestartsTheHubThenIsApplied(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-hub")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state, "")
 	l := startLive(t, broker, state, cfg)
@@ -81,7 +81,7 @@ func TestAConfigurationFromTheCloudRestartsTheHubThenIsApplied(t *testing.T) {
 }
 
 func TestTheInstallationModeAppliesNewZonesByRestarting(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-hub")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state, "")
 	if code, _, errb := cli(t, "259031\n", "codes", "-config", cfg, "set", "installer"); code != 0 {

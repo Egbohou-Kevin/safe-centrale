@@ -35,7 +35,7 @@ import (
 // $FAKE_CHANGED_UNITS, and adds $FAKE_EXTRA_UNIT, enabled; the hub restarts in a loop
 // while one unit says $FAKE_TIGHT. safehome-boot-clock.service is a oneshot, every other
 // unit a daemon. install.sh writes $FAKE_BROKER_CONF in mosquitto.conf, which says
-// allow_anonymous true before. The journal of the services, read since the start of a
+// allow_anonymous true before, and $FAKE_BROKER_ACL in safehome.acl. The journal of the services, read since the start of a
 // hold, holds $FAKE_REFUSAL while the hub's program says one of $FAKE_REFUSED, and
 // cannot be read when $FAKE_JOURNAL_FAILS. The bundle scp copies lands in $HUB/home, where its sums are computed; /boot/firmware is $HUB/boot/firmware. The
 // boot id changes once the hub is asked to reboot, unless $FAKE_NO_REBOOT; it cannot be
@@ -61,6 +61,7 @@ case "$cmd" in
 	if [ -n "$FAKE_NEW_UNIT" ]; then printf '%s\n' "$FAKE_NEW_UNIT" > "$units/safehome-hub.service"; fi
 	for u in $FAKE_CHANGED_UNITS; do printf '%s\n' "$FAKE_CHANGED_AS" > "$units/$u"; done
 	if [ -n "$FAKE_BROKER_CONF" ]; then printf '%s\n' "$FAKE_BROKER_CONF" > "$HUB/etc/mosquitto/mosquitto.conf"; fi
+	if [ -n "$FAKE_BROKER_ACL" ]; then printf '%s\n' "$FAKE_BROKER_ACL" > "$HUB/etc/mosquitto/safehome.acl"; fi
 	if [ -n "$FAKE_EXTRA_UNIT" ]; then
 		echo "[Unit] new" > "$units/$FAKE_EXTRA_UNIT"
 		mkdir -p "$units/multi-user.target.wants" && ln -sf "../$FAKE_EXTRA_UNIT" "$units/multi-user.target.wants/$FAKE_EXTRA_UNIT"
@@ -141,13 +142,7 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 		back    = "back"    // every .prev put back
 		partial = "partial" // the hub back, the gateway's .prev stuck
 	)
-	for _, c := range []struct {
-		name, installed, crashing, flapping, flapAge, stopped, mute, install, mvFails, restart, markFails, markMode string
-		refused, refusal, journalFails                                                                              string
-		noPrev, marked                                                                                              bool
-		state                                                                                                       string
-		want                                                                                                        []string
-	}{
+	for _, c := range append([]holdCase{
 		{name: "the new hub crashes at start", installed: "0.3.0", crashing: "0.3.0", marked: true, state: back,
 			want: []string{"the new programs do not hold; the previous programs are back and their services hold"}},
 		{name: "the new hub crashes a moment after it is ready", installed: "0.3.0", flapping: "0.3.0", marked: true, state: back,
@@ -201,18 +196,9 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 			want: []string{"install.sh failed before replacing the programs", "still those of an earlier run, not confirmed"}},
 		{name: "the new programs hold", installed: "0.3.0", marked: true, state: kept,
 			want: []string{"phase 2 done"}},
-		// Refused by the broker, a program stays active, deaf to every sensor (29 October 2026).
-		{name: "the broker refuses a new program", installed: "0.3.0", refused: "0.3.0", refusal: hubRefused, marked: true, state: back,
-			want: []string{"!! the broker refuses a program:", "safehome-hub[44]", "the new programs do not hold; the previous programs are back and their services hold"}},
-		{name: "the broker refuses Zigbee2MQTT", installed: "0.3.0", refused: "0.3.0", refusal: z2mRefused, marked: true, state: back,
-			want: []string{"!! the broker refuses a program:", "zigbee2mqtt[45]", "the new programs do not hold; the previous programs are back and their services hold"}},
-		{name: "the broker refuses a bad user name or password", installed: "0.3.0", refused: "0.3.0", refusal: z2mBadPassword, marked: true, state: back,
-			want: []string{"!! the broker refuses a program:", "the new programs do not hold; the previous programs are back and their services hold"}},
-		{name: "the broker refuses the previous programs too", installed: "0.3.0", refused: "0.3.0 0.2.1", refusal: hubRefused, marked: true, state: back,
-			want: []string{"the new programs do not hold; the previous programs are back but the services still do not hold"}},
 		{name: "the services' journal cannot be read", installed: "0.3.0", journalFails: "yes", marked: true, state: back,
 			want: []string{"!! the services' journal cannot be read", "the new programs do not hold; the previous programs are back but the services still do not hold"}},
-	} {
+	}, refusalCases(back)...) {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
 			bundle := filepath.Join(dir, "bundle")
@@ -300,16 +286,11 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 // did not hold is removed with its link and stopped, systemd reloads, then the services
 // restart. A unit alone changed, the programs the same, is rolled back as well, even when
 // install.sh fails on it. An archive that cannot be read then is said, naming it. The
-// mosquitto.conf saved with the units comes back as well (checkBrokerBack).
+// mosquitto.conf and safehome.acl saved with the units come back as well (checkBrokerBack).
 func TestUpdateHubPhaseTwoPutsTheSavedUnitsBack(t *testing.T) {
 	const tight = "[Unit] ProtectSystem=strict"
 	const closedBroker = "allow_anonymous false"
-	for _, c := range []struct {
-		name, newUnit, extra, tar, install, hubUnit string
-		changed, changedAs, broker                  string
-		noPrev, extraLeft, hubStays                 bool
-		want                                        []string
-	}{
+	for _, c := range append([]unitsCase{
 		{name: "a new unit makes the hub fail", newUnit: tight, hubUnit: "[Unit]",
 			want: []string{"   unit safehome-hub.service put back as it was",
 				"the new programs do not hold; the previous programs and units are back and their services hold"}},
@@ -335,19 +316,7 @@ func TestUpdateHubPhaseTwoPutsTheSavedUnitsBack(t *testing.T) {
 				"the new programs do not hold; the previous units are back and their services hold"}},
 		{name: "a new unit that holds stays", newUnit: "[Unit] new", extra: "safehome-extra.service", hubUnit: "[Unit] new", extraLeft: true,
 			want: []string{"phase 2 done"}},
-		// Programs from before 29 October 2026 have no password: the broker that refuses
-		// anonymous clients goes back with them, and restarts before them.
-		{name: "a new broker configuration goes back with the programs", newUnit: tight, hubUnit: "[Unit]", broker: closedBroker,
-			want: []string{"   unit safehome-hub.service put back as it was", "   mosquitto.conf put back as it was",
-				"   mosquitto restarted on its previous configuration",
-				"the new programs do not hold; the previous programs and units are back and their services hold"}},
-		{name: "a new broker configuration alone goes back when install.sh fails", noPrev: true, install: "before", hubUnit: "[Unit]", hubStays: true,
-			broker: closedBroker,
-			want: []string{"   mosquitto.conf put back as it was", "   mosquitto restarted on its previous configuration",
-				"install.sh failed; the previous units are back and their services hold"}},
-		{name: "a new broker configuration that holds stays", newUnit: "[Unit] new", hubUnit: "[Unit] new", broker: closedBroker,
-			want: []string{"phase 2 done"}},
-	} {
+	}, brokerUnitsCases(tight, closedBroker)...) {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
 			bundle := filepath.Join(dir, "bundle")
@@ -374,9 +343,12 @@ func TestUpdateHubPhaseTwoPutsTheSavedUnitsBack(t *testing.T) {
 				t.Fatal(err)
 			}
 			writeFile(t, filepath.Join(units, "safehome-boot-clock.service"), "[Unit]")
+			if c.aclBefore != "" {
+				writeFile(t, filepath.Join(dir, "hub", "etc", "mosquitto", "safehome.acl"), c.aclBefore)
+			}
 			cmd.Env = append(cmd.Env, "FAKE_NEW_UNIT="+c.newUnit, "FAKE_TIGHT="+tight, "FAKE_EXTRA_UNIT="+c.extra,
 				"FAKE_TAR="+c.tar, "FAKE_INSTALL="+c.install, "FAKE_CHANGED_UNITS="+c.changed, "FAKE_CHANGED_AS="+c.changedAs,
-				"FAKE_BROKER_CONF="+c.broker)
+				"FAKE_BROKER_CONF="+c.broker, "FAKE_BROKER_ACL="+c.acl)
 			b, err := cmd.CombinedOutput()
 			out := string(b)
 			holds := c.want[0] == "phase 2 done"
@@ -434,7 +406,7 @@ func TestUpdateHubPhaseTwoPutsTheSavedUnitsBack(t *testing.T) {
 					restart = i
 				}
 			}
-			if mosquitto := checkBrokerBack(t, dir, cmds, c.broker, holds, reload, restarted); restart < 0 {
+			if mosquitto := checkBrokerBack(t, dir, cmds, c.broker, c.acl, c.aclBefore, holds, reload, restarted); restart < 0 {
 				restart = mosquitto
 			}
 			if holds {

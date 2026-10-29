@@ -256,7 +256,7 @@ func dial(t *testing.T, ctx context.Context, url, id string, subs []Subscription
 }
 
 func TestPublishAndReceiveThroughARealBroker(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.StartOpen(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -287,7 +287,7 @@ func TestPublishAndReceiveThroughARealBroker(t *testing.T) {
 }
 
 func TestRetainedMessagesReachALateSubscriber(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.StartOpen(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -306,7 +306,7 @@ func TestRetainedMessagesReachALateSubscriber(t *testing.T) {
 }
 
 func TestTheClientReconnectsAndSubscribesAgain(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.StartOpen(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -339,7 +339,7 @@ func TestTheClientReconnectsAndSubscribesAgain(t *testing.T) {
 }
 
 func TestPublishFailsFastWhileTheBrokerIsDownThenWorksAgain(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.StartOpen(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -373,7 +373,7 @@ func TestPublishFailsFastWhileTheBrokerIsDownThenWorksAgain(t *testing.T) {
 }
 
 func TestCloseDisconnectsCleanly(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.StartOpen(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	c := dial(t, ctx, broker.URL(), uniqueID("c"), nil, nil)
@@ -383,7 +383,7 @@ func TestCloseDisconnectsCleanly(t *testing.T) {
 }
 
 func TestOnSubscribedFiresOnceTheSubscriptionsAreActive(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.StartOpen(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -409,7 +409,7 @@ func TestOnSubscribedFiresOnceTheSubscriptionsAreActive(t *testing.T) {
 }
 
 func TestAnEphemeralClientFindsNothingQueuedFromItsLastRun(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.StartOpen(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	pub := dial(t, ctx, broker.URL(), uniqueID("pub"), nil, nil)
@@ -493,7 +493,7 @@ func (l *links) next(t *testing.T) string {
 }
 
 func TestNoLocalKeepsAClientDeafToItself(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.StartOpen(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	for _, noLocal := range []bool{false, true} {
@@ -515,7 +515,7 @@ func TestNoLocalKeepsAClientDeafToItself(t *testing.T) {
 }
 
 func TestTheFallbackURLIsUsedWhenTheFirstIsBlocked(t *testing.T) {
-	broker := mqtttest.StartWith(t, mqtttest.Options{WebSockets: true})
+	broker := mqtttest.StartOpenWith(t, mqtttest.Options{WebSockets: true})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	l := newLinks()
@@ -543,7 +543,7 @@ func TestTheFallbackURLIsUsedWhenTheFirstIsBlocked(t *testing.T) {
 
 func TestSecureWebSocketsAsTheCloudFallback(t *testing.T) {
 	files := mqtttest.NewTLSFiles(t)
-	broker := mqtttest.StartWith(t, mqtttest.Options{WebSockets: true, TLS: &files})
+	broker := mqtttest.StartOpenWith(t, mqtttest.Options{WebSockets: true, TLS: &files})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	l := newLinks()
@@ -574,7 +574,7 @@ func TestSecureWebSocketsAsTheCloudFallback(t *testing.T) {
 
 func TestTLSTrustsOnlyTheGivenAuthority(t *testing.T) {
 	files := mqtttest.NewTLSFiles(t)
-	broker := mqtttest.StartWith(t, mqtttest.Options{TLS: &files})
+	broker := mqtttest.StartOpenWith(t, mqtttest.Options{TLS: &files})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -655,7 +655,7 @@ func (p *proxy) drop() {
 }
 
 func TestTheWillIsPublishedWhenTheLinkDiesAndTheLinkChangeIsTold(t *testing.T) {
-	broker := mqtttest.Start(t)
+	broker := mqtttest.StartOpen(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	p := startProxy(t, strings.TrimPrefix(broker.URL(), "mqtt://"))

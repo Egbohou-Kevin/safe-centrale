@@ -136,7 +136,7 @@ func (c *cloudSide) statuses() string {
 
 func TestATunnelEndToEnd(t *testing.T) {
 	t.Setenv(fakeSSH, "1")
-	broker := mqtttest.Start(t)
+	broker := mqtttest.Start(t, "safehome-maint")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state, "")
 
@@ -144,6 +144,7 @@ func TestATunnelEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	client, err := mqtt.Dial(ctx, mqtt.Options{
+		Username: mqtttest.Peer, Password: mqtttest.Password(mqtttest.Peer),
 		BrokerURL: broker.URL(), ClientID: fmt.Sprintf("agent-%d", time.Now().UnixNano()),
 		Subscriptions: []mqtt.Subscription{{Filter: contract.MaintSessionTopic(site), QoS: 1}},
 		OnMessage: func(m mqtt.Message) {

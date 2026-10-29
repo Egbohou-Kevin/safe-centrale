@@ -1,0 +1,127 @@
+# What each name may read and write on the hub's broker (29 October 2026), named by
+# mosquitto.conf's acl_file; install.sh puts it in /etc/mosquitto/safehome.acl. Each
+# program reads and writes what its code reads and writes, nothing else: a program taken
+# over can no longer send an order (alarm/cmd, maint/cmd, config/set...) it never sends.
+# The site is +, as are device ids. A topic a name may not write is refused (PUBACK
+# 0x87 at QoS 1, nothing at QoS 0); one it may not read is never delivered to it, its
+# subscription still granted: a right forgotten here leaves a program deaf, so every
+# test of cmd/ runs against this file (internal/adapter/mqtt/mqtttest), and
+# deploy/acl_test.go keeps the orders to their senders. Adding a topic: the code, then
+# this file (docs/systeme.md, "Mosquitto").
+
+user safehome-hub
+topic read safehome/+/device/+/event
+topic read safehome/+/device/+/state/+
+topic read safehome/+/device/+/ack
+topic read safehome/+/alarm/cmd
+topic read safehome/+/alert/result
+topic read safehome/+/alert/ack
+topic read safehome/+/alert/seen
+topic read safehome/+/gsm/status
+topic read safehome/+/zigbee/status
+topic read safehome/+/agent/status
+topic read safehome/+/install/cmd
+topic read safehome/+/registry/event
+topic read safehome/+/registry/devices
+topic read safehome/+/config/set
+topic readwrite safehome/+/alarm/state
+topic readwrite safehome/+/install/mode
+topic write safehome/+/device/+/cmd
+topic write safehome/+/alarm/event
+topic write safehome/+/alarm/ack
+topic write safehome/+/alert/request
+topic write safehome/+/system/health
+topic write safehome/+/system/heartbeat
+topic write safehome/+/system/devices
+topic write safehome/+/system/contacts
+topic write safehome/+/config/applied
+
+# The agent relays the cloud's orders to the hub (alarm/cmd, video/cmd, alert/*,
+# config/set, maint/cmd) and the hub's news to the cloud.
+user safehome-agent
+topic read safehome/+/alarm/event
+topic read safehome/+/alarm/ack
+topic read safehome/+/alarm/state
+topic read safehome/+/alert/request
+topic read safehome/+/system/health
+topic read safehome/+/system/devices
+topic read safehome/+/system/contacts
+topic read safehome/+/system/heartbeat
+topic read safehome/+/device/+/event
+topic read safehome/+/video/session
+topic read safehome/+/video/status
+topic read safehome/+/config/applied
+topic read safehome/+/photo/taken
+topic read safehome/+/maint/session
+topic read safehome/+/install/mode
+topic readwrite safehome/+/alert/result
+topic readwrite safehome/+/alert/ack
+topic readwrite safehome/+/photo/sent
+topic write safehome/+/alarm/cmd
+topic write safehome/+/video/cmd
+topic write safehome/+/alert/seen
+topic write safehome/+/config/set
+topic write safehome/+/maint/cmd
+topic write safehome/+/agent/status
+topic write safehome/+/agent/replayed
+
+# The Zigbee adapter speaks to Zigbee2MQTT under its base topic, and clears the retained
+# states of a device it removes (an empty retained message on device/+/state/+).
+user safehome-zigbee
+topic readwrite zigbee2mqtt/#
+topic read safehome/+/device/+/cmd
+topic read safehome/+/registry/cmd
+topic write safehome/+/device/+/ack
+topic write safehome/+/device/+/event
+topic write safehome/+/device/+/state/+
+topic write safehome/+/registry/event
+topic write safehome/+/registry/devices
+topic write safehome/+/zigbee/status
+
+user safehome-gsm
+topic read safehome/+/alert/request
+topic read safehome/+/alarm/event
+topic read safehome/+/config/applied
+topic readwrite safehome/+/alert/ack
+topic write safehome/+/alert/result
+topic write safehome/+/gsm/status
+
+# The power board is a device of its own: it only writes.
+user safehome-power
+topic write safehome/+/device/+/event
+topic write safehome/+/device/+/state/+
+
+user safehome-maint
+topic read safehome/+/maint/cmd
+topic write safehome/+/maint/session
+
+user safehome-console
+topic read safehome/+/registry/devices
+topic read safehome/+/registry/event
+topic read safehome/+/zigbee/status
+topic read safehome/+/device/+/event
+topic read safehome/+/install/mode
+topic write safehome/+/install/cmd
+topic write safehome/+/registry/cmd
+
+user safehome-video
+topic read safehome/+/video/cmd
+topic read safehome/+/alarm/event
+topic read safehome/+/config/applied
+topic write safehome/+/video/session
+topic write safehome/+/video/status
+topic write safehome/+/photo/taken
+
+# Zigbee2MQTT keeps to its base topic (deploy/zigbee2mqtt/configuration.yaml).
+user zigbee2mqtt
+topic readwrite zigbee2mqtt/#
+
+# The operator (sudo mosquitto_sub, safehome-install, the virtual kit) reads everything
+# and writes the orders an installer gives: pairing (registry/cmd), the installer mode
+# (install/cmd) and the alarm (alarm/cmd).
+user operator
+topic read safehome/#
+topic read zigbee2mqtt/#
+topic write safehome/+/registry/cmd
+topic write safehome/+/install/cmd
+topic write safehome/+/alarm/cmd
