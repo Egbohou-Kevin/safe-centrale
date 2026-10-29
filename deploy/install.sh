@@ -211,8 +211,10 @@ if has console && [ ! -f "$ETC/console.secret" ]; then
 	raw="$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'a-km-np-z2-9')"
 	printf '%s\n' "${raw:0:12}" >"$ETC/console.secret"
 fi
-chown -R root:safehome "$ETC"
-chmod -R u=rwX,g=rX,o= "$ETC" # contacts, cloud secret, camera passwords
+# Contacts, cloud secret, camera passwords: the programs' group reads them. Not the
+# passwords on the broker (mqtt/, below), root's alone, not even for an instant.
+find "$ETC" -path "$ETC/mqtt" -prune -o -exec chown root:safehome {} +
+find "$ETC" -path "$ETC/mqtt" -prune -o -exec chmod u=rwX,g=rX,o= {} +
 
 failed=""
 for p in $enabled; do
@@ -227,6 +229,62 @@ rm -rf "$backup"
 
 # --- System settings, broker, programs ------------------------------------------
 
+# The hub's broker takes no anonymous client (29 October 2026): each program,
+# Zigbee2MQTT and the operator have a name and a password of their own, made here once
+# and kept. Root's alone: systemd hands each unit its own (LoadCredential=, and
+# EnvironmentFile= for Zigbee2MQTT), the operator reads its own under sudo. A password
+# never goes on a command line: printf is the shell's own, cat reads a file. Every
+# program gets one, enabled or not: one enabled later finds it.
+MQTT="$ETC/mqtt"
+mqtt_users=""
+for p in $PROGRAMS; do mqtt_users="$mqtt_users safehome-$p"; done
+mqtt_users="$mqtt_users zigbee2mqtt operator"
+mkdir -p "$MQTT"
+chown root:root "$MQTT"
+chmod 700 "$MQTT"
+# put_private DEST: replaces DEST, made by root and readable by root alone, with what
+# comes on stdin.
+put_private() {
+	rm -f "$1.new"
+	(umask 077 && cat >"$1.new")
+	chmod 600 "$1.new"
+	mv -f "$1.new" "$1"
+}
+for u in $mqtt_users; do
+	if [ ! -s "$MQTT/$u.secret" ]; then
+		# 32 random bytes, in base64url: no character the files below would misread.
+		head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n' | put_private "$MQTT/$u.secret"
+	fi
+done
+# mqtt_password USER: the password of USER on the broker.
+mqtt_password() { cat "$MQTT/$1.secret"; }
+
+# Mosquitto's names and hashed passwords, made again at each run from the secrets: the
+# plain list is root's (0600), and mosquitto_passwd hashes it in place before Mosquitto
+# gets it.
+PASSWD="$ROOT/etc/mosquitto/safehome.passwd"
+mkdir -p "$(dirname "$PASSWD")"
+for u in $mqtt_users; do
+	printf '%s:%s\n' "$u" "$(mqtt_password "$u")"
+done | put_private "$PASSWD.plain"
+if ! mosquitto_passwd -U "$PASSWD.plain"; then
+	rm -f "$PASSWD.plain"
+	fail "mosquitto_passwd could not hash the broker's passwords"
+fi
+chown mosquitto:mosquitto "$PASSWD.plain"
+chmod 600 "$PASSWD.plain"
+mv -f "$PASSWD.plain" "$PASSWD"
+# Zigbee2MQTT takes its name and password from its environment, which wins over its
+# configuration.yaml (it rewrites that file itself).
+printf 'ZIGBEE2MQTT_CONFIG_MQTT_USER=zigbee2mqtt\nZIGBEE2MQTT_CONFIG_MQTT_PASSWORD=%s\n' "$(mqtt_password zigbee2mqtt)" |
+	put_private "$MQTT/zigbee2mqtt.env"
+# The operator: sudo mosquitto_sub (and _pub) read their options there, no password typed.
+for tool in mosquitto_sub mosquitto_pub; do
+	mkdir -p "$ROOT/root/.config"
+	printf -- '-u operator\n-P %s\n' "$(mqtt_password operator)" | put_private "$ROOT/root/.config/$tool"
+done
+chown -R root:root "$MQTT"
+chmod 600 "$MQTT"/*
 put "$BUNDLE/deploy/system/journald-safehome.conf" "$ROOT/etc/systemd/journald.conf.d/safehome.conf" 644
 put "$BUNDLE/deploy/system/watchdog-safehome.conf" "$ROOT/etc/systemd/system.conf.d/safehome-watchdog.conf" 644
 put "$BUNDLE/deploy/mosquitto/mosquitto.conf" "$ROOT/etc/mosquitto/mosquitto.conf" 644

@@ -5,6 +5,9 @@ After=mosquitto.service
 
 [Service]
 ExecStart=/usr/local/bin/vkit-fakez2m -broker mqtt://127.0.0.1:1883 -control /run/vkit/zigbee
+# The hub's broker asks for a name and password (29 October 2026): Zigbee2MQTT's, made
+# by deploy/install.sh, which runs before this unit starts (vkit/install-kit.sh).
+LoadCredential=mqtt-password:/etc/safehome/mqtt/zigbee2mqtt.secret
 Restart=always
 RestartSec=1
 

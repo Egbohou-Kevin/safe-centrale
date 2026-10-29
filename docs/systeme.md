@@ -305,6 +305,26 @@ appareils sont donc ceux de la dernière sauvegarde, vieux de 5 minutes au plus 
 moteur d'alarme écarte au démarrage un état plus ancien que ce qu'il avait entendu
 (voir `engine.md`, « Persistance et redémarrage »).
 
+**Un nom et un mot de passe par programme** (29 octobre 2026). Le broker refuse les clients
+anonymes (`allow_anonymous false`) : sans cela, n'importe quel processus de la centrale pouvait
+publier un ordre (`alarm/cmd`, `maint`, `config/set`) que les services croyaient. Chaque programme
+a son nom (`safehome-hub`, `safehome-agent`, `safehome-zigbee`, `safehome-gsm`, `safehome-power`,
+`safehome-maint`, `safehome-console`, `safehome-video`), plus `zigbee2mqtt` et `operator` pour
+l'opérateur. `install.sh` fait leurs mots de passe une fois et les garde :
+`/etc/safehome/mqtt/<nom>.secret`, 32 octets aléatoires en base64url, à root seul (dossier 0700,
+fichiers 0600). Il refait à chaque passage `/etc/mosquitto/safehome.passwd` (haché par
+`mosquitto_passwd -U`, à mosquitto seul, 0600), avant de redémarrer Mosquitto puis les programmes.
+systemd donne à chaque unité son propre mot de passe (`LoadCredential=mqtt-password:…`), que le
+programme lit dans `$CREDENTIALS_DIRECTORY` ; Zigbee2MQTT reçoit le sien par
+`EnvironmentFile=/etc/safehome/mqtt/zigbee2mqtt.env`, qui l'emporte sur son `configuration.yaml`.
+L'opérateur : `sudo mosquitto_sub …` et `sudo mosquitto_pub …` lisent leurs options dans
+`/root/.config/`, sans mot de passe tapé, et `safehome-install` (sous sudo) lit
+`/etc/safehome/mqtt/operator.secret`. Aucun mot de passe ne passe sur une ligne de commande, ni
+dans un journal ou une erreur. Les droits par topic (ACL) viennent dans un lot suivant : pour
+l'instant, tout nom connu garde tous les topics. Mosquitto ne démarre pas sans
+`/etc/mosquitto/safehome.passwd` : copier `mosquitto.conf` à la main (ci-dessus) seulement après
+un premier passage d'`install.sh`, qui le pose lui-même.
+
 **Le code d'accès n'attend pas dans le broker.** Les programmes gardent leur session
 un jour : en QoS 1, Mosquitto garde pour un programme absent (un redémarrage pour une
 nouvelle configuration, un plantage) ce qui arrive pour lui, et l'écrit dans
@@ -721,7 +741,13 @@ paquet, ou si le programme ne sait même pas la dire, le retour joue tout de sui
 attend deux minutes, et si une unité n'est pas `active` (un programme qui plante au démarrage n'est
 jamais `failed` : `Restart=always` sans limite le laisse `activating`), si `safehome-hub.service`
 ne tourne pas du tout (une unité arrêtée n'est pas listée), ou si une unité n'est pas active
-depuis au moins 100 s, le retour joue aussi. Ce dernier point attrape un programme qui plante
+depuis au moins 100 s, ou si le broker refuse un programme pendant ces deux minutes (29 octobre
+2026 : le journal des unités `safehome-*` et `zigbee2mqtt`, lu depuis le début de l'attente,
+contient « mqtt broker refused the connection », écrit par notre client MQTT, ou « Not
+authorized » / « Bad User Name or Password », écrits par Zigbee2MQTT ; un journal illisible
+compte comme un refus, une connexion simplement impossible non), le retour joue aussi. Un
+programme refusé reste `active` et réessaie sans fin, sans voir aucun capteur : sans ce
+contrôle, ses unités paraîtraient tenir. Le point des 100 s attrape un programme qui plante
 juste après s'être dit prêt (`RestartSec=2`) : il paraît `active` la plupart du temps, mais son
 dernier démarrage (`ActiveEnterTimestampMonotonic`, comparé à `/proc/uptime`) est récent. Le seuil
 est de 100 s après `install.sh` et après le retour : chaque `systemctl restart` y attend que l'unité
@@ -746,7 +772,12 @@ sécurité de la centrale). Le retour remet aussi les unités, après les progra
 phase 2 (jamais une plus ancienne) : l'archive est extraite à part (`/data/maintenance/restore.*`,
 effacé ensuite), chaque unité `safehome*` ou `zigbee2mqtt*` qui diffère de la sienne (`diff -r`) est
 remise telle quelle, chaque unité que l'archive n'avait pas (une unité neuve du paquet) est retirée
-avec ses liens dans `*.wants`, puis arrêtée après `daemon-reload`. Les services activés parmi les
+avec ses liens dans `*.wants`, puis arrêtée après `daemon-reload`. L'archive garde aussi
+`/etc/mosquitto/mosquitto.conf` (29 octobre 2026 ; la phase 2 n'installe rien si elle ne le tient
+pas) : s'il diffère, il est remis, et Mosquitto redémarre après `daemon-reload`, avant les
+programmes (« mosquitto.conf put back as it was », « mosquitto restarted on its previous
+configuration »). Des programmes d'avant les mots de passe du broker retrouvent ainsi un broker
+qui les accepte, Zigbee2MQTT compris ; `safehome.passwd` et les secrets restent, sans effet. Les services activés parmi les
 programmes revenus et les unités remises redémarrent, chacun une fois ; une unité identique n'est
 ni touchée ni redémarrée, et une unité remise qui n'est pas un démon (son `Type` lu par
 `systemctl show` n'est ni `simple`, `exec`, `notify`, `notify-reload`, `forking` ni `dbus`) est remise
@@ -915,6 +946,26 @@ moteur (`engine.json` réécrit à 13:13:44, aucune zone ouverte). À 13:19, la 
 (`safehome-install zone`, puis `safehome-hub` redémarré, `check` vert). À 13:21 et 13:22, deux battements de cœur
 lus sur le broker local (`mosquitto-clients` installé sur l'overlay, donc parti au prochain démarrage) :
 `clock_ok: true`, un par minute, l'heure du Pi à la seconde de celle du Mac.
+
+À vérifier sur le Pi à la première mise à jour qui pose les mots de passe du broker (29 octobre
+2026), `mosquitto-clients` installé pour l'essai :
+
+1. `systemctl --failed` vide, chaque service activé `active`, et
+   `journalctl -u mosquitto -b | grep "not authorised"` ne montre aucun programme refusé ;
+2. `sudo mosquitto_sub -t 'safehome/#' -v -C 3 -W 90` montre les messages de la centrale (les
+   options de l'opérateur, dans `/root/.config/mosquitto_sub`) ;
+3. sans sudo, `mosquitto_sub -t 'safehome/#' -C 1 -W 5` est refusé (`not authorised`) ;
+4. un capteur déclenché arrive à la centrale (Zigbee2MQTT connecté avec son nom), et
+   `sudo safehome-install devices` répond ;
+5. `sudo ls -l /etc/safehome/mqtt /etc/mosquitto/safehome.passwd` : dossier `drwx------ root`,
+   fichiers `-rw------- root` ; le fichier haché à `mosquitto`.
+
+Retour arrière : `update-hub.sh` remet aussi `mosquitto.conf` d'avant (« Retour arrière des
+unités ») et redémarre Mosquitto avant les programmes : des programmes d'avant le 29 octobre 2026,
+sans mot de passe, retrouvent un broker ouvert. Un programme que le broker refuse (mot de passe
+faux, absent ou périmé) reste `active` et réessaie sans fin, sans voir aucun capteur : la phase 2
+compte comme un service qui ne tient pas un refus dans le journal des programmes ou de
+Zigbee2MQTT pendant ses deux minutes d'attente (« Retour arrière des programmes »).
 
 Conséquence : **pas de mises à jour automatiques** (elles seraient effacées au
 redémarrage). La centrale n'est pas joignable depuis internet (derrière la box ou

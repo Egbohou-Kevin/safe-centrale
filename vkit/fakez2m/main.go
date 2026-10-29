@@ -9,15 +9,20 @@
 //	fakez2m -broker mqtt://127.0.0.1:1883 -control /run/vkit/zigbee
 //	echo 'pair MCCGQ11LM 0x00158d0000000001' > /run/vkit/zigbee
 //	echo 'send 0x00158d0000000001 {"contact":false}' > /run/vkit/zigbee
+//
+// The hub's broker takes no anonymous client (29 October 2026): the fake connects as
+// zigbee2mqtt, with the password systemd hands it (vkit-z2m.service, LoadCredential=).
 package main
 
 import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -31,8 +36,13 @@ func main() {
 	broker := flag.String("broker", "mqtt://127.0.0.1:1883", "the hub's broker")
 	base := flag.String("base", "zigbee2mqtt", "the base topic, as in zigbee.json")
 	control := flag.String("control", "/run/vkit/zigbee", "the named pipe that takes the orders")
+	username := flag.String("username", "zigbee2mqtt", "its name on the hub's broker")
 	flag.Parse()
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
+	password, err := unitPassword()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -40,6 +50,8 @@ func main() {
 	client, err := mqtt.Dial(ctx, mqtt.Options{
 		BrokerURL:     *broker,
 		ClientID:      "vkit-fakez2m",
+		Username:      *username,
+		Password:      password,
 		Subscriptions: []mqtt.Subscription{{Filter: *base + "/#", QoS: 1}},
 		OnMessage:     z.received,
 	})
@@ -56,6 +68,22 @@ func main() {
 	z.publish("bridge/state", map[string]string{"state": "online"}, true)
 	log.Print("Zigbee2MQTT (fake) online")
 	z.serve(ctx)
+}
+
+// unitPassword reads the password systemd gives the unit, as the hub's programs do
+// (internal/configfile); none outside systemd. An error names the file, never what it
+// holds.
+func unitPassword() (string, error) {
+	dir := os.Getenv("CREDENTIALS_DIRECTORY")
+	if dir == "" {
+		return "", nil
+	}
+	path := filepath.Join(dir, "mqtt-password")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("cannot read the broker's password in %s", path)
+	}
+	return strings.TrimSpace(string(b)), nil
 }
 
 // bridge is the fake Zigbee2MQTT: its devices are known by their Zigbee address,

@@ -133,9 +133,9 @@ func runAdapter(ctx context.Context, cfg zigbeeconfig.Result, stderr io.Writer) 
 
 	return service.Daemon{
 		Name: name, Log: log, Loops: []func(context.Context) error{app.Run}, Alive: app.Alive,
-		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
-			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: service.Subscriptions(app.Subscriptions()), Logger: log,
+		Brokers: []service.Broker{{Publisher: pub, Options: service.Local(cfg, mqtt.Options{
+			Subscriptions: service.Subscriptions(app.Subscriptions()), Logger: log,
 			Take: service.Take(app.HandleMessage),
-		}}},
+		})}},
 	}.Run(ctx)
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -13,6 +14,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/eclipse/paho.golang/autopaho"
+	"github.com/eclipse/paho.golang/paho"
 
 	"safehome/internal/adapter/mqtt/mqtttest"
 )
@@ -690,4 +694,19 @@ func TestTheWillIsPublishedWhenTheLinkDiesAndTheLinkChangeIsTold(t *testing.T) {
 		t.Fatalf("the will was built %d time(s), want once per connection", wills.Load())
 	}
 	c.Close(ctx)
+}
+
+// A broker that refuses the client is said apart, with its reason: deploy/update-hub.sh
+// looks for these words. Any other failure stays a warning.
+func TestARefusalOfTheBrokerIsSaidApart(t *testing.T) {
+	var out strings.Builder
+	s := &session{log: slog.New(slog.NewTextHandler(&out, nil))}
+	s.connectError(autopaho.NewConnackError(errors.New("failed to connect to server: "), &paho.Connack{ReasonCode: 135}))
+	s.connectError(errors.New("dial tcp 127.0.0.1:1883: connect: connection refused"))
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 ||
+		!strings.Contains(lines[0], `level=ERROR msg="mqtt broker refused the connection" reason=135`) ||
+		!strings.Contains(lines[1], `level=WARN msg="mqtt connection attempt failed"`) {
+		t.Fatalf("logged:\n%s", out.String())
+	}
 }

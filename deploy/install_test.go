@@ -29,6 +29,9 @@ var fakes = map[string]string{
 	"apt-get":    `exit 0`,
 	"systemctl":  `exit 0`,
 	"ssh-keygen": `while [ $# -gt 1 ]; do shift; done; echo key > "$1"; echo "ssh-ed25519 AAAA" > "$1.pub"`,
+	// Keeps the plain list it was given in $ROOT/.passwd-seen, then hashes it in place.
+	"mosquitto_passwd": `[ "$1" = -U ] || exit 0; cp "$2" "$ROOT/.passwd-seen"; ` +
+		`awk -F: '{print $1 ":$7$101$hashed"}' "$2" > "$2.h" && cat "$2.h" > "$2" && rm "$2.h"`,
 }
 
 // fakeProgram stands for a safehome-* program: check fails on a configuration or a

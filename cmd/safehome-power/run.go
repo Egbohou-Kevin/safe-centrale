@@ -96,6 +96,6 @@ func runService(ctx context.Context, cfg powerconfig.Result, stderr io.Writer) i
 
 	return service.Daemon{
 		Name: name, Log: log, Loops: []func(context.Context) error{app.Run}, Alive: app.Alive,
-		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Logger: log}}},
+		Brokers: []service.Broker{{Publisher: pub, Options: service.Local(cfg, mqtt.Options{Logger: log})}},
 	}.Run(ctx)
 }

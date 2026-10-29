@@ -150,7 +150,7 @@ func (s *session) config() (autopaho.ClientConfig, error) {
 		ConnectPacketBuilder:          s.connectPacket,
 		OnConnectionUp:                s.connectionUp,
 		OnConnectionDown:              s.connectionDown,
-		OnConnectError:                func(err error) { s.log.Warn("mqtt connection attempt failed", "err", err) },
+		OnConnectError:                s.connectError,
 		ClientConfig: paho.ClientConfig{
 			ClientID:                   s.o.ClientID,
 			EnableManualAcknowledgment: s.o.Take != nil,
@@ -175,6 +175,19 @@ func (s *session) connectPacket(cp *paho.Connect, u *url.URL) (*paho.Connect, er
 		cp.WillMessage = &paho.WillMessage{Topic: w.Topic, Payload: w.Payload, QoS: w.QoS, Retain: w.Retain}
 	}
 	return cp, nil
+}
+
+// connectError says why a connection attempt failed. A broker that answers but refuses
+// the client (its name or password, 29 October 2026) is said apart, as an error: the
+// program stays up and retries, deaf to the broker, and deploy/update-hub.sh looks for
+// these words in the journal.
+func (s *session) connectError(err error) {
+	var refused *autopaho.ConnackError
+	if errors.As(err, &refused) {
+		s.log.Error("mqtt broker refused the connection", "reason", refused.ReasonCode, "err", err)
+		return
+	}
+	s.log.Warn("mqtt connection attempt failed", "err", err)
 }
 
 // connectionUp subscribes, then says the link is up, away from the library's

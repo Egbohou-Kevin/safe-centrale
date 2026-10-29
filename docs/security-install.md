@@ -17,6 +17,7 @@ passe si une centrale est volée, détruite ou remplacée.
 | Un appareil pirate est ajouté au site | L'appairage se fait seulement en local, et seuls les modèles connus sont acceptés (voir `adapter-zigbee.md`). |
 | Le cloud est compromis | Le cloud ne peut envoyer que des ordres d'alarme, de vidéo, de maintenance et de configuration, et les résultats des alertes. Il ne commande ni la sirène ni les appareils. |
 | Faux SMS d'acquittement | Il ne peut qu'arrêter l'escalade, et l'incident reste visible (voir `gsm-gateway.md`). |
+| Un processus de la centrale publie un faux ordre sur le broker local | Depuis le 29 octobre 2026, le broker de la centrale exige un nom et un mot de passe par programme (plus Zigbee2MQTT et l'opérateur), faits par `install.sh` et donnés à chaque service par systemd, lisibles de lui seul (voir `systeme.md`, « Mosquitto »). Les droits par topic (ACL) viennent ensuite : pour l'instant, tout nom connu garde tous les topics. |
 | Brouillage radio du Zigbee | Limite connue en v1. Une disparition simultanée de tous les capteurs est un signal à surveiller plus tard. |
 
 ## Identités
@@ -439,6 +440,12 @@ Reste à ajouter : les événements de journal `audit.config_applied`,
 - Le coût du hachage est à régler sur la vraie centrale : vérifier 5 codes prend
   environ 90 ms sur un Mac récent, et sera plusieurs fois plus long sur un Raspberry Pi.
   Mesure à faire sur le matériel : `go test -run xxx -bench Verify ./internal/access`.
+- Le broker local exige un mot de passe par programme (29 octobre 2026) : aucun client
+  anonyme, un nom par programme (`safehome-hub`…), plus `zigbee2mqtt` et `operator`. Le mot
+  de passe d'un service lui vient de systemd (`LoadCredential`), jamais d'un fichier lisible
+  des autres unités, et n'apparaît dans aucun journal, aucune erreur, aucune ligne de
+  commande. Les droits par topic (ACL), puis un utilisateur Unix par groupe de services,
+  viennent dans les lots suivants.
 - Le code ne se change que sur place (clavier ou console locale), jamais à distance
   depuis l'application en v1. À reconsidérer quand le chiffrement de bout en bout
   existera.

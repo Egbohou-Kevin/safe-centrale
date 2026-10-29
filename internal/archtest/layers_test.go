@@ -2,9 +2,11 @@ package archtest
 
 import (
 	"go/ast"
+	"go/token"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -328,5 +330,91 @@ func TestApplicationLayersUseOnlyTheClockPort(t *testing.T) {
 				t.Errorf("internal/%s/%s reads the clock (%s): an application layer takes time from its driver.Clock port", dir, name, c)
 			}
 		}
+	}
+}
+
+// The hub's broker refuses a client without its name and password (29 October 2026):
+// every program connects to it through service.Local, which fills the address, the
+// client id, the name and the password from the configuration, so that none forgets
+// one. An mqtt.Options written elsewhere in cmd/ names its own Username and Password
+// (the agent's client of the cloud).
+func TestEveryClientOfTheHubsBrokerGoesThroughLocal(t *testing.T) {
+	dirs, err := filepath.Glob(filepath.Join(root(t), "cmd", "safehome-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range dirs {
+		fset, files := parsePackage(t, dir)
+		local := 0
+		for _, f := range files {
+			n, bare := brokerOptions(fset, f)
+			local += n
+			for _, b := range bare {
+				t.Errorf("%s: mqtt.Options without Username and Password: build it with service.Local", b)
+			}
+		}
+		if local == 0 {
+			t.Errorf("%s connects to the hub's broker without service.Local", filepath.Base(dir))
+		}
+	}
+}
+
+// brokerOptions counts the mqtt.Options given to service.Local in f, and returns the
+// others that name no Username and Password, as "file:line".
+func brokerOptions(fset *token.FileSet, f *ast.File) (local int, bare []string) {
+	wrapped := map[ast.Expr]bool{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		if c, ok := n.(*ast.CallExpr); ok && isSelector(c.Fun, "service", "Local") && len(c.Args) == 2 {
+			wrapped[c.Args[1]] = true
+		}
+		return true
+	})
+	ast.Inspect(f, func(n ast.Node) bool {
+		lit, ok := n.(*ast.CompositeLit)
+		if !ok || !isSelector(lit.Type, "mqtt", "Options") {
+			return true
+		}
+		if wrapped[lit] {
+			local++
+			return true
+		}
+		keys := map[string]bool{}
+		for _, e := range lit.Elts {
+			if kv, ok := e.(*ast.KeyValueExpr); ok {
+				if id, ok := kv.Key.(*ast.Ident); ok {
+					keys[id.Name] = true
+				}
+			}
+		}
+		if !keys["Username"] || !keys["Password"] {
+			p := fset.Position(lit.Pos())
+			bare = append(bare, filepath.Base(p.Filename)+":"+strconv.Itoa(p.Line))
+		}
+		return true
+	})
+	return local, bare
+}
+
+func isSelector(e ast.Expr, pkg, name string) bool {
+	s, ok := e.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	id, ok := s.X.(*ast.Ident)
+	return ok && id.Name == pkg && s.Sel.Name == name
+}
+
+// The witness of brokerOptions: the options of every program before 29 October 2026
+// are seen bare, those through service.Local and the cloud's are not.
+func TestBrokerOptionsSeesAClientWithoutItsPassword(t *testing.T) {
+	fset, f := parseSource(t, `package p
+func before(cfg C) mqtt.Options { return mqtt.Options{BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID} }
+func half(cfg C) mqtt.Options { return mqtt.Options{BrokerURL: cfg.BrokerURL, Username: cfg.Username} }
+func local(cfg C) mqtt.Options { return service.Local(cfg, mqtt.Options{Ephemeral: true}) }
+func cloud(c Cloud) mqtt.Options { return mqtt.Options{BrokerURL: c.URL, Username: c.Username, Password: c.Password} }
+`)
+	local, bare := brokerOptions(fset, f)
+	if local != 1 || !slices.Equal(bare, []string{"x.go:2", "x.go:3"}) {
+		t.Fatalf("local %d, bare %v: want 1 and the first two", local, bare)
 	}
 }

@@ -241,8 +241,8 @@ func daemon(cfg hubconfig.Result, h *hub.Hub, conf *configapp.App, pub *service.
 			conf.Run,
 			func(ctx context.Context) error { reloadCodes(ctx, h, hup, log); return nil },
 		},
-		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
-			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: subs, Logger: log,
+		Brokers: []service.Broker{{Publisher: pub, Options: service.Local(cfg, mqtt.Options{
+			Subscriptions: subs, Logger: log,
 			OnSubscribed: h.LinkUp,
 			OnMessage: service.Deliver(func(m inbox.Message) {
 				if confTopics[m.Topic] { // exact topics, no wildcard
@@ -251,7 +251,7 @@ func daemon(cfg hubconfig.Result, h *hub.Hub, conf *configapp.App, pub *service.
 				}
 				h.HandleMessage(m)
 			}),
-		}}},
+		})}},
 	}
 }
 

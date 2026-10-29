@@ -1,7 +1,9 @@
 package configfile
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -154,6 +156,7 @@ func TestWriteAtomicFailsCleanly(t *testing.T) {
 }
 
 func TestProgramFileBuild(t *testing.T) {
+	t.Setenv(credentialsEnv, "")
 	var f struct {
 		ProgramFile
 		Other string `json:"other"`
@@ -165,7 +168,7 @@ func TestProgramFileBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p != (Program{BrokerURL: "mqtt://127.0.0.1:1883", ClientID: "safehome-gsm-tg-lom-0001", StateDir: "/s", LogLevel: slog.LevelInfo}) {
+	if p != (Program{BrokerURL: "mqtt://127.0.0.1:1883", ClientID: "safehome-gsm-tg-lom-0001", Username: "safehome-gsm", StateDir: "/s", LogLevel: slog.LevelInfo}) {
 		t.Fatalf("%+v", p)
 	}
 	f.BrokerURL, f.ClientID, f.LogLevel = "mqtt://10.0.0.1:1883", "mine", "debug"
@@ -181,4 +184,88 @@ func TestProgramFileBuild(t *testing.T) {
 		err.Error() != "state_dir is required (where the gateway keeps its queue)" {
 		t.Fatalf("%v", err)
 	}
+}
+
+// The local broker's password comes from systemd's credentials folder, and shows
+// nowhere: not in an error, not in a printed or logged configuration.
+func TestTheBrokerPasswordComesFromTheCredentials(t *testing.T) {
+	const secret = "pw-9f3Kq_x"
+	f := ProgramFile{Site: "tg-lom-0001", StateDir: "/s"}
+
+	t.Setenv(credentialsEnv, "")
+	if p, err := f.Build("safehome-hub-", "x"); err != nil || p.Password != "" || p.Username != "safehome-hub" {
+		t.Fatalf("without credentials: %+v %v", p, err)
+	}
+
+	dir := t.TempDir()
+	t.Setenv(credentialsEnv, dir)
+	path := filepath.Join(dir, PasswordCredential)
+	if err := os.WriteFile(path, []byte(secret+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := f.Build("safehome-hub-", "x")
+	if err != nil || p.Password.Reveal() != secret {
+		t.Fatalf("with credentials: %v", err)
+	}
+	url, id, user, pass := p.LocalBroker()
+	if url != "mqtt://127.0.0.1:1883" || id != "safehome-hub-tg-lom-0001" || user != "safehome-hub" || pass != secret {
+		t.Fatalf("LocalBroker: %s %s %s (password %t)", url, id, user, pass == secret)
+	}
+	var logged strings.Builder
+	slog.New(slog.NewTextHandler(&logged, nil)).Info("starting", "cfg", p, "password", p.Password)
+	for _, shown := range []string{fmt.Sprint(p), fmt.Sprintf("%+v %#v %q %x", p, p, p.Password, p.Password), logged.String(), string(must(json.Marshal(p)))} {
+		if strings.Contains(shown, secret) {
+			t.Errorf("the password shows: %s", shown)
+		}
+	}
+
+	for name, setup := range map[string]func(){
+		"unreadable": func() { os.Chmod(path, 0o000) },
+		"missing":    func() { os.Remove(path) },
+		"empty":      func() { os.WriteFile(path, []byte("\n"), 0o600) },
+		"a folder":   func() { os.Remove(path); os.Mkdir(path, 0o700) },
+	} {
+		os.RemoveAll(path)
+		os.WriteFile(path, []byte(secret), 0o600)
+		setup()
+		_, err := f.Build("safehome-hub-", "x")
+		if name == "unreadable" && os.Getuid() == 0 {
+			continue // root reads it anyway
+		}
+		if err == nil || !strings.Contains(err.Error(), path) || strings.Contains(err.Error(), secret) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// A tool run by hand under sudo is the operator, with the password only root reads;
+// on a computer without it, there is none.
+func TestTheOperatorReadsItsPassword(t *testing.T) {
+	t.Setenv(credentialsEnv, "")
+	p, err := ProgramFile{Site: "tg-lom-0001", StateDir: "/s"}.Build("safehome-hub-", "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "operator.secret")
+	if op, err := p.asOperator(path); err != nil || op.Username != "operator" || op.Password != "" {
+		t.Fatalf("without the file: %+v %v", op, err)
+	}
+	os.WriteFile(path, []byte("op-secret\n"), 0o600)
+	op, err := p.asOperator(path)
+	if err != nil || op.Username != "operator" || op.Password.Reveal() != "op-secret" || op.ClientID != p.ClientID {
+		t.Fatalf("%+v %v", op, err)
+	}
+	if os.Getuid() != 0 {
+		os.Chmod(path, 0o000)
+		if _, err := p.asOperator(path); err == nil || !strings.Contains(err.Error(), path) || strings.Contains(err.Error(), "op-secret") {
+			t.Errorf("unreadable: %v", err)
+		}
+	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

@@ -11,6 +11,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -23,6 +24,7 @@ import (
 	"sync"
 	"testing"
 
+	"safehome/internal/configfile"
 	"safehome/internal/siteconfig"
 	"safehome/internal/videoconfig"
 )
@@ -420,5 +422,66 @@ func TestSeesTellsAStateFolderLeftOpen(t *testing.T) {
 	shut := unit{"Service": {"TemporaryFileSystem": {"/var/lib/safehome:ro"}, "BindPaths": {"/var/lib/safehome/video /var/lib/safehome/videos"}}}
 	if shut.sees(key) || shut.sees("/var/lib/safehome/video.json") || !shut.sees("/var/lib/safehome/video/video.json") {
 		t.Error("sees reads a folder as a prefix of the names")
+	}
+}
+
+// The hub's broker refuses a client without its name and password (29 October 2026).
+// Each program's unit hands it its own password, from the file install.sh makes for
+// its name, and no other; Zigbee2MQTT gets its name and password from its environment
+// file. The operator's password is for tools run under sudo, never for a unit.
+func TestEveryClientOfTheBrokerGetsItsOwnPassword(t *testing.T) {
+	for _, p := range programs(t) {
+		t.Run(p, func(t *testing.T) {
+			if err := ownPassword(programUnit(t, p), "safehome-"+p); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	z2m := readUnit(t, filepath.Join("systemd", "zigbee2mqtt.service"))
+	if got := z2m.value(t, "EnvironmentFile"); got != "/etc/safehome/mqtt/zigbee2mqtt.env" {
+		t.Errorf("zigbee2mqtt: EnvironmentFile = %q, want /etc/safehome/mqtt/zigbee2mqtt.env: the broker would refuse it", got)
+	}
+	if want := mqttSecret("operator"); configfile.OperatorSecret != want {
+		t.Errorf("safehome-install reads %s, install.sh makes %s", configfile.OperatorSecret, want)
+	}
+}
+
+// mqttSecret is the file install.sh makes for name's password on the broker.
+func mqttSecret(name string) string { return "/etc/safehome/mqtt/" + name + ".secret" }
+
+// ownPassword says what is wrong with the password the unit hands its program for
+// name, or nil.
+func ownPassword(u unit, name string) error {
+	var given []string
+	for _, c := range u["Service"]["LoadCredential"] {
+		if strings.HasPrefix(c, configfile.PasswordCredential+":") {
+			given = append(given, c)
+		}
+	}
+	want := configfile.PasswordCredential + ":" + mqttSecret(name)
+	switch {
+	case len(given) == 0:
+		return fmt.Errorf("no LoadCredential=%s: the broker would refuse the program", configfile.PasswordCredential)
+	case len(given) > 1 || given[0] != want:
+		return fmt.Errorf("LoadCredential %q, want %s alone", given, want)
+	}
+	return nil
+}
+
+// The witness of ownPassword: a unit without the password, and one that hands its
+// program another's, are seen.
+func TestOwnPasswordSeesAUnitWithoutItsOwn(t *testing.T) {
+	for name, creds := range map[string][]string{
+		"none":     nil,
+		"another":  {"mqtt-password:/etc/safehome/mqtt/safehome-zigbee.secret"},
+		"operator": {"mqtt-password:/etc/safehome/mqtt/operator.secret"},
+		"two":      {"mqtt-password:/etc/safehome/mqtt/safehome-hub.secret", "mqtt-password:/etc/safehome/mqtt/safehome-gsm.secret"},
+	} {
+		if ownPassword(unit{"Service": {"LoadCredential": creds}}, "safehome-hub") == nil {
+			t.Errorf("%s: not seen", name)
+		}
+	}
+	if err := ownPassword(unit{"Service": {"LoadCredential": {"mqtt-password:/etc/safehome/mqtt/safehome-hub.secret"}}}, "safehome-hub"); err != nil {
+		t.Errorf("its own: %v", err)
 	}
 }

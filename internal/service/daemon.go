@@ -69,6 +69,21 @@ type Broker struct {
 	Publisher *Publisher // attached once the client is dialed; nil if the program only listens
 }
 
+// LocalBroker is what a program's configuration says of the hub's broker
+// (configfile.Program has it): its address, the client id, and the program's name and
+// password there.
+type LocalBroker interface {
+	LocalBroker() (url, clientID, username, password string)
+}
+
+// Local returns o for the hub's broker, which refuses a client without its name and
+// password: every program connects to it through Local, so that none forgets one
+// (internal/archtest keeps it so).
+func Local(c LocalBroker, o mqtt.Options) mqtt.Options {
+	o.BrokerURL, o.ClientID, o.Username, o.Password = c.LocalBroker()
+	return o
+}
+
 // Restart asks a running program to stop cleanly, so that systemd starts it again:
 // to load a new configuration. Asking twice is asking once.
 type Restart chan struct{}

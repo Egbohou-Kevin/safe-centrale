@@ -159,10 +159,10 @@ func daemon(cfg videoconfig.Result, app *videoapp.App, pub *service.Publisher, l
 	restart := service.NewRestart()
 	return service.Daemon{
 		Name: name, Log: log, Loops: []func(context.Context) error{app.Run}, Alive: app.Alive, Restart: restart,
-		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
-			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Logger: log,
+		Brokers: []service.Broker{{Publisher: pub, Options: service.Local(cfg, mqtt.Options{
+			Logger:        log,
 			Subscriptions: append(service.Subscriptions(app.Subscriptions()), mqtt.Subscription{Filter: applied, QoS: 1}),
 			OnMessage:     service.Deliver(restart.Watch(applied, changed, app.HandleMessage, log)),
-		}}},
+		})}},
 	}
 }

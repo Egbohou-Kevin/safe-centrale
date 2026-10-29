@@ -102,10 +102,10 @@ func daemon(cfg agentconfig.Result, app *agentapp.App, local, cloud *service.Pub
 		topic, payload := app.Will()
 		return mqtt.Message{Topic: topic, Payload: payload, QoS: 1, Retain: true}
 	}
-	hub := mqtt.Options{
-		BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Subscriptions: service.Subscriptions(app.LocalSubscriptions()), Logger: log,
+	hub := service.Local(cfg, mqtt.Options{
+		Subscriptions: service.Subscriptions(app.LocalSubscriptions()), Logger: log,
 		Take: service.Take(app.HandleLocal),
-	}
+	})
 	toCloud := mqtt.Options{
 		BrokerURL: cfg.Cloud.URLs[0], FallbackURLs: cfg.Cloud.URLs[1:], CAFile: cfg.Cloud.CAFile,
 		ClientID: cfg.Cloud.ClientID, Username: cfg.Cloud.Username, Password: cfg.Cloud.Password,

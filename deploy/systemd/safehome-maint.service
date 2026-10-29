@@ -14,6 +14,9 @@ WatchdogSec=30s
 User=safehome
 Group=safehome
 ExecStart=/usr/local/bin/safehome-maint run -config /etc/safehome/maint.json
+# Its password on the hub's broker (29 October 2026), root's file, handed to this unit
+# alone in $CREDENTIALS_DIRECTORY.
+LoadCredential=mqtt-password:/etc/safehome/mqtt/safehome-maint.secret
 Restart=always
 RestartSec=2
 # A clean stop closes the tunnel and removes the pid file.

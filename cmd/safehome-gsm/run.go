@@ -94,10 +94,10 @@ func runGateway(ctx context.Context, cfg gsmconfig.Result, stderr io.Writer) int
 	restart := service.NewRestart()
 	return service.Daemon{
 		Name: name, Log: log, Loops: []func(context.Context) error{g.Run}, Alive: g.Alive, Restart: restart,
-		Brokers: []service.Broker{{Publisher: pub, Options: mqtt.Options{
-			BrokerURL: cfg.BrokerURL, ClientID: cfg.ClientID, Logger: log,
+		Brokers: []service.Broker{{Publisher: pub, Options: service.Local(cfg, mqtt.Options{
+			Logger:        log,
 			Subscriptions: append(service.Subscriptions(g.Subscriptions()), mqtt.Subscription{Filter: applied, QoS: 1}),
 			OnMessage:     service.Deliver(restart.Watch(applied, changed, g.HandleMessage, log)),
-		}}},
+		})}},
 	}.Run(ctx)
 }

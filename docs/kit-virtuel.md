@@ -16,7 +16,7 @@ d'intégration entre programmes et de comportement face aux pannes.
 | Carte SD : partition de données | Second disque de la VM, monté comme à l'étape 2 de `systeme.md` |
 | Chien de garde matériel | `softdog` |
 | Modem GSM USB | `vkit-fakemodem` : le simulateur AT des tests derrière un pseudo-terminal `/dev/ttyVMODEM` (groupe `dialout`, comme un vrai modem) |
-| Clé Zigbee et Zigbee2MQTT | `vkit-fakez2m` : parle sur le broker comme Zigbee2MQTT |
+| Clé Zigbee et Zigbee2MQTT | `vkit-fakez2m` : parle sur le broker comme Zigbee2MQTT, avec son nom et son mot de passe (`LoadCredential=`, 29 octobre 2026) |
 | Cloud | Un second Mosquitto en TLS sur `127.0.0.1:8883`, avec sa propre autorité |
 | Caméra du commerce | `vkit-camera` : un go2rtc qui diffuse une mire de test en RTSP (H.264) sur `127.0.0.1:8554` |
 | Relais vidéo du cloud | `vkit-relay` (ffmpeg qui reçoit le flux RTMP) derrière `vkit-relay-tls` (rtmps sur `127.0.0.1:1936`, certificat du faux cloud, reconnu par le système comme le serait le vrai) |
