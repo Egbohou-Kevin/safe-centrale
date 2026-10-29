@@ -14,6 +14,9 @@ WatchdogSec=30s
 User=safehome
 Group=safehome
 ExecStart=/usr/local/bin/safehome-zigbee run -config /etc/safehome/zigbee.json
+# Its password on the hub's broker (29 October 2026), root's file, handed to this unit
+# alone in $CREDENTIALS_DIRECTORY.
+LoadCredential=mqtt-password:/etc/safehome/mqtt/safehome-zigbee.secret
 Restart=always
 RestartSec=2
 # A clean stop sends what is left and removes the pid file (3 s of grace in the program).

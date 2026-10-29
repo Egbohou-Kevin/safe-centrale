@@ -16,6 +16,9 @@ Group=safehome
 # The modem's serial port.
 SupplementaryGroups=dialout
 ExecStart=/usr/local/bin/safehome-gsm run -config /etc/safehome/gsm.json
+# Its password on the hub's broker (29 October 2026), root's file, handed to this unit
+# alone in $CREDENTIALS_DIRECTORY.
+LoadCredential=mqtt-password:/etc/safehome/mqtt/safehome-gsm.secret
 Restart=always
 RestartSec=2
 # A clean stop sends what is left and removes the pid file (3 s of grace in the program).

@@ -14,6 +14,9 @@ WatchdogSec=30s
 User=safehome
 Group=safehome
 ExecStart=/usr/local/bin/safehome-video run -config /etc/safehome/video.json
+# Its password on the hub's broker (29 October 2026), root's file, handed to this unit
+# alone in $CREDENTIALS_DIRECTORY.
+LoadCredential=mqtt-password:/etc/safehome/mqtt/safehome-video.secret
 Restart=always
 RestartSec=2
 # A clean stop ends every go2rtc process; whatever is left in the service's group is

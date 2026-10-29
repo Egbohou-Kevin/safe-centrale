@@ -14,6 +14,9 @@ WorkingDirectory=/opt/zigbee2mqtt
 # Its data (network key, devices) lives on the writable partition.
 Environment=ZIGBEE2MQTT_DATA=/var/lib/zigbee2mqtt
 Environment=NODE_ENV=production
+# Its name and password on the hub's broker (29 October 2026), root's file read by
+# systemd: they win over configuration.yaml, which Zigbee2MQTT rewrites itself.
+EnvironmentFile=/etc/safehome/mqtt/zigbee2mqtt.env
 ExecStart=/usr/bin/node /opt/zigbee2mqtt/index.js
 Restart=always
 RestartSec=5

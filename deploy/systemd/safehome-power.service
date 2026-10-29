@@ -16,6 +16,9 @@ Group=safehome
 # The module's GPIO lines and I2C bus (Raspberry Pi OS gives them to these groups).
 SupplementaryGroups=gpio i2c
 ExecStart=/usr/local/bin/safehome-power run -config /etc/safehome/power.json
+# Its password on the hub's broker (29 October 2026), root's file, handed to this unit
+# alone in $CREDENTIALS_DIRECTORY.
+LoadCredential=mqtt-password:/etc/safehome/mqtt/safehome-power.secret
 Restart=always
 # A module that does not answer at start stops the program: try again, without
 # filling the journal.
