@@ -911,7 +911,10 @@ et file de vérification par origine), phases 1 à 4 en exit 0, de 13:05 à 13:1
 résultats aux huit vérifications, mêmes scores (hub 2.8, Zigbee2MQTT 8.3, vidéo 3.3) ; cloud joint en wss à
 13:09:57, les 7 messages en attente partis. Le capteur essayé : la porte d'entrée (`dev_2dyw`) ouverte à 13:13:25
 et refermée à 13:13:44, vue par Zigbee2MQTT, par `safehome-zigbee` (`contact` `closed` depuis 13:13:44) et par le
-moteur (`engine.json` réécrit à 13:13:44, aucune zone ouverte). Le `clock_ok` reste non lu.
+moteur (`engine.json` réécrit à 13:13:44, aucune zone ouverte). À 13:19, la zone renommée « Porte d'entree »
+(`safehome-install zone`, puis `safehome-hub` redémarré, `check` vert). À 13:21 et 13:22, deux battements de cœur
+lus sur le broker local (`mosquitto-clients` installé sur l'overlay, donc parti au prochain démarrage) :
+`clock_ok: true`, un par minute, l'heure du Pi à la seconde de celle du Mac.
 
 Conséquence : **pas de mises à jour automatiques** (elles seraient effacées au
 redémarrage). La centrale n'est pas joignable depuis internet (derrière la box ou
