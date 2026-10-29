@@ -34,7 +34,10 @@ import (
 // $FAKE_NEW_UNIT as safehome-hub.service, writes $FAKE_CHANGED_AS in each unit of
 // $FAKE_CHANGED_UNITS, and adds $FAKE_EXTRA_UNIT, enabled; the hub restarts in a loop
 // while one unit says $FAKE_TIGHT. safehome-boot-clock.service is a oneshot, every other
-// unit a daemon. The bundle scp copies lands in $HUB/home, where its sums are computed; /boot/firmware is $HUB/boot/firmware. The
+// unit a daemon. install.sh writes $FAKE_BROKER_CONF in mosquitto.conf, which says
+// allow_anonymous true before. The journal of the services, read since the start of a
+// hold, holds $FAKE_REFUSAL while the hub's program says one of $FAKE_REFUSED, and
+// cannot be read when $FAKE_JOURNAL_FAILS. The bundle scp copies lands in $HUB/home, where its sums are computed; /boot/firmware is $HUB/boot/firmware. The
 // boot id changes once the hub is asked to reboot, unless $FAKE_NO_REBOOT; it cannot be
 // read when $FAKE_NO_BOOTID is "fails", reads empty when it is "empty"; its uptime is
 // always short.
@@ -57,6 +60,7 @@ case "$cmd" in
 	touch "$HUB/installed"
 	if [ -n "$FAKE_NEW_UNIT" ]; then printf '%s\n' "$FAKE_NEW_UNIT" > "$units/safehome-hub.service"; fi
 	for u in $FAKE_CHANGED_UNITS; do printf '%s\n' "$FAKE_CHANGED_AS" > "$units/$u"; done
+	if [ -n "$FAKE_BROKER_CONF" ]; then printf '%s\n' "$FAKE_BROKER_CONF" > "$HUB/etc/mosquitto/mosquitto.conf"; fi
 	if [ -n "$FAKE_EXTRA_UNIT" ]; then
 		echo "[Unit] new" > "$units/$FAKE_EXTRA_UNIT"
 		mkdir -p "$units/multi-user.target.wants" && ln -sf "../$FAKE_EXTRA_UNIT" "$units/multi-user.target.wants/$FAKE_EXTRA_UNIT"
@@ -83,6 +87,12 @@ case "$cmd" in
 "findmnt -no FSTYPE /var/lib/systemd/timesync") echo "${FAKE_TIMESYNC_FS:-ext4}" ;;
 *"is-active systemd-timesyncd"*) echo "${FAKE_TIMESYNCD:-active}" ;;
 *engine.json*) echo "${FAKE_MODE:-armed_home}" ;;
+*journalctl*"--since=@"*)
+	journal='Oct 29 15:00:00 hub safehome-agent[42]: level=INFO msg="connected to the cloud"
+Oct 29 15:00:01 hub safehome-zigbee[43]: level=WARN msg="mqtt connection attempt failed" err="dial tcp 127.0.0.1:1883: connect: connection refused"'
+	if among "$FAKE_REFUSED"; then journal="$journal
+$FAKE_REFUSAL"; fi
+	JOURNAL="$journal" bash -c "$cmd" ;;
 *journalctl*)
 	if [ -n "$FAKE_NO_CLOUD" ]; then exit 1; fi
 	echo "connected to the cloud" ;;
@@ -133,6 +143,7 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 	)
 	for _, c := range []struct {
 		name, installed, crashing, flapping, flapAge, stopped, mute, install, mvFails, restart, markFails, markMode string
+		refused, refusal, journalFails                                                                              string
 		noPrev, marked                                                                                              bool
 		state                                                                                                       string
 		want                                                                                                        []string
@@ -190,6 +201,17 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 			want: []string{"install.sh failed before replacing the programs", "still those of an earlier run, not confirmed"}},
 		{name: "the new programs hold", installed: "0.3.0", marked: true, state: kept,
 			want: []string{"phase 2 done"}},
+		// Refused by the broker, a program stays active, deaf to every sensor (29 October 2026).
+		{name: "the broker refuses a new program", installed: "0.3.0", refused: "0.3.0", refusal: hubRefused, marked: true, state: back,
+			want: []string{"!! the broker refuses a program:", "safehome-hub[44]", "the new programs do not hold; the previous programs are back and their services hold"}},
+		{name: "the broker refuses Zigbee2MQTT", installed: "0.3.0", refused: "0.3.0", refusal: z2mRefused, marked: true, state: back,
+			want: []string{"!! the broker refuses a program:", "zigbee2mqtt[45]", "the new programs do not hold; the previous programs are back and their services hold"}},
+		{name: "the broker refuses a bad user name or password", installed: "0.3.0", refused: "0.3.0", refusal: z2mBadPassword, marked: true, state: back,
+			want: []string{"!! the broker refuses a program:", "the new programs do not hold; the previous programs are back and their services hold"}},
+		{name: "the broker refuses the previous programs too", installed: "0.3.0", refused: "0.3.0 0.2.1", refusal: hubRefused, marked: true, state: back,
+			want: []string{"the new programs do not hold; the previous programs are back but the services still do not hold"}},
+		{name: "the services' journal cannot be read", installed: "0.3.0", journalFails: "yes", marked: true, state: back,
+			want: []string{"!! the services' journal cannot be read", "the new programs do not hold; the previous programs are back but the services still do not hold"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -207,7 +229,8 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 			cmd, log := updateHub(t, dir, files, "-v", "0.3.0", "2", bundle)
 			cmd.Env = append(cmd.Env, "FAKE_CRASHING="+c.crashing, "FAKE_FLAPPING="+c.flapping, "FAKE_FLAP_AGE="+c.flapAge, "FAKE_STOPPED="+c.stopped,
 				"FAKE_MUTE="+c.mute, "FAKE_INSTALL="+c.install, "FAKE_RESTART="+c.restart, "FAKE_MV_FAILS="+c.mvFails,
-				"FAKE_MARK_FAILS="+c.markFails, "FAKE_MARK="+c.markMode)
+				"FAKE_MARK_FAILS="+c.markFails, "FAKE_MARK="+c.markMode,
+				"FAKE_REFUSED="+c.refused, "FAKE_REFUSAL="+c.refusal, "FAKE_JOURNAL_FAILS="+c.journalFails)
 			b, err := cmd.CombinedOutput()
 			out := string(b)
 			holds := c.want[0] == "phase 2 done"
@@ -276,12 +299,14 @@ func TestUpdateHubPhaseTwoPutsThePreviousProgramsBackWhenTheNewOnesDoNotHold(t *
 // install.sh by this run (never an older archive) replace the new ones, a unit the archive
 // did not hold is removed with its link and stopped, systemd reloads, then the services
 // restart. A unit alone changed, the programs the same, is rolled back as well, even when
-// install.sh fails on it. An archive that cannot be read then is said, naming it.
+// install.sh fails on it. An archive that cannot be read then is said, naming it. The
+// mosquitto.conf saved with the units comes back as well (checkBrokerBack).
 func TestUpdateHubPhaseTwoPutsTheSavedUnitsBack(t *testing.T) {
 	const tight = "[Unit] ProtectSystem=strict"
+	const closedBroker = "allow_anonymous false"
 	for _, c := range []struct {
 		name, newUnit, extra, tar, install, hubUnit string
-		changed, changedAs                          string
+		changed, changedAs, broker                  string
 		noPrev, extraLeft, hubStays                 bool
 		want                                        []string
 	}{
@@ -309,6 +334,18 @@ func TestUpdateHubPhaseTwoPutsTheSavedUnitsBack(t *testing.T) {
 			want: []string{"   unit zigbee2mqtt.service put back as it was",
 				"the new programs do not hold; the previous units are back and their services hold"}},
 		{name: "a new unit that holds stays", newUnit: "[Unit] new", extra: "safehome-extra.service", hubUnit: "[Unit] new", extraLeft: true,
+			want: []string{"phase 2 done"}},
+		// Programs from before 29 October 2026 have no password: the broker that refuses
+		// anonymous clients goes back with them, and restarts before them.
+		{name: "a new broker configuration goes back with the programs", newUnit: tight, hubUnit: "[Unit]", broker: closedBroker,
+			want: []string{"   unit safehome-hub.service put back as it was", "   mosquitto.conf put back as it was",
+				"   mosquitto restarted on its previous configuration",
+				"the new programs do not hold; the previous programs and units are back and their services hold"}},
+		{name: "a new broker configuration alone goes back when install.sh fails", noPrev: true, install: "before", hubUnit: "[Unit]", hubStays: true,
+			broker: closedBroker,
+			want: []string{"   mosquitto.conf put back as it was", "   mosquitto restarted on its previous configuration",
+				"install.sh failed; the previous units are back and their services hold"}},
+		{name: "a new broker configuration that holds stays", newUnit: "[Unit] new", hubUnit: "[Unit] new", broker: closedBroker,
 			want: []string{"phase 2 done"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -338,7 +375,8 @@ func TestUpdateHubPhaseTwoPutsTheSavedUnitsBack(t *testing.T) {
 			}
 			writeFile(t, filepath.Join(units, "safehome-boot-clock.service"), "[Unit]")
 			cmd.Env = append(cmd.Env, "FAKE_NEW_UNIT="+c.newUnit, "FAKE_TIGHT="+tight, "FAKE_EXTRA_UNIT="+c.extra,
-				"FAKE_TAR="+c.tar, "FAKE_INSTALL="+c.install, "FAKE_CHANGED_UNITS="+c.changed, "FAKE_CHANGED_AS="+c.changedAs)
+				"FAKE_TAR="+c.tar, "FAKE_INSTALL="+c.install, "FAKE_CHANGED_UNITS="+c.changed, "FAKE_CHANGED_AS="+c.changedAs,
+				"FAKE_BROKER_CONF="+c.broker)
 			b, err := cmd.CombinedOutput()
 			out := string(b)
 			holds := c.want[0] == "phase 2 done"
@@ -396,6 +434,9 @@ func TestUpdateHubPhaseTwoPutsTheSavedUnitsBack(t *testing.T) {
 					restart = i
 				}
 			}
+			if mosquitto := checkBrokerBack(t, dir, cmds, c.broker, holds, reload, restarted); restart < 0 {
+				restart = mosquitto
+			}
 			if holds {
 				if restore >= 0 || reload >= 0 {
 					t.Errorf("units put back at %d, daemon-reload at %d: the healthy path puts nothing back", restore, reload)
@@ -444,6 +485,9 @@ exec /usr/bin/tar "$@"`)
 	for _, unit := range []string{"safehome-hub.service", "safehome-agent.service", "zigbee2mqtt.service"} {
 		writeFile(t, filepath.Join(hub, "etc", "systemd", "system", unit), "[Unit]")
 	}
+	writeFile(t, filepath.Join(hub, "etc", "mosquitto", "mosquitto.conf"), "allow_anonymous true")
+	writeScript(t, filepath.Join(stubs, "journalctl"), `[ -z "$FAKE_JOURNAL_FAILS" ] || { echo "Failed to open the journal" >&2; exit 1; }
+printf '%s\n' "$JOURNAL"`)
 	// $FAKE_CUT: the power is cut while tee writes, its file left half written;
 	// $FAKE_GARBLE: tee says it wrote, but its file is not what it was given.
 	writeScript(t, filepath.Join(stubs, "tee"), `if [ -n "$FAKE_CUT" ]; then for a; do :; done; head -c 12 > "$a"; exit 1; fi

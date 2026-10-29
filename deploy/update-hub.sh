@@ -3,9 +3,10 @@
 # (docs/systeme.md, "Maintenance"), in four phases run one after the other:
 #
 #   deploy/update-hub.sh 1                     save cmdline.txt and the alarm's mode, leave read-only, reboot
-#   deploy/update-hub.sh -v VERSION 2 BUNDLE   write access, DNS and clock, units saved, bundle copied
-#                                              and its sums compared, install, check, clean up;
-#                                              the previous programs and units back if the new ones do not hold
+#   deploy/update-hub.sh -v VERSION 2 BUNDLE   write access, DNS and clock, units and mosquitto.conf
+#                                              saved, bundle copied and its sums compared, install,
+#                                              check, clean up; the previous programs, units and
+#                                              mosquitto.conf back if the new ones do not hold
 #   deploy/update-hub.sh 3                     back to read-only (cmdline.txt as saved), reboot
 #   deploy/update-hub.sh 4                     overlay, timesyncd's clock on /data, services, same alarm mode, cloud reached
 #
@@ -80,9 +81,16 @@ reboot_hub() {
 # /proc/uptime) must be SECONDS old. After install.sh or roll_back, each restart blocks
 # until the unit is ready (Type=notify), so a unit that held is two minutes old: 100 s
 # then. After a boot the start is not timed: 60 s, the first minute left to it. A unit
-# that is not running at all is not listed: the hub must be.
+# that is not running at all is not listed: the hub must be. A program the broker
+# refuses (its password wrong, missing or stale, 29 October 2026) stays active and
+# retries for ever, deaf to every sensor: a refusal in the journal of the programs or of
+# Zigbee2MQTT during the two minutes counts as a unit that does not hold.
 services_hold() {
 	held=$1
+	if ! t0=$(pi 'date +%s'); then
+		echo "!! the hub's clock cannot be read" >&2
+		return 1
+	fi
 	echo "== services for two minutes"
 	sleep 120
 	# Called after ||, where set -e does not stop: each failure is said here.
@@ -124,9 +132,25 @@ services_hold() {
 		echo "!! not active for the last $held s: $recent" >&2
 		return 1
 	fi
+	# Read whole, then searched: a journal that cannot be read never passes for one
+	# without refusals.
+	if ! refused=$(pi "j=\$(sudo -n journalctl -u 'safehome-*' -u zigbee2mqtt.service --since=@$t0 --no-pager) || exit 1; printf '%s\n' \"\$j\" | grep -iE '$refusal' | tail -n 3; exit 0"); then
+		echo "!! the services' journal cannot be read" >&2
+		return 1
+	fi
+	if [ -n "$refused" ]; then
+		echo "!! the broker refuses a program:" >&2
+		printf '%s\n' "$refused" | sed 's/^/     /' >&2
+		return 1
+	fi
 	echo "   failed units:"
 	pi 'systemctl --failed --no-legend --plain' | sed 's/^/     /'
 }
+
+# What a client the hub's broker refuses writes in the journal: our programs
+# (internal/adapter/mqtt) and Zigbee2MQTT ("Connection refused: Not authorized", or a
+# bad user name or password).
+refusal='mqtt broker refused the connection|not authori[sz]ed|bad user ?name or password'
 
 wait_services() { services_hold 60 || die "the services do not hold"; }
 
@@ -138,29 +162,36 @@ mark() { pi "if [ ! -e $unconfirmed ]; then echo none; elif t=\$(sudo -n cat $un
 
 # restore_units: the units go back as this run saved them in $units_tgz before
 # install.sh (never an older archive): each one that differs is put back, each one the
-# archive did not hold is removed, with its links in *.wants. Sets changed and removed
-# (unit names); units_note says a restoration that failed, naming the archive, and the
-# caller goes on as for a restart that failed. Nothing is reloaded or restarted here.
+# archive did not hold is removed, with its links in *.wants. So does mosquitto.conf,
+# when it differs: programs from before 29 October 2026 have no password, and the
+# broker of the new one would refuse them all, Zigbee2MQTT too. Sets changed and
+# removed (unit names) and broker (mosquitto.conf, when put back); units_note says a
+# restoration that failed, naming the archive, and the caller goes on as for a restart
+# that failed. Nothing is reloaded or restarted here.
 restore_units() {
-	changed="" removed="" units_note=""
-	echo "== putting the units back from $units_tgz"
-	sys=etc/systemd/system
+	changed="" removed="" broker="" units_note=""
+	echo "== putting the units and mosquitto.conf back from $units_tgz"
+	sys=etc/systemd/system conf=etc/mosquitto/mosquitto.conf
 	# Called where set -e still stops: a failure is said, what was done still read.
-	if ! did=$(pi "sudo -n sh -c 'cd / && t=\$(mktemp -d /data/maintenance/restore.XXXXXX) || exit 1; trap \"rm -rf \$t\" EXIT; tar -xzf $units_tgz -C \$t || exit 1; rc=0; for f in $sys/safehome* $sys/zigbee2mqtt*; do { [ -e \"\$f\" ] || [ -L \"\$f\" ]; } || continue; { [ -e \"\$t/\$f\" ] || [ -L \"\$t/\$f\" ]; } && continue; n=\${f##*/}; if rm -rf \"\$f\" $sys/*.wants/\"\$n\"; then echo \"removed \$n\"; else rc=1; fi; done; for f in \$t/$sys/*; do { [ -e \"\$f\" ] || [ -L \"\$f\" ]; } || continue; n=\${f##*/}; diff -r \"\$f\" $sys/\"\$n\" >/dev/null 2>&1 && continue; if rm -rf $sys/\"\$n\" && cp -Rp \"\$f\" $sys/\"\$n\"; then echo \"restored \$n\"; else rc=1; fi; done; exit \$rc'"); then
+	if ! did=$(pi "sudo -n sh -c 'cd / && t=\$(mktemp -d /data/maintenance/restore.XXXXXX) || exit 1; trap \"rm -rf \$t\" EXIT; tar -xzf $units_tgz -C \$t || exit 1; rc=0; for f in $sys/safehome* $sys/zigbee2mqtt*; do { [ -e \"\$f\" ] || [ -L \"\$f\" ]; } || continue; { [ -e \"\$t/\$f\" ] || [ -L \"\$t/\$f\" ]; } && continue; n=\${f##*/}; if rm -rf \"\$f\" $sys/*.wants/\"\$n\"; then echo \"removed \$n\"; else rc=1; fi; done; for f in \$t/$sys/*; do { [ -e \"\$f\" ] || [ -L \"\$f\" ]; } || continue; n=\${f##*/}; diff -r \"\$f\" $sys/\"\$n\" >/dev/null 2>&1 && continue; if rm -rf $sys/\"\$n\" && cp -Rp \"\$f\" $sys/\"\$n\"; then echo \"restored \$n\"; else rc=1; fi; done; if [ -e \$t/$conf ] && ! diff \$t/$conf $conf >/dev/null 2>&1; then if cp -p \$t/$conf $conf; then echo \"broker mosquitto.conf\"; else rc=1; fi; fi; exit \$rc'"); then
 		units_note="the units could not all be put back from $units_tgz: compare them with it by hand"
 		echo "!! $units_note" >&2
 	fi
 	changed=$(printf '%s\n' "${did:-}" | awk '$1 == "restored" {print $2}')
 	removed=$(printf '%s\n' "${did:-}" | awk '$1 == "removed" {print $2}')
+	broker=$(printf '%s\n' "${did:-}" | awk '$1 == "broker" {print $2}')
 	for n in $changed; do echo "   unit $n put back as it was"; done
 	for n in $removed; do echo "   unit $n removed: it was not there before"; done
+	for n in $broker; do echo "   $n put back as it was"; done
 }
 
 # roll_back REASON [units]: the programs install.sh replaced go back (it kept each one as
 # X.prev, docs/systeme.md, "Maintenance"; an X.prev.new is a copy cut short, never put
 # back), then the units as saved before install.sh (restore_units); with "units", only
 # the units, and nothing to put back is no stop. systemd reloads, the units removed stop,
-# and the services of those enabled among the programs and units back restart on them,
+# mosquitto restarts first when its configuration came back (the programs then find
+# the broker they knew), and the services of those enabled among the programs and units
+# back restart on them,
 # but a unit that is not a daemon (a oneshot, safehome-boot-clock) never restarts.
 # Nothing is disarmed; the alarm's state (/var/lib/safehome) is not touched. Called
 # last after ||, where set -e still stops: each step that may fail is said here.
@@ -173,7 +204,7 @@ roll_back() {
 		fi
 	fi
 	restore_units
-	if [ -z "$back$changed$removed" ]; then
+	if [ -z "$back$changed$removed$broker" ]; then
 		if [ "${2:-}" = units ]; then
 			[ -z "$units_note" ] || die "$1, and $units_note"
 			return 0
@@ -183,13 +214,20 @@ roll_back() {
 	what="the previous programs"
 	if [ -z "$back" ]; then
 		what="the previous units"
-	elif [ -n "$changed$removed" ]; then
+	elif [ -n "$changed$removed$broker" ]; then
 		what="the previous programs and units"
 	fi
 	pi 'sudo -n systemctl daemon-reload' || echo "!! systemctl daemon-reload failed" >&2
 	for n in $removed; do
 		pi "sudo -n systemctl stop $n" || echo "!! $n could not be stopped" >&2
 	done
+	if [ -n "$broker" ]; then
+		if pi 'sudo -n systemctl restart mosquitto.service'; then
+			echo "   mosquitto restarted on its previous configuration"
+		else
+			echo "!! mosquitto could not be restarted on its previous configuration" >&2
+		fi
+	fi
 	# program:NAME or unit:NAME, each name once, a program first (a for loop: ssh
 	# would read a while loop's input).
 	again=$({
@@ -270,14 +308,16 @@ case "$phase" in
 	pi 'sudo -n mount -o remount,rw /'
 	dns_and_clock
 	stamp=$(date +%Y%m%d-%H%M)
-	# The units are the only way back for them (no .prev): saved and read back, or no install.
+	# The units and mosquitto.conf are the only way back for them (no .prev): saved and
+	# read back, or no install.
 	units_tgz=/data/maintenance/units-$stamp.tgz
-	pi "sudo -n sh -c 'mkdir -p /data/maintenance && cd / && tar -czf $units_tgz etc/systemd/system/safehome* etc/systemd/system/zigbee2mqtt*'" ||
+	pi "sudo -n sh -c 'mkdir -p /data/maintenance && cd / && tar -czf $units_tgz etc/systemd/system/safehome* etc/systemd/system/zigbee2mqtt* etc/mosquitto/mosquitto.conf'" ||
 		die "the units could not be saved in $units_tgz: nothing installed"
 	saved=$(pi "sudo -n tar -tzf $units_tgz") || die "$units_tgz cannot be read back: nothing installed"
-	printf '%s\n' "$saved" | grep -qx etc/systemd/system/safehome-hub.service ||
-		die "$units_tgz does not hold safehome-hub.service: nothing installed"
-	echo "== units kept in $units_tgz, copying the bundle"
+	for f in etc/systemd/system/safehome-hub.service etc/mosquitto/mosquitto.conf; do
+		printf '%s\n' "$saved" | grep -qx "$f" || die "$units_tgz does not hold ${f##*/}: nothing installed"
+	done
+	echo "== units and mosquitto.conf kept in $units_tgz, copying the bundle"
 	pi 'rm -rf ~/safehome'
 	scp -q -r -i "$key" "$bundle" "$hub:safehome"
 	there=$(pi "cd ~/safehome && find . -type f -exec sha256sum {} + | LC_ALL=C sort") ||
