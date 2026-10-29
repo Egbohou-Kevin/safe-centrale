@@ -156,8 +156,11 @@ l'exemple) se remonte ainsi dans l'unité de l'agent : sinon l'agent refuse de d
 
 `/var/lib/safehome` ne change pas : l'état est à plat, et `code-key` et `access.json` restent
 lisibles des unités autres que la vidéo jusqu'à la deuxième phase (un dossier d'état par
-programme, `security-install.md`). Pendant `install.sh`, la copie de secours `/etc/safehome.prev`
-existe quelques secondes et n'est cachée à personne ; après une configuration refusée,
+programme, `security-install.md`). Pendant `install.sh`, la copie de secours de `/etc/safehome`
+(tous les secrets) est `/etc/safehome.prev/safehome`, dans un dossier à root seul (0700) dès sa
+création : aucune unité ne la cache, mais aucun service ne la lit, même si `install.sh` est coupé
+avant de l'effacer (témoin : `TestTheBackupOfTheConfigurationIsRootsAlone`, 29 octobre 2026) ;
+après une configuration refusée,
 `install.sh` remplace tout `/etc/safehome` par cette copie sans rien redémarrer : le noyau défait
 alors dans chaque unité les montages posés sur l'ancien dossier (liste noire comme liste blanche),
 et chaque service en marche voit tout le dossier jusqu'à son prochain démarrage (ce que fait le
@@ -1083,8 +1086,10 @@ ne tient pas, donc remet les unités d'avant :
    suffit pas (il tourne hors de l'unité et voit tout), mais
    `sudo nsenter -t $(systemctl show -p MainPID --value safehome-console) -m ls -l /etc/safehome`
    montre les fichiers des autres en mode 000 (liste noire), et
-   `sudo nsenter -t $(systemctl show -p MainPID --value safehome-console) -m -S $(id -u safehome) cat /etc/safehome/cloud.secret`
-   échoue (`Permission denied`) ; pour l'agent, `ls /etc/safehome` dans son espace ne montre que
+   `sudo nsenter -t $(systemctl show -p MainPID --value safehome-console) -m -S $(id -u safehome) -G $(id -g safehome) cat /etc/safehome/cloud.secret`
+   échoue (`Permission denied`), alors que la même commande sur `/etc/safehome/hub.json` le lit
+   (témoin positif : sans `-G`, le groupe resterait 0 et les deux échoueraient, fichiers
+   root:safehome 0640, ce qui ne prouverait rien) ; pour l'agent, `ls /etc/safehome` dans son espace ne montre que
    `agent.json` et `cloud.secret` (liste blanche) ; pour chacun,
    `ls /var/lib/zigbee2mqtt` dans son espace échoue ;
 3. la centrale relit `hub.json` en marche : un code changé depuis la console arrive à la centrale
