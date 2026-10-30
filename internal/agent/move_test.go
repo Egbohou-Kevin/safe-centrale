@@ -227,6 +227,42 @@ func TestAMoveSurvivesARestart(t *testing.T) {
 	}
 }
 
+// The move that ended on B is remembered across a restart: its configuration, if
+// still pending on disk, is B's, accepted (the application commits it again).
+func TestTheMoveThatArrivedIsRemembered(t *testing.T) {
+	h, ref, _ := movingHarness(t)
+	if h.r.Arrived() != "" {
+		t.Fatal("arrived before the move ended")
+	}
+	h.handle(Link{Now: h.now, Up: true, Transport: "mqtts", Next: true})
+	h.restart()
+	if h.r.Arrived() != ref {
+		t.Fatalf("forgotten: %q", h.r.Arrived())
+	}
+}
+
+// Stopped after the commit, before its state was saved: the configuration on disk
+// says the move ended on B, and the core ends it there without committing again.
+func TestAMoveCommittedBeforeAStopLandsOnB(t *testing.T) {
+	h, ref, _ := movingHarness(t)
+	id, _ := h.local(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
+	h.restart()
+	if acts := h.r.Landed("another-move"); acts != nil || !h.r.Moving() {
+		t.Fatalf("landed another move: %+v", acts)
+	}
+	acts := h.r.Landed(ref)
+	if len(of[MoveCommit](acts)) != 0 || movedOf(t, acts) != (contract.MovedData{Ref: ref, To: contract.MovedToB}) {
+		t.Fatalf("%+v", acts)
+	}
+	if h.r.Moving() || h.r.Arrived() != ref || !slices.Equal(h.r.cfg.CloudURLs, cellB) {
+		t.Fatal("still moving after landing")
+	}
+	h.linkUp()
+	if got := h.send(); len(got) == 0 || got[0].ID != id {
+		t.Fatalf("%+v", got)
+	}
+}
+
 // A stale, malformed or second order is refused and logged: nothing moves.
 func TestABadOrSecondMoveIsRefused(t *testing.T) {
 	for name, edit := range map[string]func(*contract.MoveData){

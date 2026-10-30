@@ -46,14 +46,16 @@ func (c cloudPublisher) Publish(ctx context.Context, topic string, payload []byt
 // mover fits the agent's folder (agentconfig) and a restart to the application's port:
 // the agent connects to the cloud of a move by starting again on it.
 type mover struct {
-	dir     string
-	pending bool
-	restart service.Restart
+	dir           string
+	pending       bool
+	next, current string // the agent.move that wrote each (agentconfig.Result)
+	restart       service.Restart
 }
 
-func (m mover) Pending() bool { return m.pending }
-func (m mover) Write(urls []string, secret string) error {
-	return agentconfig.WriteNext(m.dir, urls, secret)
+func (m mover) Pending() (string, bool) { return m.next, m.pending }
+func (m mover) Current() string         { return m.current }
+func (m mover) Write(ref string, urls []string, secret string) error {
+	return agentconfig.WriteNext(m.dir, ref, urls, secret)
 }
 func (m mover) Commit() error  { return agentconfig.Commit(m.dir) }
 func (m mover) Discard() error { return agentconfig.Discard(m.dir) }

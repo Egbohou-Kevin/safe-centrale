@@ -25,7 +25,7 @@ func TestTheMoverWritesThenRestarts(t *testing.T) {
 	dir := t.TempDir()
 	restart := service.NewRestart()
 	m := mover{dir: dir, restart: restart}
-	if err := m.Write([]string{"mqtts://b.example:8883"}, "s3cret-for-cell-b-0001"); err != nil {
+	if err := m.Write("move-b", []string{"mqtts://b.example:8883"}, "s3cret-for-cell-b-0001"); err != nil {
 		t.Fatal(err)
 	}
 	m.Reconnect()

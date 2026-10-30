@@ -210,6 +210,14 @@ redémarrage au milieu reprend au même point, et le délai reste compté depuis
 Après un arrêt entre l'écriture de la configuration neuve et la sauvegarde de l'état,
 une configuration neuve sans déménagement connu est effacée (retour à A) ; un
 déménagement connu sans sa configuration revient à A tout de suite (`not_saved`).
+Chaque fichier de cloud porte l'`id` de l'ordre qui l'a écrit (`ref`), et l'état
+sauvegardé garde le dernier déménagement arrivé sur B : une fois B acceptée, l'agent
+ne revient jamais à A, dont le secret a pu disparaître. Un `cloud.next.json` que B a
+accepté mais qui n'a pas pu devenir `cloud.json` (trois essais, carte pleine) reste
+en place : l'agent travaille sur B et le renomme au démarrage suivant. Un arrêt entre
+ce renommage et la sauvegarde de l'état finit le déménagement sur B (`agent.moved`
+`b`), sans retour. Ce que l'arrêt a laissé se lit avant que la boucle de l'agent ne
+démarre.
 Un ordre périmé (`until` passé), mal formé, ou un second ordre pendant un
 déménagement est refusé et journalisé : rien ne bouge. Le secret n'est jamais
 journalisé. Pourquoi l'ordre porte un secret, et ce qui le borne : `contract.md`,

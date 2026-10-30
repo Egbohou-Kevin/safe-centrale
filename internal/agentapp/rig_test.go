@@ -148,6 +148,12 @@ func newRigWith(t *testing.T, d *disk, cfg Config) *rig {
 // newRigMoving is newRigWith with a Mover.
 func newRigMoving(t *testing.T, d *disk, cfg Config, mover Mover) *rig {
 	t.Helper()
+	return newRigStarting(t, d, cfg, mover, nil)
+}
+
+// newRigStarting is newRigMoving that calls atStart, if set, as soon as Run started.
+func newRigStarting(t *testing.T, d *disk, cfg Config, mover Mover, atStart func(*App)) *rig {
+	t.Helper()
 	if d == nil {
 		d = newDisk()
 	}
@@ -166,6 +172,9 @@ func newRigMoving(t *testing.T, d *disk, cfg Config, mover Mover) *rig {
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel, r.done = cancel, make(chan struct{})
 	go func() { app.Run(ctx); close(r.done) }()
+	if atStart != nil {
+		atStart(app)
+	}
 	r.stop = func() { cancel(); <-r.done }
 	t.Cleanup(r.stop)
 	drivertest.WaitFor(t, "the first status", func() bool { return len(r.local.OfType(contract.TypeAgentStatus)) > 0 })

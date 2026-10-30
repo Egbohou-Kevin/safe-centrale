@@ -50,6 +50,10 @@ type Result struct {
 	// Next is the cloud of a move under way (NextName in KeyDir), nil if none: the
 	// agent tries it until the move ends (see move.go).
 	Next *Cloud
+	// NextRef is the agent.move that wrote Next, MovedRef the one that wrote the
+	// current cloud ("" if the file's): after a stop, they tell the agent where its
+	// move stands.
+	NextRef, MovedRef string
 }
 
 // KeyFolder is the agent's own folder in the state directory, made 0700 and hidden from the
@@ -113,14 +117,14 @@ func build(f file, dir string) (Result, error) {
 		return Result{}, err
 	}
 	// A cloud the agent moved to overrides the file's (move.go).
-	moved, err := readMoved(r.KeyDir, MovedName, r.Cloud)
+	moved, movedRef, err := readMoved(r.KeyDir, MovedName, r.Cloud)
 	if err != nil {
 		return Result{}, err
 	}
 	if moved != nil {
-		r.Cloud = *moved
+		r.Cloud, r.MovedRef = *moved, movedRef
 	}
-	if r.Next, err = readMoved(r.KeyDir, NextName, r.Cloud); err != nil {
+	if r.Next, r.NextRef, err = readMoved(r.KeyDir, NextName, r.Cloud); err != nil {
 		return Result{}, err
 	}
 	if r.App, err = appConfig(f, r.Cloud.URLs); err != nil {

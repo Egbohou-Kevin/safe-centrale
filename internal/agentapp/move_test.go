@@ -19,25 +19,30 @@ var cellB = []string{"mqtts://b.safehome.example:8883"}
 
 // fakeMover records what the agent asked of the disk and the connection.
 type fakeMover struct {
-	mu       sync.Mutex
-	pending  bool
-	writeErr error
-	calls    []string
-	urls     []string
-	secret   string
+	mu        sync.Mutex
+	pending   bool
+	next      string // the move that wrote the pending configuration
+	current   string // the move that wrote the current one
+	writeErr  error
+	commitErr error
+	calls     []string
+	ref       string
+	urls      []string
+	secret    string
 }
 
-func (m *fakeMover) Pending() bool { return m.pending }
+func (m *fakeMover) Pending() (string, bool) { return m.next, m.pending }
+func (m *fakeMover) Current() string         { return m.current }
 
-func (m *fakeMover) Write(urls []string, secret string) error {
+func (m *fakeMover) Write(ref string, urls []string, secret string) error {
 	m.note("write")
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.urls, m.secret = urls, secret
+	m.ref, m.urls, m.secret = ref, urls, secret
 	return m.writeErr
 }
 
-func (m *fakeMover) Commit() error  { m.note("commit"); return nil }
+func (m *fakeMover) Commit() error  { m.note("commit"); return m.commitErr }
 func (m *fakeMover) Discard() error { m.note("discard"); return nil }
 func (m *fakeMover) Reconnect()     { m.note("reconnect") }
 
@@ -82,7 +87,7 @@ func TestTheAgentMovesThroughARestart(t *testing.T) {
 	}
 	r.stop()
 
-	m2 := &fakeMover{pending: true}
+	m2 := &fakeMover{pending: true, next: m.ref}
 	r2 := newRigMoving(t, d, DefaultConfig(site), m2)
 	r2.app.LinkChanged(true, "mqtts")
 	if got := moved(t, r2); got.To != contract.MovedToB {
@@ -141,6 +146,89 @@ func TestAMoveWithoutItsConfigurationGoesBackAtOnce(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 	if !slices.Equal(m.did(), []string{"discard"}) {
+		t.Fatalf("%v", m.did())
+	}
+}
+
+// orderThenStop gives the agent the order to move, and stops it once the order was
+// written: the move is in its saved state. It returns the move's ref.
+func orderThenStop(t *testing.T, d *disk) string {
+	t.Helper()
+	m := &fakeMover{}
+	r := newRigMoving(t, d, DefaultConfig(site), m)
+	r.app.LinkChanged(true, "mqtts")
+	r.moveOrder()
+	drivertest.WaitFor(t, "the restart", func() bool { return slices.Contains(m.did(), "reconnect") })
+	r.settle()
+	r.stop()
+	return m.ref
+}
+
+// B accepted the agent but its configuration could not become the current one: tried
+// a few times, then again at each start, never undone: back on A, whose secret may be
+// gone, the site would have no uplink. Meanwhile the agent works on B.
+func TestACommitThatFailsIsTriedAgainNeverUndone(t *testing.T) {
+	d := newDisk()
+	ref := orderThenStop(t, d)
+	full := errors.New("card full")
+	m := &fakeMover{pending: true, next: ref, commitErr: full}
+	r := newRigMoving(t, d, DefaultConfig(site), m)
+	r.app.LinkChanged(true, "mqtts")
+	if got := moved(t, r); got.To != contract.MovedToB {
+		t.Fatalf("%+v", got)
+	}
+	drivertest.WaitFor(t, "the tries", func() bool { return len(m.did()) == commitTries })
+	r.stop()
+
+	m = &fakeMover{pending: true, next: ref, commitErr: full}
+	r = newRigMoving(t, d, DefaultConfig(site), m)
+	r.app.LinkChanged(true, "mqtts")
+	alarm := r.fromHub(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
+	drivertest.WaitFor(t, "the alarm on B", func() bool { return len(r.cloud.OfType(contract.TypeAlarmTriggered)) == 1 })
+	if !same(r.cloud.OfType(contract.TypeAlarmTriggered)[0], alarm) || !slices.Equal(m.did(), []string{"commit", "commit", "commit"}) {
+		t.Fatalf("%v", m.did())
+	}
+	r.stop()
+
+	m = &fakeMover{pending: true, next: ref}
+	r = newRigMoving(t, d, DefaultConfig(site), m)
+	drivertest.WaitFor(t, "the start on B's configuration", func() bool { return slices.Equal(m.did(), []string{"commit", "reconnect"}) })
+	r.stop()
+	if !slices.Equal(m.did(), []string{"commit", "reconnect"}) {
+		t.Fatalf("%v", m.did())
+	}
+}
+
+// Stopped after the commit, before the core's state was saved: B's configuration is
+// the current one, so the move ended there; it does not go back, and says so.
+func TestAMoveCommittedBeforeTheStateWasSavedEndsOnB(t *testing.T) {
+	d := newDisk()
+	ref := orderThenStop(t, d)
+	m := &fakeMover{current: ref}
+	r := newRigMoving(t, d, DefaultConfig(site), m)
+	r.app.LinkChanged(true, "mqtts")
+	if got := moved(t, r); got != (contract.MovedData{Ref: ref, To: contract.MovedToB}) {
+		t.Fatalf("%+v", got)
+	}
+	alarm := r.fromHub(topic("alarm", "event"), contract.TypeAlarmTriggered, triggered)
+	drivertest.WaitFor(t, "the alarm on B", func() bool { return len(r.cloud.OfType(contract.TypeAlarmTriggered)) == 1 })
+	if !same(r.cloud.OfType(contract.TypeAlarmTriggered)[0], alarm) || len(m.did()) != 0 {
+		t.Fatalf("%v", m.did())
+	}
+}
+
+// The move ends on B as the agent starts: what the start settles is read before the
+// loop runs, never against it (go test -race), and the move is not undone.
+func TestAMoveEndingAsTheAgentStartsIsNotUndone(t *testing.T) {
+	d := newDisk()
+	ref := orderThenStop(t, d)
+	m := &fakeMover{pending: true, next: ref}
+	r := newRigStarting(t, d, DefaultConfig(site), m, func(a *App) { a.LinkChanged(true, "mqtts") })
+	if got := moved(t, r); got.To != contract.MovedToB {
+		t.Fatalf("%+v", got)
+	}
+	r.settle()
+	if !slices.Equal(m.did(), []string{"commit"}) {
 		t.Fatalf("%v", m.did())
 	}
 }

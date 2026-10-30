@@ -114,6 +114,7 @@ type App struct {
 	// nextCloud: the connection is with the new configuration of a move under way (Link.Next),
 	// until the move ends there.
 	nextCloud atomic.Bool
+	left      moveLeft // what a stop left of a move, settled as Run starts
 
 	uploads sync.WaitGroup // the photos being sent
 
@@ -167,7 +168,7 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if err := a.restoreQueue(); err != nil {
 		return nil, err
 	}
-	a.nextCloud.Store(deps.Mover != nil && deps.Mover.Pending())
+	a.readMove()
 	return a, nil
 }
 
@@ -212,6 +213,9 @@ func (a *App) Run(ctx context.Context) error {
 	// Everything runs on life, which ends with ctx: a loop only stops once life is
 	// over, so a message handed to it meanwhile is known to be given up, and an upload
 	// under way gives up too (it is tried again at the next start).
+	// Before the loop runs: settleMove reads the core, which belongs to the loop
+	// from then on.
+	a.settleMove()
 	var wg sync.WaitGroup
 	for _, run := range []func(context.Context){
 		func(c context.Context) { a.loop.Run(c) },
@@ -223,7 +227,6 @@ func (a *App) Run(ctx context.Context) error {
 	} {
 		wg.Go(func() { run(a.life) })
 	}
-	a.settleMove()
 	a.repeatStatus(a.life) // the status at start: the link is down until the cloud's broker answers
 	wg.Wait()
 	a.uploads.Wait()

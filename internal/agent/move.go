@@ -91,6 +91,21 @@ func (r *Relay) MoveRef() string {
 	return r.s.Move.Ref
 }
 
+// Arrived is the last agent.move that ended on cell B, "" if none: its new
+// configuration, still pending on disk, is cell B's, which accepted the agent.
+func (r *Relay) Arrived() string { return r.s.Arrived }
+
+// Landed ends the move ref on cell B when its configuration is already the current
+// one: the agent stopped after the commit, before its state was saved. Called before
+// the loop runs, like Restore; it returns the report to publish, nil if ref is not
+// the move under way.
+func (r *Relay) Landed(ref string) []Action {
+	if r.s.Move == nil || ref == "" || r.s.Move.Ref != ref {
+		return nil
+	}
+	return slices.DeleteFunc(r.arrived(), func(a Action) bool { _, commit := a.(MoveCommit); return commit })
+}
+
 // checkMove applies the rules of agent.move: valid, not expired (against the clock as
 // it is), and no other move under way.
 func (r *Relay) checkMove(now time.Time, env contract.Envelope) string {
@@ -119,6 +134,7 @@ func (r *Relay) startMove(now time.Time, env contract.Envelope) []Action {
 func (r *Relay) arrived() []Action {
 	m := r.s.Move
 	r.s.Move = nil
+	r.s.Arrived = m.Ref
 	r.cfg.CloudURLs = m.URLs
 	return []Action{MoveCommit{Ref: m.Ref}, Moved{Report: contract.MovedData{Ref: m.Ref, To: contract.MovedToB}}}
 }

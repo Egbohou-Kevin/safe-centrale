@@ -61,13 +61,16 @@ func files(t *testing.T, dir string) []string {
 
 func TestAMoveIsWrittenBesideTheCurrentCloudThenTakesItsPlace(t *testing.T) {
 	path, dir := moving(t)
-	if err := WriteNext(dir, cellB, secretB); err != nil {
+	if err := WriteNext(dir, "move-b", cellB, secretB); err != nil {
 		t.Fatal(err)
 	}
 	r := load(t, path)
 	onCell(t, r, cellA, "pw") // untouched until B accepts
 	if r.Next == nil || !slices.Equal(r.Next.URLs, cellB) || r.Next.Password != secretB || r.Next.ClientID != r.Cloud.ClientID || r.Next.Username != r.Cloud.Username {
 		t.Fatalf("the move under way: %+v", r.Next)
+	}
+	if r.NextRef != "move-b" || r.MovedRef != "" {
+		t.Fatalf("the moves: next %q, current %q", r.NextRef, r.MovedRef)
 	}
 	if err := Commit(dir); err != nil {
 		t.Fatal(err)
@@ -77,15 +80,18 @@ func TestAMoveIsWrittenBesideTheCurrentCloudThenTakesItsPlace(t *testing.T) {
 	if r.Next != nil || !slices.Equal(files(t, dir), []string{MovedName}) {
 		t.Fatalf("after the commit: %+v, %v", r.Next, files(t, dir))
 	}
+	if r.NextRef != "" || r.MovedRef != "move-b" {
+		t.Fatalf("the moves: next %q, current %q", r.NextRef, r.MovedRef)
+	}
 	// A second move keeps the first cell once.
-	if err := WriteNext(dir, cellC, secretC); err != nil {
+	if err := WriteNext(dir, "move-c", cellC, secretC); err != nil {
 		t.Fatal(err)
 	}
 	if err := Commit(dir); err != nil {
 		t.Fatal(err)
 	}
 	onCell(t, load(t, path), cellC, secretC)
-	prev, err := readMoved(dir, PreviousName, Cloud{})
+	prev, _, err := readMoved(dir, PreviousName, Cloud{})
 	if err != nil || prev == nil || !slices.Equal(prev.URLs, cellB) || prev.Password != secretB {
 		t.Fatalf("the previous cloud: %+v, %v", prev, err)
 	}
@@ -93,7 +99,7 @@ func TestAMoveIsWrittenBesideTheCurrentCloudThenTakesItsPlace(t *testing.T) {
 
 func TestAMoveThatGoesBackLeavesTheCurrentCloud(t *testing.T) {
 	path, dir := moving(t)
-	if err := WriteNext(dir, cellB, secretB); err != nil {
+	if err := WriteNext(dir, "move-b", cellB, secretB); err != nil {
 		t.Fatal(err)
 	}
 	if err := Discard(dir); err != nil {
@@ -116,7 +122,7 @@ func TestAMoveThatGoesBackLeavesTheCurrentCloud(t *testing.T) {
 // as it was, and no half-written file is read.
 func TestAStopBetweenTwoWritesLeavesTheOldConfiguration(t *testing.T) {
 	path, dir := moving(t)
-	if err := WriteNext(dir, cellB, secretB); err != nil {
+	if err := WriteNext(dir, "move-b", cellB, secretB); err != nil {
 		t.Fatal(err)
 	}
 	if err := Commit(dir); err != nil {
@@ -127,7 +133,7 @@ func TestAStopBetweenTwoWritesLeavesTheOldConfiguration(t *testing.T) {
 	t.Cleanup(func() { rename = os.Rename })
 
 	// Writing the next move stops before its rename.
-	if err := WriteNext(dir, cellC, secretC); !errors.Is(err, stop) {
+	if err := WriteNext(dir, "move-c", cellC, secretC); !errors.Is(err, stop) {
 		t.Fatal(err)
 	}
 	r := load(t, path)
@@ -145,7 +151,7 @@ func TestAStopBetweenTwoWritesLeavesTheOldConfiguration(t *testing.T) {
 	// The commit stops after keeping the previous cloud, before the new one takes the
 	// current one's place: the current one is untouched and the move still pending.
 	rename = os.Rename
-	if err := WriteNext(dir, cellC, secretC); err != nil {
+	if err := WriteNext(dir, "move-c", cellC, secretC); err != nil {
 		t.Fatal(err)
 	}
 	calls := 0
@@ -179,10 +185,13 @@ func TestADamagedMovedCloudIsRefusedWithoutItsSecret(t *testing.T) {
 		}
 		os.Remove(filepath.Join(dir, name))
 	}
-	if err := WriteNext(dir, []string{"mqtt://b.example:1883"}, secretB); err == nil {
+	if err := WriteNext(dir, "move-b", []string{"mqtt://b.example:1883"}, secretB); err == nil {
 		t.Error("a move to an unencrypted cloud was written")
 	}
-	if err := WriteNext(dir, cellB, ""); err == nil {
+	if err := WriteNext(dir, "move-b", cellB, ""); err == nil {
 		t.Error("a move without a secret was written")
+	}
+	if err := WriteNext(dir, "", cellB, secretB); err == nil {
+		t.Error("a move without its ref was written")
 	}
 }

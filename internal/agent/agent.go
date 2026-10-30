@@ -144,6 +144,7 @@ type Snapshot struct {
 	Photos    map[string]photo     `json:"photos,omitempty"`   // photo id -> its upload
 	Retained  map[string]string    `json:"retained,omitempty"` // retained topic -> id of the hub's last state queued (see up.go)
 	Move      *moving              `json:"move,omitempty"`     // a move under way (move.go), never its secret
+	Arrived   string               `json:"arrived,omitempty"`  // the last move that ended on cell B (move.go)
 }
 
 // Relay is the agent's core.

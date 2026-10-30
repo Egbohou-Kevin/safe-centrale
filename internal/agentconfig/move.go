@@ -26,6 +26,7 @@ const (
 )
 
 type movedFile struct {
+	Ref    string   `json:"ref"` // the agent.move that wrote it
 	URLs   []string `json:"urls"`
 	Secret string   `json:"secret"`
 }
@@ -37,18 +38,18 @@ var (
 	syncFolder = syncDir
 )
 
-// WriteNext writes the cloud of a move under way beside the current one, which it
-// does not touch.
-func WriteNext(dir string, urls []string, secret string) error {
+// WriteNext writes the cloud of the move ref beside the current one, which it does
+// not touch.
+func WriteNext(dir, ref string, urls []string, secret string) error {
 	for i, raw := range urls {
 		if err := checkCloudURL(raw); err != nil {
 			return fmt.Errorf("agentconfig: the new cloud's urls[%d]: %w", i, err)
 		}
 	}
-	if len(urls) == 0 || secret == "" {
-		return errors.New("agentconfig: the new cloud needs its urls and its secret")
+	if ref == "" || len(urls) == 0 || secret == "" {
+		return errors.New("agentconfig: the new cloud needs its move, its urls and its secret")
 	}
-	b, err := json.Marshal(movedFile{URLs: urls, Secret: secret})
+	b, err := json.Marshal(movedFile{Ref: ref, URLs: urls, Secret: secret})
 	if err != nil {
 		return err
 	}
@@ -112,30 +113,30 @@ func writeAtomic(dir, name string, b []byte) error {
 	return syncFolder(dir)
 }
 
-// readMoved reads one of the moved clouds over base: absent, it is nil. Its errors
-// never quote the secret.
-func readMoved(dir, name string, base Cloud) (*Cloud, error) {
+// readMoved reads one of the moved clouds over base, with the move that wrote it:
+// absent, it is nil. Its errors never quote the secret.
+func readMoved(dir, name string, base Cloud) (*Cloud, string, error) {
 	b, err := os.ReadFile(filepath.Join(dir, name))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	var f movedFile
 	if err := json.Unmarshal(b, &f); err != nil {
-		return nil, fmt.Errorf("%s is damaged", name)
+		return nil, "", fmt.Errorf("%s is damaged", name)
 	}
 	if len(f.URLs) == 0 || f.Secret == "" {
-		return nil, fmt.Errorf("%s has no urls or no secret", name)
+		return nil, "", fmt.Errorf("%s has no urls or no secret", name)
 	}
 	for i, raw := range f.URLs {
 		if err := checkCloudURL(raw); err != nil {
-			return nil, fmt.Errorf("%s: urls[%d]: %w", name, i, err)
+			return nil, "", fmt.Errorf("%s: urls[%d]: %w", name, i, err)
 		}
 	}
 	base.URLs, base.Password = f.URLs, f.Secret
-	return &base, nil
+	return &base, f.Ref, nil
 }
 
 // syncDir flushes a folder, so that a file renamed into it stays there after a power cut.

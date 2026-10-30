@@ -85,7 +85,7 @@ func runAgent(ctx context.Context, cfg agentconfig.Result, stderr io.Writer) int
 	app, err := agentapp.New(cfg.App, agentapp.Deps{
 		Clock: driver.SystemClock(), Store: store, Queue: queue, Local: local, Cloud: cloudPublisher{cloud},
 		Photos: photos{dir}, Uploader: uploader{https}, NewID: ids.New, Logger: log, Key: key,
-		Mover: mover{dir: cfg.KeyDir, pending: cfg.Next != nil, restart: restart},
+		Mover: mover{dir: cfg.KeyDir, pending: cfg.Next != nil, next: cfg.NextRef, current: cfg.MovedRef, restart: restart},
 	})
 	if err != nil {
 		log.Error("cannot start the agent", "err", err)
