@@ -57,6 +57,10 @@ type Link struct {
 	Now       time.Time
 	Up        bool
 	Transport string
+	// Next: this connection is with the new configuration of a move under way (cell
+	// B's). Up, it ends the move there; with no move under way, it is a late one
+	// and is ignored (see move.go).
+	Next bool
 }
 
 // Tick says time has passed.
@@ -167,7 +171,8 @@ type Item struct {
 	Sent bool `json:"sent,omitempty"`
 }
 
-// Status is the state of the link, as agent.status says it.
+// Status is the state of the link, as agent.status says it. A link frozen by a move
+// is down: nothing goes up, and an alert for the cloud fails at once.
 type Status struct {
 	Up        bool
 	Transport string

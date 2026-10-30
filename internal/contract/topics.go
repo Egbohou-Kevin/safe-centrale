@@ -73,9 +73,11 @@ func RegistryDevicesTopic(site string) string { return Topic(site, "registry", "
 // AgentStatusTopic carries the state of the link to the cloud, retained.
 func AgentStatusTopic(site string) string { return Topic(site, "agent", "status") }
 
-// Orders from the cloud for the agent itself (agent.replay), and its answers.
+// Orders from the cloud for the agent itself (agent.replay, agent.move), and its
+// answers.
 func AgentCmdTopic(site string) string      { return Topic(site, "agent", "cmd") }
 func AgentReplayedTopic(site string) string { return Topic(site, "agent", "replayed") }
+func AgentMovedTopic(site string) string    { return Topic(site, "agent", "moved") }
 
 // InstallModeTopic carries the installation mode, retained; InstallCmdTopic the
 // local console's orders to the hub (never the cloud's).

@@ -57,6 +57,8 @@ func (r *Relay) cloud(c Cloud) []Action {
 	case contract.TypeAgentReplay:
 		d, _ := contract.DecodeData[contract.ReplayData](env) // checked above
 		return r.replayRange(d)
+	case contract.TypeAgentMove:
+		return r.startMove(c.Now, env)
 	}
 	return []Action{PublishLocal{Topic: c.Topic, Payload: c.Payload, Code: route.code}}
 }
@@ -104,6 +106,8 @@ func (r *Relay) check(now time.Time, env contract.Envelope) string {
 	case contract.TypeAgentReplay:
 		_, why := valid[contract.ReplayData](env)
 		return why
+	case contract.TypeAgentMove:
+		return r.checkMove(now, env)
 	case contract.TypeConfigSet:
 		_, why := valid[contract.ConfigSetData](env)
 		return why

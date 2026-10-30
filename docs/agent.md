@@ -135,7 +135,7 @@ Quand internet est coupé :
   du dernier état parti. Un état changé pendant un arrêt de l'agent a un autre `id` et
   part. Un état redit (voir ci-dessous) porte un `id` de l'agent, pas celui de la
   centrale : encore en file à un redémarrage, il ne remplace pas l'`id` gardé, sinon
-  l'état de la centrale redonné par le broker repartirait sous un nouveau numéro. L'agent ne lit pas ses propres topics (`agent/status`, `agent/replayed`) sur
+  l'état de la centrale redonné par le broker repartirait sous un nouveau numéro. L'agent ne lit pas ses propres topics (`agent/status`, `agent/replayed`, `agent/moved`) sur
   la centrale.
 - **Messages redonnés après leur envoi** : le broker de la centrale peut aussi redonner
   un événement, une alerte ou une annonce de photo déjà partis au cloud. Mosquitto ne
@@ -175,6 +175,54 @@ Quand internet est coupé :
   2 Mo) pour ne pas user la carte SD : après un redémarrage de l'agent, les anciens
   numéros sont dans `missing`.
 
+## Déménager vers une autre cellule
+
+Le cloud de la cellule A peut ordonner à l'agent de passer à la cellule B
+(`agent.move` sur `agent/cmd`, AD-20 du cloud) sans déplacer l'installateur :
+
+1. **Gel** : dès l'ordre, plus rien ne part vers A. Ce qui monte reste dans la file
+   sur disque, dans l'ordre, sans numéro neuf ni renumérotation. `agent.status` dit la
+   liaison coupée : une alerte pour l'application ou WhatsApp échoue tout de suite
+   (`no_uplink`), celles qui attendaient la confirmation du cloud aussi, et la centrale
+   passe au GSM comme lors d'une coupure d'internet. Aucune photo ne part.
+2. L'agent écrit la configuration neuve à côté de l'ancienne, sans la toucher :
+   `cloud.next.json` (adresses et secret, 0600) dans son dossier
+   `/var/lib/safehome/agent`. Le fichier `/etc/safehome/agent.json` est en lecture
+   seule pour l'agent (`ProtectSystem=strict`) : il ne change jamais ; un cloud de
+   déménagement le remplace. Chaque écriture passe par un fichier temporaire, vidé sur
+   la carte, renommé, puis le dossier vidé : un arrêt entre deux écritures laisse
+   l'ancienne configuration intacte.
+3. L'agent redémarre (systemd le relance) et se connecte à B avec le même
+   identifiant et le secret neuf, en réessayant jusqu'au délai (`give_up_after`, 600 s
+   par défaut, 3600 au plus) compté depuis l'ordre : B refuse tant que A copie le site.
+4. **B accepte** : `cloud.next.json` devient `cloud.json` (renommage), qui remplace le
+   cloud de `agent.json` ; un `cloud.json` d'un déménagement précédent est gardé une
+   fois (`cloud.previous.json`). La file part vers B, dans l'ordre, ses numéros à la
+   suite de ceux que A a reçus ; les photos vont désormais aux hôtes de B. L'agent
+   répond `agent.moved` (`to` : `b`) sur `agent/moved`.
+5. **B injoignable au-delà du délai** : `cloud.next.json` est effacé, l'agent
+   redémarre sur A, la file part vers A et `agent.moved` dit `back` avec
+   `unreachable`. Une configuration neuve impossible à écrire renvoie de même vers A
+   tout de suite (`not_saved`).
+
+Le déménagement en cours est dans l'état sauvegardé de l'agent (sans le secret) : un
+redémarrage au milieu reprend au même point, et le délai reste compté depuis l'ordre.
+Après un arrêt entre l'écriture de la configuration neuve et la sauvegarde de l'état,
+une configuration neuve sans déménagement connu est effacée (retour à A) ; un
+déménagement connu sans sa configuration revient à A tout de suite (`not_saved`).
+Chaque fichier de cloud porte l'`id` de l'ordre qui l'a écrit (`ref`), et l'état
+sauvegardé garde le dernier déménagement arrivé sur B : une fois B acceptée, l'agent
+ne revient jamais à A, dont le secret a pu disparaître. Un `cloud.next.json` que B a
+accepté mais qui n'a pas pu devenir `cloud.json` (trois essais, carte pleine) reste
+en place : l'agent travaille sur B et le renomme au démarrage suivant. Un arrêt entre
+ce renommage et la sauvegarde de l'état finit le déménagement sur B (`agent.moved`
+`b`), sans retour. Ce que l'arrêt a laissé se lit avant que la boucle de l'agent ne
+démarre.
+Un ordre périmé (`until` passé), mal formé, ou un second ordre pendant un
+déménagement est refusé et journalisé : rien ne bouge. Le secret n'est jamais
+journalisé. Pourquoi l'ordre porte un secret, et ce qui le borne : `contract.md`,
+« Qualité de service sur le broker du cloud ».
+
 ## Alertes pour les canaux du cloud
 
 Quand le moteur demande une alerte par application ou WhatsApp :
@@ -209,8 +257,8 @@ Tout ce qui descend du cloud est contrôlé avant d'être publié localement :
   venir de l'app et porter sur un incident que l'agent a vu passer), et sur `alert/seen`
   le « Vu » de l'application (`alert.seen`, un incident que l'agent a vu passer, un
   contact et une heure) ; et pour l'agent
-  lui-même `photo.upload` sur `photo/cmd` et `agent.replay` sur `agent/cmd`, jamais
-  republiés sur la centrale. Le reste est refusé et enregistré dans le journal.
+  lui-même `photo.upload` sur `photo/cmd`, `agent.replay` et `agent.move` sur
+  `agent/cmd`, jamais republiés sur la centrale. Le reste est refusé et enregistré dans le journal.
 - **Aucun ordre avec un code n'attend sur le broker du cloud.** L'agent s'abonne à
   `alarm/cmd` en QoS 0, à tous les autres topics du cloud en QoS 1. Avec une session
   gardée un jour et un abonnement en QoS 1, Mosquitto garderait pour un agent absent

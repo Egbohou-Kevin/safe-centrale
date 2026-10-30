@@ -143,6 +143,8 @@ type Snapshot struct {
 	RepliesAt time.Time            `json:"replies_at"`
 	Photos    map[string]photo     `json:"photos,omitempty"`   // photo id -> its upload
 	Retained  map[string]string    `json:"retained,omitempty"` // retained topic -> id of the hub's last state queued (see up.go)
+	Move      *moving              `json:"move,omitempty"`     // a move under way (move.go), never its secret
+	Arrived   string               `json:"arrived,omitempty"`  // the last move that ended on cell B (move.go)
 }
 
 // Relay is the agent's core.
@@ -195,6 +197,7 @@ func (r *Relay) Snapshot() Snapshot {
 	s.Photos = maps.Clone(s.Photos)
 	s.Retained = maps.Clone(s.Retained)
 	s.Seals = maps.Clone(s.Seals)
+	s.Move = s.Move.clone()
 	return s
 }
 
@@ -242,7 +245,7 @@ func (r *Relay) Up() bool { return r.up }
 
 // Status returns the state of the link at now.
 func (r *Relay) Status(now time.Time) Status {
-	st := Status{Up: r.up, Transport: r.transport, Queued: len(r.queue) + len(r.replay), Dropped: r.s.Dropped}
+	st := Status{Up: r.up && !r.Moving(), Transport: r.transport, Queued: len(r.queue) + len(r.replay), Dropped: r.s.Dropped}
 	for _, it := range r.queue {
 		if age := now.Sub(it.At); age > st.Oldest {
 			st.Oldest = age
@@ -279,6 +282,9 @@ func (r *Relay) NextWake() time.Time {
 	for _, t := range r.photoWakes() {
 		soonest(t)
 	}
+	if r.s.Move != nil {
+		soonest(r.s.Move.GiveUp)
+	}
 	return wake
 }
 
@@ -300,6 +306,8 @@ func (r *Relay) Handle(in Input) []Action {
 		out = append(out, r.link(v)...)
 	case Uploaded:
 		out = append(out, r.uploaded(v)...)
+	case MoveFailed:
+		out = append(out, r.moveFailed(v)...)
 	}
 	return append(out, r.uploads(in.at())...)
 }
@@ -307,15 +315,22 @@ func (r *Relay) Handle(in Input) []Action {
 // --- the link --------------------------------------------------------------------
 
 func (r *Relay) link(l Link) []Action {
-	if l.Up == r.up && l.Transport == r.transport {
+	arrived := l.Up && l.Next && r.Moving()
+	if l.Up && l.Next && !arrived {
+		return nil // cell B, for a move already ended: the application leaves it
+	}
+	if !arrived && l.Up == r.up && l.Transport == r.transport {
 		return nil
+	}
+	out := []Action{}
+	if arrived {
+		out = r.arrived()
 	}
 	r.up = l.Up
 	r.transport = ""
 	if l.Up {
 		r.transport = l.Transport
 	}
-	out := []Action{}
 	if l.Up {
 		out = append(out, r.restate(l.Now)...)
 	} else {
@@ -380,5 +395,6 @@ func (r *Relay) expire(now time.Time) []Action {
 	old, _ := r.removeIf(func(it Item) bool { return !now.Before(it.At.Add(r.cfg.QueueAge)) })
 	out = append(out, r.dropped(old, "too old")...)
 	out = append(out, r.forgetSent(now)...)
+	out = append(out, r.expireMove(now)...)
 	return append(out, r.expirePhotos(now)...)
 }

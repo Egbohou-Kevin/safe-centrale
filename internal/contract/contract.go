@@ -52,6 +52,8 @@ const (
 
 	TypeAgentReplay   = "agent.replay"
 	TypeAgentReplayed = "agent.replayed"
+	TypeAgentMove     = "agent.move"
+	TypeAgentMoved    = "agent.moved"
 
 	TypeInstallMode  = "install.mode"
 	TypeInstallClose = "install.close"

@@ -122,6 +122,8 @@ func TestSchemasMatchGoTypes(t *testing.T) {
 		"maint-session.json":            reflect.TypeOf(MaintSessionData{}),
 		"agent-replay.json":             reflect.TypeOf(ReplayData{}),
 		"agent-replayed.json":           reflect.TypeOf(ReplayedData{}),
+		"agent-move.json":               reflect.TypeOf(MoveData{}),
+		"agent-moved.json":              reflect.TypeOf(MovedData{}),
 		"install-mode.json":             reflect.TypeOf(InstallModeData{}),
 		"install-close.json":            reflect.TypeOf(InstallCloseData{}),
 	}
@@ -201,7 +203,7 @@ func TestSchemaEnumsMatchConstants(t *testing.T) {
 		TypeConfigSet, TypeConfigApplied,
 		TypePhotoTaken, TypePhotoUpload, TypePhotoSent,
 		TypeMaintOpen, TypeMaintClose, TypeMaintSession,
-		TypeAgentReplay, TypeAgentReplayed,
+		TypeAgentReplay, TypeAgentReplayed, TypeAgentMove, TypeAgentMoved,
 		TypeInstallMode, TypeInstallClose,
 	})
 	check("alarm-command.json", "origin", origins)
@@ -232,6 +234,8 @@ func TestSchemaEnumsMatchConstants(t *testing.T) {
 	check("photo-sent.json", "reason", photoFailures)
 	check("maint-session.json", "status", maintStatuses)
 	check("maint-session.json", "reason", maintReasons)
+	check("agent-moved.json", "to", movedTo)
+	check("agent-moved.json", "reason", moveReasons)
 
 	caps := keys(allowedValues)
 	for c := range numericCapabilities {
@@ -334,7 +338,10 @@ func TestSchemasAcceptValidMessages(t *testing.T) {
 		"agent-replay.json":   ReplayData{From: 120, To: 130},
 		"agent-replayed.json": ReplayedData{From: 120, To: 130, Last: 4012, Resent: 8, Missing: []SeqRange{{120, 121}, {127, 127}}},
 		"install-mode.json":   InstallModeData{Status: InstallOpen, Until: TSPtr(ends)},
-		"install-close.json":  InstallCloseData{},
+		"agent-move.json": MoveData{URLs: []string{"mqtts://b.safehome.example:8883", "wss://b.safehome.example:443/mqtt"},
+			Secret: "s3cret-for-cell-b-0001", Until: TS(ends), GiveUpAfter: 600},
+		"agent-moved.json":   MovedData{Ref: "m1", To: MovedBack, Reason: MoveUnreachable},
+		"install-close.json": InstallCloseData{},
 	}
 	schematest.Validate(t, "install-mode.json", InstallModeData{Status: InstallClosed, Reason: InstallTimeout})
 	schematest.Validate(t, "config-set.json", ConfigSetData{Version: 1})
@@ -365,6 +372,12 @@ func TestSchemasRejectInvalidMessages(t *testing.T) {
 		{"maintenance without reason", "maint-open.json", `{"session":"m","user":"u","duration_s":600,"exp":"2026-10-17T21:00:00.000Z"}`},
 		{"replay from zero", "agent-replay.json", `{"from":0,"to":3}`},
 		{"replayed without resent", "agent-replayed.json", `{"from":1,"to":3,"last":9}`},
+		{"move in plain mqtt", "agent-move.json", `{"urls":["mqtt://b.example:1883"],"secret":"0123456789abcdef","until":"2026-10-17T21:00:00.000Z"}`},
+		{"move without secret", "agent-move.json", `{"urls":["mqtts://b.example:8883"],"until":"2026-10-17T21:00:00.000Z"}`},
+		{"move with a short secret", "agent-move.json", `{"urls":["mqtts://b.example:8883"],"secret":"short","until":"2026-10-17T21:00:00.000Z"}`},
+		{"move tried for a day", "agent-move.json", `{"urls":["mqtts://b.example:8883"],"secret":"0123456789abcdef","until":"2026-10-17T21:00:00.000Z","give_up_after":86400}`},
+		{"moved elsewhere", "agent-moved.json", `{"ref":"m","to":"c"}`},
+		{"moved back for no reason", "agent-moved.json", `{"ref":"m","to":"back"}`},
 		{"installation mode ajar", "install-mode.json", `{"status":"ajar"}`},
 		{"installation mode closed for no reason", "install-mode.json", `{"status":"closed"}`},
 		{"installation mode open for ever", "install-mode.json", `{"status":"open"}`},

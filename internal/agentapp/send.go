@@ -47,6 +47,8 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action)
 			a.publishOwn(now, contract.AgentReplayedTopic(a.cfg.Site), contract.TypeAgentReplayed, v.Report, false)
 		case agent.Restate:
 			a.restate(now, v)
+		case agent.Move, agent.MoveCommit, agent.MoveBack, agent.Moved:
+			a.dispatchMove(now, act)
 		case agent.Upload, agent.RemovePhoto, agent.PhotoReport:
 			a.dispatchPhoto(now, act)
 		case agent.QueueSave, agent.QueueDrop, agent.UplinkSave:

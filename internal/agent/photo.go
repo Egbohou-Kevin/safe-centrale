@@ -197,7 +197,7 @@ func (r *Relay) expirePhotos(now time.Time) []Action {
 // uploads starts the next upload, if the time is right: the link is up, nothing is
 // being sent, and nothing of an alarm waits in the queue.
 func (r *Relay) uploads(now time.Time) []Action {
-	if !r.up || r.sending != "" || slices.ContainsFunc(r.queue, func(it Item) bool { return it.Prio == PriorityAlarm }) {
+	if !r.up || r.Moving() || r.sending != "" || slices.ContainsFunc(r.queue, func(it Item) bool { return it.Prio == PriorityAlarm }) {
 		return nil
 	}
 	id := r.oldestPhoto(func(_ string, p photo) bool { return p.URL != "" && now.Before(p.Exp) && !now.Before(p.RetryAt) })

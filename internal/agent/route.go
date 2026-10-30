@@ -57,6 +57,7 @@ var upRoutes = map[string]upRoute{
 	"photo/sent":       {types: []string{contract.TypePhotoSent}, prio: PriorityNormal},
 	"maint/session":    {types: []string{contract.TypeMaintSession}, prio: PriorityNormal},
 	"agent/replayed":   {types: []string{contract.TypeAgentReplayed}, prio: PriorityNormal, own: true},
+	"agent/moved":      {types: []string{contract.TypeAgentMoved}, prio: PriorityNormal, own: true},
 	// The owner sees in the app that someone opened the installation mode.
 	"install/mode": {types: []string{contract.TypeInstallMode}, prio: PriorityNormal, retain: true},
 }
@@ -108,7 +109,7 @@ var downRoutes = map[string]downRoute{
 	"config/set":   {types: []string{contract.TypeConfigSet}},
 	"photo/cmd":    {types: []string{contract.TypePhotoUpload}}, // for the agent itself
 	"maint/cmd":    {types: []string{contract.TypeMaintOpen, contract.TypeMaintClose}},
-	"agent/cmd":    {types: []string{contract.TypeAgentReplay}}, // for the agent itself
+	"agent/cmd":    {types: []string{contract.TypeAgentReplay, contract.TypeAgentMove}}, // for the agent itself
 }
 
 // Filter is a topic the agent reads on the cloud's broker, with the QoS to ask for.

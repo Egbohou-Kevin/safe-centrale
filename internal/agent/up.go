@@ -98,7 +98,7 @@ func (r *Relay) followAlert(now time.Time, env contract.Envelope) bool {
 	if err != nil || !cloudChannel(d.Channel) {
 		return true // the GSM's business: it only goes up for the record
 	}
-	if !r.up {
+	if !r.up || r.Moving() {
 		return false
 	}
 	r.s.Pending[env.ID] = pendingAlert{Deadline: now.Add(r.cfg.ConfirmWait), Forget: now.Add(alertMemory), Incident: d.Incident}
