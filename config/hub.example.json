@@ -12,7 +12,7 @@
     { "id": "u_owner", "name": "Proprietaire", "role": "owner",   "channels": ["app", "whatsapp", "sms", "call"] },
     { "id": "u_deputy", "name": "Responsable", "role": "deputy",  "channels": ["app", "sms", "call"] },
     { "id": "u_guard", "name": "Gardien",      "role": "guard",   "channels": ["sms", "call"] },
-    { "id": "u_mgr",   "name": "Gerant",       "role": "manager", "channels": ["app", "sms"] }
+    { "id": "u_mgr",   "name": "Gérant",       "role": "manager", "channels": ["app", "sms"] }
   ],
 
   "escalation": {

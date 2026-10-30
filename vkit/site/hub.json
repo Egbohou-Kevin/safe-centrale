@@ -39,7 +39,7 @@
     },
     {
       "id": "u_mgr",
-      "name": "Gerant",
+      "name": "Gérant",
       "role": "manager",
       "channels": [
         "app",
