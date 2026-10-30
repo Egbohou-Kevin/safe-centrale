@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/agent-moved.json",
+  "title": "agent.moved",
+  "description": "Réponse de l'agent de liaison à agent.move (topic agent/moved) : resté sur la cellule B, ou revenu à A et pourquoi.",
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "L'id de l'agent.move"
+    },
+    "to": {
+      "type": "string",
+      "enum": ["b", "back"]
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["unreachable", "not_saved"],
+      "description": "Retour : B injoignable dans le délai, ou configuration neuve impossible à écrire"
+    }
+  },
+  "required": [
+    "ref",
+    "to"
+  ],
+  "allOf": [
+    {
+      "if": { "properties": { "to": { "const": "back" } } },
+      "then": { "required": ["reason"] },
+      "else": { "not": { "required": ["reason"] } }
+    }
+  ]
+}

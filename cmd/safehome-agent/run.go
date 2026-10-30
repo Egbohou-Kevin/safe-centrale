@@ -81,19 +81,24 @@ func runAgent(ctx context.Context, cfg agentconfig.Result, stderr io.Writer) int
 	}
 	ids := contract.NewIDGenerator()
 	local, cloud := &service.Publisher{}, &service.Publisher{}
+	restart := service.NewRestart()
 	app, err := agentapp.New(cfg.App, agentapp.Deps{
 		Clock: driver.SystemClock(), Store: store, Queue: queue, Local: local, Cloud: cloudPublisher{cloud},
 		Photos: photos{dir}, Uploader: uploader{https}, NewID: ids.New, Logger: log, Key: key,
+		Mover: mover{dir: cfg.KeyDir, pending: cfg.Next != nil, restart: restart},
 	})
 	if err != nil {
 		log.Error("cannot start the agent", "err", err)
 		return 1
 	}
-	log.Info("starting", "site", cfg.App.Site, "cloud", cfg.Cloud, "broker", cfg.BrokerURL, "version", version)
-	return daemon(cfg, app, local, cloud, log).Run(ctx)
+	log.Info("starting", "site", cfg.App.Site, "cloud", cfg.Cloud, "moving", cfg.Next != nil, "broker", cfg.BrokerURL, "version", version)
+	d := daemon(cfg, app, local, cloud, log)
+	d.Restart = restart
+	return d.Run(ctx)
 }
 
-// daemon runs the application between the hub's broker and the cloud's. At a stop,
+// daemon runs the application between the hub's broker and the cloud's: the cloud of
+// a move under way if there is one (agentconfig.Result.Next), else the current one. At a stop,
 // the application sends what is left for the hub, then the agent tells the cloud
 // the site goes offline: a clean disconnection does not set off the Last Will, and
 // the cloud would believe the site still connected.
@@ -106,9 +111,10 @@ func daemon(cfg agentconfig.Result, app *agentapp.App, local, cloud *service.Pub
 		Subscriptions: service.Subscriptions(app.LocalSubscriptions()), Logger: log,
 		Take: service.Take(app.HandleLocal),
 	})
+	c := cloudOf(cfg)
 	toCloud := mqtt.Options{
-		BrokerURL: cfg.Cloud.URLs[0], FallbackURLs: cfg.Cloud.URLs[1:], CAFile: cfg.Cloud.CAFile,
-		ClientID: cfg.Cloud.ClientID, Username: cfg.Cloud.Username, Password: cfg.Cloud.Password,
+		BrokerURL: c.URLs[0], FallbackURLs: c.URLs[1:], CAFile: c.CAFile,
+		ClientID: c.ClientID, Username: c.Username, Password: c.Password,
 		Subscriptions: service.Subscriptions(app.CloudSubscriptions()), Will: will, Spread: true, Logger: log.With("broker", "cloud"),
 		Take:         service.Take(app.HandleCloud),
 		OnLinkChange: app.LinkChanged,
@@ -123,4 +129,13 @@ func daemon(cfg agentconfig.Result, app *agentapp.App, local, cloud *service.Pub
 			}
 		},
 	}
+}
+
+// cloudOf is the cloud to connect to: the cloud of a move under way if there is one,
+// else the current one.
+func cloudOf(cfg agentconfig.Result) agentconfig.Cloud {
+	if cfg.Next != nil {
+		return *cfg.Next
+	}
+	return cfg.Cloud
 }

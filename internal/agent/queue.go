@@ -82,6 +82,9 @@ func dropOf(items []Item) []Action {
 // its first attempt, and keeps it: the actions returned then must be carried out
 // before the item is sent.
 func (r *Relay) Next() (Item, []Action, bool) {
+	if r.Moving() {
+		return Item{}, nil, false // frozen: everything waits for the cell the move ends on
+	}
 	best := r.awaitedAlert()
 	if best < 0 {
 		best = r.mostImportant()

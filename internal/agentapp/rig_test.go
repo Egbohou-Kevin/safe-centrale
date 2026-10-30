@@ -142,6 +142,12 @@ func newRig(t *testing.T, d *disk) *rig {
 
 func newRigWith(t *testing.T, d *disk, cfg Config) *rig {
 	t.Helper()
+	return newRigMoving(t, d, cfg, nil)
+}
+
+// newRigMoving is newRigWith with a Mover.
+func newRigMoving(t *testing.T, d *disk, cfg Config, mover Mover) *rig {
+	t.Helper()
 	if d == nil {
 		d = newDisk()
 	}
@@ -152,7 +158,7 @@ func newRigWith(t *testing.T, d *disk, cfg Config) *rig {
 	r := &rig{t: t, key: key, clock: drivertest.NewFakeClock(t0), disk: d, local: &outboxtest.Broker{}, cloud: &outboxtest.Broker{}, ids: contract.NewIDGenerator(),
 		photos: &memPhotos{files: map[string][]byte{}}, upl: &fakeUploader{}, logs: drivertest.Logs(t)}
 	app, err := New(cfg, Deps{Clock: r.clock, Store: d.store, Queue: d.queue, Local: r.local, Cloud: r.cloud,
-		Photos: r.photos, Uploader: r.upl, NewID: r.ids.New, Key: key, Logger: slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))})
+		Photos: r.photos, Uploader: r.upl, NewID: r.ids.New, Key: key, Mover: mover, Logger: slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))})
 	if err != nil {
 		t.Fatal(err)
 	}

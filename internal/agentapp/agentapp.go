@@ -79,7 +79,13 @@ type Deps struct {
 	Key *sealcode.Key
 	// Logger: never given a message's content, which may hold a video token.
 	Logger *slog.Logger
+	// Mover moves the agent to another cell of the cloud (agent.move); nil, a move is
+	// refused (not_saved) and the agent stays.
+	Mover Mover
 }
+
+// errNoMover: this agent was built without a Mover.
+var errNoMover = errors.New("agentapp: this agent cannot move")
 
 const (
 	src        = contract.AgentLink
@@ -105,6 +111,9 @@ type App struct {
 	// links counts the link's changes, so that the sender tells a change it has not
 	// seen from one it took into account already (see wait).
 	links atomic.Uint64
+	// nextCloud: the connection is with the new configuration of a move under way (Link.Next),
+	// until the move ends there.
+	nextCloud atomic.Bool
 
 	uploads sync.WaitGroup // the photos being sent
 
@@ -158,6 +167,7 @@ func New(cfg Config, deps Deps) (*App, error) {
 	if err := a.restoreQueue(); err != nil {
 		return nil, err
 	}
+	a.nextCloud.Store(deps.Mover != nil && deps.Mover.Pending())
 	return a, nil
 }
 
@@ -213,6 +223,7 @@ func (a *App) Run(ctx context.Context) error {
 	} {
 		wg.Go(func() { run(a.life) })
 	}
+	a.settleMove()
 	a.repeatStatus(a.life) // the status at start: the link is down until the cloud's broker answers
 	wg.Wait()
 	a.uploads.Wait()
@@ -246,9 +257,10 @@ func (a *App) HandleCloud(m inbox.Message) bool {
 }
 
 // LinkChanged is told when the connection to the cloud comes up or goes down, with
-// the URL scheme in use.
+// the URL scheme in use. A connection with the new configuration of a move says so.
 func (a *App) LinkChanged(up bool, scheme string) {
-	a.submit(func(now time.Time) agent.Input { return agent.Link{Now: now, Up: up, Transport: scheme} })
+	next := a.nextCloud.Load()
+	a.submit(func(now time.Time) agent.Input { return agent.Link{Now: now, Up: up, Transport: scheme, Next: next} })
 }
 
 // Will is the message the cloud's broker publishes if the agent disappears without a

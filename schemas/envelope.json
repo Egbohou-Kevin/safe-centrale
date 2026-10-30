@@ -86,7 +86,9 @@
         "install.close",
         "maint.session",
         "agent.replay",
-        "agent.replayed"
+        "agent.replayed",
+        "agent.move",
+        "agent.moved"
       ]
     },
     "data": {

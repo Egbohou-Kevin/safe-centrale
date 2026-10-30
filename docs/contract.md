@@ -93,8 +93,9 @@ Tous les topics commencent par `safehome/{site}/`.
 | `.../gsm/status` | Lignes de la passerelle GSM (modem, réseau, crédit, test) | oui |
 | `.../zigbee/status` | État du réseau Zigbee (Zigbee2MQTT, appareils muets, appairage) | oui |
 | `.../agent/status` | Liaison avec le cloud, publiée par l'agent de liaison | oui |
-| `.../agent/cmd` | Ordre du cloud pour l'agent lui-même (`agent.replay`, rejeu de messages manqués) | non |
+| `.../agent/cmd` | Ordre du cloud pour l'agent lui-même (`agent.replay`, rejeu de messages manqués ; `agent.move`, déménagement vers une autre cellule du cloud) | non |
 | `.../agent/replayed` | Résultat d'un rejeu, par l'agent (`agent.replayed`) | non |
+| `.../agent/moved` | Fin d'un déménagement, par l'agent (`agent.moved`) | non |
 | `.../video/cmd` | Ouvrir ou arrêter une session vidéo en direct (cloud vers site) | non |
 | `.../video/session` | Étapes d'une session vidéo | non |
 | `.../video/status` | Caméras, sessions en cours, données du mois | oui |
@@ -119,7 +120,16 @@ MQTT 5 limite la remise, pas la garde). Pour un abonnement en QoS 0, il ne garde
 | `alarm/cmd` | 0 | Porte le code d'accès (`alarm.disarm`, `alarm.silence`, `alarm.end`), que le cloud ne garde jamais : le broker ne doit pas le garder non plus. Un ordre ne vaut qu'une minute (`exp`) |
 | `video/cmd` | 1 | Le jeton est celui du cloud, pour une session ; un `video.stop` vaut encore après une coupure, une demande périmée est refusée par l'agent |
 | `photo/cmd` | 1 | Le jeton est celui du cloud, pour une photo ; l'adresse vaut jusqu'à son `exp` et la photo est une preuve de l'alarme |
-| `config/set`, `maint/cmd`, `agent/cmd`, `alert/result`, `alert/ack`, `alert/seen` | 1 | Pas de secret ; ils valent encore au retour de l'agent (un `maint.open` périmé est refusé) |
+| `config/set`, `maint/cmd`, `agent/cmd`, `alert/result`, `alert/ack`, `alert/seen` | 1 | Pas de secret ; ils valent encore au retour de l'agent (un `maint.open` périmé est refusé). **Exception nommée** : `agent.move` sur `agent/cmd` porte le secret neuf du site (voir ci-dessous) |
+
+**`agent.move`, l'exception au « pas de secret »** (30 octobre 2026, décidé seul, à
+relire par Kevin) : l'ordre de déménagement (AD-20 du cloud, « Déménager un site »)
+porte le secret neuf du site pour la cellule B. Le cloud l'envoie seulement à une
+centrale connectée, jamais retenu, avec une expiration MQTT 5 (Message Expiry) de
+quelques minutes et `until` dans l'ordre : le broker du cloud peut le garder au plus
+jusqu'à cette expiration (en mémoire et dans `mosquitto.db`, voir plus haut), l'agent
+refuse un ordre vu après `until`. Variante écartée pour l'instant : chiffrer le secret
+pour la clé publique de la centrale (celle des codes scellés).
 
 Le cloud publie toujours en QoS 1 : le broker lui accuse réception, puis remet
 l'ordre à l'agent en QoS 0 (la plus petite des deux). Le prix, accepté : un ordre donné
@@ -1159,6 +1169,19 @@ passerelle vit. Son `ts` est l'heure à laquelle la passerelle l'a écrit.
 
 Changements depuis la v1 validée, sans changement de `v` :
 
+- **30 octobre 2026, l'ordre de déménagement** : deux types neufs, `agent.move` (du
+  cloud, sur `agent/cmd`) et `agent.moved` (de l'agent, sur le topic neuf
+  `agent/moved`), schémas `agent-move.json` et `agent-moved.json`. `agent.move` :
+  `urls` (le broker de la cellule B, 1 à 4 adresses `mqtts://` ou `wss://` sans
+  identifiants, comme `cloud.urls`), `secret` (16 à 256 caractères imprimables, sans
+  espace ; jamais journalisé), `until` (date-heure UTC, ordre périmé au-delà),
+  `give_up_after` (facultatif, secondes de 60 à 3600, 600 si absent). `agent.moved` :
+  `ref` (l'`id` de l'`agent.move`), `to` (`b` : resté sur la cellule B ; `back` :
+  revenu à A) et `reason` (seulement pour `back` : `unreachable`, B injoignable dans le
+  délai ; `not_saved`, configuration neuve impossible à écrire). Le cloud à jour
+  d'abord : un cloud qui ne connaît pas `agent.moved` le refuse. Un ordre périmé, mal
+  formé, ou un second ordre pendant un déménagement est refusé et journalisé, sans
+  réponse. Voir `agent.md`, « Déménager vers une autre cellule ».
 - **29 octobre 2026, la centrale en mise à jour** : `system.health` porte
   `updating_until` (facultatif, une date-heure UTC), présent seulement pendant une mise
   à jour annoncée par `deploy/update-hub.sh`, 20 minutes au plus ; au-delà de son heure,
@@ -1315,7 +1338,8 @@ L'agent de liaison transmet seulement :
 - le `system.heartbeat`,
 - les `device.event` de type `smoke`, `panic`, `tamper`, `mains` et les
   changements utiles de `battery`,
-- son propre `agent.status`, et `agent.replayed` après un rejeu demandé par le cloud,
+- son propre `agent.status`, `agent.replayed` après un rejeu demandé par le cloud, et
+  `agent.moved` à la fin d'un déménagement,
 - `video.session` et `video.status` (voir plus haut). Le flux vidéo lui-même ne passe
   jamais par MQTT : il va directement au relais du cloud ;
 - `config.applied`, la réponse à une configuration ;
@@ -1328,8 +1352,8 @@ Dans l'autre sens, le cloud peut publier seulement :
 
 - sur `alarm/cmd`, les ordres de l'application (`origin` à `app`) ;
 - sur `video/cmd`, les sessions vidéo ;
-- sur `agent/cmd`, les demandes de rejeu (`agent.replay`) pour l'agent lui-même,
-  jamais publiées sur la centrale ;
+- sur `agent/cmd`, les demandes de rejeu (`agent.replay`) et l'ordre de déménager
+  (`agent.move`) pour l'agent lui-même, jamais publiés sur la centrale ;
 - sur `alert/result` et `alert/ack`, les résultats et les acquittements des canaux du
   cloud (application, WhatsApp), pour une alerte que l'agent lui a transmise ;
 - sur `alert/seen`, le « Vu » d'un contact dans l'application, pour un incident que

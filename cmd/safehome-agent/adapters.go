@@ -13,6 +13,7 @@ import (
 	"safehome/internal/adapter/photodir"
 	"safehome/internal/adapter/upload"
 	"safehome/internal/agentapp"
+	"safehome/internal/agentconfig"
 	"safehome/internal/sealcode"
 	"safehome/internal/service"
 )
@@ -41,6 +42,22 @@ func (c cloudPublisher) Publish(ctx context.Context, topic string, payload []byt
 	}
 	return err
 }
+
+// mover fits the agent's folder (agentconfig) and a restart to the application's port:
+// the agent connects to the cloud of a move by starting again on it.
+type mover struct {
+	dir     string
+	pending bool
+	restart service.Restart
+}
+
+func (m mover) Pending() bool { return m.pending }
+func (m mover) Write(urls []string, secret string) error {
+	return agentconfig.WriteNext(m.dir, urls, secret)
+}
+func (m mover) Commit() error  { return agentconfig.Commit(m.dir) }
+func (m mover) Discard() error { return agentconfig.Discard(m.dir) }
+func (m mover) Reconnect()     { m.restart.Ask() }
 
 // uploader fits HTTPS to the application's port.
 type uploader struct{ c *upload.Client }

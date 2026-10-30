@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safehome.example/schemas/agent-move.json",
+  "title": "agent.move",
+  "description": "Ordre du cloud à l'agent de liaison (topic agent/cmd) : déménager vers la cellule B (AD-20 du cloud). Seul ordre de agent/cmd qui porte un secret : jamais retenu, expiration MQTT de quelques minutes, envoyé seulement à une centrale connectée.",
+  "type": "object",
+  "properties": {
+    "urls": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "string",
+        "pattern": "^(mqtts|wss)://[^/?#@]+(/[^?#@]*)?$"
+      },
+      "description": "Broker de la cellule B, le premier puis les secours (comme cloud.urls)"
+    },
+    "secret": {
+      "type": "string",
+      "pattern": "^[!-~]{16,256}$",
+      "description": "Le secret neuf du site pour la cellule B ; jamais journalisé"
+    },
+    "until": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Un ordre vu après until est refusé"
+    },
+    "give_up_after": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 3600,
+      "description": "Secondes : la cellule B injoignable au-delà, retour à A ; absent pour 600"
+    }
+  },
+  "required": [
+    "urls",
+    "secret",
+    "until"
+  ]
+}

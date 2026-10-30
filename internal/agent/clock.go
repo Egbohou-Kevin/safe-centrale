@@ -9,7 +9,8 @@ import "time"
 // time that really passed: an alert waiting for the cloud's confirmation does not fail
 // at once (which would send the escalation to the GSM for nothing), and what the relay
 // remembers for a while (the alerts, the incidents, the tombstones, the photos, the
-// allowances, the states said again, the repeated messages) is not forgotten early.
+// allowances, the states said again, the repeated messages, a move's deadline) is not
+// forgotten early.
 // Each item of the queue keeps its age too, in memory: its copy on disk is not written
 // again for it (a restart starts from the clock as it is, and the queue keeps items a
 // week). The times set by the cloud (a photo's URL expiry) are not moved.
@@ -30,6 +31,9 @@ func (r *Relay) Stepped(d time.Duration) {
 	for id, p := range r.s.Photos {
 		p.Taken, p.RetryAt = moved(p.Taken, d), moved(p.RetryAt, d)
 		r.s.Photos[id] = p
+	}
+	if r.s.Move != nil {
+		r.s.Move.GiveUp = moved(r.s.Move.GiveUp, d)
 	}
 	for i := range r.queue {
 		r.queue[i].At = moved(r.queue[i].At, d)
