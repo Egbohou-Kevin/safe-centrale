@@ -1,8 +1,5 @@
 # Consignes pour Claude
 
-Les règles générales sont dans `~/.claude/CLAUDE.md` ; les dépôts voisins (`../safeHome-cloud`,
-`../safeHome-app`) portent chacun leur propre bloc.
-
 <!-- creator:profile go -->
 ## Vérifier sans gaspiller
 
