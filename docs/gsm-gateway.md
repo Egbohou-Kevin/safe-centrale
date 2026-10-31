@@ -159,7 +159,7 @@ avec une ligne dite en état de marche pendant que chaque envoi échouait.
 
 Un `alert.ack` venu de l'application (`via` à `app`) arrête l'escalade, SMS et appels
 compris, et vient du cloud. La passerelle envoie donc au contact qui l'a donné, s'il a un
-numéro, un SMS : « safeHome: l'alarme est prise en charge en votre nom dans
+numéro, un SMS : « SeQ: l'alarme est prise en charge en votre nom dans
 l'application. Si ce n'est pas vous, personne ne s'en occupe: agissez. » Une fois par
 incident ; un acquittement par SMS (le « 1 ») n'est pas confirmé. Comme le SMS de numéro
 retiré, il ne fait l'objet d'aucun `alert.result`.
@@ -168,7 +168,7 @@ retiré, il ne fait l'objet d'aucun `alert.result`.
 
 Les contacts et leurs numéros viennent du cloud (`config.set`). Un numéro avec lequel la
 passerelle tournait, et qu'elle n'a plus à son démarrage suivant (un contact retiré, ou
-passé à un autre numéro), reçoit un SMS : « safeHome: ce numero ne recevra plus les
+passé à un autre numéro), reçoit un SMS : « SeQ: ce numero ne recevra plus les
 alertes de l'alarme. Si personne ne l'a demande, appelez votre installateur. » Une
 liste changée de loin, par erreur ou par quelqu'un qui aurait pris la main sur le cloud,
 ne fait donc pas taire un numéro sans qu'il le sache, et par un canal que le cloud ne

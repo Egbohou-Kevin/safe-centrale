@@ -1,6 +1,6 @@
 # Virtual kit: the shop's camera (docs/kit-virtuel.md).
 [Unit]
-Description=safeHome virtual kit: camera
+Description=SeQ virtual kit: camera
 
 [Service]
 ExecStart=/usr/local/bin/go2rtc -config /etc/vkit/camera.yaml

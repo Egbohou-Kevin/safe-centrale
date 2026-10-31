@@ -1,6 +1,6 @@
 # Virtual kit: the fake Zigbee2MQTT, on the hub's broker (docs/kit-virtuel.md).
 [Unit]
-Description=safeHome virtual kit: fake Zigbee2MQTT
+Description=SeQ virtual kit: fake Zigbee2MQTT
 After=mosquitto.service
 
 [Service]

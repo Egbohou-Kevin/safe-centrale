@@ -57,7 +57,7 @@ func TestDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Wifi.SSID != "safehome-tg-lom-0001" || r.Wifi.Passphrase != "k7p2m9x4q8wd" || r.ClientID != "safehome-console-tg-lom-0001" ||
+	if r.Wifi.SSID != "SeQ-tg-lom-0001" || r.Wifi.Passphrase != "k7p2m9x4q8wd" || r.ClientID != "safehome-console-tg-lom-0001" ||
 		r.BrokerURL != "mqtt://127.0.0.1:1883" || r.Host() != "10.42.0.1:8080" || r.LogLevel != slog.LevelInfo {
 		t.Fatalf("%+v", r)
 	}
@@ -67,7 +67,7 @@ func TestDefaults(t *testing.T) {
 		t.Fatal("the passphrase shows in the logs")
 	}
 	for _, format := range []string{"%v", "%+v", "%#v"} {
-		if s := fmt.Sprintf(format, r); strings.Contains(s, "k7p2m9x4q8wd") || !strings.Contains(s, "safehome-tg-lom-0001") {
+		if s := fmt.Sprintf(format, r); strings.Contains(s, "k7p2m9x4q8wd") || !strings.Contains(s, "SeQ-tg-lom-0001") {
 			t.Errorf("%s shows the passphrase, or not the network: %s", format, s)
 		}
 	}

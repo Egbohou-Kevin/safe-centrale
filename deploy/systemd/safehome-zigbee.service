@@ -1,5 +1,5 @@
 [Unit]
-Description=safeHome Zigbee adapter
+Description=SeQ Zigbee adapter
 After=network.target mosquitto.service
 Wants=mosquitto.service
 # Restart forever: an alarm that gives up after a few failures is worse than one that keeps trying.

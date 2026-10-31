@@ -13,5 +13,8 @@ Ici, on trouve :
   L'icône animée s'affiche pendant une attente, l'appairage ouvert ou les tests sans événement. L'en-tête et
   les boutons sont en bleu nuit `#0F2A44`.
 
-Les identifiants techniques (`safehome`, `safehome-hub`…) et le nom affiché « safeHome » ne changent pas
-sans Kevin.
+Plus aucun « safeHome » visible (Kevin, 31/10/2026 03:40 : « Je ne veux plus de safe home quelque part. SeQ »,
+puis « partout ») : titre et en-tête de la console, nom de son Wi-Fi (`SeQ-<site>` par défaut), SMS, descriptions
+des services systemd, documents. Les identifiants techniques restent tels quels (Kevin, 31/10/2026 03:45:39 : « on garde les
+identifiants techniques […] Seul le visible devient SeQ ») : le dépôt, le module Go `safehome`, les programmes et services `safehome-…`, le compte `safehome`, les chemins sur le
+Pi. La centrale n'a pas d'écran qui démarre, donc pas d'animation de lancement (F).

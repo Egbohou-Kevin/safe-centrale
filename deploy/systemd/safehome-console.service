@@ -1,5 +1,5 @@
 [Unit]
-Description=safeHome local console (own Wi-Fi and web page, during the installation mode only)
+Description=SeQ local console (own Wi-Fi and web page, during the installation mode only)
 After=network-online.target mosquitto.service NetworkManager.service
 Wants=network-online.target mosquitto.service
 # Restart forever: an alarm that gives up after a few failures is worse than one that keeps trying.

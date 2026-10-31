@@ -6,7 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {{if .Refresh}}<meta http-equiv="refresh" content="{{.Refresh}}">{{end}}
-<title>safeHome — installation</title>
+<title>SeQ — installation</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 120 120%27%3E%3Crect width=%27120%27 height=%27120%27 rx=%2728%27 fill=%27%230F2A44%27/%3E%3Cpath d=%27M74.25 38.33 A28.5 28.5 0 1 1 45.75 38.33%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%276.75%27 stroke-linecap=%27round%27/%3E%3Cline x1=%2782.5%27 y1=%2785.5%27 x2=%2788.5%27 y2=%2791.5%27 stroke=%27%23fff%27 stroke-width=%276.75%27 stroke-linecap=%27round%27/%3E%3Ccircle cx=%2760%27 cy=%2734.5%27 r=%274.5%27 fill=%27%23F2A900%27/%3E%3Cpath d=%27M51.9 27.75 A10.5 10.5 0 0 1 68.1 27.75%27 fill=%27none%27 stroke=%27%23F2A900%27 stroke-width=%273.3%27 stroke-linecap=%27round%27/%3E%3Cpath d=%27M46.2 22.95 A18 18 0 0 1 73.8 22.95%27 fill=%27none%27 stroke=%27%23F2A900%27 stroke-width=%273.3%27 stroke-linecap=%27round%27 stroke-opacity=%27.55%27/%3E%3C/svg%3E">
 <style>
   body { font: 16px/1.4 system-ui, sans-serif; margin: 0; padding: 0 12px 40px; background: #f6f6f4; color: #1d1d1b; }
@@ -49,7 +49,7 @@
 </head>
 <body>
 <header>
-  <h1>{{template "seq" false}}safeHome — installation</h1>
+  <h1>{{template "seq" false}}SeQ — installation</h1>
   {{with .Overview}}{{if .Open}}<p>Mode installation ouvert jusqu'à {{hour .Until}}</p>{{else}}<p>Mode installation fermé</p>{{end}}{{end}}
   <nav><a href="/">Appareils</a><a href="/tests">Tests</a></nav>
 </header>

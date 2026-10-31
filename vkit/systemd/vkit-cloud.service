@@ -1,7 +1,7 @@
 # Virtual kit: the cloud's broker, TLS on 127.0.0.1:8883 (docs/kit-virtuel.md). Stop
 # it, or block the port, to cut the site's internet.
 [Unit]
-Description=safeHome virtual kit: cloud broker
+Description=SeQ virtual kit: cloud broker
 
 [Service]
 ExecStart=/usr/sbin/mosquitto -c /etc/vkit/cloud.conf

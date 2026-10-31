@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const testText = "safeHome: SMS de test, ne pas repondre."
+const testText = "SeQ: SMS de test, ne pas repondre."
 
 func (g *Gateway) request(r Request) []Action {
 	if r.Channel != ChannelSMS && r.Channel != ChannelCall {
@@ -143,7 +143,7 @@ func (g *Gateway) queueTest(now time.Time) {
 }
 
 // noticeText tells a number taken off the contacts that it no longer gets the alerts.
-const noticeText = "safeHome: ce numero ne recevra plus les alertes de l'alarme. Si personne ne l'a demande, appelez votre installateur."
+const noticeText = "SeQ: ce numero ne recevra plus les alertes de l'alarme. Si personne ne l'a demande, appelez votre installateur."
 
 // noticeRemoved tells by SMS each number the gateway ran with before and no longer
 // has: a contact removed, or given another number. The contacts come from the cloud;

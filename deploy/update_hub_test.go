@@ -108,11 +108,11 @@ Oct 29 15:00:02 hub safehome-hub[41]: level=INFO msg=\"update announced\" until=
 	date -u -r "$n" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$n" +%Y-%m-%dT%H:%M:%SZ ;;
 *list-units*)
 	if crashing; then
-		echo "safehome-hub.service loaded activating auto-restart safeHome hub"
+		echo "safehome-hub.service loaded activating auto-restart SeQ hub"
 	elif ! among "$FAKE_STOPPED"; then
-		echo "safehome-hub.service loaded active running safeHome hub"
+		echo "safehome-hub.service loaded active running SeQ hub"
 	fi
-	echo "safehome-agent.service loaded active running safeHome agent"
+	echo "safehome-agent.service loaded active running SeQ agent"
 	echo "mosquitto.service loaded active running Mosquitto" ;;
 *ActiveEnterTimestampMonotonic*)
 	if [ -n "$FAKE_SHOW_FAILS" ]; then exit 1; fi

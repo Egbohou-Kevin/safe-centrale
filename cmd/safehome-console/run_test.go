@@ -84,7 +84,7 @@ func TestUsageVersionAndCheck(t *testing.T) {
 	}
 	path, _, _ := setup(t, "mqtt://127.0.0.1:1883", 80)
 	code, out, errb := cli("check", "-config", path)
-	if code != 0 || !strings.Contains(out, `network "safehome-tg-lom-0001" on wlan0, page at http://127.0.0.1/`) {
+	if code != 0 || !strings.Contains(out, `network "SeQ-tg-lom-0001" on wlan0, page at http://127.0.0.1/`) {
 		t.Fatalf("%d %q %q", code, out, errb)
 	}
 	if strings.Contains(out+errb, "k7p2m9x4q8wd") {

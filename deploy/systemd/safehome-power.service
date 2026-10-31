@@ -1,5 +1,5 @@
 [Unit]
-Description=safeHome battery module (mains and battery of the hub)
+Description=SeQ battery module (mains and battery of the hub)
 After=mosquitto.service
 Wants=mosquitto.service
 # Restart forever: an alarm that gives up after a few failures is worse than one that keeps trying.

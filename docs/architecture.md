@@ -1,6 +1,6 @@
 <img src="marque/seq-icone.svg" width="56" alt="SeQ">
 
-# Architecture safeHome
+# Architecture SeQ
 
 Statut : en vigueur, vérifiée par `internal/archtest`.
 

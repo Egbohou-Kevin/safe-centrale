@@ -32,7 +32,7 @@ func (g *Gateway) cancel(incident string) []Action {
 
 // confirmText tells a contact that the alarm was taken in hand in their name in the
 // app.
-const confirmText = "safeHome: l'alarme est prise en charge en votre nom dans l'application. Si ce n'est pas vous, personne ne s'en occupe: agissez."
+const confirmText = "SeQ: l'alarme est prise en charge en votre nom dans l'application. Si ce n'est pas vous, personne ne s'en occupe: agissez."
 
 // confirm tells by SMS the contact who acknowledged an incident in the app, once per
 // incident: the acknowledgement comes through the cloud and ends the SMS and calls of

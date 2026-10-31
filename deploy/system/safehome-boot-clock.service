@@ -9,7 +9,7 @@
 # before sysinit.target, so before any network, hence any NTP. Read by the hub under its
 # hardening: /run stays readable with ProtectSystem=strict.
 [Unit]
-Description=safeHome: the clock as it reads at boot, before NTP
+Description=SeQ: the clock as it reads at boot, before NTP
 DefaultDependencies=no
 After=fake-hwclock.service systemd-timesyncd.service
 Before=sysinit.target shutdown.target

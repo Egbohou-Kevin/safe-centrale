@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs or updates safeHome on the hub from a bundle made by deploy/bundle.sh
+# Installs or updates SeQ on the hub from a bundle made by deploy/bundle.sh
 # (docs/systeme.md). Run on the Raspberry Pi, as root, with the system writable (not
 # in read-only mode) and the data partition mounted (step 2 of docs/systeme.md):
 #

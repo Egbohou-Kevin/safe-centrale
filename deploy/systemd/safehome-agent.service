@@ -1,5 +1,5 @@
 [Unit]
-Description=safeHome link agent (hub to cloud)
+Description=SeQ link agent (hub to cloud)
 After=network-online.target mosquitto.service
 Wants=network-online.target mosquitto.service
 # Restart forever: an alarm that gives up after a few failures is worse than one that keeps trying.

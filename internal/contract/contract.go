@@ -1,4 +1,4 @@
-// Package contract implements the safeHome event contract (see docs/contract.md):
+// Package contract implements the SeQ event contract (see docs/contract.md):
 // envelope, message types, payloads and topics. It is the published language that
 // every component and the cloud speak; it knows nothing about the alarm domain.
 package contract

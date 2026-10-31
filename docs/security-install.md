@@ -200,7 +200,7 @@ peut pas ouvrir le mode, même avec ce code.
 ### Le réseau de la console
 
 En mode installation, la centrale allume **son propre réseau Wi-Fi**. Par défaut il
-s'appelle `safehome-tg-lom-0001` et la page est à l'adresse `http://10.42.0.1/`.
+s'appelle `SeQ-tg-lom-0001` et la page est à l'adresse `http://10.42.0.1/`.
 
 - **Rien n'écoute sur le réseau du commerce.** La page n'est servie que sur ce réseau à
   part, et seulement pendant le mode. Elle ne répond qu'aux appareils de ce réseau
@@ -457,7 +457,7 @@ Reste à ajouter : les événements de journal `audit.config_applied`,
 - Chaque service ne voit de `/etc/safehome` que ses fichiers (29 octobre 2026, remarque 3 de
   l'étude de sécurité de la centrale, **en partie close** : première phase, et deuxième phase pour la clé de l'agent et les codes) : la console,
   exposée au Wi-Fi du magasin, ne lit plus `cloud.secret`, `maint.key`, `video.json` ni
-  `gsm.json`, et aucun service safeHome ne lit plus `/var/lib/zigbee2mqtt` (la clé du réseau
+  `gsm.json`, et aucun service SeQ ne lit plus `/var/lib/zigbee2mqtt` (la clé du réseau
   Zigbee). Même utilisateur `safehome` pour tous, la séparation est faite par systemd (option
   b de l'étude `fichiers-par-service`, choisie sans Kevin sur sa recommandation, à relire) ;
   le détail, et comment ajouter un fichier de réglage, dans `systeme.md` (« Ce qui tourne »).
@@ -472,7 +472,7 @@ Reste à ajouter : les événements de journal `audit.config_applied`,
     (un vieux `.prev`) est supprimé (choix du constructeur, pas de Kevin).
 
   Reste ouvert :
-  - **le reste de l'état** est à plat : lisible et inscriptible par toutes les unités safeHome
+  - **le reste de l'état** est à plat : lisible et inscriptible par toutes les unités SeQ
     sauf la vidéo. `engine.json` (lot 6) est reporté ;
   - **la centrale et la console partagent `codes/`** : une console compromise lit les
     empreintes des codes (cassables hors ligne) et peut les réécrire ;

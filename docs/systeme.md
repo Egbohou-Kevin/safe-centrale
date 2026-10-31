@@ -165,7 +165,7 @@ dossier (`safehome`, 0700), que les unités des autres programmes cachent
 |---|---|---|
 | `agent/` | `safehome-agent` | `code-key`, la clé des codes scellés avec le cloud |
 | `codes/` | `safehome-hub`, `safehome-console` (et l'outil `safehome-hub codes`, lancé hors unité) | les codes d'accès : `access.json` (les empreintes), `installer.json`, `codes-taken.json`, leurs `.prev`, le verrou `codes.lock`, la marque `moved-by-install` |
-| la racine | toutes les unités safeHome sauf la vidéo (trois dossiers seulement, ci-dessus) | le reste de l'état, à plat (`hub.pid`, `site-devices.json`…), et un lien relatif par fichier déplacé |
+| la racine | toutes les unités SeQ sauf la vidéo (trois dossiers seulement, ci-dessus) | le reste de l'état, à plat (`hub.pid`, `site-devices.json`…), et un lien relatif par fichier déplacé |
 
 `agent/` est caché du hub, de zigbee, du GSM, de l'alimentation, de la maintenance et de la
 console ; `codes/` de l'agent, du GSM, de zigbee, de l'alimentation et de la maintenance. La vidéo
@@ -495,7 +495,7 @@ d'appareil `qos: 0` à l'appairage de chaque clavier, et de nouveau à chaque d�
 `queue_qos0_messages false` est écrit dans le fichier (c'est la valeur par défaut) et
 vérifié par `go test ./deploy`.
 
-### 7. Utilisateur et programmes safeHome
+### 7. Utilisateur et programmes SeQ
 
 Sur l'ordinateur (voir `operations.md`) :
 

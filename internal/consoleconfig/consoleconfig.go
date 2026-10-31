@@ -141,7 +141,7 @@ func parseService(f file) (Result, error) {
 func parseWifi(w wifiFile, site, dir string) (Wifi, error) {
 	out := Wifi{
 		Interface: cmp.Or(w.Interface, "wlan0"),
-		SSID:      cmp.Or(w.SSID, "safehome-"+site),
+		SSID:      cmp.Or(w.SSID, "SeQ-"+site),
 		Address:   cmp.Or(w.Address, "10.42.0.1"),
 	}
 	if ip := net.ParseIP(out.Address); ip == nil || ip.To4() == nil {

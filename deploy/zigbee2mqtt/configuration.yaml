@@ -1,4 +1,4 @@
-# Zigbee2MQTT for the safeHome hub: /var/lib/zigbee2mqtt/configuration.yaml
+# Zigbee2MQTT for the SeQ hub: /var/lib/zigbee2mqtt/configuration.yaml
 # Written for Zigbee2MQTT 2.x and the Sonoff ZBDongle-E, and run as it is with
 # Zigbee2MQTT 2.14.2 on Node.js 24 (trial on real hardware, 24 October 2026; see
 # docs/systeme.md, step 8, and docs/adapter-zigbee.md).

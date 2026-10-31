@@ -1,4 +1,4 @@
-// Package mqtt is the adapter between safeHome and an MQTT 5 broker (Mosquitto on
+// Package mqtt is the adapter between SeQ and an MQTT 5 broker (Mosquitto on
 // the hub). It is the only package that imports the MQTT library: the domains, the
 // contract and the drivers see plain messages. Replacing the library means
 // rewriting this package and nothing else.

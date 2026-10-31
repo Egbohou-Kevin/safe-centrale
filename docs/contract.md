@@ -1,6 +1,6 @@
 <img src="marque/seq-icone.svg" width="56" alt="SeQ">
 
-# Contrat d'événements safeHome
+# Contrat d'événements SeQ
 
 Statut : v1 validée sur les points de format, d'envoi vers le cloud, de heartbeat
 et d'armement. Les schémas JSON sont dans `schemas/`, vérifiés par les tests.

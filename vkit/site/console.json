@@ -9,7 +9,7 @@
   "pair_for": "2m",
   "wifi": {
     "interface": "wlan0",
-    "ssid": "safehome-tg-lom-0001",
+    "ssid": "SeQ-tg-lom-0001",
     "passphrase_file": "console.secret",
     "address": "10.42.0.1"
   }

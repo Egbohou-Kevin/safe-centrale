@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs inside the virtual Pi, as root (vkit/deploy.sh starts it): puts the fake
-# devices and the cloud's broker in place, then installs safeHome with the real
+# devices and the cloud's broker in place, then installs SeQ with the real
 # deploy/install.sh, as on a real hub.
 #
 #   sudo bash /tmp/vkit-deploy/vkit/install-kit.sh /tmp/vkit-deploy

@@ -1,6 +1,6 @@
 # Virtual kit: the fake GSM modem, on /dev/ttyVMODEM (docs/kit-virtuel.md).
 [Unit]
-Description=safeHome virtual kit: fake GSM modem
+Description=SeQ virtual kit: fake GSM modem
 Before=safehome-gsm.service
 
 [Service]
