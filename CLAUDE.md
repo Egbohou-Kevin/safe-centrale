@@ -12,3 +12,11 @@ seule vérification complète par commit.
 - Le `scripts/check.sh` complet (race, shellcheck, build pour la cible) tourne une fois, avant
   la fusion.
 <!-- creator:end -->
+
+## Le cloud, seule source de vérité (AD-23)
+
+Kevin, 31/10/2026 : la centrale, l'appli et la console ne contiennent que le minimum. Tout le reste
+(noms, règles, mise en forme partagée) est traité dans le cloud, l'intermédiaire qui fait la
+correspondance entre eux. Un contexte du cloud qui a besoin d'un autre ouvre un port (sortie chez
+lui, entrée chez le propriétaire, pont dans `app`) : jamais une raison de traiter ailleurs.
+Détail : `safeHome-cloud/docs/00-decisions-d-architecture.md`, AD-23.
