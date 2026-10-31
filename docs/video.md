@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Vidéo en direct
 
 Statut : service vidéo de la centrale codé (`internal/video`, `internal/videoapp`,

@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Alimentation de la centrale
 
 Statut : choix du module fait le 21 octobre 2026 (Geekworm X728). Le programme est

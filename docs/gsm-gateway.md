@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Passerelle GSM
 
 Statut : v1 codée et testée sans matériel (faux modem). À valider sur le vrai modem avec

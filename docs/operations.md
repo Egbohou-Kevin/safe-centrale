@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Exploitation de la centrale
 
 Ce document dit comment lancer et entretenir les programmes `safehome-hub`,

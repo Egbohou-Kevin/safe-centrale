@@ -1,3 +1,5 @@
+<img src="docs/marque/seq-icone.svg" width="56" alt="SeQ">
+
 # safeHome
 
 Système de télésurveillance pour les commerces. La conception est dans `docs/`, le

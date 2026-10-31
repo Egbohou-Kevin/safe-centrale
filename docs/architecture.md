@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Architecture safeHome
 
 Statut : en vigueur, vérifiée par `internal/archtest`.
@@ -325,6 +327,7 @@ tests tournent avec `go test ./...` (environ une seconde) :
 | `packagedoc` : chaque paquet a un commentaire « Package nom … » (« Command nom … ») | – |
 | `tls-verify` : aucun fichier, tests compris, ne coupe la vérification du certificat TLS (`InsecureSkipVerify`) ; un test passe par le client de son serveur `httptest` (29 octobre 2026) | – |
 | `readme` : chaque paquet de `internal/` et `cmd/` a sa ligne dans le README, et aucune ligne ne nomme un paquet disparu | – |
+| `brand` : chaque document `.md` (sauf `CLAUDE.md`) commence par l'icône SeQ, `docs/marque/seq-icone.svg`, avec le chemin relatif à son dossier (31 octobre 2026) | – |
 
 Lire un échec : `fichier:ligne: [règle] ce qui ne va pas. Fix: quoi faire`. On corrige
 le code. Si la règle a vraiment tort à cet endroit, l'exception va dans `allowed`

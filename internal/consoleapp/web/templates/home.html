@@ -9,7 +9,7 @@
   {{with .Status}}<p>Pont {{if eq .Bridge "online"}}en ligne{{else}}<span class="problem">{{.Bridge}}</span>{{end}}, {{.Devices}} appareil(s){{if .Offline}}, <span class="warn">muets : {{join .Offline}}</span>{{end}}.</p>
   {{else}}<p class="warn">L'adaptateur Zigbee ne donne pas de nouvelles.</p>{{end}}
   {{with .Pairing}}
-    {{if .Active}}<p><strong>Appairage ouvert jusqu'à {{clock .Until}}.</strong> Mettez chaque appareil en mode appairage (voir sa notice).</p>
+    {{if .Active}}<p class="waiting">{{template "seq" true}}<span><strong>Appairage ouvert jusqu'à {{clock .Until}}.</strong> Mettez chaque appareil en mode appairage (voir sa notice).</span></p>
     {{else if .Err}}<p class="problem">L'appairage s'est arrêté : {{.Err}}</p>
     {{else}}<p class="muted">Appairage fermé.</p>{{end}}
     {{if .Added}}<p>Ajoutés :</p><ul>{{range .Added}}<li><span class="id">{{.DeviceID}}</span> {{.Model}} ({{join .Capabilities}})</li>{{end}}</ul>{{end}}

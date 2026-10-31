@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Système de la centrale
 
 Statut : procédure v1, écrite avant le kit d'essai. Les fichiers à poser sont dans

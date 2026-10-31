@@ -1,3 +1,5 @@
+<img src="docs/marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Kit de base — petit commerce (Togo)
 
 Kit de départ pour une boutique avec une porte d'entrée et une arrière-cour.

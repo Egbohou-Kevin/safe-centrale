@@ -5,7 +5,7 @@
   <p class="muted">Déclenchez chaque appareil (ouvrez la porte, passez devant le détecteur, appuyez sur le bouton) : il doit apparaître ici dans les secondes qui suivent. La page se met à jour seule.</p>
   {{if .Events}}<table>
     {{range .Events}}<tr><td>{{clock .At}}</td><td><span class="id">{{.DeviceID}}</span>{{if .Zone}}<br><span class="muted">{{.Zone}}</span>{{end}}</td><td>{{.Capability}}</td><td>{{.Value}}</td></tr>{{end}}
-  </table>{{else}}<p>Rien pour l'instant.</p>{{end}}
+  </table>{{else}}<p class="waiting">{{template "seq" true}}<span>Rien pour l'instant.</span></p>{{end}}
 </section>
 {{end}}
 </body>

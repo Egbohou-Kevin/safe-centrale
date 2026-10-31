@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Adaptateur Zigbee
 
 Statut : v1 codée et testée sans matériel (voir « Ce qui est codé » à la fin), puis

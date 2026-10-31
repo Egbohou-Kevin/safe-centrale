@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Kit virtuel
 
 Statut : en place depuis le 21 octobre 2026. Une centrale complète tourne dans une

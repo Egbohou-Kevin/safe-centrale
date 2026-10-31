@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Maintenance à distance
 
 Statut : codé côté centrale (`internal/maint`, `internal/maintapp`,

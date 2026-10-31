@@ -158,7 +158,7 @@ func TestThePageRefreshesWhilePairing(t *testing.T) {
 		Rejected: []contract.RegistryDeviceRejectedData{{Model: "TS0203", Reason: contract.RejectUnknownModel}}}
 	o.Busy = true
 	body := get(newHandler(t, &fakeConsole{o: o}), "/").Body.String()
-	for _, want := range []string{`content="3"`, "Appairage ouvert jusqu'\u00e0 14:30:00", "dev_k7p2", "TS0203 : mod\u00e8le inconnu"} {
+	for _, want := range []string{`content="3"`, "Appairage ouvert jusqu'\u00e0 14:30:00", "dev_k7p2", "TS0203 : mod\u00e8le inconnu", `class="seq wait"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
 		}
@@ -173,6 +173,23 @@ func TestTheTestsPage(t *testing.T) {
 	for _, want := range []string{`content="2"`, "14:29:00", "Porte &lt;A&gt;", "contact", "open"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
+		}
+	}
+}
+
+// SeQ's mark heads every page and its favicon; its waves play only while the installer waits.
+func TestEveryPageCarriesSeQsMark(t *testing.T) {
+	quiet := overview()
+	quiet.Events = nil
+	for path, waits := range map[string]bool{"/": false, "/tests": true} {
+		body := get(newHandler(t, &fakeConsole{o: quiet}), path).Body.String()
+		for _, want := range []string{`aria-label="SeQ`, `rel="icon" href="data:image/svg+xml`, "prefers-reduced-motion"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s: missing %q", path, want)
+			}
+		}
+		if got := strings.Contains(body, `class="seq wait"`); got != waits {
+			t.Errorf("%s: waiting animation %v, want %v", path, got, waits)
 		}
 	}
 }

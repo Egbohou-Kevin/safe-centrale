@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Glossaire
 
 Les documents sont en français, le code et ses commentaires en anglais. Ce glossaire

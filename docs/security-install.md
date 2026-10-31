@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Sécurité et installation d'un site
 
 Statut : v1, codée ; essayée sur le kit virtuel (`kit-virtuel.md`), pas encore sur un

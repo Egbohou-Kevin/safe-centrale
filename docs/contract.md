@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Contrat d'événements safeHome
 
 Statut : v1 validée sur les points de format, d'envoi vers le cloud, de heartbeat

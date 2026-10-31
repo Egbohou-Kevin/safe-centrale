@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Escalade des alertes
 
 Statut : v1 codée (`internal/escalation`), à valider sur le terrain. Les choix faits au codage sont à la fin du document.

@@ -1,3 +1,5 @@
+{{define "seq"}}<svg class="seq{{if .}} wait{{end}}" viewBox="0 0 120 120" width="32" height="32" role="img" aria-label="SeQ{{if .}}, en attente{{end}}"><rect width="120" height="120" rx="28" fill="#0F2A44"/><path d="M74.25 38.33 A28.5 28.5 0 1 1 45.75 38.33" fill="none" stroke="#FFFFFF" stroke-width="6.75" stroke-linecap="round"/><line x1="82.5" y1="85.5" x2="88.5" y2="91.5" stroke="#FFFFFF" stroke-width="6.75" stroke-linecap="round"/><circle cx="60" cy="34.5" r="4.5" fill="#F2A900"/><path class="w1" d="M51.9 27.75 A10.5 10.5 0 0 1 68.1 27.75"/><path class="w2" d="M46.2 22.95 A18 18 0 0 1 73.8 22.95"/></svg>{{end}}
+
 {{define "head"}}<!doctype html>
 <html lang="fr">
 <head>
@@ -5,9 +7,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {{if .Refresh}}<meta http-equiv="refresh" content="{{.Refresh}}">{{end}}
 <title>safeHome — installation</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 120 120%27%3E%3Crect width=%27120%27 height=%27120%27 rx=%2728%27 fill=%27%230F2A44%27/%3E%3Cpath d=%27M74.25 38.33 A28.5 28.5 0 1 1 45.75 38.33%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%276.75%27 stroke-linecap=%27round%27/%3E%3Cline x1=%2782.5%27 y1=%2785.5%27 x2=%2788.5%27 y2=%2791.5%27 stroke=%27%23fff%27 stroke-width=%276.75%27 stroke-linecap=%27round%27/%3E%3Ccircle cx=%2760%27 cy=%2734.5%27 r=%274.5%27 fill=%27%23F2A900%27/%3E%3Cpath d=%27M51.9 27.75 A10.5 10.5 0 0 1 68.1 27.75%27 fill=%27none%27 stroke=%27%23F2A900%27 stroke-width=%273.3%27 stroke-linecap=%27round%27/%3E%3Cpath d=%27M46.2 22.95 A18 18 0 0 1 73.8 22.95%27 fill=%27none%27 stroke=%27%23F2A900%27 stroke-width=%273.3%27 stroke-linecap=%27round%27 stroke-opacity=%27.55%27/%3E%3C/svg%3E">
 <style>
   body { font: 16px/1.4 system-ui, sans-serif; margin: 0; padding: 0 12px 40px; background: #f6f6f4; color: #1d1d1b; }
-  header { position: sticky; top: 0; background: #1f4e5f; color: #fff; margin: 0 -12px 12px; padding: 10px 12px; }
+  header { position: sticky; top: 0; background: #0F2A44; color: #fff; margin: 0 -12px 12px; padding: 10px 12px; }
   header h1 { font-size: 18px; margin: 0; }
   header p { margin: 2px 0 0; font-size: 14px; opacity: .9; }
   nav a { color: #fff; margin-right: 14px; }
@@ -23,18 +26,30 @@
   .id { font-family: ui-monospace, monospace; font-weight: 600; }
   form { margin: 6px 0 0; }
   input[type=text], input[type=password], select { font-size: 16px; padding: 6px; width: 100%; box-sizing: border-box; margin: 2px 0 6px; }
-  button { font-size: 16px; padding: 8px 12px; border-radius: 6px; border: 1px solid #1f4e5f; background: #1f4e5f; color: #fff; }
-  button.light { background: #fff; color: #1f4e5f; }
+  button { font-size: 16px; padding: 8px 12px; border-radius: 6px; border: 1px solid #0F2A44; background: #0F2A44; color: #fff; }
+  button.light { background: #fff; color: #0F2A44; }
   button.danger { background: #fff; color: #c62828; border-color: #c62828; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; }
   ul { margin: 4px 0; padding-left: 20px; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   td { border-top: 1px solid #eee; padding: 6px 4px; }
+  /* SeQ's mark; .wait plays the loading animation of safeHome-app/docs/marque (1.4 s, waves from the dot upwards) */
+  header h1 { display: flex; align-items: center; gap: 10px; }
+  .seq { flex: none; vertical-align: middle; }
+  .seq path.w1, .seq path.w2 { fill: none; stroke: #F2A900; stroke-width: 3.3; stroke-linecap: round; }
+  .seq path.w2 { opacity: .55; }
+  .seq.wait path.w1, .seq.wait path.w2 { opacity: 0; animation: 1.4s ease-in-out infinite; }
+  .seq.wait path.w1 { animation-name: seq-w1; }
+  .seq.wait path.w2 { animation-name: seq-w2; }
+  @keyframes seq-w1 { 0% { opacity: 0 } 20% { opacity: 1 } 70% { opacity: 1 } 100% { opacity: 0 } }
+  @keyframes seq-w2 { 0%, 20% { opacity: 0 } 40% { opacity: .55 } 70% { opacity: .55 } 100% { opacity: 0 } }
+  @media (prefers-reduced-motion: reduce) { .seq.wait path.w1, .seq.wait path.w2 { animation: none } .seq.wait path.w1 { opacity: 1 } .seq.wait path.w2 { opacity: .55 } }
+  .waiting { display: flex; align-items: center; gap: 10px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>safeHome — installation</h1>
+  <h1>{{template "seq" false}}safeHome — installation</h1>
   {{with .Overview}}{{if .Open}}<p>Mode installation ouvert jusqu'à {{hour .Until}}</p>{{else}}<p>Mode installation fermé</p>{{end}}{{end}}
   <nav><a href="/">Appareils</a><a href="/tests">Tests</a></nav>
 </header>

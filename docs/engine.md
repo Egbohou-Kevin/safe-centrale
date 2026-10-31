@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Moteur d'alarme
 
 Statut : spécifié pour la v1. Le cœur est codé dans `internal/engine` (voir « Avancement »).

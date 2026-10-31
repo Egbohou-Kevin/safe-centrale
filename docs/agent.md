@@ -1,3 +1,5 @@
+<img src="marque/seq-icone.svg" width="56" alt="SeQ">
+
 # Agent de liaison
 
 Statut : v1 codée (`internal/agent`, `internal/agentapp`, `cmd/safehome-agent`), avec
