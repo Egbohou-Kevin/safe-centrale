@@ -1219,7 +1219,14 @@ Puis :
 4. un code juste accepté après le déplacement : le changer à la console
    (`journalctl -u safehome-hub -b | grep "access codes reloaded"`), puis le taper au clavier ou
    dans l'application : il désarme ; un code faux est refusé (témoin positif). `access.json` à
-   plat reste un lien (`ls -l`), `codes/access.json` a pris l'heure du changement ;
+   plat reste un lien (`ls -l`), `codes/access.json` a pris l'heure du changement.
+   Tenu le 31 octobre 2026 (0.2.7-670bb12) : sans clavier ni code installateur, la console
+   ne s'ouvre pas, le code a été changé par `codes set` à 12:14:22 (« access codes reloaded »,
+   `users=1`), `codes.lock` et `access.json.prev` sont apparus, le lien est resté ; dans
+   l'application, armer (sortie à +30 s) puis désarmer avec le nouveau code, armer encore, un code
+   faux, puis désarmer à 12:16:41 (`arm_origin` app, `u_kevin`). Les messages envoyés au cloud
+   sont vidés une fois partis : le refus du code faux a été vu dans l'application, pas dans le
+   journal de la centrale, qui ne trace ni armement ni désarmement au niveau INFO ;
 5. un retour arrière : la mise à jour (`update-hub.sh` 1 à 4) avec le paquet de la version
    d'avant, un code changé à la console, puis la remise à jour avec le paquet courant ; le code
    changé est gardé (la marque fait gagner le fichier à plat) : il désarme, et
@@ -1228,6 +1235,20 @@ Puis :
    `sudo ls -l /var/lib/safehome/access.json.prev` doit montrer un lien
    (`-> codes/access.json`, un lien dur vers le lien, pas vers son fichier) ; sinon le noter, la
    reprise du `.prev` serait à revoir.
+   Essai du 31 octobre 2026, retour vers 0.2.5-b652c0d (la dernière d'avant le déplacement ;
+   rc 0, aucun échec, désarmée, le lien resté et lu par l'ancien programme) : le code changé à
+   12:26:27 par `codes set` sous `safehome` a remplacé le lien par un fichier à plat, mais
+   **aucun `access.json.prev` n'a été écrit** : le lien appartient à root, et
+   `fs.protected_hardlinks` interdit à `safehome` d'en faire un lien dur (reproduit sur le Pi :
+   `Operation not permitted` sous `safehome`, accepté sous root). Ce n'est qu'au mieux (un
+   avertissement sur la sortie de l'outil) : l'ancien programme perd la version d'avant de ce
+   seul premier changement, les suivants la gardent (le fichier à plat est à `safehome`).
+   Remise à jour en 0.2.7-dc80876 (rc 0, fin 12:34, aucun échec) : le fichier à plat a gagné,
+   `codes/access.json` est celui de 12:26:27, `access.json` et `access.json.prev` sont de
+   nouveau des liens ; `codes/access.json.prev` reste celui du 29 octobre (le code de 12:14,
+   jamais gardé par l'ancien programme, est perdu, sans gêne : seul le courant compte). Un
+   `codes.lock` à plat (12:26:27, vide) reste à côté du dossier, que l'installation ne déplace
+   pas : sans effet, le programme courant ne prend que celui du dossier.
 
 Conséquence : **pas de mises à jour automatiques** (elles seraient effacées au
 redémarrage). La centrale n'est pas joignable depuis internet (derrière la box ou
