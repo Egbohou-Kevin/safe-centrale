@@ -1248,7 +1248,9 @@ Puis :
    nouveau des liens ; `codes/access.json.prev` reste celui du 29 octobre (le code de 12:14,
    jamais gardé par l'ancien programme, est perdu, sans gêne : seul le courant compte). Un
    `codes.lock` à plat (12:26:27, vide) reste à côté du dossier, que l'installation ne déplace
-   pas : sans effet, le programme courant ne prend que celui du dossier.
+   pas : sans effet, le programme courant ne prend que celui du dossier. Témoin positif :
+   armée depuis l'application à 12:39:42, désarmée à 12:40:46 avec le code de 12:26:27
+   (`u_kevin`).
 
 Conséquence : **pas de mises à jour automatiques** (elles seraient effacées au
 redémarrage). La centrale n'est pas joignable depuis internet (derrière la box ou
