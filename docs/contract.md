@@ -824,6 +824,11 @@ courant sans internet, elle est fausse jusqu'à la synchronisation : à `false`,
 se fie à sa propre heure de réception plutôt qu'à `ts`. Absent quand la centrale ne
 sait pas le dire.
 
+`fw` donne la version de chaque composant. `fw.engine` est celle du programme lui-même
+(`safehome-hub version`, depuis le 4 novembre 2026), lue dans le binaire et non dans le
+fichier de configuration ; la mise en service l'affiche (AD-27). Les autres composants
+viennent de la clé `versions` du fichier, s'il y en a.
+
 `serial` (depuis le 4 novembre 2026) est le numéro de série de la machine, lu une fois
 au démarrage dans `/sys/firmware/devicetree/base/serial-number` : la centrale se
 présente à la mise en service, l'installateur ne le saisit pas (AD-27). Facultatif : il

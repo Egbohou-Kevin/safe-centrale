@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"safehome/internal/adapter/mqtt/mqtttest"
+	"safehome/internal/contract"
 	"safehome/internal/driver/drivertest"
 	"safehome/internal/escalation"
 	"safehome/internal/hubconfig"
@@ -228,6 +229,36 @@ func fakeSystemd(t *testing.T) func() []string {
 		}
 	}()
 	return func() []string { mu.Lock(); defer mu.Unlock(); return append([]string(nil), got...) }
+}
+
+// The commissioning shows the version the heartbeat gives (AD-27): the program's own,
+// which no deployment writes, even over a file's stale word, and the file's other
+// components stay.
+func TestTheHeartbeatSaysTheProgramsVersion(t *testing.T) {
+	before := version
+	version = "0.2.7-dc80876"
+	t.Cleanup(func() { version = before })
+	for name, extra := range map[string]string{
+		"no versions in the file": `, "heartbeat_every": "50ms"`,
+		"a stale engine":          `, "heartbeat_every": "50ms", "versions": {"engine": "0.1.0", "adapter": "0.1.0"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			broker := mqtttest.Start(t, "safehome-hub")
+			state := t.TempDir()
+			l := startLive(t, broker, state, writeConfig(t, broker.URL(), state, extra))
+			l.waitCount(contract.TypeHeartbeat, 1)
+			d, err := contract.DecodeData[contract.HeartbeatData](l.seen(contract.TypeHeartbeat)[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d.FW["engine"] != "0.2.7-dc80876" {
+				t.Fatalf("fw %v", d.FW)
+			}
+			if strings.Contains(extra, "adapter") && d.FW["adapter"] != "0.1.0" {
+				t.Fatalf("the file's other component is lost: %v", d.FW)
+			}
+		})
+	}
 }
 
 func TestTheHubTellsSystemdItIsReadyAndStillWorks(t *testing.T) {

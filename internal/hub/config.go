@@ -44,7 +44,7 @@ type Config struct {
 	Outbox     outbox.Settings
 	AuthQueue  int // code checks that may wait, in each origin's lane (keypad, app)
 
-	Versions map[string]string // component -> version, for the heartbeat
+	Versions map[string]string // component -> version, for the heartbeat; "engine" is the program's own
 }
 
 // DefaultConfig returns the defaults decided in the design documents.

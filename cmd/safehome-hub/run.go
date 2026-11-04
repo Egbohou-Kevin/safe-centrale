@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"os/signal"
 	"slices"
@@ -169,6 +170,7 @@ func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr
 // codes it takes are those of the contacts saved now, read like the console does: the
 // configuration from the cloud may have changed them since the start.
 func newHub(cfg hubconfig.Result, configPath string, deps hub.Deps) (*hub.Hub, error) {
+	cfg.Hub.Versions = withTheProgramsVersion(cfg.Hub.Versions, version)
 	deps.Clock = driver.SystemClock()
 	deps.ClockSynced = sysclock.Synced
 	deps.Serial = machine.Serial
@@ -187,6 +189,18 @@ func newHub(cfg hubconfig.Result, configPath string, deps hub.Deps) (*hub.Hub, e
 		return ids, nil
 	}
 	return hub.New(cfg.Hub, deps)
+}
+
+// withTheProgramsVersion is what the heartbeat says of the software: the components the
+// file names, with the engine's version taken from the program itself, the one word no
+// deployment has to write and that cannot go stale (AD-27).
+func withTheProgramsVersion(file map[string]string, program string) map[string]string {
+	versions := maps.Clone(file)
+	if versions == nil {
+		versions = map[string]string{}
+	}
+	versions["engine"] = program
+	return versions
 }
 
 // devicesChanged says whether the installer changed the zones or the sirens (the
