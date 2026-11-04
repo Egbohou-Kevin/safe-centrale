@@ -832,8 +832,10 @@ viennent de la clé `versions` du fichier, s'il y en a.
 `serial` (depuis le 4 novembre 2026) est le numéro de série de la machine, lu une fois
 au démarrage dans `/sys/firmware/devicetree/base/serial-number` : la centrale se
 présente à la mise en service, l'installateur ne le saisit pas (AD-27). Facultatif : il
-est absent d'une centrale ancienne, d'une machine qui n'en dit pas, ou d'un numéro nul
-ou hors format (`contract.HubSerial`), et le heartbeat part quand même. La lecture ne
+est absent d'une centrale ancienne, d'une machine qui n'en dit pas, ou d'un numéro hors
+format (`contract.HubSerial`), et le heartbeat part quand même. Une série de zéros, ce
+que dit une carte sans vrai numéro, part telle quelle : c'est le cloud qui refuse de la
+montrer (`HubCard`, AD-23), une centrale ne juge que la forme. La lecture ne
 retient ni l'alarme ni le heartbeat : tant qu'elle n'a pas répondu, il part sans
 `serial`.
 

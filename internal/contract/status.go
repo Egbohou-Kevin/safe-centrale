@@ -22,12 +22,13 @@ type HeartbeatData struct {
 const MaxHubSerial = 64
 
 // HubSerial turns what the machine says into the serial of system.heartbeat: the
-// firmware ends it with NUL. It gives "" for what the schema would refuse, and for a
-// serial of zeros, what a board without a real one says: an odd serial is left out,
-// it never gets the heartbeat refused.
+// firmware ends it with NUL. It gives "" for what the schema would refuse: an odd
+// serial is left out, it never gets the heartbeat refused. It judges the form only: a
+// serial of zeros, what a board without a real one says, goes out as said, and the
+// cloud decides what to show (AD-23).
 func HubSerial(raw string) string {
 	s := strings.Trim(raw, "\x00 \t\r\n")
-	if s == "" || len(s) > MaxHubSerial || strings.Trim(s, "0") == "" {
+	if s == "" || len(s) > MaxHubSerial {
 		return ""
 	}
 	for _, c := range s {

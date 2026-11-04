@@ -477,7 +477,8 @@ func TestAHeartbeatWithoutASerialIsValid(t *testing.T) {
 }
 
 // Whatever the machine says, HubSerial gives what the schema takes or nothing: an odd
-// serial must not get the heartbeat refused, the site would look silent.
+// serial must not get the heartbeat refused, the site would look silent. It says what
+// the machine says: a serial of zeros is the cloud's to refuse (HubCard), not the hub's.
 func TestHubSerialOnlyGivesWhatTheSchemaTakes(t *testing.T) {
 	for raw, want := range map[string]string{
 		"10000000a1b2c3d4\x00":              "10000000a1b2c3d4",
@@ -485,7 +486,7 @@ func TestHubSerialOnlyGivesWhatTheSchemaTakes(t *testing.T) {
 		"SN-12.a_b":                         "SN-12.a_b",
 		"":                                  "",
 		"\x00":                              "",
-		"0000000000000000\x00":              "",
+		"0000000000000000\x00":              "0000000000000000", // the cloud refuses it (AD-23)
 		"12 34":                             "",
 		"caf\u00e9":                         "",
 		strings.Repeat("a", MaxHubSerial):   strings.Repeat("a", MaxHubSerial),
