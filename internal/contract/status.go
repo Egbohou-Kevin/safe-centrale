@@ -1,5 +1,7 @@
 package contract
 
+import "strings"
+
 // HeartbeatData is the payload of system.heartbeat.
 type HeartbeatData struct {
 	BootID     string            `json:"boot_id"`
@@ -10,7 +12,33 @@ type HeartbeatData struct {
 	// ClockOK says whether the hub's clock is synchronised (NTP): after a power cut
 	// without internet, the times it sends may be wrong. Absent when unknown.
 	ClockOK *bool `json:"clock_ok,omitempty"`
+	// Serial is the machine's serial number, read on it, for the commissioning (since 4
+	// November 2026). Absent from an older hub or a machine that tells none: see
+	// HubSerial.
+	Serial string `json:"serial,omitempty"`
 }
+
+// MaxHubSerial bounds the serial of system.heartbeat, in characters.
+const MaxHubSerial = 64
+
+// HubSerial turns what the machine says into the serial of system.heartbeat: the
+// firmware ends it with NUL. It gives "" for what the schema would refuse, and for a
+// serial of zeros, what a board without a real one says: an odd serial is left out,
+// it never gets the heartbeat refused.
+func HubSerial(raw string) string {
+	s := strings.Trim(raw, "\x00 \t\r\n")
+	if s == "" || len(s) > MaxHubSerial || strings.Trim(s, "0") == "" {
+		return ""
+	}
+	for _, c := range s {
+		if !strings.ContainsRune(hubSerialChars, c) {
+			return ""
+		}
+	}
+	return s
+}
+
+const hubSerialChars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz._-"
 
 // GSMLine is the state of one GSM line (a modem and its SIM).
 type GSMLine struct {

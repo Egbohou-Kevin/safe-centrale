@@ -36,6 +36,13 @@
     "clock_ok": {
       "type": "boolean",
       "description": "Horloge de la centrale synchronisée (NTP). Absent si inconnu."
+    },
+    "serial": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[0-9A-Za-z._-]+$",
+      "description": "Numéro de série de la machine, lu sur elle (depuis le 4 novembre 2026), pour la mise en service. Absent d'une centrale ancienne ou d'une machine qui n'en dit pas."
     }
   },
   "required": [

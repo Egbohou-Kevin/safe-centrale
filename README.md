@@ -96,6 +96,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/adapter/upload` | L'envoi d'un fichier au cloud en HTTPS (PUT, jeton en `Authorization`), sans jamais écrire le jeton (bibliothèque standard seulement) |
 | `internal/adapter/sdnotify` | Le dialogue avec systemd : « démarré », puis « fonctionne encore » tant que les boucles répondent (chien de garde, bibliothèque standard seulement) |
 | `internal/adapter/sysclock` | Dit si l'horloge du système est synchronisée, pour `clock_ok` du heartbeat (noyau Linux, bibliothèque standard seulement) |
+| `internal/adapter/machine` | Lit ce que la carte dit de son numéro de série dans son device tree, pour `serial` du heartbeat (bibliothèque standard seulement) |
 | `internal/adapter/pidfile` | Empêche un programme de tourner deux fois sur le même état |
 | `internal/adapter/go2rtc` | L'adaptateur go2rtc : un processus par session, piloté sur un socket Unix (bibliothèque standard seulement) ; `go2rtctest` est un faux go2rtc pour les tests |
 | `internal/adapter/sshtunnel` | Le tunnel : le client OpenSSH vers le bastion (`ssh -R`), bastion épinglé, aucune configuration lue |

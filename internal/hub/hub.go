@@ -64,8 +64,9 @@ type Hub struct {
 	started time.Time
 
 	// Read from any goroutine.
-	mode  atomic.Value // the alarm state, for the heartbeat
-	mains atomic.Bool  // a mains reading has been seen
+	mode   atomic.Value // the alarm state, for the heartbeat
+	mains  atomic.Bool  // a mains reading has been seen
+	serial atomic.Value // the machine's serial number, for the heartbeat, once read
 	// powerIgnored: a mains or hub battery reading was ignored on a site without a
 	// battery module, and logged once.
 	powerIgnored atomic.Bool
@@ -298,6 +299,7 @@ func (h *Hub) Run(ctx context.Context) error {
 	defer h.escal.stop()
 	defer context.AfterFunc(ctx, h.stop)()
 
+	go h.readSerial()
 	var domains, rest sync.WaitGroup
 	domains.Go(func() { h.alarm.loop.Run(h.life) })
 	domains.Go(func() { h.monitor.loop.Run(h.life) })

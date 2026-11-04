@@ -44,7 +44,7 @@ type Config struct {
 	Outbox     outbox.Settings
 	AuthQueue  int // code checks that may wait, in each origin's lane (keypad, app)
 
-	Versions map[string]string // component -> version, for the heartbeat
+	Versions map[string]string // component -> version, for the heartbeat; "engine" is the program's own
 }
 
 // DefaultConfig returns the defaults decided in the design documents.
@@ -134,6 +134,10 @@ type Deps struct {
 	// ClockSynced says whether the system clock is synchronised, for the heartbeat;
 	// known is false when it cannot tell. Nil leaves clock_ok out.
 	ClockSynced func() (synced, known bool)
+	// Serial reads what the machine says as its serial number, for the heartbeat, which
+	// checks it (contract.HubSerial); "" when it says none. Read once, off the way: see
+	// Hub.readSerial. Nil leaves serial out.
+	Serial func() string
 	// Uptime says how long the system has been up; ok is false when it cannot tell.
 	// The engine takes now less it for when the system started, to tell the device
 	// states the broker kept from before the clock went back (see engine.Boot). Nil, or
