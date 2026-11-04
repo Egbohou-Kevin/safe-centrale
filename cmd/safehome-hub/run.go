@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"safehome/internal/adapter/filestore"
+	"safehome/internal/adapter/machine"
 	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/sysclock"
 	"safehome/internal/configapp"
@@ -170,6 +171,7 @@ func runHub(ctx context.Context, cfg hubconfig.Result, configPath string, stderr
 func newHub(cfg hubconfig.Result, configPath string, deps hub.Deps) (*hub.Hub, error) {
 	deps.Clock = driver.SystemClock()
 	deps.ClockSynced = sysclock.Synced
+	deps.Serial = machine.Serial
 	deps.Uptime = sysclock.Uptime
 	deps.StartShown = sysclock.StartShown
 	deps.Updating = readUpdating(cfg.StateDir)

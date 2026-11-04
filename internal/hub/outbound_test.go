@@ -162,6 +162,66 @@ func TestTheHeartbeatSaysWhetherTheClockIsRight(t *testing.T) {
 	}
 }
 
+func TestTheHeartbeatSaysTheSerial(t *testing.T) {
+	r := newRig(t, nil)
+	r.hub.deps.Serial = func() string { return "10000000a1b2c3d4\x00" }
+	r.start()
+	drivertest.WaitFor(t, "a heartbeat with the serial", func() bool {
+		r.clock.Advance(time.Minute)
+		hbs := eventsOf(r, contract.TypeHeartbeat)
+		return len(hbs) > 0 && dataOf[contract.HeartbeatData](t, hbs[len(hbs)-1]).Serial == "10000000a1b2c3d4"
+	})
+	r.settle()
+	r.validateAll()
+}
+
+func TestAHeartbeatWithoutASerialLeavesItOut(t *testing.T) {
+	for name, serial := range map[string]func() string{
+		"no reader":  nil,
+		"none told":  func() string { return "" },
+		"an odd one": func() string { return "12 34" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, nil)
+			r.hub.deps.Serial = serial
+			r.start()
+			r.clock.Advance(time.Minute)
+			drivertest.WaitFor(t, "heartbeat", func() bool { return len(eventsOf(r, contract.TypeHeartbeat)) == 1 })
+			if data := string(eventsOf(r, contract.TypeHeartbeat)[0].Env.Data); strings.Contains(data, "serial") {
+				t.Fatalf("serial in %s", data)
+			}
+			r.settle()
+			r.validateAll()
+		})
+	}
+}
+
+// The serial's file does not answer: the alarm and the heartbeats leave all the same,
+// and the hub still stops.
+func TestASerialThatDoesNotAnswerHoldsNothing(t *testing.T) {
+	stuck := make(chan struct{})
+	reading := make(chan struct{})
+	r := newRig(t, nil)
+	r.hub.deps.Serial = func() string {
+		close(reading)
+		<-stuck
+		return "10000000a1b2c3d4"
+	}
+	defer close(stuck)
+	r.start()
+	<-reading
+	r.armedNow()
+	r.device(devBack, contract.CapContact, "open")
+	drivertest.WaitFor(t, "the alarm", func() bool { return len(eventsOf(r, contract.TypeAlarmTriggered)) == 1 })
+	drivertest.WaitFor(t, "the siren", func() bool { return len(r.broker.On(contract.DeviceCmdTopic(site, devSiren))) == 1 })
+	r.clock.Advance(time.Minute)
+	drivertest.WaitFor(t, "a heartbeat", func() bool { return len(eventsOf(r, contract.TypeHeartbeat)) >= 1 })
+	if data := string(eventsOf(r, contract.TypeHeartbeat)[0].Env.Data); strings.Contains(data, "serial") {
+		t.Fatalf("serial in %s", data)
+	}
+	r.stop()
+}
+
 func TestANewBootGetsANewBootID(t *testing.T) {
 	first := newRig(t, nil)
 	first.start()

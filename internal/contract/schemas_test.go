@@ -2,6 +2,7 @@ package contract
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -161,6 +162,9 @@ func TestSchemaBoundsMatchConstants(t *testing.T) {
 			t.Errorf("%s: device_name maxLength %v, MaxDeviceName %d", file, got, MaxDeviceName)
 		}
 	}
+	if got := loadSchema(t, "system-heartbeat.json").Properties["serial"]["maxLength"]; got != float64(MaxHubSerial) {
+		t.Errorf("serial maxLength %v, MaxHubSerial %d", got, MaxHubSerial)
+	}
 }
 
 func enumOf(t *testing.T, s schemaFile, prop string) []string {
@@ -307,7 +311,7 @@ func TestSchemasAcceptValidMessages(t *testing.T) {
 		"alarm-siren-failed.json":     SirenFailedData{Incident: "i", DeviceID: "dev_siren1"},
 		"device-command.json":         DeviceCommandData{DeviceID: "dev_s3x9", Command: CmdSirenOn, Args: DeviceCommandArgs{DurationS: 300}, Exp: TSPtr(ends)},
 		"device-command-ack.json":     CommandAckData{Ref: "r", Status: CmdDone},
-		"system-heartbeat.json":       HeartbeatData{BootID: "b", UptimeS: 86412, Engine: StateArmed, FW: map[string]string{"engine": "0.1.0"}},
+		"system-heartbeat.json":       HeartbeatData{BootID: "b", UptimeS: 86412, Engine: StateArmed, FW: map[string]string{"engine": "0.1.0"}, Serial: "10000000a1b2c3d4"},
 		"system-health.json": HealthData{Mains: ValLost, HubBattery: intPtr(82), Links: map[string]string{"zigbee": "ok", "internet": "down"},
 			GSM: &GSMHealth{Lines: []GSMLine{{ID: "line1", Operator: "togocom", Responding: true, Registered: true, Signal: 71, Credit: "ok", LastTest: TSPtr(ends), LastTestOK: boolPtr(true)}}}},
 		"gsm-status.json":      GSMStatusData{Queued: 2, Lines: []GSMLine{{ID: "line1", Responding: true, Registered: true, Signal: 70, Credit: "empty", Restarts: 1}}},
@@ -437,6 +441,10 @@ func TestSchemasRejectInvalidMessages(t *testing.T) {
 		{"negative uptime", "system-heartbeat.json", `{"boot_id":"b","uptime_s":-1,"engine":"armed","queue_depth":0}`},
 		{"health without links", "system-health.json", `{"mains":"lost"}`},
 		{"hub battery above 100", "system-health.json", `{"links":{},"hub_battery":120}`},
+		{"heartbeat with an empty serial", "system-heartbeat.json", `{"boot_id":"b","uptime_s":1,"engine":"armed","queue_depth":0,"serial":""}`},
+		{"heartbeat with a serial as a number", "system-heartbeat.json", `{"boot_id":"b","uptime_s":1,"engine":"armed","queue_depth":0,"serial":1234}`},
+		{"heartbeat with a serial with a space", "system-heartbeat.json", `{"boot_id":"b","uptime_s":1,"engine":"armed","queue_depth":0,"serial":"12 34"}`},
+		{"heartbeat with an endless serial", "system-heartbeat.json", `{"boot_id":"b","uptime_s":1,"engine":"armed","queue_depth":0,"serial":"` + strings.Repeat("a", MaxHubSerial+1) + `"}`},
 		{"gsm line without signal", "system-health.json", `{"links":{},"gsm":{"lines":[{"id":"l","responding":true,"registered":true}]}}`},
 		{"health updating until a word", "system-health.json", `{"links":{},"updating_until":"soon"}`},
 		{"health updating until a number", "system-health.json", `{"links":{},"updating_until":1200}`},
@@ -458,6 +466,42 @@ func TestSchemasRejectInvalidMessages(t *testing.T) {
 	// The reference envelope itself must be valid, or the cases above prove nothing.
 	if err := schematest.Check("envelope.json", []byte(okEnvelope)); err != nil {
 		t.Fatalf("the reference envelope must be valid: %v", err)
+	}
+}
+
+// The serial is optional: a hub that has none, such as an older one, is never refused.
+func TestAHeartbeatWithoutASerialIsValid(t *testing.T) {
+	if err := schematest.Check("system-heartbeat.json", []byte(`{"boot_id":"b","uptime_s":1,"engine":"armed","queue_depth":0}`)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Whatever the machine says, HubSerial gives what the schema takes or nothing: an odd
+// serial must not get the heartbeat refused, the site would look silent.
+func TestHubSerialOnlyGivesWhatTheSchemaTakes(t *testing.T) {
+	for raw, want := range map[string]string{
+		"10000000a1b2c3d4\x00":              "10000000a1b2c3d4",
+		" 10000000a1b2c3d4\n":               "10000000a1b2c3d4",
+		"SN-12.a_b":                         "SN-12.a_b",
+		"":                                  "",
+		"\x00":                              "",
+		"0000000000000000\x00":              "",
+		"12 34":                             "",
+		"caf\u00e9":                         "",
+		strings.Repeat("a", MaxHubSerial):   strings.Repeat("a", MaxHubSerial),
+		strings.Repeat("a", MaxHubSerial+1): "",
+	} {
+		got := HubSerial(raw)
+		if got != want {
+			t.Errorf("HubSerial(%q) = %q, want %q", raw, got, want)
+		}
+		if got == "" {
+			continue
+		}
+		data := fmt.Sprintf(`{"boot_id":"b","uptime_s":1,"engine":"armed","queue_depth":0,"serial":%q}`, got)
+		if err := schematest.Check("system-heartbeat.json", []byte(data)); err != nil {
+			t.Errorf("the schema refuses %q: %v", got, err)
+		}
 	}
 }
 

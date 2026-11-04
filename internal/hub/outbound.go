@@ -227,16 +227,27 @@ func (h *Hub) followUplink(now time.Time, s health.LinkState) {
 	h.escalate(escalation.Uplink{Now: now, Up: s == health.LinkOK})
 }
 
+// readSerial reads the machine's serial number once, on its own goroutine that nothing
+// waits for: a file that does not answer holds neither the alarm, nor the heartbeats,
+// which leave without serial, nor the stop.
+func (h *Hub) readSerial() {
+	if h.deps.Serial != nil {
+		h.serial.Store(contract.HubSerial(h.deps.Serial()))
+	}
+}
+
 // publishHeartbeat publishes a sign of life (every HeartbeatEvery).
 func (h *Hub) publishHeartbeat(context.Context) {
 	now := h.deps.Clock.Now()
 	mode, _ := h.mode.Load().(string)
+	serial, _ := h.serial.Load().(string)
 	data := contract.HeartbeatData{
 		BootID:     h.bootID,
 		UptimeS:    max(int64(now.Sub(h.started)/time.Second), 0),
 		Engine:     mode,
 		QueueDepth: h.out.Depth(),
 		FW:         h.cfg.Versions,
+		Serial:     serial,
 	}
 	if h.deps.ClockSynced != nil {
 		if synced, known := h.deps.ClockSynced(); known {
