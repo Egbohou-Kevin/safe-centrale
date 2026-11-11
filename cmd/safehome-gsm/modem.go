@@ -16,9 +16,9 @@ import (
 	"syscall"
 	"time"
 
-	"safehome/internal/adapter/atmodem"
-	"safehome/internal/gateway"
-	"safehome/internal/gsmconfig"
+	"safehome/internal/gsm/adapter/atmodem"
+	"safehome/internal/gsm/app/gateway"
+	"safehome/internal/gsm/config/gsmconfig"
 )
 
 // openPort opens a modem's serial port. Tests replace it with a simulated modem.

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/adapter/atmodem/attest"
+	"safehome/internal/gsm/adapter/atmodem/attest"
 	"safehome/internal/shared/driver/drivertest"
 )
 

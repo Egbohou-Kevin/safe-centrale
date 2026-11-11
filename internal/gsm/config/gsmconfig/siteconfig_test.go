@@ -12,7 +12,7 @@ import (
 
 func exampleWithState(t *testing.T) (string, string) {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "config", "gsm.example.json"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "config", "gsm.example.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/adapter/atmodem/attest"
+	"safehome/internal/gsm/adapter/atmodem/attest"
 )
 
 func TestDecodeDeliver(t *testing.T) {

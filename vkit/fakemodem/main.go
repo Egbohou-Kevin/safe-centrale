@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"safehome/internal/adapter/atmodem/attest"
+	"safehome/internal/gsm/adapter/atmodem/attest"
 	"safehome/vkit/order"
 )
 

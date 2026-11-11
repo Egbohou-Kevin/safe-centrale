@@ -75,7 +75,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 
 - **Les domaines** (`internal/engine` pour l'alarme, `internal/health` pour la
   supervision de la centrale et des appareils, `internal/access` pour les codes
-  d'accès, `internal/escalation` pour l'escalade des alertes, `internal/gsm` pour la
+  d'accès, `internal/escalation` pour l'escalade des alertes, `internal/gsm/core/gsm` pour la
   passerelle GSM, `internal/zigbee` pour l'adaptateur Zigbee, `internal/video/core/video` pour la
   vidéo en direct, `internal/maint/core/maint` pour la maintenance à distance) sont purs : ils
   dépendent seulement de la bibliothèque standard, n'ont aucune entrée-sortie et ne
@@ -143,9 +143,9 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   l'importe. Les outils de l'installateur changent les codes par `hub.SiteCodes` : les
   codes des personnes et celui de l'installateur, pour les contacts du site, et un code
   n'ouvre qu'une chose.
-- **La passerelle GSM** a la même forme : son domaine (`internal/gsm`), sa couche
-  application (`internal/gateway`, qui déclare le port `Modem`), son adaptateur
-  (`internal/adapter/atmodem`). La file d'envoi MQTT (`internal/shared/outbox`) est partagée
+- **La passerelle GSM** a la même forme : son domaine (`internal/gsm/core/gsm`), sa couche
+  application (`internal/gsm/app/gateway`, qui déclare le port `Modem`), son adaptateur
+  (`internal/gsm/adapter/atmodem`). La file d'envoi MQTT (`internal/shared/outbox`) est partagée
   par toutes les couches application des programmes de la centrale ; elle connaît le
   contrat et le pilote, et aucun domaine. `Send` encode un message tout de suite et le
   met en file, avec un identifiant tiré de la fonction donnée à `Open` ; un message
@@ -239,7 +239,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   levée alors, ou la fin d'une escalade, doit encore arriver à l'escalade. Avant le
   25 octobre 2026, elle pouvait être perdue sans trace : la sirène reprenait au
   redémarrage, mais personne n'était jamais prévenu.
-- **Les lectures de configuration** (`internal/hubconfig`, `internal/gsmconfig`, etc.)
+- **Les lectures de configuration** (`internal/hubconfig`, `internal/gsm/config/gsmconfig`, etc.)
   partagent `internal/shared/config/configfile` : JSON strict, niveau de journal, durées, secrets,
   écriture atomique. L'en-tête commun des fichiers (`site`, `broker_url`, `client_id`,
   `state_dir`, `log_level`) est `configfile.ProgramFile` ; sa méthode `Build` en fait un

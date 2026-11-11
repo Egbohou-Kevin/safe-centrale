@@ -261,12 +261,12 @@ Découpage, selon l'architecture hexagonale :
 
 | Paquet | Rôle |
 |---|---|
-| `internal/gsm` | Le domaine : file à priorités, choix de la ligne, reprises, abandon des demandes trop vieilles, doublons, surveillance du modem, réponses « 1 », SMS de test. Pur, sans horloge |
-| `internal/gsm/wire` | Traduction entre le domaine et le contrat |
-| `internal/gateway` | La couche application : un fil par ligne (une commande à la fois par modem), publication des résultats, de l'acquittement et de l'état des lignes |
-| `internal/adapter/atmodem` | L'adaptateur du modem : commandes AT sur le port série, bibliothèque standard seulement |
-| `internal/adapter/atmodem/attest` | Un faux modem qui répond comme un vrai, pour les tests |
-| `internal/gsmconfig`, `cmd/safehome-gsm` | Le fichier de configuration et le programme |
+| `internal/gsm/core/gsm` | Le domaine : file à priorités, choix de la ligne, reprises, abandon des demandes trop vieilles, doublons, surveillance du modem, réponses « 1 », SMS de test. Pur, sans horloge |
+| `internal/gsm/core/gsm/wire` | Traduction entre le domaine et le contrat |
+| `internal/gsm/app/gateway` | La couche application : un fil par ligne (une commande à la fois par modem), publication des résultats, de l'acquittement et de l'état des lignes |
+| `internal/gsm/adapter/atmodem` | L'adaptateur du modem : commandes AT sur le port série, bibliothèque standard seulement |
+| `internal/gsm/adapter/atmodem/attest` | Un faux modem qui répond comme un vrai, pour les tests |
+| `internal/gsm/config/gsmconfig`, `cmd/safehome-gsm` | Le fichier de configuration et le programme |
 
 Là où le document laissait un doute :
 

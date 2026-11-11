@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"safehome/internal/gsm"
+	"safehome/internal/gsm/core/gsm"
 )
 
 // Modem is what the gateway needs from one modem. Errors may wrap one of the Err

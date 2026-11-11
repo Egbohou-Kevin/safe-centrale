@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/gsm"
+	"safehome/internal/gsm/core/gsm"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver/drivertest"
 	"safehome/internal/shared/inbox"

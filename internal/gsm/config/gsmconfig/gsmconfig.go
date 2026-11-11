@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"safehome/internal/gateway"
-	"safehome/internal/gsm"
+	"safehome/internal/gsm/app/gateway"
+	"safehome/internal/gsm/core/gsm"
 	"safehome/internal/shared/config/configfile"
 	"safehome/internal/shared/config/siteconfig"
 )

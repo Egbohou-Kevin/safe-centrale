@@ -6,8 +6,8 @@ import (
 	"io"
 	"sync/atomic"
 
-	"safehome/internal/gateway"
-	"safehome/internal/gsmconfig"
+	"safehome/internal/gsm/app/gateway"
+	"safehome/internal/gsm/config/gsmconfig"
 	"safehome/internal/shared/adapter/mqtt"
 	"safehome/internal/shared/config/siteconfig"
 	"safehome/internal/shared/contract"

@@ -51,6 +51,10 @@ func internal(names ...string) []string {
 // (docs/rangement-par-programme.md): the rules below still name a package by its
 // former path, at turns it into the current one.
 var moved = map[string]string{
+	"gsm":               "gsm/core/gsm",
+	"adapter/atmodem":   "gsm/adapter/atmodem",
+	"gateway":           "gsm/app/gateway",
+	"gsmconfig":         "gsm/config/gsmconfig",
 	"agent":             "agent/core/agent",
 	"sealcode":          "agent/core/sealcode",
 	"adapter/queuedir":  "agent/adapter/queuedir",

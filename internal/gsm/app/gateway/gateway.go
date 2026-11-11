@@ -20,8 +20,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"safehome/internal/gsm"
-	gsmwire "safehome/internal/gsm/wire"
+	"safehome/internal/gsm/core/gsm"
+	gsmwire "safehome/internal/gsm/core/gsm/wire"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/inbox"

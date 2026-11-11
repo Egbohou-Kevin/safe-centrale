@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/gateway"
-	"safehome/internal/gsm"
+	"safehome/internal/gsm/app/gateway"
+	"safehome/internal/gsm/core/gsm"
 	"safehome/internal/shared/config/configfile"
 	"safehome/internal/shared/config/siteconfig"
 	"safehome/internal/shared/contract"
@@ -27,7 +27,7 @@ func parse(data []byte) (Result, error) {
 const minimal = `{"site": "tg-lom-0001", "state_dir": "/tmp/s", "lines": [{"id": "line1", "port": "/dev/ttyUSB2"}]}`
 
 func TestTheExampleFileIsValidAndRepeatsTheDefaults(t *testing.T) {
-	r, err := Load(filepath.Join("..", "..", "config", "gsm.example.json"))
+	r, err := Load(filepath.Join("..", "..", "..", "..", "config", "gsm.example.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

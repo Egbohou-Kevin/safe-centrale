@@ -29,8 +29,8 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/access` | Les codes d'accès (troisième domaine) : un code par personne, 5 au maximum, stockés hachés avec un algorithme lent, vérification qui dit à qui appartient le code |
 | `internal/escalation` | L'escalade (quatrième domaine) : qui est prévenu, par quel canal, dans quel ordre et après combien de temps ; acquittements, relances, limite par heure |
 | `internal/escalation/wire` | La traduction entre l'escalade et le contrat |
-| `internal/gsm` | La passerelle GSM (cinquième domaine) : file à priorités, lignes, reprises, réponses « 1 », surveillance du modem |
-| `internal/gsm/wire` | La traduction entre la passerelle et le contrat |
+| `internal/gsm/core/gsm` | La passerelle GSM (cinquième domaine) : file à priorités, lignes, reprises, réponses « 1 », surveillance du modem |
+| `internal/gsm/core/gsm/wire` | La traduction entre la passerelle et le contrat |
 | `internal/zigbee` | L'adaptateur Zigbee (sixième domaine) : profils, changements, présence, commandes confirmées, appairage et registre |
 | `internal/zigbee/z2m` | La seule traduction depuis et vers Zigbee2MQTT |
 | `internal/zigbee/wire` | La traduction entre l'adaptateur et le contrat |
@@ -47,7 +47,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | Dossier | Contenu |
 |---|---|
 | `internal/hub` | La couche application de la centrale : relie MQTT aux domaines (moteur, supervision, codes, escalade), file d'envoi avec reprise, clavier, battement de cœur. Elle publie par `outbox.Publisher` et ne connaît aucun adaptateur. `SiteCodes` donne les codes aux outils de l'installateur : un code n'ouvre qu'une chose |
-| `internal/gateway` | La couche application de la passerelle : un fil par modem, publication des résultats et de l'état des lignes |
+| `internal/gsm/app/gateway` | La couche application de la passerelle : un fil par modem, publication des résultats et de l'état des lignes |
 | `internal/zigbeeapp` | La couche application de l'adaptateur Zigbee |
 | `internal/agent/app/agentapp` | La couche application de l'agent : envoi au cloud avec reprise, republication sur la centrale, `agent.status` |
 | `internal/video/app/videoapp` | La couche application de la vidéo : démarre et arrête les flux par le port `Streamer`, compte les octets, publie `video.session` et `video.status` |
@@ -75,7 +75,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 |---|---|
 | `internal/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict), nom de son fichier de pid (`PidFile`) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) |
 | `internal/shared/config/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
-| `internal/gsmconfig` | Lecture du fichier de configuration de la passerelle, avec les contacts réglés depuis le cloud |
+| `internal/gsm/config/gsmconfig` | Lecture du fichier de configuration de la passerelle, avec les contacts réglés depuis le cloud |
 | `internal/zigbeeconfig` | Lecture de la configuration et des profils d'appareils (`config/profiles/`) |
 | `internal/agent/config/agentconfig` | Lecture de la configuration de l'agent et du secret du cloud |
 | `internal/video/config/videoconfig` | Lecture de la configuration de la vidéo (caméras, liaison, plafond) |
@@ -90,7 +90,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/shared/adapter/mqtt` | L'adaptateur MQTT 5 (client de Mosquitto) : seul paquet qui connaît la bibliothèque MQTT |
 | `internal/shared/adapter/filestore` | Écriture atomique de l'état sur disque (survit à une coupure de courant) ; un fichier écrit prend le propriétaire du dossier |
 | `internal/shared/adapter/filelock` | Verrou de fichier (flock) entre les programmes qui récrivent les mêmes fichiers : les codes d'accès, depuis la console et l'outil en ligne de commande |
-| `internal/adapter/atmodem` | L'adaptateur du modem : commandes AT sur le port série (bibliothèque standard seulement) ; `attest` est un faux modem pour les tests |
+| `internal/gsm/adapter/atmodem` | L'adaptateur du modem : commandes AT sur le port série (bibliothèque standard seulement) ; `attest` est un faux modem pour les tests |
 | `internal/agent/adapter/queuedir` | La file de l'agent pour le cloud sur disque : un petit fichier par message, écrit d'un coup, qui survit à une coupure de courant |
 | `internal/shared/adapter/photodir` | Le dossier des photos prises à l'alarme : le service vidéo les y écrit, l'agent les lit et les efface ; borné en nombre et en taille |
 | `internal/agent/adapter/upload` | L'envoi d'un fichier au cloud en HTTPS (PUT, jeton en `Authorization`), sans jamais écrire le jeton (bibliothèque standard seulement) |
@@ -128,7 +128,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/shared/driver/drivertest` | Pour les tests : une fausse horloge (ses minuteries suivent une horloge monotone, comme la vraie), un faux disque, un journal partagé et de quoi attendre |
 | `internal/shared/outbox/outboxtest` | Pour les tests : un faux broker qui garde ce qu'on lui publie, et qu'on peut rendre absent, faire refuser ou faire attendre |
 | `internal/shared/adapter/mqtt/mqtttest` | Pour les tests : un vrai Mosquitto privé, lancé sur un port libre (TLS et WebSocket compris) |
-| `internal/adapter/atmodem/attest` | Pour les tests : un faux modem qui répond aux commandes AT |
+| `internal/gsm/adapter/atmodem/attest` | Pour les tests : un faux modem qui répond aux commandes AT |
 | `internal/video/adapter/go2rtc/go2rtctest` | Pour les tests : un faux go2rtc |
 
 Des tests vérifient que les schémas restent alignés avec les structures Go, que tout ce
