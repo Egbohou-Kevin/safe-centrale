@@ -74,7 +74,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 ```
 
 - **Les domaines** (`internal/hub/core/engine` pour l'alarme, `internal/hub/core/health` pour la
-  supervision de la centrale et des appareils, `internal/hub/core/access` pour les codes
+  supervision de la centrale et des appareils, `internal/shared/core/access` pour les codes
   d'accès, `internal/hub/core/escalation` pour l'escalade des alertes, `internal/gsm/core/gsm` pour la
   passerelle GSM, `internal/zigbee/core/zigbee` pour l'adaptateur Zigbee, `internal/video/core/video` pour la
   vidéo en direct, `internal/maint/core/maint` pour la maintenance à distance) sont purs : ils
@@ -270,7 +270,7 @@ Ces règles sont vérifiées par des tests (`internal/checks/archtest`). Ils éc
 
 - si un paquet n'est pas rangé sous `<programme>/{app,core,adapter,config}/`, `shared/` ou
   `checks/` ; si un programme (`internal/X` et `cmd/safehome-X`) importe le paquet d'un
-  autre programme hors des cinq exceptions nommées ; si un cœur (`*/core/`) importe un
+  autre programme hors des exceptions nommées (`crossPrograms`) ; si un cœur (`*/core/`) importe un
   adaptateur ou une application ;
 - si un domaine importe un paquet du module (le contrat compris), une bibliothèque
   tierce ou un paquet d'entrées-sorties, ou s'il lit l'horloge ;
@@ -468,3 +468,6 @@ loin reste ouverte.
    l'installateur, installateur vers `hubconfig` et `engine`, `hubconfig` vers
    l'installateur), `access` sous `hub/core`. Sortir le site partagé dans `shared/site`
    reste un lot à part, à proposer.
+   Ajout du 12/11/2026 : Kevin a tranché pour `access` (11/11/2026 23:43:15, « access dans
+   shared ») : il est sous `internal/shared/core/access`, et l'exception console → `access`
+   tombe ; restent quatre flèches nommées.

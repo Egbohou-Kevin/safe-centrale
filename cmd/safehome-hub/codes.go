@@ -11,9 +11,9 @@ import (
 
 	"safehome/internal/hub/app/hub"
 	"safehome/internal/hub/config/hubconfig"
-	"safehome/internal/hub/core/access"
 	"safehome/internal/shared/adapter/filelock"
 	"safehome/internal/shared/adapter/filestore"
+	"safehome/internal/shared/core/access"
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/service"
 )

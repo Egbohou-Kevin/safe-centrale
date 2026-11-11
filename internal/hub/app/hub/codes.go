@@ -8,8 +8,8 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/hub/core/access"
 	"safehome/internal/hub/core/escalation"
+	"safehome/internal/shared/core/access"
 	"safehome/internal/shared/driver"
 )
 

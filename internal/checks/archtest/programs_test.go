@@ -24,7 +24,6 @@ var roles = []string{"adapter", "app", "config", "core"}
 var crossPrograms = map[string]map[string]string{
 	"console": {
 		"hub/app/hub":          "the local console shows the hub's state the way the hub computes it",
-		"hub/core/access":      "the console checks codes with the hub's rule",
 		"hub/config/hubconfig": "the console reads and edits the hub's configuration",
 		"install/app/install":  "the console's pairing pages sit on the installer",
 	},
@@ -180,7 +179,9 @@ func TestTheLayoutRulesRejectWhatTheyMustReject(t *testing.T) {
 		{"video", module + "/internal/hub/core/engine", true},
 		{"video", module + "/internal/video/core/video", false},
 		{"video", module + "/internal/shared/contract", false},
-		{"console", module + "/internal/hub/core/access", false},
+		{"console", module + "/internal/hub/config/hubconfig", false},
+		{"console", module + "/internal/shared/core/access", false},
+		{"console", module + "/internal/hub/core/engine/wire", true},
 		{"console", module + "/internal/hub/core/engine", true},
 		{"", module + "/internal/hub/core/engine", false},
 		{"gsm", "github.com/someone/lib", false},

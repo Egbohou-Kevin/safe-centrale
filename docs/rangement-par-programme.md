@@ -13,7 +13,7 @@ la table, aucun dossier de rôle ne reste à plat sous `internal`, et `archtest`
 
 ```
 internal/
-├── hub/       app/{hub,configapp}  core/{engine,health,escalation,access}(+wire)  adapter/machine  config/hubconfig
+├── hub/       app/{hub,configapp}  core/{engine,health,escalation}(+wire)  adapter/machine  config/hubconfig
 ├── zigbee/    app/zigbeeapp        core/zigbee(+wire,z2m)                                          config/zigbeeconfig
 ├── gsm/       app/gateway          core/gsm(+wire)                  adapter/atmodem               config/gsmconfig
 ├── agent/     app/agentapp         core/{agent,sealcode}            adapter/{queuedir,upload}     config/agentconfig
@@ -22,7 +22,7 @@ internal/
 ├── maint/     app/maintapp         core/maint(+wire)                adapter/sshtunnel             config/maintconfig
 ├── console/   app/consoleapp(+web)                                  adapter/hotspot               config/consoleconfig
 ├── install/   app/install
-├── shared/    contract(+schematest) driver inbox outbox service
+├── shared/    contract(+schematest) driver inbox outbox service core/access
 │              adapter/{mqtt,filestore,filelock,pidfile,sdnotify,sysclock,photodir}  config/{configfile,siteconfig}
 └── checks/    archtest qualitytest
 
@@ -43,7 +43,8 @@ exceptions nommées :    console ─► hub (codes, réglages), install ;  insta
    partout où un programme en importe deux (la console importe l'application du hub et la sienne).
 3. **Le commun s'appelle `shared`** : ce qui sert à deux programmes ou plus. Ses outils
    (`contract`, `driver`, `inbox`, `outbox`, `service`) sont directement dessous ; ses adaptateurs
-   sous `shared/adapter`, ses réglages sous `shared/config`. Rien d'autre.
+   sous `shared/adapter`, ses réglages sous `shared/config`, le cœur partagé `access` sous
+   `shared/core` (Kevin, 11/11/2026 23:43). Rien d'autre.
 4. **`…/wire` et `zigbee/z2m` restent sous leur cœur** (`hub/core/engine/wire`) : ils traduisent ce
    cœur et lui seul, la règle `TestWireOnlyBridgesItsDomainAndTheContract` le tient déjà.
 5. **Un paquet de test reste sous le paquet qu'il simule** : `mqtttest` sous
@@ -82,7 +83,7 @@ transitives, `go list -deps`), « les neuf » quand tous le font.
 | `configapp` | `hub/app/configapp` | application | hub |
 | `hub` | `hub/app/hub` | application | console, hub, install |
 | `hubconfig` | `hub/config/hubconfig` | réglages | console, hub, install |
-| `access` | `hub/core/access` | cœur | console, hub, install |
+| `access` | `shared/core/access` | cœur | console, hub, install |
 | `engine/wire` | `hub/core/engine/wire` | traduction | console, hub, install |
 | `engine` | `hub/core/engine` | cœur | console, hub, install |
 | `escalation/wire` | `hub/core/escalation/wire` | traduction | console, hub, install |
@@ -152,6 +153,9 @@ d'imports.
 2. **Décidé seule, à relire (11/11/2026).** **`access`** sert le hub et la console. La table le met sous `hub/core/access` (son
    propriétaire est le hub, la console y passe par l'exception 1) plutôt que sous `shared`, comme
    l'esquisse le proposait : le commun garde seulement ce que plusieurs programmes possèdent.
+   **Kevin a tranché (11/11/2026 23:43:15, relayé par la session mère) : « access dans shared ».**
+   Déplacé le 12/11/2026 sous `shared/core/access` (`shared/core` : un cœur que plusieurs
+   programmes partagent) ; l'exception console → `hub/core/access` du cas 1 tombe.
 3. **`configapp`** (la configuration reçue du cloud) n'est embarqué que par le hub : seconde
    application du hub, `hub/app/configapp`.
 4. **Décidé seule, à relire (11/11/2026).** **Un test qui croise deux programmes** : `power/wire` vérifie en test que le hub (`health`,

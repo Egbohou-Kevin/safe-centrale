@@ -22,11 +22,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"safehome/internal/hub/core/access"
 	"safehome/internal/hub/core/engine"
 	"safehome/internal/hub/core/escalation"
 	"safehome/internal/hub/core/health"
 	"safehome/internal/shared/contract"
+	"safehome/internal/shared/core/access"
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/inbox"
 	"safehome/internal/shared/outbox"

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/hub/core/access"
 	"safehome/internal/hub/core/engine"
 	"safehome/internal/shared/contract"
+	"safehome/internal/shared/core/access"
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/driver/drivertest"
 	"safehome/internal/shared/inbox"

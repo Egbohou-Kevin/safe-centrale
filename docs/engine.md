@@ -320,7 +320,7 @@ Le désarmement à distance est autorisé, mais il exige **le code du site**, en
 de la connexion à l'application. Un téléphone volé ne suffit donc pas : le voleur
 doit aussi connaître le code.
 
-- Le code est **vérifié sur le site**, par la centrale (`internal/hub/core/access`) ; le
+- Le code est **vérifié sur le site**, par la centrale (`internal/shared/core/access`) ; le
   moteur reçoit le résultat et applique le verrouillage. Le code est stocké haché sur
   la centrale. Le cloud le transmet sans le garder ni l'écrire dans ses journaux.
 - Le verrouillage se compte **par origine** (29 octobre 2026) : le clavier d'un côté,
@@ -963,7 +963,7 @@ Codé et testé côté pilote (`internal/shared/driver`, `internal/shared/adapte
   empêche le démarrage : c'est à l'application de décider, pas un défaut silencieux.
 - Une erreur d'envoi ou de sauvegarde n'arrête pas la boucle.
 
-Codé et testé dans `internal/hub/core/access` (domaine des codes d'accès, voir
+Codé et testé dans `internal/shared/core/access` (domaine des codes d'accès, voir
 `security-install.md`) : un code par personne (5 au maximum), vérification qui retrouve
 la personne, refus des codes faibles ou déjà pris, sauvegarde avant prise en compte.
 Il fournit au moteur l'`Auth` (`Checked`, `OK`, `User`) ; la centrale fait le

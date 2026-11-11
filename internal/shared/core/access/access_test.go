@@ -416,7 +416,7 @@ func TestSafeForConcurrentUse(t *testing.T) {
 }
 
 // The hash cost on this machine, to tune Iterations on the hub: run
-// go test -bench Verify ./internal/hub/core/access on the Raspberry Pi.
+// go test -bench Verify ./internal/shared/core/access on the Raspberry Pi.
 func BenchmarkVerifyFiveCodes(b *testing.B) {
 	cfg := DefaultConfig()
 	s := &store{}

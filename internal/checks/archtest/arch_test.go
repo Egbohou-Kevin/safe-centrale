@@ -52,7 +52,7 @@ func internal(names ...string) []string {
 // in the layout by program (docs/rangement-par-programme.md, programs_test.go).
 var moved = map[string]string{
 	"hub":               "hub/app/hub",
-	"access":            "hub/core/access",
+	"access":            "shared/core/access",
 	"adapter/machine":   "hub/adapter/machine",
 	"configapp":         "hub/app/configapp",
 	"engine":            "hub/core/engine",
