@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/zigbee"
+	"safehome/internal/zigbee/core/zigbee"
 )
 
 var now = time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)

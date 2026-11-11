@@ -8,9 +8,9 @@ import (
 
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/outbox"
-	"safehome/internal/zigbee"
-	"safehome/internal/zigbee/wire"
-	"safehome/internal/zigbee/z2m"
+	"safehome/internal/zigbee/core/zigbee"
+	"safehome/internal/zigbee/core/zigbee/wire"
+	"safehome/internal/zigbee/core/zigbee/z2m"
 )
 
 // dispatch runs on the loop's goroutine and only queues messages. An action that

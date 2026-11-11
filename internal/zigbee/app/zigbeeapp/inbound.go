@@ -6,9 +6,9 @@ import (
 
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/inbox"
-	"safehome/internal/zigbee"
-	"safehome/internal/zigbee/wire"
-	"safehome/internal/zigbee/z2m"
+	"safehome/internal/zigbee/core/zigbee"
+	"safehome/internal/zigbee/core/zigbee/wire"
+	"safehome/internal/zigbee/core/zigbee/z2m"
 )
 
 // HandleMessage takes a message from the broker, and says whether it took it (see

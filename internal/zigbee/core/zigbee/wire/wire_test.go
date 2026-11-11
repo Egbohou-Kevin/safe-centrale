@@ -8,7 +8,7 @@ import (
 
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/contract/schematest"
-	"safehome/internal/zigbee"
+	"safehome/internal/zigbee/core/zigbee"
 )
 
 var t0 = time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)

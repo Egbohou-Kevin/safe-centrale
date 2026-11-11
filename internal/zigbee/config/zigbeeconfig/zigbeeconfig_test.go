@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/zigbee"
-	"safehome/internal/zigbeeapp"
+	"safehome/internal/zigbee/app/zigbeeapp"
+	"safehome/internal/zigbee/core/zigbee"
 )
 
 func TestTheExampleFileAndProfilesAreValidAndRepeatTheDefaults(t *testing.T) {
-	r, err := Load(filepath.Join("..", "..", "config", "zigbee.example.json"))
+	r, err := Load(filepath.Join("..", "..", "..", "..", "config", "zigbee.example.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

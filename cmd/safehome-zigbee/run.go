@@ -16,9 +16,9 @@ import (
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/service"
-	"safehome/internal/zigbee"
-	"safehome/internal/zigbeeapp"
-	"safehome/internal/zigbeeconfig"
+	"safehome/internal/zigbee/app/zigbeeapp"
+	"safehome/internal/zigbee/config/zigbeeconfig"
+	"safehome/internal/zigbee/core/zigbee"
 )
 
 const (

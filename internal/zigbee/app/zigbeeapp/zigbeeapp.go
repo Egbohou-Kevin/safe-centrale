@@ -23,8 +23,8 @@ import (
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/inbox"
 	"safehome/internal/shared/outbox"
-	"safehome/internal/zigbee"
-	"safehome/internal/zigbee/z2m"
+	"safehome/internal/zigbee/core/zigbee"
+	"safehome/internal/zigbee/core/zigbee/z2m"
 )
 
 // Config holds what the adapter needs to know.

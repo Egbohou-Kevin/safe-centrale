@@ -17,8 +17,8 @@ import (
 
 	"safehome/internal/shared/config/configfile"
 	"safehome/internal/shared/contract"
-	"safehome/internal/zigbee"
-	"safehome/internal/zigbeeapp"
+	"safehome/internal/zigbee/app/zigbeeapp"
+	"safehome/internal/zigbee/core/zigbee"
 )
 
 // Result is what the files describe.

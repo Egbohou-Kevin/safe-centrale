@@ -408,7 +408,7 @@ donc par SMS.
 **Source.** Le module batterie de la centrale (Geekworm X728) : `safehome-power`
 publie le secteur et la charge au nom de l'appareil `hub_device_id`, et éteint la
 centrale proprement avant que la batterie soit vide (`alimentation.md`).
-`internal/zigbeeconfig` interdit la capacité `mains` dans les profils d'appareil :
+`internal/zigbee/config/zigbeeconfig` interdit la capacité `mains` dans les profils d'appareil :
 seule la centrale la donne.
 
 ## Canaux interchangeables

@@ -427,11 +427,11 @@ retenu par capacité.
 
 | Paquet | Rôle |
 |---|---|
-| `internal/zigbee` | Le domaine : profils, changements seulement, états conservés sans événement, actions, présence, commandes confirmées avec nouvelles tentatives, appairage, retrait, registre. Pur, sans horloge |
-| `internal/zigbee/z2m` | La seule traduction depuis et vers Zigbee2MQTT (sujets, champs, requêtes du pont) |
-| `internal/zigbee/wire` | La traduction vers le contrat |
-| `internal/zigbeeapp` | La couche application : messages MQTT vers le domaine, publication, état répété chaque minute |
-| `internal/zigbeeconfig` | Lecture de la configuration et des profils, vérifiés contre le contrat |
+| `internal/zigbee/core/zigbee` | Le domaine : profils, changements seulement, états conservés sans événement, actions, présence, commandes confirmées avec nouvelles tentatives, appairage, retrait, registre. Pur, sans horloge |
+| `internal/zigbee/core/zigbee/z2m` | La seule traduction depuis et vers Zigbee2MQTT (sujets, champs, requêtes du pont) |
+| `internal/zigbee/core/zigbee/wire` | La traduction vers le contrat |
+| `internal/zigbee/app/zigbeeapp` | La couche application : messages MQTT vers le domaine, publication, état répété chaque minute |
+| `internal/zigbee/config/zigbeeconfig` | Lecture de la configuration et des profils, vérifiés contre le contrat |
 | `cmd/safehome-zigbee` | Le programme |
 
 Choix faits au codage :

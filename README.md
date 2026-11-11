@@ -31,9 +31,9 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/escalation/wire` | La traduction entre l'escalade et le contrat |
 | `internal/gsm/core/gsm` | La passerelle GSM (cinquième domaine) : file à priorités, lignes, reprises, réponses « 1 », surveillance du modem |
 | `internal/gsm/core/gsm/wire` | La traduction entre la passerelle et le contrat |
-| `internal/zigbee` | L'adaptateur Zigbee (sixième domaine) : profils, changements, présence, commandes confirmées, appairage et registre |
-| `internal/zigbee/z2m` | La seule traduction depuis et vers Zigbee2MQTT |
-| `internal/zigbee/wire` | La traduction entre l'adaptateur et le contrat |
+| `internal/zigbee/core/zigbee` | L'adaptateur Zigbee (sixième domaine) : profils, changements, présence, commandes confirmées, appairage et registre |
+| `internal/zigbee/core/zigbee/z2m` | La seule traduction depuis et vers Zigbee2MQTT |
+| `internal/zigbee/core/zigbee/wire` | La traduction entre l'adaptateur et le contrat |
 | `internal/video/core/video` | La vidéo en direct (septième domaine) : sessions, refus, durée maximale, plafond du mois en données mobiles, test des caméras |
 | `internal/video/core/video/wire` | La traduction entre la vidéo et le contrat |
 | `internal/maint/core/maint` | La maintenance à distance (huitième domaine) : une session à la fois, une heure au plus, reprise après une coupure du tunnel |
@@ -48,7 +48,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 |---|---|
 | `internal/hub` | La couche application de la centrale : relie MQTT aux domaines (moteur, supervision, codes, escalade), file d'envoi avec reprise, clavier, battement de cœur. Elle publie par `outbox.Publisher` et ne connaît aucun adaptateur. `SiteCodes` donne les codes aux outils de l'installateur : un code n'ouvre qu'une chose |
 | `internal/gsm/app/gateway` | La couche application de la passerelle : un fil par modem, publication des résultats et de l'état des lignes |
-| `internal/zigbeeapp` | La couche application de l'adaptateur Zigbee |
+| `internal/zigbee/app/zigbeeapp` | La couche application de l'adaptateur Zigbee |
 | `internal/agent/app/agentapp` | La couche application de l'agent : envoi au cloud avec reprise, republication sur la centrale, `agent.status` |
 | `internal/video/app/videoapp` | La couche application de la vidéo : démarre et arrête les flux par le port `Streamer`, compte les octets, publie `video.session` et `video.status` |
 | `internal/maint/app/maintapp` | La couche application de la maintenance : ouvre et ferme le tunnel par le port `Tunneler`, publie `maint.session` |
@@ -76,7 +76,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict), nom de son fichier de pid (`PidFile`) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) |
 | `internal/shared/config/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
 | `internal/gsm/config/gsmconfig` | Lecture du fichier de configuration de la passerelle, avec les contacts réglés depuis le cloud |
-| `internal/zigbeeconfig` | Lecture de la configuration et des profils d'appareils (`config/profiles/`) |
+| `internal/zigbee/config/zigbeeconfig` | Lecture de la configuration et des profils d'appareils (`config/profiles/`) |
 | `internal/agent/config/agentconfig` | Lecture de la configuration de l'agent et du secret du cloud |
 | `internal/video/config/videoconfig` | Lecture de la configuration de la vidéo (caméras, liaison, plafond) |
 | `internal/maint/config/maintconfig` | Lecture de la configuration de la maintenance |

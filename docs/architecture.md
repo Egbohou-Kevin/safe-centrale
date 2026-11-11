@@ -76,7 +76,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 - **Les domaines** (`internal/engine` pour l'alarme, `internal/health` pour la
   supervision de la centrale et des appareils, `internal/access` pour les codes
   d'accès, `internal/escalation` pour l'escalade des alertes, `internal/gsm/core/gsm` pour la
-  passerelle GSM, `internal/zigbee` pour l'adaptateur Zigbee, `internal/video/core/video` pour la
+  passerelle GSM, `internal/zigbee/core/zigbee` pour l'adaptateur Zigbee, `internal/video/core/video` pour la
   vidéo en direct, `internal/maint/core/maint` pour la maintenance à distance) sont purs : ils
   dépendent seulement de la bibliothèque standard, n'ont aucune entrée-sortie et ne
   lisent jamais l'horloge. Ils reçoivent des entrées qui portent leur heure et
@@ -170,9 +170,9 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   d'entrée (`internal/shared/inbox`) aussi :
   le message reçu, les abonnements, la vérification d'un message contre le contrat
   (`Open`), les identifiants déjà vus. Elle ne connaît que le contrat.
-- **L'adaptateur Zigbee** aussi : son domaine (`internal/zigbee`), sa couche
-  application (`internal/zigbeeapp`). Zigbee2MQTT parle déjà MQTT : il n'y a pas
-  d'adaptateur technique de plus, mais un paquet de traduction (`internal/zigbee/z2m`),
+- **L'adaptateur Zigbee** aussi : son domaine (`internal/zigbee/core/zigbee`), sa couche
+  application (`internal/zigbee/app/zigbeeapp`). Zigbee2MQTT parle déjà MQTT : il n'y a pas
+  d'adaptateur technique de plus, mais un paquet de traduction (`internal/zigbee/core/zigbee/z2m`),
   seul à connaître les messages de Zigbee2MQTT, comme `wire` est seul à connaître le
   contrat.
 - **L'agent de liaison** : un cœur (`internal/agent/core/agent`) qui n'est pas un domaine au sens
@@ -272,7 +272,7 @@ Ces règles sont vérifiées par des tests (`internal/checks/archtest`). Ils éc
   tierce ou un paquet d'entrées-sorties, ou s'il lit l'horloge ;
 - si le contrat importe un paquet du module ;
 - si un paquet `wire` connaît autre chose que son domaine et le contrat, ou fait des
-  entrées-sorties ; si `internal/zigbee/z2m` connaît autre chose que le domaine Zigbee ;
+  entrées-sorties ; si `internal/zigbee/core/zigbee/z2m` connaît autre chose que le domaine Zigbee ;
 - si le pilote ou un adaptateur importe un paquet du module ; si le pilote lit
   l'horloge ailleurs que dans `SystemClock` ;
 - si la file d'envoi connaît autre chose que le contrat et le pilote, ou son faux

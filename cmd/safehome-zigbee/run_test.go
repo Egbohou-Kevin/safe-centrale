@@ -18,7 +18,7 @@ import (
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/contract/schematest"
 	"safehome/internal/shared/driver/drivertest"
-	"safehome/internal/zigbeeapp"
+	"safehome/internal/zigbee/app/zigbeeapp"
 )
 
 const site = "tg-lom-0001"

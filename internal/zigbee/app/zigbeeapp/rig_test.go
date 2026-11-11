@@ -14,7 +14,7 @@ import (
 	"safehome/internal/shared/driver/drivertest"
 	"safehome/internal/shared/inbox"
 	"safehome/internal/shared/outbox/outboxtest"
-	"safehome/internal/zigbee"
+	"safehome/internal/zigbee/core/zigbee"
 )
 
 const site = "tg-lom-0001"

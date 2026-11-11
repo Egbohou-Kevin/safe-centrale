@@ -6,16 +6,16 @@ import (
 	"time"
 
 	"safehome/internal/shared/contract"
-	"safehome/internal/zigbee"
-	"safehome/internal/zigbee/wire"
-	"safehome/internal/zigbeeconfig"
+	"safehome/internal/zigbee/config/zigbeeconfig"
+	"safehome/internal/zigbee/core/zigbee"
+	"safehome/internal/zigbee/core/zigbee/wire"
 )
 
 // The real keypad profile, through the core and the wire: the Develco keypad sends
 // the code typed before any key, "arm" included. The contract takes a code only with
 // disarm or silence, so the code of an arming is dropped, not the arming.
 func TestTheKeypadArmsWithACodeTypedFirst(t *testing.T) {
-	profiles, err := zigbeeconfig.LoadProfiles(filepath.Join("..", "..", "..", "config", "profiles"))
+	profiles, err := zigbeeconfig.LoadProfiles(filepath.Join("..", "..", "..", "..", "..", "config", "profiles"))
 	if err != nil {
 		t.Fatal(err)
 	}

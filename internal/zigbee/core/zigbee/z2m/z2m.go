@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"safehome/internal/zigbee"
+	"safehome/internal/zigbee/core/zigbee"
 )
 
 // DefaultBase is Zigbee2MQTT's default base topic.

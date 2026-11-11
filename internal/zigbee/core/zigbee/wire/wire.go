@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"safehome/internal/shared/contract"
-	"safehome/internal/zigbee"
+	"safehome/internal/zigbee/core/zigbee"
 )
 
 // Device is the device.event and the device.state a change makes; either may be nil.

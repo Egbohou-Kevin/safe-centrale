@@ -377,7 +377,7 @@ func TestZigbee2MQTTDeviceMessagesSurviveAnAdapterRestart(t *testing.T) {
 		t.Errorf("zigbee2mqtt device_options.retain = %q, want false", got)
 	}
 	// A message kept by the broker says when the device was heard, so that a key held
-	// while the adapter was down expires at the hub (internal/zigbee/z2m reads it).
+	// while the adapter was down expires at the hub (internal/zigbee/core/zigbee/z2m reads it).
 	if got := yamlValue(t, z2m, "advanced", "last_seen"); got != "ISO_8601" {
 		t.Errorf("zigbee2mqtt advanced.last_seen = %q, want ISO_8601", got)
 	}
