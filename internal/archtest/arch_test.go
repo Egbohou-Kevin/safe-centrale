@@ -50,7 +50,23 @@ func internal(names ...string) []string {
 // moved says where each package of the former flat layout of internal/ now lives
 // (docs/rangement-par-programme.md): the rules below still name a package by its
 // former path, at turns it into the current one.
-var moved = map[string]string{}
+var moved = map[string]string{
+	"contract":          "shared/contract",
+	"schematest":        "shared/contract/schematest",
+	"driver":            "shared/driver",
+	"inbox":             "shared/inbox",
+	"outbox":            "shared/outbox",
+	"service":           "shared/service",
+	"configfile":        "shared/config/configfile",
+	"siteconfig":        "shared/config/siteconfig",
+	"adapter/filelock":  "shared/adapter/filelock",
+	"adapter/filestore": "shared/adapter/filestore",
+	"adapter/mqtt":      "shared/adapter/mqtt",
+	"adapter/photodir":  "shared/adapter/photodir",
+	"adapter/pidfile":   "shared/adapter/pidfile",
+	"adapter/sdnotify":  "shared/adapter/sdnotify",
+	"adapter/sysclock":  "shared/adapter/sysclock",
+}
 
 // at is the current path below internal/ of the package once at internal/old.
 func at(old string) string {
@@ -263,17 +279,17 @@ func TestImportDetectorCatchesViolations(t *testing.T) {
 import (
 	"fmt"
 	"os"
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 	"github.com/someone/lib"
 )
 `)
 	pure := func(p string) bool { return isLocal(p) || !isStdlib(p) || p == "os" }
 	got := forbiddenImports(f, pure)
-	want := []string{"os", "safehome/internal/contract", "github.com/someone/lib"}
+	want := []string{"os", "safehome/internal/shared/contract", "github.com/someone/lib"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
-	if isStdlib("safehome/internal/contract") || !isLocal("safehome/internal/contract") || isLocal("safehomex/y") {
+	if isStdlib("safehome/internal/shared/contract") || !isLocal("safehome/internal/shared/contract") || isLocal("safehomex/y") {
 		t.Fatal("module path classification is wrong")
 	}
 }
@@ -281,11 +297,11 @@ import (
 func TestALayerRejectsWhatItMustReject(t *testing.T) {
 	l := layer{local: internal("contract"), noStd: []string{"os"}}
 	for p, want := range map[string]bool{
-		"fmt":                        false,
-		"os":                         true,
-		"safehome/internal/contract": false,
-		"safehome/internal/engine":   true,
-		"github.com/someone/lib":     true,
+		"fmt":                               false,
+		"os":                                true,
+		"safehome/internal/shared/contract": false,
+		"safehome/internal/engine":          true,
+		"github.com/someone/lib":            true,
 	} {
 		if got := l.rejects(p); got != want {
 			t.Errorf("rejects(%s) = %v, want %v", p, got, want)

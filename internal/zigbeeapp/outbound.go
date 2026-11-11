@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/outbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/outbox"
 	"safehome/internal/zigbee"
 	"safehome/internal/zigbee/wire"
 	"safehome/internal/zigbee/z2m"

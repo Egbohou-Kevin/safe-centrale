@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // carriesCode tells whether messages of a type may carry the site's access code: its

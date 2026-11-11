@@ -14,9 +14,9 @@ import (
 	"regexp"
 	"time"
 
-	"safehome/internal/configfile"
-	"safehome/internal/contract"
-	"safehome/internal/siteconfig"
+	"safehome/internal/shared/config/configfile"
+	"safehome/internal/shared/config/siteconfig"
+	"safehome/internal/shared/contract"
 	"safehome/internal/video"
 	"safehome/internal/videoapp"
 )
@@ -88,7 +88,7 @@ func Load(path string) (Result, error) {
 }
 
 // withSite takes the client's allowance and longest session from the configuration
-// set from the cloud, if the state folder holds one (internal/siteconfig). They only
+// set from the cloud, if the state folder holds one (internal/shared/config/siteconfig). They only
 // apply on mobile data.
 func withSite(r Result) Result {
 	o, ok, err := siteconfig.Read(r.StateDir)

@@ -392,7 +392,7 @@ l'espacer retarderait le moment où le cloud voit une centrale disparaître.
 Un Raspberry Pi 4 n'a pas d'horloge qui survit à une coupure de courant : après une
 panne, l'heure est fausse jusqu'à la synchronisation par internet. La centrale indique
 dans le heartbeat si l'horloge est synchronisée (`clock_ok`, lu dans le noyau par
-`internal/adapter/sysclock`). Le noyau cesse de la dire synchronisée après quelques
+`internal/shared/adapter/sysclock`). Le noyau cesse de la dire synchronisée après quelques
 heures sans correction : après une longue coupure d'internet, `false` veut dire « pas
 vérifiée depuis longtemps ». Le cloud ajoute sa propre
 heure de réception, comme prévu dans `contract.md`. Il faut donc une horloge à pile

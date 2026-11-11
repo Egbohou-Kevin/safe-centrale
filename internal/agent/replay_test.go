@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // send sends the queue as the application would: Next, then Sent once the cloud's

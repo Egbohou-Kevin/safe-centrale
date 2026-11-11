@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
+	"safehome/internal/shared/contract"
 )
 
 func dev(id string, caps ...string) contract.RegistryDevice {

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
-	"safehome/internal/siteconfig"
+	"safehome/internal/shared/config/siteconfig"
+	"safehome/internal/shared/contract"
 )
 
 // exampleWithState copies the example configuration with its state in a temporary

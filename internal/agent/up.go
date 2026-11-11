@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // From the hub to the cloud: what goes up, in which order, and what the queue drops

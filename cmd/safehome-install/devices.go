@@ -9,8 +9,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/install"
+	"safehome/internal/shared/contract"
 )
 
 func (c *command) devices(ctx context.Context, s *install.Session) error {

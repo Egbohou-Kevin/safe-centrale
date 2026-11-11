@@ -6,11 +6,11 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
 	engwire "safehome/internal/engine/wire"
 	"safehome/internal/escalation"
-	"safehome/internal/inbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/inbox"
 )
 
 // The Zigbee adapter answers each siren command (command.ack). A siren.on that did not

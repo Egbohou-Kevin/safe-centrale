@@ -6,9 +6,9 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
 	"safehome/internal/health"
+	"safehome/internal/shared/contract"
 )
 
 // boot lets the retained device states arrive, then tells the engine what the

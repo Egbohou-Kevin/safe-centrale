@@ -5,8 +5,8 @@ package wire
 import (
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/maint"
+	"safehome/internal/shared/contract"
 )
 
 // Open turns a maint.open into a core input.

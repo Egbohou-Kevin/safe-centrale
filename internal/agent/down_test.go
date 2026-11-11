@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/sealcode"
+	"safehome/internal/shared/contract"
 )
 
 // An order from the app the agent does not pass on is answered at once: the cloud

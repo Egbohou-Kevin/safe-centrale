@@ -151,7 +151,7 @@ services_hold() {
 }
 
 # What a client the hub's broker refuses writes in the journal: our programs
-# (internal/adapter/mqtt: the connection; a subscription, internal/outbox: a message the
+# (internal/shared/adapter/mqtt: the connection; a subscription, internal/shared/outbox: a message the
 # ACL does not let it write) and Zigbee2MQTT ("Connection refused: Not authorized", or a
 # bad user name or password). A topic the ACL does not let a program read leaves no
 # trace: Mosquitto grants the subscription and delivers nothing (the tests of cmd/ run

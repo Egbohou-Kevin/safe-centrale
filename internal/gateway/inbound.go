@@ -5,10 +5,10 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/gsm"
 	gsmwire "safehome/internal/gsm/wire"
-	"safehome/internal/inbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/inbox"
 )
 
 // HandleMessage takes a message from the broker. It returns quickly. Payloads are

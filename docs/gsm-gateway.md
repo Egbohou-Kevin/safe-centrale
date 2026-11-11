@@ -271,7 +271,7 @@ Découpage, selon l'architecture hexagonale :
 Là où le document laissait un doute :
 
 - **Un programme à part** (`safehome-gsm`), à côté de `safehome-hub`, comme prévu : ils ne
-  se parlent que par MQTT. La file d'envoi MQTT est partagée (`internal/outbox`).
+  se parlent que par MQTT. La file d'envoi MQTT est partagée (`internal/shared/outbox`).
 - **Échec signalé tout de suite, reprises ensuite.** Quand toutes les lignes ont échoué
   une fois, la passerelle publie `failed` (l'escalade passe à la vague suivante sans
   attendre), puis continue d'essayer avec un délai qui double (5 s, 10 s, … 2 min au

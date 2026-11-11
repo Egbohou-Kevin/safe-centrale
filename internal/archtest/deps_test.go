@@ -39,7 +39,7 @@ func allowedThirdParty(rel, path string) bool {
 
 // Shipped code uses the standard library only, with one exception per adapter: the
 // package that wraps a library may import it, and no other package may. Third-party
-// packages are also allowed in tests, through internal/schematest.
+// packages are also allowed in tests, through internal/shared/contract/schematest.
 func TestProductionCodeHasNoThirdPartyDependencies(t *testing.T) {
 	walkSources(t, func(rel string, f *ast.File) {
 		if strings.HasPrefix(rel, dirOf("schematest")) {
@@ -53,11 +53,11 @@ func TestProductionCodeHasNoThirdPartyDependencies(t *testing.T) {
 	})
 }
 
-// internal/schematest pulls in a third-party validator, internal/adapter/mqtt/
+// internal/shared/contract/schematest pulls in a third-party validator, internal/shared/adapter/mqtt/
 // mqtttest starts a broker process, internal/adapter/atmodem/attest pretends to be
 // a modem, internal/adapter/go2rtc/go2rtctest a video relay,
-// internal/driver/drivertest fakes the clock and the disk and
-// internal/outbox/outboxtest the broker: shipped code must never import them. The
+// internal/shared/driver/drivertest fakes the clock and the disk and
+// internal/shared/outbox/outboxtest the broker: shipped code must never import them. The
 // virtual kit's fake devices (vkit/) are test equipment too, and may.
 func TestOnlyTestsImportTestSupport(t *testing.T) {
 	testSupport := internal("schematest", "driver/drivertest", "outbox/outboxtest",
@@ -139,7 +139,7 @@ func TestExecRuleIsNarrow(t *testing.T) {
 
 // openBrokers are the tests that may start an open broker (mqtttest.StartOpen or
 // StartOpenWith), with their number of calls: the MQTT client's own tests (the whole of
-// internal/adapter/mqtt) and the agent's cloud side. A program under test runs on the
+// internal/shared/adapter/mqtt) and the agent's cloud side. A program under test runs on the
 // hub's broker, with the shipped ACL (29 October 2026).
 var openBrokers = map[string]int{
 	filepath.Join("cmd", "safehome-agent", "run_test.go"): 1,

@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
-	"safehome/internal/inbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver/drivertest"
+	"safehome/internal/shared/inbox"
 )
 
 // --- tests -------------------------------------------------------------------------

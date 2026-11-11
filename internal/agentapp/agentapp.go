@@ -18,11 +18,11 @@ import (
 	"time"
 
 	"safehome/internal/agent"
-	"safehome/internal/contract"
-	"safehome/internal/driver"
-	"safehome/internal/inbox"
-	"safehome/internal/outbox"
 	"safehome/internal/sealcode"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/inbox"
+	"safehome/internal/shared/outbox"
 )
 
 // Config holds what the agent needs to know.

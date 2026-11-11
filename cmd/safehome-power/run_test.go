@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/adapter/mqtt"
-	"safehome/internal/adapter/mqtt/mqtttest"
-	"safehome/internal/driver/drivertest"
 	"safehome/internal/powerconfig"
+	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/adapter/mqtt/mqtttest"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 func cli(args ...string) (int, string, string) {

@@ -13,7 +13,7 @@ import (
 // mosquitto.conf and safehome.acl back (the cases themselves are in update_hub_test.go).
 
 // What the journal says of a client the hub's broker refuses: one of our programs
-// (internal/adapter/mqtt), Zigbee2MQTT as mqtt.js says it, with MQTT 3.1.1 and 5.
+// (internal/shared/adapter/mqtt), Zigbee2MQTT as mqtt.js says it, with MQTT 3.1.1 and 5.
 const (
 	hubRefused     = `Oct 29 15:00:02 hub safehome-hub[44]: level=ERROR msg="mqtt broker refused the connection" reason=135 err="server denied connect (reason: 135): failed to connect to server: "`
 	z2mRefused     = "Oct 29 15:00:02 hub zigbee2mqtt[45]: [2026-10-29 15:00:02] error: \tz2m: MQTT error: Connection refused: Not authorized"
@@ -35,9 +35,9 @@ func TestUpdateHubLooksForTheRefusalTheClientWrites(t *testing.T) {
 	line := script[start+len("\nrefusal='"):]
 	alternatives := strings.Split(line[:strings.Index(line, "'")], "|")
 	for i, c := range []struct{ file, said string }{
-		{filepath.Join("..", "internal", "adapter", "mqtt", "client.go"), "mqtt broker refused the connection"},
-		{filepath.Join("..", "internal", "adapter", "mqtt", "client.go"), "mqtt subscription refused"},
-		{filepath.Join("..", "internal", "outbox", "outbox.go"), "the broker refused a message"},
+		{filepath.Join("..", "internal", "shared", "adapter", "mqtt", "client.go"), "mqtt broker refused the connection"},
+		{filepath.Join("..", "internal", "shared", "adapter", "mqtt", "client.go"), "mqtt subscription refused"},
+		{filepath.Join("..", "internal", "shared", "outbox", "outbox.go"), "the broker refused a message"},
 	} {
 		if !strings.Contains(string(must(os.ReadFile(c.file))), `"`+c.said+`"`) || i >= len(alternatives) || alternatives[i] != c.said {
 			t.Errorf("%s logs %q, and update-hub.sh's refusal says it, alternative %d: one of them changed", c.file, c.said, i+1)

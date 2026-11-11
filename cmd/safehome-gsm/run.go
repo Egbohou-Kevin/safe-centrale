@@ -6,13 +6,13 @@ import (
 	"io"
 	"sync/atomic"
 
-	"safehome/internal/adapter/mqtt"
-	"safehome/internal/contract"
-	"safehome/internal/driver"
 	"safehome/internal/gateway"
 	"safehome/internal/gsmconfig"
-	"safehome/internal/service"
-	"safehome/internal/siteconfig"
+	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/config/siteconfig"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/service"
 )
 
 const (

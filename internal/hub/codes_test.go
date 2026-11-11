@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"safehome/internal/access"
-	"safehome/internal/contract"
-	"safehome/internal/driver"
-	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 // --- access codes ----------------------------------------------------------------------

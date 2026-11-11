@@ -161,11 +161,11 @@ func f(log *slog.Logger, err error) {
 	time.Sleep(time.Second)
 }
 `,
-		"internal/adapter/dev/d.go":        "package dev\nimport \"time\"\nfunc f() { time.Sleep(1) }\n",
-		"internal/driver/drivertest/w.go":  "package drivertest\nimport \"time\"\nfunc f() { time.Sleep(1) }\n",
-		"internal/app/a_test.go":           "package app\nimport \"time\"\nfunc g() { time.Sleep(1) }\n",
-		"internal/other/no_slog.go":        "package other\nfunc f(t T) { t.Error(\"x\", \"error\") }\n",
-		"internal/other/clock/realtime.go": "package clock\nimport t \"time\"\nfunc f() { t.Sleep(1) }\n",
+		"internal/adapter/dev/d.go":              "package dev\nimport \"time\"\nfunc f() { time.Sleep(1) }\n",
+		"internal/shared/driver/drivertest/w.go": "package drivertest\nimport \"time\"\nfunc f() { time.Sleep(1) }\n",
+		"internal/app/a_test.go":                 "package app\nimport \"time\"\nfunc g() { time.Sleep(1) }\n",
+		"internal/other/no_slog.go":              "package other\nfunc f(t T) { t.Error(\"x\", \"error\") }\n",
+		"internal/other/clock/realtime.go":       "package clock\nimport t \"time\"\nfunc f() { t.Sleep(1) }\n",
 	})
 	if got := slogErrorKeys(tr); len(got) != 2 || got[0].pos.Line != 4 || got[1].pos.Line != 6 {
 		t.Errorf("slog rule: got %+v, want lines 4 and 6 of internal/app/a.go", got)

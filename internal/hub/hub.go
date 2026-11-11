@@ -23,13 +23,13 @@ import (
 	"time"
 
 	"safehome/internal/access"
-	"safehome/internal/contract"
-	"safehome/internal/driver"
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
 	"safehome/internal/health"
-	"safehome/internal/inbox"
-	"safehome/internal/outbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/inbox"
+	"safehome/internal/shared/outbox"
 )
 
 // Store keys.

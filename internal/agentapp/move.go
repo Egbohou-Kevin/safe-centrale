@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"safehome/internal/agent"
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // Mover carries out a move to another cell of the cloud (agent.move, see

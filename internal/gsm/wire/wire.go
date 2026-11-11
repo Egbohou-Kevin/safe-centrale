@@ -6,8 +6,8 @@ package wire
 import (
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/gsm"
+	"safehome/internal/shared/contract"
 )
 
 var channels = map[string]gsm.Channel{

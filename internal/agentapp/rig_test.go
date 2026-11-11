@@ -14,10 +14,10 @@ import (
 	"sync"
 	"testing"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
-	"safehome/internal/inbox"
-	"safehome/internal/outbox/outboxtest"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver/drivertest"
+	"safehome/internal/shared/inbox"
+	"safehome/internal/shared/outbox/outboxtest"
 )
 
 // --- fakes ---------------------------------------------------------------------

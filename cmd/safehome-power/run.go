@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"io"
 
-	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/x728"
-	"safehome/internal/contract"
-	"safehome/internal/driver"
 	"safehome/internal/powerapp"
 	"safehome/internal/powerconfig"
-	"safehome/internal/service"
+	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/service"
 )
 
 const (

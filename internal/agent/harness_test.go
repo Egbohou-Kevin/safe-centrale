@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/sealcode"
+	"safehome/internal/shared/contract"
 )
 
 const site = "tg-lom-0001"

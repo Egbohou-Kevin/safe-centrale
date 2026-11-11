@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // Photos (see docs/agent.md): the video service announces each photo it took at an

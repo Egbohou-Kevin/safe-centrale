@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
+	"safehome/internal/shared/contract"
 )
 
 // sensors maps contract capabilities to the sensor kinds the engine understands.

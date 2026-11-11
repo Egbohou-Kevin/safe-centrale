@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"safehome/internal/adapter/go2rtc/go2rtctest"
-	"safehome/internal/driver/drivertest"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 func TestMain(m *testing.M) {

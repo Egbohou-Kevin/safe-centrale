@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 	"safehome/internal/zigbee"
 	"safehome/internal/zigbee/wire"
 	"safehome/internal/zigbeeconfig"

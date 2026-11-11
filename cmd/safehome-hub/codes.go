@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"safehome/internal/access"
-	"safehome/internal/adapter/filelock"
-	"safehome/internal/adapter/filestore"
-	"safehome/internal/driver"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
-	"safehome/internal/service"
+	"safehome/internal/shared/adapter/filelock"
+	"safehome/internal/shared/adapter/filestore"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/service"
 )
 
 // codes runs "safehome-hub codes": it lists, sets or removes the access codes, then

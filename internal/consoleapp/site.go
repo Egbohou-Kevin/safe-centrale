@@ -3,8 +3,8 @@ package consoleapp
 import (
 	"fmt"
 
-	"safehome/internal/contract"
 	"safehome/internal/install"
+	"safehome/internal/shared/contract"
 )
 
 // paired returns a paired device, as the registry knows it.

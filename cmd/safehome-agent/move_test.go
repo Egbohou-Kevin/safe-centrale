@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"safehome/internal/agentconfig"
-	"safehome/internal/service"
+	"safehome/internal/shared/service"
 )
 
 // A move under way connects to its new cell; otherwise the current one.

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/adapter/mqtt"
+	"safehome/internal/shared/adapter/mqtt"
 )
 
 type recorder struct {

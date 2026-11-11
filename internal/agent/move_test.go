@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 const newSecret = "s3cret-for-cell-b-0001"

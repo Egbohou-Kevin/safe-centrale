@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/driver/drivertest"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 const fakeEnv = "SAFEHOME_FAKE_SSH"

@@ -8,13 +8,13 @@ import (
 	"log/slog"
 	"os"
 
-	"safehome/internal/adapter/mqtt"
 	"safehome/internal/adapter/sshtunnel"
-	"safehome/internal/contract"
-	"safehome/internal/driver"
 	"safehome/internal/maintapp"
 	"safehome/internal/maintconfig"
-	"safehome/internal/service"
+	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/service"
 )
 
 const (

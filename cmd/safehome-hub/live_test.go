@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/adapter/mqtt"
-	"safehome/internal/adapter/mqtt/mqtttest"
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
-	"safehome/internal/schematest"
+	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/adapter/mqtt/mqtttest"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/contract/schematest"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 // live is a running hub and a test client on the same broker.

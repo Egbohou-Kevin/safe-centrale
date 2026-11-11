@@ -20,10 +20,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver"
-	"safehome/internal/inbox"
-	"safehome/internal/outbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/inbox"
+	"safehome/internal/shared/outbox"
 	"safehome/internal/video"
 	videowire "safehome/internal/video/wire"
 )

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/adapter/mqtt/mqtttest"
-	"safehome/internal/adapter/pidfile"
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
+	"safehome/internal/shared/adapter/mqtt/mqtttest"
+	"safehome/internal/shared/adapter/pidfile"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 func TestTheHubEndToEndOverARealBroker(t *testing.T) {

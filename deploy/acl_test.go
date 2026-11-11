@@ -2,7 +2,7 @@ package deploy
 
 // The rights on the hub's broker (29 October 2026): mosquitto/safehome.acl gives each
 // name exactly the topics its code reads and writes. The tests of cmd/ run each program
-// against this file (internal/adapter/mqtt/mqtttest); these check the file itself, then
+// against this file (internal/shared/adapter/mqtt/mqtttest); these check the file itself, then
 // what the real Mosquitto does with it.
 
 import (
@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/adapter/mqtt"
-	"safehome/internal/adapter/mqtt/mqtttest"
-	"safehome/internal/driver/drivertest"
+	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/adapter/mqtt/mqtttest"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 // rights are the patterns a section of the ACL may read and write.

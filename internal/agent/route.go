@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // upRoute says whether a message of the hub goes to the cloud, and how. The list is

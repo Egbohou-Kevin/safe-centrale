@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"safehome/internal/adapter/atmodem/attest"
-	"safehome/internal/driver/drivertest"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 type events struct {

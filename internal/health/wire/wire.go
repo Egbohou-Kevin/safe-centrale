@@ -6,8 +6,8 @@ package wire
 import (
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/health"
+	"safehome/internal/shared/contract"
 )
 
 // Input turns a device event or state into a health input. ok is false when it does

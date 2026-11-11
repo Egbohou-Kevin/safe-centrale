@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 // No log of the agent, at any level, holds the access code or the agent's key: not for

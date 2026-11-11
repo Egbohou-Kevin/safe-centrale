@@ -5,10 +5,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
 	engwire "safehome/internal/engine/wire"
-	"safehome/internal/inbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/inbox"
 )
 
 var keypadCommands = map[string]string{

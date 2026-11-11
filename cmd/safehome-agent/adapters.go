@@ -9,13 +9,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"safehome/internal/adapter/mqtt"
-	"safehome/internal/adapter/photodir"
 	"safehome/internal/adapter/upload"
 	"safehome/internal/agentapp"
 	"safehome/internal/agentconfig"
 	"safehome/internal/sealcode"
-	"safehome/internal/service"
+	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/adapter/photodir"
+	"safehome/internal/shared/service"
 )
 
 // photos fits the photos' folder to the application's port.

@@ -17,11 +17,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver"
-	"safehome/internal/outbox"
 	"safehome/internal/power"
 	powerwire "safehome/internal/power/wire"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/outbox"
 )
 
 // Board is the battery module.

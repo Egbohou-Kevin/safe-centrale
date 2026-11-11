@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"safehome/internal/configfile"
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
 	escwire "safehome/internal/escalation/wire"
 	"safehome/internal/health"
 	"safehome/internal/hub"
 	"safehome/internal/install"
+	"safehome/internal/shared/config/configfile"
 )
 
 // zones reads the zones. A name follows the installer's rule (install.ValidName),

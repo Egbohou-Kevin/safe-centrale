@@ -6,8 +6,8 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/sealcode"
+	"safehome/internal/shared/contract"
 )
 
 // From the cloud to the hub: what the cloud may send, checked before it reaches the

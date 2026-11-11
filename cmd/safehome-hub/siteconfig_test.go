@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/adapter/mqtt/mqtttest"
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
 	"safehome/internal/hubconfig"
 	"safehome/internal/install"
-	"safehome/internal/siteconfig"
+	"safehome/internal/shared/adapter/mqtt/mqtttest"
+	"safehome/internal/shared/config/siteconfig"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 func TestAConfigurationFromTheCloudRestartsTheHubThenIsApplied(t *testing.T) {

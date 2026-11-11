@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // Zone is what a device is for: a name for people and a kind for the engine, and

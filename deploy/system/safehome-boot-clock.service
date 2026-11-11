@@ -3,7 +3,7 @@
 # forward once the network is up, sometimes before the hub starts: a device state dated
 # in between is on the clock as it read at boot. The hub reads this line (the time, then
 # the uptime, in seconds) to tell such a state from one the broker kept from before the
-# power cut (internal/adapter/sysclock.StartShown).
+# power cut (internal/shared/adapter/sysclock.StartShown).
 #
 # After systemd-timesyncd, which first sets the clock forward to the last time it saved;
 # before sysinit.target, so before any network, hence any NTP. Read by the hub under its

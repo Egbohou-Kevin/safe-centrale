@@ -13,10 +13,10 @@ import (
 	"time"
 	_ "time/tzdata" // the hub's image may have no time zone database
 
-	"safehome/internal/configfile"
-	"safehome/internal/contract"
 	"safehome/internal/hub"
-	"safehome/internal/siteconfig"
+	"safehome/internal/shared/config/configfile"
+	"safehome/internal/shared/config/siteconfig"
+	"safehome/internal/shared/contract"
 )
 
 // Result is what the file describes.
@@ -42,7 +42,7 @@ type Result struct {
 
 // Load reads and checks the file at path, lays over it the zones and sirens the
 // installer's tools keep in the state folder (DevicesFile), then the configuration
-// set from the cloud (internal/siteconfig). Neither ever stops the hub: one that does
+// set from the cloud (internal/shared/config/siteconfig). Neither ever stops the hub: one that does
 // not fit is left aside, and DevicesErr or SiteErr says why.
 func Load(path string) (Result, error) {
 	f, err := readConfig(path)

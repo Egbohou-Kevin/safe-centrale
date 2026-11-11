@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
-	"safehome/internal/inbox"
 	"safehome/internal/install"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver/drivertest"
+	"safehome/internal/shared/inbox"
 )
 
 const site = "tg-lom-0001"

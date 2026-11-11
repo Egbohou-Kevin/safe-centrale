@@ -4,7 +4,7 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // Moving to another cell of the cloud (agent.move, see docs/agent.md). From the

@@ -3,7 +3,7 @@ package agent
 import (
 	"testing"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // The hub's broker gives messages again after they reached the cloud: after a power

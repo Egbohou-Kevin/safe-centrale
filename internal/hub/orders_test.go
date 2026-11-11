@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
-	"safehome/internal/schematest"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/contract/schematest"
 )
 
 // The broker keeps the hub's session for a day: what was sent while the hub was down

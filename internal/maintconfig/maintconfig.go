@@ -8,9 +8,9 @@ import (
 	"errors"
 	"fmt"
 
-	"safehome/internal/configfile"
 	"safehome/internal/maint"
 	"safehome/internal/maintapp"
+	"safehome/internal/shared/config/configfile"
 )
 
 // Tunnel says how to reach the bastion.

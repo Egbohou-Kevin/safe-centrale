@@ -190,20 +190,20 @@ func TestDriverReadsTheClockOnlyInSystemClock(t *testing.T) {
 		total += len(calls)
 		for _, c := range calls {
 			if !strings.Contains(c, "time.Now") && !strings.Contains(c, "time.NewTimer") && !strings.Contains(c, "time.Since") {
-				t.Errorf("internal/driver/%s uses the clock in an unexpected way: %s", name, c)
+				t.Errorf("internal/shared/driver/%s uses the clock in an unexpected way: %s", name, c)
 			}
 		}
 	}
 	// Exactly four places: SystemClock.Now, SystemClock.Timer, SystemClock.Elapsed and
 	// its origin.
 	if total != 4 {
-		t.Errorf("internal/driver reads the clock in %d places, want 4 (SystemClock.Now, Timer, Elapsed and its origin)", total)
+		t.Errorf("internal/shared/driver reads the clock in %d places, want 4 (SystemClock.Now, Timer, Elapsed and its origin)", total)
 	}
 }
 
 // The application layer (hub) assembles the domains through ports it declares
 // itself. It never imports an adapter: wiring the real MQTT client or the real disk
-// to those ports is the job of the composition root (cmd/, with internal/service
+// to those ports is the job of the composition root (cmd/, with internal/shared/service
 // that only cmd/ may use, see the next rule), and nothing else.
 func TestOnlyTheCompositionRootImportsAdapters(t *testing.T) {
 	walkSources(t, func(rel string, f *ast.File) {
@@ -245,7 +245,7 @@ func TestTheVirtualKitStaysOutside(t *testing.T) {
 
 func inVirtualKit(rel string) bool { return strings.HasPrefix(rel, "vkit"+string(filepath.Separator)) }
 
-// internal/service is the part of the composition root every program shares: the
+// internal/shared/service is the part of the composition root every program shares: the
 // command line, the pid file, the MQTT clients and the life cycle under systemd. It
 // knows those adapters, the inbox's message and the outbox's error, nothing of the
 // domains, the applications or the configuration files; and only cmd/ imports it.

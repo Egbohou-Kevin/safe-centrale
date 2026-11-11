@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/schematest"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/contract/schematest"
 )
 
 // pairingAdapter opens the network, adds a device, refuses two, ignores another

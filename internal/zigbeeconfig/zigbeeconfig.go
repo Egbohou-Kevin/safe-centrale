@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"time"
 
-	"safehome/internal/configfile"
-	"safehome/internal/contract"
+	"safehome/internal/shared/config/configfile"
+	"safehome/internal/shared/contract"
 	"safehome/internal/zigbee"
 	"safehome/internal/zigbeeapp"
 )

@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // Numbering and replay (see docs/agent.md). The programs of the site number their own

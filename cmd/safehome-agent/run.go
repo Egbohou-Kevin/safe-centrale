@@ -8,15 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"safehome/internal/adapter/mqtt"
-	"safehome/internal/adapter/photodir"
 	"safehome/internal/adapter/queuedir"
 	"safehome/internal/adapter/upload"
 	"safehome/internal/agentapp"
 	"safehome/internal/agentconfig"
-	"safehome/internal/contract"
-	"safehome/internal/driver"
-	"safehome/internal/service"
+	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/adapter/photodir"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/service"
 )
 
 const (

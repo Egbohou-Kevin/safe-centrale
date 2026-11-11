@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"safehome/internal/adapter/mqtt"
-	"safehome/internal/contract"
 	"safehome/internal/install"
-	"safehome/internal/service"
+	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/service"
 )
 
 // online connects to the broker, runs fn with a session, and disconnects.

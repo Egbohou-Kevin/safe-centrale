@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 // sirenOrders lists the commands sent to the siren so far.

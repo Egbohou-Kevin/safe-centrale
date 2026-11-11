@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"safehome/internal/agent"
-	"safehome/internal/contract"
-	"safehome/internal/outbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/outbox"
 )
 
 // ErrRefused is wrapped by the error of the cloud's publisher when its broker refused

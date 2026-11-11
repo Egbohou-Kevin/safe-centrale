@@ -15,7 +15,7 @@ import (
 
 	"safehome/internal/agent"
 	"safehome/internal/agentapp"
-	"safehome/internal/configfile"
+	"safehome/internal/shared/config/configfile"
 )
 
 // Cloud is how to reach the cloud's broker.

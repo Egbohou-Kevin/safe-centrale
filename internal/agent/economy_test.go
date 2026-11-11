@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 func economy(c *Config) { c.Economy = EconomyEvery }

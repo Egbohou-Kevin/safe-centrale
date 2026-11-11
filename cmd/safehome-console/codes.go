@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"safehome/internal/access"
-	"safehome/internal/adapter/filelock"
-	"safehome/internal/adapter/filestore"
 	"safehome/internal/consoleapp"
-	"safehome/internal/driver"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
-	"safehome/internal/service"
+	"safehome/internal/shared/adapter/filelock"
+	"safehome/internal/shared/adapter/filestore"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/service"
 )
 
 // codes fits the hub's access codes to the console's Codes port. Each call reads the

@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/health"
 	healthwire "safehome/internal/health/wire"
 	"safehome/internal/power"
+	"safehome/internal/shared/contract"
 )
 
 // What the module reports is what the supervision reads as the hub's supply.

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // EconomyEvery is how often the heartbeat and agent.status reach the cloud on mobile

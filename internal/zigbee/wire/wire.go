@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 	"safehome/internal/zigbee"
 )
 

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/escalation"
-	"safehome/internal/schematest"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/contract/schematest"
 )
 
 var now = time.Date(2026, 10, 17, 21, 4, 0, 0, time.UTC)

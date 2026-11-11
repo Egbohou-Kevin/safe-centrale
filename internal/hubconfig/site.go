@@ -10,8 +10,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"safehome/internal/configfile"
 	"safehome/internal/install"
+	"safehome/internal/shared/config/configfile"
 )
 
 // DevicesFile is the file of the hub's state folder that holds the zones and the

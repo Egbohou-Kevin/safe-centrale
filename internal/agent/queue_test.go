@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 func TestDrainingTheQueueSavesOneItemAtATime(t *testing.T) {

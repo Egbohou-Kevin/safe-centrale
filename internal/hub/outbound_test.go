@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 	"safehome/internal/health"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 // --- the broker goes away ------------------------------------------------------------

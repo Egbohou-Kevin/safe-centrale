@@ -30,7 +30,7 @@ var sharedHelpers = map[string]string{
 }
 
 // sharedHomes are the packages that hold the shared fakes, and may declare them.
-var sharedHomes = []string{"internal/driver/drivertest", "internal/outbox/outboxtest"}
+var sharedHomes = []string{"internal/shared/driver/drivertest", "internal/shared/outbox/outboxtest"}
 
 // redeclaredFakes returns the types and functions, outside the shared homes, named
 // like a merged copy, and the test types that play the clock or the store (they have
@@ -184,7 +184,7 @@ type brokerPublisher struct{}
 type adapter struct{}
 func (adapter) Publish() error { return nil } // production code may publish
 `,
-		"internal/driver/drivertest/d.go": "package drivertest\ntype memStore struct{}\n",
+		"internal/shared/driver/drivertest/d.go": "package drivertest\ntype memStore struct{}\n",
 	})
 	got := strings.Join(keys(redeclaredFakes(tr)), " ")
 	want := "p/a_test.go:fakeClock p/a_test.go:clock p/a_test.go:store p/a_test.go:eventually p/prod.go:brokerPublisher"

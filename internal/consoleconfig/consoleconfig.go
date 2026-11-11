@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"time"
 
-	"safehome/internal/configfile"
 	"safehome/internal/consoleapp"
-	"safehome/internal/contract"
+	"safehome/internal/shared/config/configfile"
+	"safehome/internal/shared/contract"
 )
 
 // Wifi is the hub's own network, which exists while the installation mode lasts.

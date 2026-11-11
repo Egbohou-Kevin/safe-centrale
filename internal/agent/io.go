@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // Input is what the relay is told. Every input carries the time it happened.

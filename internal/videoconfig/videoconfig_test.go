@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/siteconfig"
+	"safehome/internal/shared/config/siteconfig"
+	"safehome/internal/shared/contract"
 	"safehome/internal/video"
 	"safehome/internal/videoapp"
 )

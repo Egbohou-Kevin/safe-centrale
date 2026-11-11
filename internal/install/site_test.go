@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // memSites keeps the site in memory, and refuses one without siren as the hub does.

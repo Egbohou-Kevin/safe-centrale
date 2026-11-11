@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"safehome/internal/agent"
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 // queued reads the size of the core's queue, on its loop.

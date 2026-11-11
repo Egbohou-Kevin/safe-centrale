@@ -20,12 +20,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver"
 	"safehome/internal/gsm"
 	gsmwire "safehome/internal/gsm/wire"
-	"safehome/internal/inbox"
-	"safehome/internal/outbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/inbox"
+	"safehome/internal/shared/outbox"
 )
 
 // Config holds what the gateway needs to know.

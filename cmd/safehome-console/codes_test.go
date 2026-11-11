@@ -13,14 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/adapter/filestore"
-	"safehome/internal/adapter/pidfile"
 	"safehome/internal/consoleapp"
-	"safehome/internal/driver"
-	"safehome/internal/driver/drivertest"
 	"safehome/internal/escalation"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
+	"safehome/internal/shared/adapter/filestore"
+	"safehome/internal/shared/adapter/pidfile"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {

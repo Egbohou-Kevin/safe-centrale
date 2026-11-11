@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"safehome/internal/access"
-	"safehome/internal/contract"
-	"safehome/internal/driver"
-	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
-	"safehome/internal/inbox"
-	"safehome/internal/outbox/outboxtest"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/driver/drivertest"
+	"safehome/internal/shared/inbox"
+	"safehome/internal/shared/outbox/outboxtest"
 )
 
 // --- boot and restart ---------------------------------------------------------------

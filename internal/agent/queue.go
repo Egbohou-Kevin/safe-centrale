@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // The queue for the cloud is not in the snapshot. It may hold 20000 items and 10 MB:

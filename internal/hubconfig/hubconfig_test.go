@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/configfile"
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
 	escwire "safehome/internal/escalation/wire"
 	"safehome/internal/health"
 	"safehome/internal/install"
+	"safehome/internal/shared/config/configfile"
 )
 
 // parse reads and checks a configuration given as bytes.

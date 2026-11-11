@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"time"
 
-	"safehome/internal/configfile"
 	"safehome/internal/power"
 	"safehome/internal/powerapp"
+	"safehome/internal/shared/config/configfile"
 )
 
 // Board says where the module is: the X728's lines and bus.

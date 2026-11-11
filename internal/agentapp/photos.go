@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"safehome/internal/agent"
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // Photos is the photos' folder, which the video service fills.

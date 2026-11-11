@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"safehome/internal/contract"
 	"safehome/internal/power"
+	"safehome/internal/shared/contract"
 )
 
 // Mains turns a report of the supply into the state of deviceID's mains.

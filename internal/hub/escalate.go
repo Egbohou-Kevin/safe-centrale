@@ -4,12 +4,12 @@ import (
 	"context"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
 	escwire "safehome/internal/escalation/wire"
 	"safehome/internal/health"
-	"safehome/internal/inbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/inbox"
 )
 
 // The hub is where the domains meet: an alert decided by the engine or the monitor

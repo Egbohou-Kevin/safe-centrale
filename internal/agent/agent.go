@@ -15,8 +15,8 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/sealcode"
+	"safehome/internal/shared/contract"
 )
 
 // Config holds the relay's settings.

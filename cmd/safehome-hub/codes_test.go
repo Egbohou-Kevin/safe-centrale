@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"safehome/internal/adapter/filestore"
-	"safehome/internal/adapter/mqtt/mqtttest"
-	"safehome/internal/contract"
-	"safehome/internal/driver"
-	"safehome/internal/driver/drivertest"
 	"safehome/internal/escalation"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
+	"safehome/internal/shared/adapter/filestore"
+	"safehome/internal/shared/adapter/mqtt/mqtttest"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 // moreContacts gives the site of the configuration at path a deputy and a guard too.

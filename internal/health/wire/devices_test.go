@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/health"
-	"safehome/internal/schematest"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/contract/schematest"
 )
 
 // The example of docs/contract.md, from the messages the hub receives to the list it

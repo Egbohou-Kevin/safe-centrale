@@ -21,10 +21,10 @@ import (
 	"sync"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver"
-	"safehome/internal/inbox"
 	"safehome/internal/install"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/inbox"
 )
 
 // Source names the console in the envelopes it sends.

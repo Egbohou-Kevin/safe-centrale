@@ -15,7 +15,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 
 | Dossier | Contenu |
 |---|---|
-| `internal/contract` | Le contrat d'événements : enveloppe, types de messages, identifiants (ULID), topics MQTT |
+| `internal/shared/contract` | Le contrat d'événements : enveloppe, types de messages, identifiants (ULID), topics MQTT |
 | `schemas/` | Les schémas JSON du contrat, pour le cloud et le firmware |
 
 ### Les domaines, avec leur traduction vers le contrat
@@ -62,19 +62,19 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 
 | Dossier | Contenu |
 |---|---|
-| `internal/inbox` | La porte d'entrée partagée par toutes les couches application : le message reçu (`Message`), les abonnements (`Subscription`), la vérification d'un message (`Open`, `Envelope`) et les derniers identifiants vus (`RecentIDs`). Il ne connaît que le contrat |
+| `internal/shared/inbox` | La porte d'entrée partagée par toutes les couches application : le message reçu (`Message`), les abonnements (`Subscription`), la vérification d'un message (`Open`, `Envelope`) et les derniers identifiants vus (`RecentIDs`). Il ne connaît que le contrat |
 | `internal/sealcode` | Le code d'accès scellé par le téléphone pour l'agent de liaison (ECIES P-256, AES-GCM, bibliothèque standard seule) : le cloud qui porte l'ordre ne le voit jamais |
-| `internal/outbox` | La file d'envoi MQTT partagée par toutes les couches application des programmes de la centrale : ordre, reprises, numéro de message qui survit aux redémarrages. Mêmes réglages partout (`Settings`), ouverture en un appel (`Open`), un message encodé et mis en file en un appel (`Send`, ou `SendWithCode` en QoS 0 pour un message qui porte le code d'accès) |
-| `internal/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine. `Every` répète un travail sur l'horloge. |
-| `internal/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre, redémarrage pour charger une nouvelle configuration du cloud (`Restart.Watch`), demande de relecture à un programme qui tourne (`Reload`). Seuls les programmes de `cmd/` s'en servent |
-| `internal/configfile` | Ce que les lectures de configuration ont en commun : l'en-tête des fichiers (`ProgramFile`, qui donne un `Program`), JSON strict, niveau de journal, durées, secrets, écriture atomique d'un fichier |
+| `internal/shared/outbox` | La file d'envoi MQTT partagée par toutes les couches application des programmes de la centrale : ordre, reprises, numéro de message qui survit aux redémarrages. Mêmes réglages partout (`Settings`), ouverture en un appel (`Open`), un message encodé et mis en file en un appel (`Send`, ou `SendWithCode` en QoS 0 pour un message qui porte le code d'accès) |
+| `internal/shared/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine. `Every` répète un travail sur l'horloge. |
+| `internal/shared/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre, redémarrage pour charger une nouvelle configuration du cloud (`Restart.Watch`), demande de relecture à un programme qui tourne (`Reload`). Seuls les programmes de `cmd/` s'en servent |
+| `internal/shared/config/configfile` | Ce que les lectures de configuration ont en commun : l'en-tête des fichiers (`ProgramFile`, qui donne un `Program`), JSON strict, niveau de journal, durées, secrets, écriture atomique d'un fichier |
 
 ### La lecture des configurations
 
 | Dossier | Contenu |
 |---|---|
 | `internal/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict), nom de son fichier de pid (`PidFile`) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) |
-| `internal/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
+| `internal/shared/config/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
 | `internal/gsmconfig` | Lecture du fichier de configuration de la passerelle, avec les contacts réglés depuis le cloud |
 | `internal/zigbeeconfig` | Lecture de la configuration et des profils d'appareils (`config/profiles/`) |
 | `internal/agentconfig` | Lecture de la configuration de l'agent et du secret du cloud |
@@ -87,17 +87,17 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 
 | Dossier | Contenu |
 |---|---|
-| `internal/adapter/mqtt` | L'adaptateur MQTT 5 (client de Mosquitto) : seul paquet qui connaît la bibliothèque MQTT |
-| `internal/adapter/filestore` | Écriture atomique de l'état sur disque (survit à une coupure de courant) ; un fichier écrit prend le propriétaire du dossier |
-| `internal/adapter/filelock` | Verrou de fichier (flock) entre les programmes qui récrivent les mêmes fichiers : les codes d'accès, depuis la console et l'outil en ligne de commande |
+| `internal/shared/adapter/mqtt` | L'adaptateur MQTT 5 (client de Mosquitto) : seul paquet qui connaît la bibliothèque MQTT |
+| `internal/shared/adapter/filestore` | Écriture atomique de l'état sur disque (survit à une coupure de courant) ; un fichier écrit prend le propriétaire du dossier |
+| `internal/shared/adapter/filelock` | Verrou de fichier (flock) entre les programmes qui récrivent les mêmes fichiers : les codes d'accès, depuis la console et l'outil en ligne de commande |
 | `internal/adapter/atmodem` | L'adaptateur du modem : commandes AT sur le port série (bibliothèque standard seulement) ; `attest` est un faux modem pour les tests |
 | `internal/adapter/queuedir` | La file de l'agent pour le cloud sur disque : un petit fichier par message, écrit d'un coup, qui survit à une coupure de courant |
-| `internal/adapter/photodir` | Le dossier des photos prises à l'alarme : le service vidéo les y écrit, l'agent les lit et les efface ; borné en nombre et en taille |
+| `internal/shared/adapter/photodir` | Le dossier des photos prises à l'alarme : le service vidéo les y écrit, l'agent les lit et les efface ; borné en nombre et en taille |
 | `internal/adapter/upload` | L'envoi d'un fichier au cloud en HTTPS (PUT, jeton en `Authorization`), sans jamais écrire le jeton (bibliothèque standard seulement) |
-| `internal/adapter/sdnotify` | Le dialogue avec systemd : « démarré », puis « fonctionne encore » tant que les boucles répondent (chien de garde, bibliothèque standard seulement) |
-| `internal/adapter/sysclock` | Dit si l'horloge du système est synchronisée, pour `clock_ok` du heartbeat (noyau Linux, bibliothèque standard seulement) |
+| `internal/shared/adapter/sdnotify` | Le dialogue avec systemd : « démarré », puis « fonctionne encore » tant que les boucles répondent (chien de garde, bibliothèque standard seulement) |
+| `internal/shared/adapter/sysclock` | Dit si l'horloge du système est synchronisée, pour `clock_ok` du heartbeat (noyau Linux, bibliothèque standard seulement) |
 | `internal/adapter/machine` | Lit ce que la carte dit de son numéro de série dans son device tree, pour `serial` du heartbeat (bibliothèque standard seulement) |
-| `internal/adapter/pidfile` | Empêche un programme de tourner deux fois sur le même état |
+| `internal/shared/adapter/pidfile` | Empêche un programme de tourner deux fois sur le même état |
 | `internal/adapter/go2rtc` | L'adaptateur go2rtc : un processus par session, piloté sur un socket Unix (bibliothèque standard seulement) ; `go2rtctest` est un faux go2rtc pour les tests |
 | `internal/adapter/sshtunnel` | Le tunnel : le client OpenSSH vers le bastion (`ssh -R`), bastion épinglé, aucune configuration lue |
 | `internal/adapter/x728` | Le module batterie Geekworm X728 : ligne du secteur et bouton d'alimentation par l'interface GPIO de Linux, jauge sur le bus I2C, bibliothèque standard seule |
@@ -124,10 +124,10 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 |---|---|
 | `internal/archtest` | Les tests d'architecture : ils échouent si les règles de dépendance sont cassées |
 | `internal/qualitytest` | Les garde-fous de qualité : tailles, gofmt, ASCII, copier-coller, code mort, faux de test redéclarés, règles de cohérence (voir « Lancer les tests ») |
-| `internal/schematest` | Validation des messages contre les schémas JSON (tests seulement) |
-| `internal/driver/drivertest` | Pour les tests : une fausse horloge (ses minuteries suivent une horloge monotone, comme la vraie), un faux disque, un journal partagé et de quoi attendre |
-| `internal/outbox/outboxtest` | Pour les tests : un faux broker qui garde ce qu'on lui publie, et qu'on peut rendre absent, faire refuser ou faire attendre |
-| `internal/adapter/mqtt/mqtttest` | Pour les tests : un vrai Mosquitto privé, lancé sur un port libre (TLS et WebSocket compris) |
+| `internal/shared/contract/schematest` | Validation des messages contre les schémas JSON (tests seulement) |
+| `internal/shared/driver/drivertest` | Pour les tests : une fausse horloge (ses minuteries suivent une horloge monotone, comme la vraie), un faux disque, un journal partagé et de quoi attendre |
+| `internal/shared/outbox/outboxtest` | Pour les tests : un faux broker qui garde ce qu'on lui publie, et qu'on peut rendre absent, faire refuser ou faire attendre |
+| `internal/shared/adapter/mqtt/mqtttest` | Pour les tests : un vrai Mosquitto privé, lancé sur un port libre (TLS et WebSocket compris) |
 | `internal/adapter/atmodem/attest` | Pour les tests : un faux modem qui répond aux commandes AT |
 | `internal/adapter/go2rtc/go2rtctest` | Pour les tests : un faux go2rtc |
 
@@ -177,9 +177,9 @@ d'architecture refuse tout autre import :
 
 | Bibliothèque | Où | Rôle |
 |---|---|---|
-| `github.com/eclipse/paho.golang` (MQTT 5, `autopaho`) | `internal/adapter/mqtt` seulement | Parler au broker, se reconnecter |
-| `github.com/gorilla/websocket` (déjà tirée par paho) | `internal/adapter/mqtt` seulement | MQTT dans WebSocket : un paquet par message, ce qu'exige Mosquitto 2.1 |
-| `github.com/santhosh-tekuri/jsonschema/v6` | tests seulement (`internal/schematest`) | Valider les messages contre les schémas |
+| `github.com/eclipse/paho.golang` (MQTT 5, `autopaho`) | `internal/shared/adapter/mqtt` seulement | Parler au broker, se reconnecter |
+| `github.com/gorilla/websocket` (déjà tirée par paho) | `internal/shared/adapter/mqtt` seulement | MQTT dans WebSocket : un paquet par message, ce qu'exige Mosquitto 2.1 |
+| `github.com/santhosh-tekuri/jsonschema/v6` | tests seulement (`internal/shared/contract/schematest`) | Valider les messages contre les schémas |
 
 Toute nouvelle dépendance est décidée explicitement (demandée à Kevin avant
 téléchargement).
@@ -197,7 +197,7 @@ Raspberry Pi OS. Rien à télécharger, mais c'est **à vérifier sur le kit** (
 « partagé », règle polkit). Ses tests tournent contre un faux `nmcli`.
 
 Les tests de l'adaptateur MQTT et du programme de la centrale tournent contre un vrai
-broker Mosquitto privé, lancé par `internal/adapter/mqtt/mqtttest` sur un port libre
+broker Mosquitto privé, lancé par `internal/shared/adapter/mqtt/mqtttest` sur un port libre
 (`brew install mosquitto`). Si Mosquitto n'est pas installé, ces tests sont ignorés.
 
 Pour la centrale elle-même (compilation pour le Raspberry Pi comprise) :

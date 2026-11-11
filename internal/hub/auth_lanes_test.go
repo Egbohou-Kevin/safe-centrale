@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
+	"safehome/internal/shared/contract"
 )
 
 // heldLane holds a lane's worker: each order it takes waits for release, so that the

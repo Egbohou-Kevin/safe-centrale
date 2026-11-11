@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // What the session reads, told to whoever follows it: the local console's page, and

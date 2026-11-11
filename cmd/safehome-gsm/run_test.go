@@ -16,16 +16,16 @@ import (
 
 	"safehome/internal/adapter/atmodem"
 	"safehome/internal/adapter/atmodem/attest"
-	"safehome/internal/adapter/mqtt"
-	"safehome/internal/adapter/mqtt/mqtttest"
-	"safehome/internal/adapter/pidfile"
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
 	"safehome/internal/gateway"
 	"safehome/internal/gsm"
 	"safehome/internal/gsmconfig"
-	"safehome/internal/schematest"
-	"safehome/internal/siteconfig"
+	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/adapter/mqtt/mqtttest"
+	"safehome/internal/shared/adapter/pidfile"
+	"safehome/internal/shared/config/siteconfig"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/contract/schematest"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 const site = "tg-lom-0001"

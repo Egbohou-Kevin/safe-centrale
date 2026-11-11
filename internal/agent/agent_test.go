@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 func TestConfig(t *testing.T) {

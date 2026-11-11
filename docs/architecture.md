@@ -81,7 +81,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   dépendent seulement de la bibliothèque standard, n'ont aucune entrée-sortie et ne
   lisent jamais l'horloge. Ils reçoivent des entrées qui portent leur heure et
   renvoient des actions et des événements du domaine.
-- **Le contrat** (`internal/contract`) est le langage publié. Il ne dépend de rien.
+- **Le contrat** (`internal/shared/contract`) est le langage publié. Il ne dépend de rien.
 - **La traduction** (un paquet `wire` par domaine : `engine`, `health`, `escalation`,
   `gsm`, `zigbee`, `video`, `maint`) est le seul endroit qui traduit entre un domaine et
   le contrat. Si le contrat change de version, seules ces parties changent. Les
@@ -90,9 +90,9 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 - **Les adaptateurs et le pilote** viennent autour : MQTT, disque, horloge, vérification des
   codes. Leurs interfaces se déclarent côté consommateur et restent petites. Une
   bibliothèque externe n'est importée que par le paquet d'adaptateur qui l'enveloppe
-  (par exemple `internal/adapter/mqtt` pour le client MQTT) : le reste du code ne la
+  (par exemple `internal/shared/adapter/mqtt` pour le client MQTT) : le reste du code ne la
   voit pas, et la changer ne touche qu'un paquet.
-- **Le pilote** (`internal/driver`) fait tourner un domaine en temps réel. Une seule
+- **Le pilote** (`internal/shared/driver`) fait tourner un domaine en temps réel. Une seule
   goroutine possède le domaine (il n'a donc besoin d'aucun verrou) : tout ce qui veut
   l'atteindre, message de capteur, ordre de l'application ou échéance, devient une tâche
   exécutée à son tour. Après chaque tâche, la boucle envoie les actions au monde
@@ -145,7 +145,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   n'ouvre qu'une chose.
 - **La passerelle GSM** a la même forme : son domaine (`internal/gsm`), sa couche
   application (`internal/gateway`, qui déclare le port `Modem`), son adaptateur
-  (`internal/adapter/atmodem`). La file d'envoi MQTT (`internal/outbox`) est partagée
+  (`internal/adapter/atmodem`). La file d'envoi MQTT (`internal/shared/outbox`) est partagée
   par toutes les couches application des programmes de la centrale ; elle connaît le
   contrat et le pilote, et aucun domaine. `Send` encode un message tout de suite et le
   met en file, avec un identifiant tiré de la fonction donnée à `Open` ; un message
@@ -167,7 +167,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   des messages de priorité haute, elle jette le plus ancien et le dit au journal
   (« only alarm messages »). Les tests des
   couches application partagent son faux broker (`outboxtest.Broker`). La porte
-  d'entrée (`internal/inbox`) aussi :
+  d'entrée (`internal/shared/inbox`) aussi :
   le message reçu, les abonnements, la vérification d'un message contre le contrat
   (`Open`), les identifiants déjà vus. Elle ne connaît que le contrat.
 - **L'adaptateur Zigbee** aussi : son domaine (`internal/zigbee`), sa couche
@@ -223,7 +223,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   tous les messages de la centrale. Un arrêt normal finit ce travail ; un plantage
   peut perdre une configuration reçue à l'instant, sans `config.applied` pour elle.
   Le fichier qui garde cette
-  configuration dans le dossier d'état est `internal/siteconfig`, qui ne connaît que le
+  configuration dans le dossier d'état est `internal/shared/config/siteconfig`, qui ne connaît que le
   contrat ; la centrale, la passerelle GSM et la vidéo le lisent au démarrage.
 - **L'arrêt** a la même forme dans toutes les couches application qui ont une boucle
   (centrale, passerelle, Zigbee, agent, vidéo, maintenance). Tout tourne sur un
@@ -240,7 +240,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   25 octobre 2026, elle pouvait être perdue sans trace : la sirène reprenait au
   redémarrage, mais personne n'était jamais prévenu.
 - **Les lectures de configuration** (`internal/hubconfig`, `internal/gsmconfig`, etc.)
-  partagent `internal/configfile` : JSON strict, niveau de journal, durées, secrets,
+  partagent `internal/shared/config/configfile` : JSON strict, niveau de journal, durées, secrets,
   écriture atomique. L'en-tête commun des fichiers (`site`, `broker_url`, `client_id`,
   `state_dir`, `log_level`) est `configfile.ProgramFile` ; sa méthode `Build` en fait un
   `configfile.Program`, valeurs par défaut comprises. Il ne connaît rien du module, et seuls les paquets `*config`
@@ -249,7 +249,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   passe, lu dans le dossier que systemd lui donne (`CREDENTIALS_DIRECTORY`, `LoadCredential=`) ;
   `AsOperator` lit celui de l'opérateur (`/etc/safehome/mqtt/operator.secret`) pour un outil
   lancé sous sudo. Une erreur nomme le fichier, jamais ce qu'il contient.
-- **`internal/service`** est la part de la racine de composition commune à tous les
+- **`internal/shared/service`** est la part de la racine de composition commune à tous les
   programmes : ligne de commande, verrou du dossier d'état, clients MQTT, dialogue
   avec systemd, arrêt propre. `service.Reload` envoie SIGHUP au programme d'un fichier
   de pid : la centrale relit alors ses codes. `service.Local` remplit l'adresse, l'identifiant,
@@ -260,7 +260,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 - **Les racines de composition** (`cmd/safehome-hub`, `cmd/safehome-gsm`,
   `cmd/safehome-zigbee`, `cmd/safehome-agent`, `cmd/safehome-video`, `cmd/safehome-maint`,
   `cmd/safehome-console`, `cmd/safehome-install`) sont les seuls endroits autorisés à
-  importer les adaptateurs, avec `internal/service` (l'assemblage commun que seul
+  importer les adaptateurs, avec `internal/shared/service` (l'assemblage commun que seul
   `cmd/` importe) : elles construisent le vrai client MQTT, le vrai disque et la vraie
   horloge et les passent à la couche application.
 - **DDD léger** : on le réserve aux contextes qui ont des règles (alarme, escalade). L'agent
@@ -283,11 +283,11 @@ Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent 
   `agentapp`, `videoapp`, `maintapp`, `configapp`, `install` ou `consoleapp` (et sa
   page) dépassent la liste de paquets qui leur est permise (aucun adaptateur), ou,
   pour certains, lisent l'horloge ou font des entrées-sorties ;
-- si `internal/siteconfig` connaît autre chose que le contrat et `internal/configfile` ;
-  si `internal/configfile` importe un paquet du module, lit l'horloge, ou est importé
+- si `internal/shared/config/siteconfig` connaît autre chose que le contrat et `internal/shared/config/configfile` ;
+  si `internal/shared/config/configfile` importe un paquet du module, lit l'horloge, ou est importé
   hors des paquets `*config` ;
-- si un adaptateur est importé ailleurs que dans `cmd/` et `internal/service` ; si
-  `internal/service` connaît autre chose que ses adaptateurs, la porte d'entrée et la
+- si un adaptateur est importé ailleurs que dans `cmd/` et `internal/shared/service` ; si
+  `internal/shared/service` connaît autre chose que ses adaptateurs, la porte d'entrée et la
   file d'envoi, ou est
   importé hors de `cmd/` ;
 - si une couche application (`hub`, `gateway` et tout paquet `*app`, y compris ceux
@@ -298,7 +298,7 @@ Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent 
   `outboxtest`) ; `mqtttest.Start` lance le broker de la centrale avec l'ACL livrée
   (`deploy/mosquitto/safehome.acl`, lue, jamais recopiée), le programme testé connecté sous son
   nom ; `StartOpen`, un broker ouvert, sert au client MQTT lui-même et au cloud de l'agent
-  (29 octobre 2026) : un test hors de `internal/adapter/mqtt` qui lance un broker ouvert sans
+  (29 octobre 2026) : un test hors de `internal/shared/adapter/mqtt` qui lance un broker ouvert sans
   être de la liste fermée (`openBrokers`), ou un programme de `cmd/` qui passe par
   `service.Local` sans aucun test sur `mqtttest.Start` sous son nom, fait échouer le test ;
 - si du code livré lance un programme (`os/exec`) hors d'un adaptateur ou d'un programme

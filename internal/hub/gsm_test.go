@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 func gsmStatus(lines ...contract.GSMLine) contract.GSMStatusData {

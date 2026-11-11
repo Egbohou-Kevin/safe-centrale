@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"safehome/internal/access"
-	"safehome/internal/driver"
 	"safehome/internal/escalation"
+	"safehome/internal/shared/driver"
 )
 
 // SiteCodes are the access codes as the installer's tools (the command-line tool,

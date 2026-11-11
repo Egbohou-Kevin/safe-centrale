@@ -11,19 +11,19 @@ import (
 	"slices"
 	"syscall"
 
-	"safehome/internal/adapter/filestore"
 	"safehome/internal/adapter/machine"
-	"safehome/internal/adapter/mqtt"
-	"safehome/internal/adapter/sysclock"
 	"safehome/internal/configapp"
-	"safehome/internal/contract"
-	"safehome/internal/driver"
 	"safehome/internal/escalation"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
-	"safehome/internal/inbox"
-	"safehome/internal/service"
-	"safehome/internal/siteconfig"
+	"safehome/internal/shared/adapter/filestore"
+	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/adapter/sysclock"
+	"safehome/internal/shared/config/siteconfig"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/inbox"
+	"safehome/internal/shared/service"
 )
 
 const (

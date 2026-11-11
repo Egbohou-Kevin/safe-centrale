@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"safehome/internal/access"
-	"safehome/internal/contract"
-	"safehome/internal/driver"
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
 	"safehome/internal/health"
-	"safehome/internal/outbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/outbox"
 )
 
 // Config holds everything the hub needs to know about its site.

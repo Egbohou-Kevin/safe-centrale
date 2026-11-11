@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/configfile"
-	"safehome/internal/contract"
 	"safehome/internal/gateway"
 	"safehome/internal/gsm"
-	"safehome/internal/siteconfig"
+	"safehome/internal/shared/config/configfile"
+	"safehome/internal/shared/config/siteconfig"
+	"safehome/internal/shared/contract"
 )
 
 // parse reads and checks a configuration given as bytes.

@@ -17,8 +17,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
+	"safehome/internal/shared/contract"
 )
 
 // Level says how serious a finding is.

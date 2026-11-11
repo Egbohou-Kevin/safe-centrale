@@ -14,14 +14,14 @@ import (
 	"time"
 
 	"safehome/internal/adapter/hotspot"
-	"safehome/internal/adapter/mqtt"
 	"safehome/internal/consoleapp"
 	"safehome/internal/consoleapp/web"
 	"safehome/internal/consoleconfig"
-	"safehome/internal/contract"
-	"safehome/internal/driver"
 	"safehome/internal/hubconfig"
-	"safehome/internal/service"
+	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
+	"safehome/internal/shared/service"
 )
 
 const (

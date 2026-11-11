@@ -3,10 +3,10 @@ package hub
 import (
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/health"
 	healthwire "safehome/internal/health/wire"
-	"safehome/internal/inbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/inbox"
 )
 
 // The device list (system.devices): the health of each registered device, for the

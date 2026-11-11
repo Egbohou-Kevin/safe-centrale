@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/inbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/inbox"
 )
 
 // Source names the installer's tools in the envelopes they send.

@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 // The Pi has no battery clock: after a power cut it starts from the last time it knew,

@@ -25,9 +25,9 @@ import (
 	"testing"
 
 	"safehome/internal/agentconfig"
-	"safehome/internal/configfile"
 	"safehome/internal/hubconfig"
-	"safehome/internal/siteconfig"
+	"safehome/internal/shared/config/configfile"
+	"safehome/internal/shared/config/siteconfig"
 	"safehome/internal/videoconfig"
 )
 

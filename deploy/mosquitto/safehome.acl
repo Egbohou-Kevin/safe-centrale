@@ -5,7 +5,7 @@
 # The site is +, as are device ids. A topic a name may not write is refused (PUBACK
 # 0x87 at QoS 1, nothing at QoS 0); one it may not read is never delivered to it, its
 # subscription still granted: a right forgotten here leaves a program deaf, so every
-# test of cmd/ runs against this file (internal/adapter/mqtt/mqtttest), and
+# test of cmd/ runs against this file (internal/shared/adapter/mqtt/mqtttest), and
 # deploy/acl_test.go keeps the orders to their senders. Adding a topic: the code, then
 # this file (docs/systeme.md, "Mosquitto").
 

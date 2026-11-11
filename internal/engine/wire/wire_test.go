@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
-	"safehome/internal/schematest"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/contract/schematest"
 )
 
 var t0 = time.Date(2026, 10, 17, 21, 0, 0, 0, time.UTC)

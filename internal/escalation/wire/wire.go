@@ -8,8 +8,8 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/escalation"
+	"safehome/internal/shared/contract"
 )
 
 var kinds = map[escalation.AlertKind]string{

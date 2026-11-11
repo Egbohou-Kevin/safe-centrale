@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // restated plays the application: each state to say again goes back to the relay

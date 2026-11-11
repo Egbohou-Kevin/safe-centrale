@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 // The current state at each connection (see docs/agent.md). The hub publishes its

@@ -952,7 +952,7 @@ règles : pur, sans horloge) :
   réécrire l'état à chaque point perdu. Un état sauvegardé avant la liste se relit :
   elle se remplit avec les messages retenus.
 
-Codé et testé côté pilote (`internal/driver`, `internal/adapter/filestore`) :
+Codé et testé côté pilote (`internal/shared/driver`, `internal/shared/adapter/filestore`) :
 
 - Boucle d'horloge générique : échéance du domaine devenue un tic à la bonne heure,
   entrées traitées dans l'ordre, temps qui ne recule jamais (sauf pour un domaine qui

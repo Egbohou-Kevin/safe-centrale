@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 	"safehome/internal/video"
 )
 

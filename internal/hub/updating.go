@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"safehome/internal/driver"
 	"safehome/internal/health"
+	"safehome/internal/shared/driver"
 )
 
 // announcement is what Deps.Updating read last.

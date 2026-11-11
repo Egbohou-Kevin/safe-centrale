@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
+	"safehome/internal/shared/contract"
 )
 
 func (h *harness) photo(id string) []Action {

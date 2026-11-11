@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/adapter/sysclock"
+	"safehome/internal/shared/adapter/sysclock"
 )
 
 // unit is a systemd unit: section -> key -> values (a key may repeat).
@@ -230,7 +230,7 @@ func TestEveryServiceRestartsForever(t *testing.T) {
 
 // Type=notify makes systemd wait for the program's READY=1, and WatchdogSec kill it
 // when the pings stop: a program that never says so would be killed in a loop. Each
-// program must say both (internal/adapter/sdnotify).
+// program must say both (internal/shared/adapter/sdnotify).
 func TestEveryProgramIsWatchedAndTellsSystemd(t *testing.T) {
 	for _, p := range programs(t) {
 		t.Run(p, func(t *testing.T) {
@@ -245,7 +245,7 @@ func TestEveryProgramIsWatchedAndTellsSystemd(t *testing.T) {
 			if err != nil || d < 10*time.Second || d > time.Minute {
 				t.Errorf("WatchdogSec = %v (%v): want from 10 s (a slow SD card) to 1 min (a stuck alarm)", d, err)
 			}
-			// The programs run under internal/service's Daemon, which says both.
+			// The programs run under internal/shared/service's Daemon, which says both.
 			src, err := os.ReadFile(filepath.Join("..", "cmd", "safehome-"+p, "run.go"))
 			if err != nil {
 				t.Fatal(err)
@@ -255,13 +255,13 @@ func TestEveryProgramIsWatchedAndTellsSystemd(t *testing.T) {
 			}
 		})
 	}
-	src, err := os.ReadFile(filepath.Join("..", "internal", "service", "daemon.go"))
+	src, err := os.ReadFile(filepath.Join("..", "internal", "shared", "service", "daemon.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, call := range []string{"sdnotify.FromEnv()", ".Ready()", ".Keepalive(", ".Stopping()"} {
 		if !strings.Contains(string(src), call) {
-			t.Errorf("internal/service/daemon.go does not call %s", call)
+			t.Errorf("internal/shared/service/daemon.go does not call %s", call)
 		}
 	}
 }

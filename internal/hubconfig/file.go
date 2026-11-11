@@ -3,7 +3,7 @@ package hubconfig
 import (
 	"fmt"
 
-	"safehome/internal/configfile"
+	"safehome/internal/shared/config/configfile"
 )
 
 // file is the configuration file as written. Every section is optional: what is

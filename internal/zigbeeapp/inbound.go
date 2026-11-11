@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/inbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/inbox"
 	"safehome/internal/zigbee"
 	"safehome/internal/zigbee/wire"
 	"safehome/internal/zigbee/z2m"

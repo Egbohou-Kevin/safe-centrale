@@ -7,11 +7,11 @@ import (
 	"maps"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
 	engwire "safehome/internal/engine/wire"
 	"safehome/internal/escalation"
 	"safehome/internal/health"
+	"safehome/internal/shared/contract"
 )
 
 // Sources written in the envelope.

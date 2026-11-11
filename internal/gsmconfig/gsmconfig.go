@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"safehome/internal/configfile"
 	"safehome/internal/gateway"
 	"safehome/internal/gsm"
-	"safehome/internal/siteconfig"
+	"safehome/internal/shared/config/configfile"
+	"safehome/internal/shared/config/siteconfig"
 )
 
 // Port is where a line's modem is.
@@ -63,7 +63,7 @@ type file struct {
 
 // Load reads and checks the file at path, then takes the contacts' phone numbers
 // from the configuration set from the cloud, if the state folder holds one
-// (internal/siteconfig). One that does not fit never stops the gateway: SiteErr
+// (internal/shared/config/siteconfig). One that does not fit never stops the gateway: SiteErr
 // says why it was left aside.
 func Load(path string) (Result, error) {
 	var f file

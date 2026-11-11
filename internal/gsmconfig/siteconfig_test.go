@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"safehome/internal/contract"
-	"safehome/internal/siteconfig"
+	"safehome/internal/shared/config/siteconfig"
+	"safehome/internal/shared/contract"
 )
 
 func exampleWithState(t *testing.T) (string, string) {

@@ -6,10 +6,10 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
 	engwire "safehome/internal/engine/wire"
-	"safehome/internal/inbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/inbox"
 )
 
 // The installation mode (docs/security-install.md): the installer opens it on site by

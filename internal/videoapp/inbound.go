@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/inbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/inbox"
 	"safehome/internal/video"
 	videowire "safehome/internal/video/wire"
 )

@@ -4,12 +4,12 @@ import (
 	"errors"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/engine"
 	engwire "safehome/internal/engine/wire"
 	"safehome/internal/health"
 	healthwire "safehome/internal/health/wire"
-	"safehome/internal/inbox"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/inbox"
 )
 
 const maxPayload = 64 * 1024

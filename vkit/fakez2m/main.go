@@ -28,7 +28,7 @@ import (
 	"syscall"
 	"time"
 
-	"safehome/internal/adapter/mqtt"
+	"safehome/internal/shared/adapter/mqtt"
 	"safehome/vkit/order"
 )
 
@@ -71,7 +71,7 @@ func main() {
 }
 
 // unitPassword reads the password systemd gives the unit, as the hub's programs do
-// (internal/configfile); none outside systemd. An error names the file, never what it
+// (internal/shared/config/configfile); none outside systemd. An error names the file, never what it
 // holds.
 func unitPassword() (string, error) {
 	dir := os.Getenv("CREDENTIALS_DIRECTORY")

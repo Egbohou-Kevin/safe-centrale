@@ -4,8 +4,8 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/contract"
 	"safehome/internal/health"
+	"safehome/internal/shared/contract"
 )
 
 // deviceTypes is the order in which a device's capabilities decide what it is for the

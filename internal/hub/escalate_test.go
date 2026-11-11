@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/contract"
-	"safehome/internal/driver/drivertest"
 	"safehome/internal/engine"
 	"safehome/internal/escalation"
+	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver/drivertest"
 )
 
 // withContacts gives the site an owner and a guard who has no internet.
