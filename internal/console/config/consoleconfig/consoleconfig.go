@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"time"
 
-	"safehome/internal/consoleapp"
+	"safehome/internal/console/app/consoleapp"
 	"safehome/internal/shared/config/configfile"
 	"safehome/internal/shared/contract"
 )

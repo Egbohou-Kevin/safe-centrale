@@ -54,8 +54,8 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/maint/app/maintapp` | La couche application de la maintenance : ouvre et ferme le tunnel par le port `Tunneler`, publie `maint.session` |
 | `internal/power/app/powerapp` | La couche application du module batterie : lit le module par le port `Board` chaque seconde, publie le secteur et la batterie de la centrale, demande l'arrêt |
 | `internal/install/app/install` | La couche application de l'installateur : appairage, retrait, zones et sirènes (seul à modifier le site : `Editor`, port `Sites`), vérification de la configuration contre les appareils appairés, tests en direct. L'outil en ligne de commande et la console locale s'en servent |
-| `internal/consoleapp` | La couche application de la console locale : suit le mode installation, allume le Wi-Fi de la centrale et sert la page pendant qu'il dure, fait l'appairage, les zones et les sirènes (par `internal/install/app/install`), les codes des contacts (et retire ceux d'anciens contacts) et les tests. Elle déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`) |
-| `internal/consoleapp/web` | La page de la console : formulaires HTML en français, lisibles sur un téléphone, rien de chargé d'ailleurs, seulement à l'adresse de la centrale sur son réseau |
+| `internal/console/app/consoleapp` | La couche application de la console locale : suit le mode installation, allume le Wi-Fi de la centrale et sert la page pendant qu'il dure, fait l'appairage, les zones et les sirènes (par `internal/install/app/install`), les codes des contacts (et retire ceux d'anciens contacts) et les tests. Elle déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`) |
+| `internal/console/app/consoleapp/web` | La page de la console : formulaires HTML en français, lisibles sur un téléphone, rien de chargé d'ailleurs, seulement à l'adresse de la centrale sur son réseau |
 | `internal/configapp` | La couche application qui reçoit `config.set` dans la centrale : vérification, garde, redémarrage à un moment calme (jamais pendant le mode installation, et aussi quand les zones ou les sirènes ont changé), réponse `config.applied`. Elle ne connaît ni fichier ni processus (ports) |
 
 ### La plomberie commune
@@ -81,7 +81,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/video/config/videoconfig` | Lecture de la configuration de la vidéo (caméras, liaison, plafond) |
 | `internal/maint/config/maintconfig` | Lecture de la configuration de la maintenance |
 | `internal/power/config/powerconfig` | Lecture de la configuration du module batterie |
-| `internal/consoleconfig` | Lecture de la configuration de la console et de la phrase de passe de son Wi-Fi |
+| `internal/console/config/consoleconfig` | Lecture de la configuration de la console et de la phrase de passe de son Wi-Fi |
 
 ### Les adaptateurs
 
@@ -101,7 +101,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/video/adapter/go2rtc` | L'adaptateur go2rtc : un processus par session, piloté sur un socket Unix (bibliothèque standard seulement) ; `go2rtctest` est un faux go2rtc pour les tests |
 | `internal/maint/adapter/sshtunnel` | Le tunnel : le client OpenSSH vers le bastion (`ssh -R`), bastion épinglé, aucune configuration lue |
 | `internal/power/adapter/x728` | Le module batterie Geekworm X728 : ligne du secteur et bouton d'alimentation par l'interface GPIO de Linux, jauge sur le bus I2C, bibliothèque standard seule |
-| `internal/adapter/hotspot` | Le réseau Wi-Fi propre à la centrale, créé et supprimé par `nmcli` (NetworkManager), jamais démarré au boot, retiré s'il route les téléphones ailleurs (bibliothèque standard seulement) |
+| `internal/console/adapter/hotspot` | Le réseau Wi-Fi propre à la centrale, créé et supprimé par `nmcli` (NetworkManager), jamais démarré au boot, retiré s'il route les téléphones ailleurs (bibliothèque standard seulement) |
 
 ### Les programmes
 

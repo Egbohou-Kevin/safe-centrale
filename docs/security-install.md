@@ -167,8 +167,8 @@ d'alarme.
 
 ## Console locale
 
-Statut : codée (`internal/consoleapp`, sa page `internal/consoleapp/web`, le Wi-Fi
-`internal/adapter/hotspot`, `cmd/safehome-console`). Testée avec un faux `nmcli` et
+Statut : codée (`internal/console/app/consoleapp`, sa page `internal/console/app/consoleapp/web`, le Wi-Fi
+`internal/console/adapter/hotspot`, `cmd/safehome-console`). Testée avec un faux `nmcli` et
 une vraie page HTTP, puis sur le kit virtuel : un « téléphone » rejoint le Wi-Fi de la
 console et ouvre sa page (`kit-virtuel.md`, étape 9). Décidée avec Kevin le
 20 octobre 2026.

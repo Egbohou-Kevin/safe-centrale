@@ -51,6 +51,9 @@ func internal(names ...string) []string {
 // (docs/rangement-par-programme.md): the rules below still name a package by its
 // former path, at turns it into the current one.
 var moved = map[string]string{
+	"adapter/hotspot":   "console/adapter/hotspot",
+	"consoleapp":        "console/app/consoleapp",
+	"consoleconfig":     "console/config/consoleconfig",
 	"install":           "install/app/install",
 	"zigbee":            "zigbee/core/zigbee",
 	"zigbeeapp":         "zigbee/app/zigbeeapp",

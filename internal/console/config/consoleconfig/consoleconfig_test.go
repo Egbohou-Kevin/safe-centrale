@@ -32,11 +32,11 @@ func cfg(extra string) string {
 }
 
 func TestTheExampleIsValid(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "config", "console.example.json"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "config", "console.example.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	secret, err := os.ReadFile(filepath.Join("..", "..", "config", "console.secret.example"))
+	secret, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "config", "console.secret.example"))
 	if err != nil {
 		t.Fatal(err)
 	}

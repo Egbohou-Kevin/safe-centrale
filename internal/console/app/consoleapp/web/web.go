@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"safehome/internal/consoleapp"
+	"safehome/internal/console/app/consoleapp"
 )
 
 // Console is what the page needs from the console (consoleapp.App).

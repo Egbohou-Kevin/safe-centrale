@@ -3,7 +3,7 @@
 // configuration agrees with what is paired, and watching devices during the tests.
 //
 // The command-line tool (cmd/safehome-install) and the local console
-// (internal/consoleapp) both sit on it. It knows no adapter and no configuration file:
+// (internal/console/app/consoleapp) both sit on it. It knows no adapter and no configuration file:
 // the program gives it a publisher and the messages (Session), and the site's files
 // behind the Sites port (Editor).
 package install

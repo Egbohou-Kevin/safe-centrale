@@ -195,12 +195,12 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   lit, change et écrit par le port `Sites`, pour la console comme pour l'outil.
   L'adaptateur de ce port est `hubconfig.SiteFiles`, qui garde les zones et les
   sirènes dans le dossier d'état.
-- **La console locale** : sa couche application (`internal/consoleapp`) suit le mode
+- **La console locale** : sa couche application (`internal/console/app/consoleapp`) suit le mode
   installation et déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`). `Sites` est
   `install.Sites` ; `Codes` a `People` (les contacts, et à part les codes d'anciens
   contacts), `Set` (qui refuse qui n'est pas un contact) et `Remove`. Sa page
-  (`internal/consoleapp/web`) ne connaît qu'elle. Le Wi-Fi est l'adaptateur
-  `internal/adapter/hotspot` (`nmcli`).
+  (`internal/console/app/consoleapp/web`) ne connaît qu'elle. Le Wi-Fi est l'adaptateur
+  `internal/console/adapter/hotspot` (`nmcli`).
 - **La maintenance à distance** a la forme de la vidéo : son domaine (`internal/maint/core/maint`,
   une session à la fois, une heure au plus), sa traduction (`internal/maint/core/maint/wire`), sa
   couche application (`internal/maint/app/maintapp`, qui déclare le port `Tunneler`, sans

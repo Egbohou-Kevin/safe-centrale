@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"safehome/internal/access"
-	"safehome/internal/consoleapp"
+	"safehome/internal/console/app/consoleapp"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
 	"safehome/internal/shared/adapter/filelock"

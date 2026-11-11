@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/consoleapp"
+	"safehome/internal/console/app/consoleapp"
 	"safehome/internal/escalation"
 	"safehome/internal/hub"
 	"safehome/internal/hubconfig"
