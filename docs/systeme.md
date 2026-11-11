@@ -21,7 +21,7 @@ programmes et leurs configurations d'exemple : même broker, même dossier d'ét
   systemd, 30 s). Le **chien de garde matériel** du Pi redémarre la carte si le
   système entier se fige.
 - **Journaux en mémoire** : la carte SD n'est pas usée à chaque ligne.
-- **Pas de Docker** : neuf services, autant de fichiers simples, moins de mémoire.
+- **Pas de Docker** : dix services, autant de fichiers simples, moins de mémoire.
 - **Rien n'écoute sur le réseau du commerce**, sauf SSH par clé (pas de mot de passe).
   La console locale n'écoute que sur le réseau Wi-Fi propre à la centrale, ne répond
   qu'aux appareils de ce réseau, et seulement pendant le mode installation.
@@ -1363,8 +1363,8 @@ une vraie installation chez un client.
 - Zigbee2MQTT et Mosquitto ne sont pas sous le chien de garde de systemd : seulement
   redémarrés s'ils s'arrêtent. Un Zigbee2MQTT figé est vu par l'adaptateur
   (`zigbee_down`).
-- L'option `recurse=0` et le module RTC sont **à valider** sur le kit d'essai.
-  L'agrandissement de la racine l'a été le 25 octobre 2026 (étape 1 et 2).
+- Le module RTC est **à valider** sur le kit d'essai. L'option `recurse=0` et
+  l'agrandissement de la racine l'ont été le 25 octobre 2026 (étapes 1, 2 et 12).
 - Les messages d'un clavier partent de Zigbee2MQTT en QoS 0 (option d'appareil
   posée par l'adaptateur, `adapter-zigbee.md`, « Clavier : QoS 0 ») : une touche, un
   sabotage ou un appui sur « urgence » du clavier pendant les quelques secondes où
@@ -1377,8 +1377,8 @@ une vraie installation chez un client.
 - La console locale n'a pas encore tourné sur un vrai Pi. À vérifier : NetworkManager
   et `dnsmasq-base` (mode « partagé ») présents sur Raspberry Pi OS Lite, la règle
   polkit, le script qui coupe le routage de son réseau, la portée du réseau.
-- Le script d'installation (`deploy/install.sh`) n'a pas encore tourné sur un vrai Pi :
-  il est testé sur un faux système. Les partitions, le module RTC, l'installation de
+- Le script d'installation (`deploy/install.sh`) a tourné sur le vrai Pi le 25 octobre
+  2026, du premier coup ; il est aussi testé sur un faux système. Les partitions, le module RTC, l'installation de
   Zigbee2MQTT et la lecture seule restent à la main. L'image maîtresse viendra après
   le pilote.
 - Maintenance à distance : codée sur la centrale (tunnel SSH sortant sur demande,
