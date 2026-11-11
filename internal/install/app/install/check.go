@@ -17,7 +17,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"safehome/internal/engine"
+	"safehome/internal/hub/core/engine"
 	"safehome/internal/shared/contract"
 )
 

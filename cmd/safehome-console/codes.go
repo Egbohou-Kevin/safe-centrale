@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"time"
 
-	"safehome/internal/access"
 	"safehome/internal/console/app/consoleapp"
-	"safehome/internal/hub"
-	"safehome/internal/hubconfig"
+	"safehome/internal/hub/app/hub"
+	"safehome/internal/hub/config/hubconfig"
+	"safehome/internal/hub/core/access"
 	"safehome/internal/shared/adapter/filelock"
 	"safehome/internal/shared/adapter/filestore"
 	"safehome/internal/shared/driver"

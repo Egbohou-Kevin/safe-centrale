@@ -51,6 +51,14 @@ func internal(names ...string) []string {
 // (docs/rangement-par-programme.md): the rules below still name a package by its
 // former path, at turns it into the current one.
 var moved = map[string]string{
+	"hub":               "hub/app/hub",
+	"access":            "hub/core/access",
+	"adapter/machine":   "hub/adapter/machine",
+	"configapp":         "hub/app/configapp",
+	"engine":            "hub/core/engine",
+	"escalation":        "hub/core/escalation",
+	"health":            "hub/core/health",
+	"hubconfig":         "hub/config/hubconfig",
 	"adapter/hotspot":   "console/adapter/hotspot",
 	"consoleapp":        "console/app/consoleapp",
 	"consoleconfig":     "console/config/consoleconfig",
@@ -331,7 +339,7 @@ func TestALayerRejectsWhatItMustReject(t *testing.T) {
 		"fmt":                               false,
 		"os":                                true,
 		"safehome/internal/shared/contract": false,
-		"safehome/internal/engine":          true,
+		"safehome/internal/hub/core/engine": true,
 		"github.com/someone/lib":            true,
 	} {
 		if got := l.rejects(p); got != want {

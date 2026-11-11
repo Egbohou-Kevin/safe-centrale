@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/escalation"
-	"safehome/internal/hubconfig"
+	"safehome/internal/hub/config/hubconfig"
+	"safehome/internal/hub/core/escalation"
 	"safehome/internal/shared/adapter/mqtt/mqtttest"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver/drivertest"

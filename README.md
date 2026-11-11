@@ -22,13 +22,13 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 
 | Dossier | Contenu |
 |---|---|
-| `internal/engine` | Le moteur d'alarme (le domaine) : machine à états déterministe, sans horloge ni entrées-sorties, sans connaître le contrat. Il tient aussi la table des capteurs acceptés par chaque type de zone (`engine.Accepts`), reprise par l'installateur |
-| `internal/engine/wire` | La traduction entre le domaine et le contrat |
-| `internal/health` | La supervision (second domaine) : batterie de la centrale, piles, appareils muets, résumé quotidien, liste des appareils (`system.devices`). Mêmes règles que le moteur |
-| `internal/health/wire` | La traduction entre la supervision et le contrat |
-| `internal/access` | Les codes d'accès (troisième domaine) : un code par personne, 5 au maximum, stockés hachés avec un algorithme lent, vérification qui dit à qui appartient le code |
-| `internal/escalation` | L'escalade (quatrième domaine) : qui est prévenu, par quel canal, dans quel ordre et après combien de temps ; acquittements, relances, limite par heure |
-| `internal/escalation/wire` | La traduction entre l'escalade et le contrat |
+| `internal/hub/core/engine` | Le moteur d'alarme (le domaine) : machine à états déterministe, sans horloge ni entrées-sorties, sans connaître le contrat. Il tient aussi la table des capteurs acceptés par chaque type de zone (`engine.Accepts`), reprise par l'installateur |
+| `internal/hub/core/engine/wire` | La traduction entre le domaine et le contrat |
+| `internal/hub/core/health` | La supervision (second domaine) : batterie de la centrale, piles, appareils muets, résumé quotidien, liste des appareils (`system.devices`). Mêmes règles que le moteur |
+| `internal/hub/core/health/wire` | La traduction entre la supervision et le contrat |
+| `internal/hub/core/access` | Les codes d'accès (troisième domaine) : un code par personne, 5 au maximum, stockés hachés avec un algorithme lent, vérification qui dit à qui appartient le code |
+| `internal/hub/core/escalation` | L'escalade (quatrième domaine) : qui est prévenu, par quel canal, dans quel ordre et après combien de temps ; acquittements, relances, limite par heure |
+| `internal/hub/core/escalation/wire` | La traduction entre l'escalade et le contrat |
 | `internal/gsm/core/gsm` | La passerelle GSM (cinquième domaine) : file à priorités, lignes, reprises, réponses « 1 », surveillance du modem |
 | `internal/gsm/core/gsm/wire` | La traduction entre la passerelle et le contrat |
 | `internal/zigbee/core/zigbee` | L'adaptateur Zigbee (sixième domaine) : profils, changements, présence, commandes confirmées, appairage et registre |
@@ -46,7 +46,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 
 | Dossier | Contenu |
 |---|---|
-| `internal/hub` | La couche application de la centrale : relie MQTT aux domaines (moteur, supervision, codes, escalade), file d'envoi avec reprise, clavier, battement de cœur. Elle publie par `outbox.Publisher` et ne connaît aucun adaptateur. `SiteCodes` donne les codes aux outils de l'installateur : un code n'ouvre qu'une chose |
+| `internal/hub/app/hub` | La couche application de la centrale : relie MQTT aux domaines (moteur, supervision, codes, escalade), file d'envoi avec reprise, clavier, battement de cœur. Elle publie par `outbox.Publisher` et ne connaît aucun adaptateur. `SiteCodes` donne les codes aux outils de l'installateur : un code n'ouvre qu'une chose |
 | `internal/gsm/app/gateway` | La couche application de la passerelle : un fil par modem, publication des résultats et de l'état des lignes |
 | `internal/zigbee/app/zigbeeapp` | La couche application de l'adaptateur Zigbee |
 | `internal/agent/app/agentapp` | La couche application de l'agent : envoi au cloud avec reprise, republication sur la centrale, `agent.status` |
@@ -56,7 +56,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/install/app/install` | La couche application de l'installateur : appairage, retrait, zones et sirènes (seul à modifier le site : `Editor`, port `Sites`), vérification de la configuration contre les appareils appairés, tests en direct. L'outil en ligne de commande et la console locale s'en servent |
 | `internal/console/app/consoleapp` | La couche application de la console locale : suit le mode installation, allume le Wi-Fi de la centrale et sert la page pendant qu'il dure, fait l'appairage, les zones et les sirènes (par `internal/install/app/install`), les codes des contacts (et retire ceux d'anciens contacts) et les tests. Elle déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`) |
 | `internal/console/app/consoleapp/web` | La page de la console : formulaires HTML en français, lisibles sur un téléphone, rien de chargé d'ailleurs, seulement à l'adresse de la centrale sur son réseau |
-| `internal/configapp` | La couche application qui reçoit `config.set` dans la centrale : vérification, garde, redémarrage à un moment calme (jamais pendant le mode installation, et aussi quand les zones ou les sirènes ont changé), réponse `config.applied`. Elle ne connaît ni fichier ni processus (ports) |
+| `internal/hub/app/configapp` | La couche application qui reçoit `config.set` dans la centrale : vérification, garde, redémarrage à un moment calme (jamais pendant le mode installation, et aussi quand les zones ou les sirènes ont changé), réponse `config.applied`. Elle ne connaît ni fichier ni processus (ports) |
 
 ### La plomberie commune
 
@@ -73,7 +73,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 
 | Dossier | Contenu |
 |---|---|
-| `internal/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict), nom de son fichier de pid (`PidFile`) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) |
+| `internal/hub/config/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict), nom de son fichier de pid (`PidFile`) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) |
 | `internal/shared/config/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
 | `internal/gsm/config/gsmconfig` | Lecture du fichier de configuration de la passerelle, avec les contacts réglés depuis le cloud |
 | `internal/zigbee/config/zigbeeconfig` | Lecture de la configuration et des profils d'appareils (`config/profiles/`) |
@@ -96,7 +96,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/agent/adapter/upload` | L'envoi d'un fichier au cloud en HTTPS (PUT, jeton en `Authorization`), sans jamais écrire le jeton (bibliothèque standard seulement) |
 | `internal/shared/adapter/sdnotify` | Le dialogue avec systemd : « démarré », puis « fonctionne encore » tant que les boucles répondent (chien de garde, bibliothèque standard seulement) |
 | `internal/shared/adapter/sysclock` | Dit si l'horloge du système est synchronisée, pour `clock_ok` du heartbeat (noyau Linux, bibliothèque standard seulement) |
-| `internal/adapter/machine` | Lit ce que la carte dit de son numéro de série dans son device tree, pour `serial` du heartbeat (bibliothèque standard seulement) |
+| `internal/hub/adapter/machine` | Lit ce que la carte dit de son numéro de série dans son device tree, pour `serial` du heartbeat (bibliothèque standard seulement) |
 | `internal/shared/adapter/pidfile` | Empêche un programme de tourner deux fois sur le même état |
 | `internal/video/adapter/go2rtc` | L'adaptateur go2rtc : un processus par session, piloté sur un socket Unix (bibliothèque standard seulement) ; `go2rtctest` est un faux go2rtc pour les tests |
 | `internal/maint/adapter/sshtunnel` | Le tunnel : le client OpenSSH vers le bastion (`ssh -R`), bastion épinglé, aucune configuration lue |

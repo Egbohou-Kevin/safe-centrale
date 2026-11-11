@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/health"
-	healthwire "safehome/internal/health/wire"
+	"safehome/internal/hub/core/health"
+	healthwire "safehome/internal/hub/core/health/wire"
 	"safehome/internal/power/core/power"
 	"safehome/internal/shared/contract"
 )

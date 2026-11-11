@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/hubconfig"
+	"safehome/internal/hub/config/hubconfig"
 	"safehome/internal/install/app/install"
 	"safehome/internal/shared/adapter/mqtt/mqtttest"
 	"safehome/internal/shared/config/siteconfig"

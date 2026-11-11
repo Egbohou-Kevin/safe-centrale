@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"safehome/internal/hubconfig"
+	"safehome/internal/hub/config/hubconfig"
 	"safehome/internal/install/app/install"
 )
 

@@ -45,7 +45,7 @@ chaque seconde et publie, au nom de l'appareil `hub_device_id` de la centrale :
   (et toujours à 0 et 100 %).
 
 Comme pour un capteur, chaque valeur part en événement et en état retenu. La
-supervision de la centrale (`internal/health`) en tire les alertes :
+supervision de la centrale (`internal/hub/core/health`) en tire les alertes :
 `battery_low_hub` pendant une coupure (40 %, puis 10 %), `mains_restored` au retour
 si une alerte de batterie est partie. Une coupure seule n'est pas une alerte.
 

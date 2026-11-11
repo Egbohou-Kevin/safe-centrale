@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/engine"
+	"safehome/internal/hub/core/engine"
 )
 
 // A task the loop took is carried out even when the loop stops: a message handler

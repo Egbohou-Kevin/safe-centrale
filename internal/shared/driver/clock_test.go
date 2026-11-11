@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/engine"
+	"safehome/internal/hub/core/engine"
 	"safehome/internal/shared/driver/drivertest"
 )
 

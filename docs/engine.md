@@ -2,7 +2,7 @@
 
 # Moteur d'alarme
 
-Statut : spécifié pour la v1. Le cœur est codé dans `internal/engine` (voir « Avancement »).
+Statut : spécifié pour la v1. Le cœur est codé dans `internal/hub/core/engine` (voir « Avancement »).
 
 Le moteur d'alarme est le programme en Go qui tourne sur la centrale (le
 Raspberry Pi, plus tard notre propre carte). Il décide ce que fait le système à
@@ -106,7 +106,7 @@ Les zones permanentes (`24h_*`) surveillent même désarmé.
 Le capteur de sabotage d'un appareil compte toujours comme un sabotage (règle
 `24h_tamper`), quelle que soit sa zone, même sans zone (clavier, sirène). Ouvrir un
 détecteur de fumée n'est donc pas un feu. Les autres capteurs ne comptent que si le
-type de zone les accepte (`engine.Accepts`, dans `internal/engine/zones.go`). Les
+type de zone les accepte (`engine.Accepts`, dans `internal/hub/core/engine/zones.go`). Les
 outils d'installation lisent la même table : un appareil n'est jamais mis dans une
 zone qu'il ne peut pas déclencher.
 
@@ -320,7 +320,7 @@ Le désarmement à distance est autorisé, mais il exige **le code du site**, en
 de la connexion à l'application. Un téléphone volé ne suffit donc pas : le voleur
 doit aussi connaître le code.
 
-- Le code est **vérifié sur le site**, par la centrale (`internal/access`) ; le
+- Le code est **vérifié sur le site**, par la centrale (`internal/hub/core/access`) ; le
   moteur reçoit le résultat et applique le verrouillage. Le code est stocké haché sur
   la centrale. Le cloud le transmet sans le garder ni l'écrire dans ses journaux.
 - Le verrouillage se compte **par origine** (29 octobre 2026) : le clavier d'un côté,
@@ -583,7 +583,7 @@ règle de l'horloge reculée ci-dessous. Un état changé pendant la fenêtre de
 ce démarrage, jamais écartée. Corrigé le 25 octobre 2026 après une revue : une fenêtre
 fermée deux minutes avant une coupure, la boutique armée, déclenchait l'intrusion au
 retour du courant. Corrigé le 28 octobre 2026, trouvé par les tests de séquences
-aléatoires (`internal/engine/random_test.go`) : pendant un délai de sortie encore en
+aléatoires (`internal/hub/core/engine/random_test.go`) : pendant un délai de sortie encore en
 cours, sa fin, après maintenant, faisait prendre tel quel tout état momentané (un bouton
 panique pressé avant l'armement donnait une seconde alerte au redémarrage, une sirène
 avec `PanicSiren`) ; et un bouton panique pressé dans le mode en cours, sans heure
@@ -629,7 +629,7 @@ minutes), elles redeviennent des heures entendues ordinaires, l'horloge ayant
 rattrapé celle qui les a posées.
 
 Corrigé le 28 octobre 2026, le moteur sachant depuis l'heure de démarrage du système
-(`internal/engine/restart6_test.go`, `internal/hub/clock_test.go`) : avant, un état daté
+(`internal/hub/core/engine/restart6_test.go`, `internal/hub/app/hub/clock_test.go`) : avant, un état daté
 avant l'heure où l'horloge est repartie ne se distinguait pas d'un état daté pendant le
 démarrage, et il était pris tel quel. Ainsi :
 
@@ -652,9 +652,9 @@ ouverte dans les secondes après la mise sous tension, datée sur l'horloge enco
 reculée, paraît antérieure au démarrage du système. Comparée à l'heure entendue avant
 la coupure, elle paraissait plus ancienne : écartée, puis mise à part (`set_aside`),
 donc écartée aussi aux démarrages suivants, l'alerte était perdue. Corrigé le 28
-octobre 2026 (bout en bout par le hub : `internal/hub/clock_test.go`,
+octobre 2026 (bout en bout par le hub : `internal/hub/app/hub/clock_test.go`,
 `TestARestartAfterNTPSetTheClockForwardTellsADoorOpenedMeanwhile` ; moteur :
-`internal/engine/restart7_test.go`) :
+`internal/hub/core/engine/restart7_test.go`) :
 
 - l'unité `safehome-boot-clock.service` (`deploy/system/`, posée et activée par
   `install.sh`) écrit tôt au démarrage, après `systemd-timesyncd` (qui avance d'abord
@@ -689,7 +689,7 @@ octobre 2026 (bout en bout par le hub : `internal/hub/clock_test.go`,
   affichée au démarrage. À un redémarrage du hub ensuite, tout état entendu avant ce
   saut paraissait daté avant celui du démarrage, donc nouveau : un mouvement ou un bris
   de vitre déjà entendu, encore actif, sonnait une seconde fois
-  (`internal/engine/restart8_test.go`, et une nouvelle marche dont la trace sert
+  (`internal/hub/core/engine/restart8_test.go`, et une nouvelle marche dont la trace sert
   toujours) ;
 - le hub donne la trace telle qu'elle est, même quand elle ne dit aucun saut (pas avant
   le démarrage calculé), et le moteur la garde : `Boot` ne la prend pour un saut que
@@ -698,7 +698,7 @@ octobre 2026 (bout en bout par le hub : `internal/hub/clock_test.go`,
   démarrage. Un premier `Boot` sans saut ne gardait donc rien ; NTP avançant ensuite
   l'horloge pendant la marche, la même trace, relue à un redémarrage du hub, tombait
   avant le démarrage calculé et servait : un mouvement déjà entendu sonnait une seconde
-  fois (`internal/hub/clock_test.go`,
+  fois (`internal/hub/app/hub/clock_test.go`,
   `TestARestartAfterALiveStepDoesNotRingAMovementHeardBefore` ; les séquences
   aléatoires redémarrent dans une marche dont le redémarrage n'a pas sauté, après un
   saut pendant la marche).
@@ -790,16 +790,16 @@ précédente l'a laissé y suffit (voir plus haut). Une sauvegarde d'avant, sans
 Un broker qui perd sa dernière sauvegarde ne change rien à cette règle : s'il rend le
 mouvement mis à part alors qu'un nouveau a eu lieu pendant l'arrêt du hub, ce nouveau
 était déjà perdu par le broker, que l'horloge ait reculé ou non.
-Témoins : `internal/engine/restart9_test.go` (le mouvement d'avant le mode, rendu à la
+Témoins : `internal/hub/core/engine/restart9_test.go` (le mouvement d'avant le mode, rendu à la
 même heure, 7 ms ou 2 s avant, celui du délai de sortie, armé en marche ou au
 redémarrage ; cas positifs : daté plus de 2 s avant, il sonne ; le vrai mouvement pendant
 l'arrêt, le front montant ; la sauvegarde sans `momentary`) et, au niveau du hub,
 `TestARestartAfterTheClockWentBackLiveDoesNotRingAMovementHeardBefore`
-(`internal/hub/clock_test.go`, l'état retenu daté 7 ms avant la réception : il sonnait
+(`internal/hub/app/hub/clock_test.go`, l'état retenu daté 7 ms avant la réception : il sonnait
 avec la seule égalité, relecture du 28 octobre 2026). Ils remplacent le test qui figeait
 la limite (`TestAMovementFromBeforeTheModeNeverSetAsideRingsAfterTheClockWentBack`).
 
-Les séquences aléatoires l'atteignaient (`internal/engine/random_test.go`, graine 169 des
+Les séquences aléatoires l'atteignaient (`internal/hub/core/engine/random_test.go`, graine 169 des
 séquences décalées) : un moteur restauré dont un `Boot` avait écarté le mouvement avant
 le recul ne sonnait pas, et il avait raison ; le moteur vivant sonnait. Le vivant le met
 maintenant à part au recul : la graine 169 ne sépare plus les deux moteurs
@@ -814,7 +814,7 @@ sonnerie de trop qui reste est celle de cette règle écrite.
 il doit faire tout ce que ferait le moteur vivant s'il gardait les mêmes états écartés,
 donc aucune autre alerte perdue ; et s'ils se séparent, le vivant envoie une alerte
 d'intrusion pour ce capteur et le restauré ne fait rien pour lui. Une nouvelle fourche
-part ensuite du moteur vivant. Témoins : `internal/engine/restart8_test.go` (le mouvement
+part ensuite du moteur vivant. Témoins : `internal/hub/core/engine/restart8_test.go` (le mouvement
 écarté une fois par un `Boot` ne sonne plus) et la graine 2019
 (`TestTheSeed2019PartsOnAMovementSetAsideByTheRestoredEngine`).
 
@@ -827,7 +827,7 @@ après une revue : seul le saut de NTP remettait les heures mises à part avec l
 autres, et seulement jusqu'à la dernière heure donnée au moteur plus le saut ;
 une horloge qui rattrapait en marchant, ou un hub silencieux avant le saut, les
 laissait à part pour toujours, et l'état périmé d'une porte déclenchait au redémarrage
-suivant (`internal/engine/restart5_test.go` ; les séquences aléatoires redémarrent
+suivant (`internal/hub/core/engine/restart5_test.go` ; les séquences aléatoires redémarrent
 aussi à horloge reculée, puis rattrapée, le broker rendant un état plus ancien que
 celui entendu).
 
@@ -904,7 +904,7 @@ Le moteur est entièrement spécifié pour la v1. Les ajouts sont reportés dans
 
 ## Avancement
 
-Codé et testé dans `internal/engine` (plus de 60 scénarios, horloge simulée) :
+Codé et testé dans `internal/hub/core/engine` (plus de 60 scénarios, horloge simulée) :
 
 - États, zones, délais, armement forcé et contournement, `arm_now`.
 - Cycles de sirène, silence, désarmement, fumée, panique, sabotage.
@@ -914,7 +914,7 @@ Codé et testé dans `internal/engine` (plus de 60 scénarios, horloge simulée)
   limite, zone ouverte contournée avec alerte (plus de 20 scénarios dans
   `schedule_test.go`).
 
-Codé et testé dans `internal/health` (supervision, domaine séparé du moteur, même
+Codé et testé dans `internal/hub/core/health` (supervision, domaine séparé du moteur, même
 règles : pur, sans horloge) :
 
 - Coupure de secteur sans alerte, alertes de batterie de la centrale à 40 % puis à
@@ -963,13 +963,13 @@ Codé et testé côté pilote (`internal/shared/driver`, `internal/shared/adapte
   empêche le démarrage : c'est à l'application de décider, pas un défaut silencieux.
 - Une erreur d'envoi ou de sauvegarde n'arrête pas la boucle.
 
-Codé et testé dans `internal/access` (domaine des codes d'accès, voir
+Codé et testé dans `internal/hub/core/access` (domaine des codes d'accès, voir
 `security-install.md`) : un code par personne (5 au maximum), vérification qui retrouve
 la personne, refus des codes faibles ou déjà pris, sauvegarde avant prise en compte.
 Il fournit au moteur l'`Auth` (`Checked`, `OK`, `User`) ; la centrale fait le
 branchement (ci-dessous).
 
-Codé et testé dans `internal/hub` et `cmd/safehome-hub` (le branchement de bout en bout,
+Codé et testé dans `internal/hub/app/hub` et `cmd/safehome-hub` (le branchement de bout en bout,
 voir `operations.md`) : messages MQTT vers les domaines, enveloppes et topics en sortie,
 vérification des codes sur un fil à part (un par origine depuis le 29 octobre 2026),
 commande de la sirène, clavier, démarrage avec les états retenus, battement de cœur. Un
@@ -977,12 +977,12 @@ test lance la centrale entière contre un vrai broker : armement au clavier, por
 sirène, mauvais code puis bon code, redémarrage qui garde l'état armé, rechargement des
 codes sans redémarrage.
 
-Codé dans `internal/hub` : l'avertissement à l'armement. Le moteur ne connaît pas la
+Codé dans `internal/hub/app/hub` : l'avertissement à l'armement. Le moteur ne connaît pas la
 santé des appareils ; la centrale garde le dernier résumé de la supervision et ajoute
 les appareils muets et les piles faibles à l'événement `alarm.arming` et à la réponse
 `done` de l'ordre d'armement (voir `contract.md`).
 
-Codé dans `internal/hub` : la liste des appareils, `system.devices` (voir
+Codé dans `internal/hub/app/hub` : la liste des appareils, `system.devices` (voir
 `contract.md`), décidée le 25 octobre 2026 pour la fiche Capteurs de l'application.
 Choix faits, à connaître :
 
@@ -1027,7 +1027,7 @@ Choix faits au codage, à connaître :
 - `Engine` est un objet déterministe plutôt qu'une fonction pure : même principe
   (pas d'horloge, pas d'entrée-sortie, tout vient des entrées), plus simple à écrire.
 - Le moteur ne connaît pas le contrat : il émet des événements du domaine (`ArmingStarted`,
-  `Triggered`…) et reçoit des signaux de capteurs. `internal/engine/wire` les traduit en
+  `Triggered`…) et reçoit des signaux de capteurs. `internal/hub/core/engine/wire` les traduit en
   messages du contrat, ce qui isole le moteur des changements de version.
 - Les échéances dépassées sont rejouées à leur heure, même si le tic arrive en
   retard (centrale suspendue, coupure) : le calendrier de la sirène reste exact.

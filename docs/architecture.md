@@ -73,9 +73,9 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
         └──────────────────────────────┘
 ```
 
-- **Les domaines** (`internal/engine` pour l'alarme, `internal/health` pour la
-  supervision de la centrale et des appareils, `internal/access` pour les codes
-  d'accès, `internal/escalation` pour l'escalade des alertes, `internal/gsm/core/gsm` pour la
+- **Les domaines** (`internal/hub/core/engine` pour l'alarme, `internal/hub/core/health` pour la
+  supervision de la centrale et des appareils, `internal/hub/core/access` pour les codes
+  d'accès, `internal/hub/core/escalation` pour l'escalade des alertes, `internal/gsm/core/gsm` pour la
   passerelle GSM, `internal/zigbee/core/zigbee` pour l'adaptateur Zigbee, `internal/video/core/video` pour la
   vidéo en direct, `internal/maint/core/maint` pour la maintenance à distance) sont purs : ils
   dépendent seulement de la bibliothèque standard, n'ont aucune entrée-sortie et ne
@@ -85,7 +85,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 - **La traduction** (un paquet `wire` par domaine : `engine`, `health`, `escalation`,
   `gsm`, `zigbee`, `video`, `maint`) est le seul endroit qui traduit entre un domaine et
   le contrat. Si le contrat change de version, seules ces parties changent. Les
-  domaines ne se connaissent pas : la couche application (`internal/hub`) les relie.
+  domaines ne se connaissent pas : la couche application (`internal/hub/app/hub`) les relie.
   Le pilote ne connaît aucun domaine.
 - **Les adaptateurs et le pilote** viennent autour : MQTT, disque, horloge, vérification des
   codes. Leurs interfaces se déclarent côté consommateur et restent petites. Une
@@ -134,7 +134,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   travail (un statut, le battement de cœur) sur la même horloge. La fausse horloge des
   tests (`drivertest`) fait comme la vraie : ses minuteries suivent une horloge
   monotone, que `Set` ne bouge pas.
-- **La couche application** (`internal/hub`) relie tout cela pour la centrale : elle
+- **La couche application** (`internal/hub/app/hub`) relie tout cela pour la centrale : elle
   reçoit les messages MQTT, les traduit (`wire`), les remet aux domaines par leurs
   boucles, et publie ce qui en sort. Elle publie par le port de la file d'envoi
   (`outbox.Publisher`) et réutilise ceux du pilote (horloge, stockage). La fenêtre de
@@ -190,7 +190,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   domaine propre, avec ses ports (`Publisher`, messages reçus, `Sites`) et sans
   horloge ; l'outil en ligne de commande (`cmd/safehome-install`) et la console locale
   s'appuient dessus. Les règles de zones viennent du moteur : la table des capteurs
-  acceptés par chaque type de zone est dans `internal/engine` (`engine.Accepts`).
+  acceptés par chaque type de zone est dans `internal/hub/core/engine` (`engine.Accepts`).
   `internal/install/app/install` est seul à modifier le site (zones et sirènes) : son `Editor`
   lit, change et écrit par le port `Sites`, pour la console comme pour l'outil.
   L'adaptateur de ce port est `hubconfig.SiteFiles`, qui garde les zones et les
@@ -207,12 +207,12 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   horloge) et son adaptateur (`internal/maint/adapter/sshtunnel`, le client OpenSSH vers le
   bastion). Détail dans `maintenance.md`.
 - **La configuration réglée depuis le cloud** (`config.set`) : sa couche application
-  (`internal/configapp`) tourne dans le programme de la centrale. Elle ne connaît ni
+  (`internal/hub/app/configapp`) tourne dans le programme de la centrale. Elle ne connaît ni
   fichier ni processus : vérifier, garder, redémarrer et savoir si le moment est calme
   sont des ports (`Check`, `Save`, `Restart`, `Quiet`), et elle ne lit pas l'horloge.
   Elle redémarre aussi la centrale, à un moment calme, quand `site-devices.json` a
   changé (port `DevicesChanged`) : elle le vérifie à chaque état de l'alarme, mode
-  installation ou message de configuration. `internal/hub` ne fait que répondre à
+  installation ou message de configuration. `internal/hub/app/hub` ne fait que répondre à
   `Quiet` (`Hub.Quiet`) : le moteur dit son propre état, après les entrées déjà en
   file, car l'état publié sur `alarm/state` revient par le broker en retard sur lui.
   La règle de ce qui est calme (`configapp.QuietState` : désarmé ou armé ; pour des
@@ -239,7 +239,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   levée alors, ou la fin d'une escalade, doit encore arriver à l'escalade. Avant le
   25 octobre 2026, elle pouvait être perdue sans trace : la sirène reprenait au
   redémarrage, mais personne n'était jamais prévenu.
-- **Les lectures de configuration** (`internal/hubconfig`, `internal/gsm/config/gsmconfig`, etc.)
+- **Les lectures de configuration** (`internal/hub/config/hubconfig`, `internal/gsm/config/gsmconfig`, etc.)
   partagent `internal/shared/config/configfile` : JSON strict, niveau de journal, durées, secrets,
   écriture atomique. L'en-tête commun des fichiers (`site`, `broker_url`, `client_id`,
   `state_dir`, `log_level`) est `configfile.ProgramFile` ; sa méthode `Build` en fait un

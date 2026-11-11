@@ -30,7 +30,7 @@ const module = "safehome"
 
 // file is one Go source file of the module.
 type file struct {
-	rel  string // slash-separated path from the module's root: "internal/hub/hub.go"
+	rel  string // slash-separated path from the module's root: "internal/hub/app/hub/hub.go"
 	test bool   // a _test.go file
 	src  []byte
 	ast  *ast.File
@@ -40,7 +40,7 @@ type file struct {
 func (f *file) dir() string { return path.Dir(f.rel) }
 
 // tree is every Go file of the module, parsed with its comments. The file names in
-// fset are the rel paths, so positions print as "internal/hub/hub.go:12:3".
+// fset are the rel paths, so positions print as "internal/hub/app/hub/hub.go:12:3".
 type tree struct {
 	root  string
 	fset  *token.FileSet

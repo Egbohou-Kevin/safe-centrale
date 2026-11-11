@@ -2,7 +2,7 @@
 
 # Escalade des alertes
 
-Statut : v1 codée (`internal/escalation`), à valider sur le terrain. Les choix faits au codage sont à la fin du document.
+Statut : v1 codée (`internal/hub/core/escalation`), à valider sur le terrain. Les choix faits au codage sont à la fin du document.
 
 L'escalade décide **qui est prévenu, par quel moyen, dans quel ordre et après
 combien de temps** quand le système détecte un problème. Elle doit fonctionner
@@ -11,7 +11,7 @@ injoignable.
 
 ## Qui fait quoi
 
-- **L'escalade** (`internal/escalation`, dans la centrale) décide : elle garde le
+- **L'escalade** (`internal/hub/core/escalation`, dans la centrale) décide : elle garde le
   plan d'escalade de chaque incident, mesure les délais et choisit la vague suivante.
   Elle publie des `alert.request` (voir `contract.md`). Le moteur d'alarme et la
   supervision lui donnent leurs alertes.
@@ -550,9 +550,9 @@ Ajouts à reporter dans `contract.md` :
 
 ## Choix faits au codage
 
-L'escalade est un quatrième domaine pur (`internal/escalation`), comme le moteur, la
+L'escalade est un quatrième domaine pur (`internal/hub/core/escalation`), comme le moteur, la
 supervision et les codes : pas d'horloge, pas d'entrée-sortie, les entrées portent leur
-heure. La couche application (`internal/hub`) lui donne les alertes du moteur et de la
+heure. La couche application (`internal/hub/app/hub`) lui donne les alertes du moteur et de la
 supervision, et publie ce qu'il décide. Là où le document laissait un doute :
 
 - **Horloge avancée au démarrage.** Le Pi 4 sans module d'horloge repart après une

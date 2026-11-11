@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"safehome/internal/agent/config/agentconfig"
-	"safehome/internal/hubconfig"
+	"safehome/internal/hub/config/hubconfig"
 )
 
 // etc is the programs' configuration folder.

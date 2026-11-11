@@ -17,7 +17,7 @@ import (
 	"safehome/internal/console/app/consoleapp"
 	"safehome/internal/console/app/consoleapp/web"
 	"safehome/internal/console/config/consoleconfig"
-	"safehome/internal/hubconfig"
+	"safehome/internal/hub/config/hubconfig"
 	"safehome/internal/shared/adapter/mqtt"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver"

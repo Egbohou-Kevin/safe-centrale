@@ -1,7 +1,7 @@
 // Package power is the core of the hub's battery module (see docs/alimentation.md):
 // it turns the readings of the mains line and of the fuel gauge into what the site is
 // told, the mains and the battery of the hub_device_id device, and decides when to
-// shut the hub down before its cell is empty. The supervision (internal/health) then
+// shut the hub down before its cell is empty. The supervision (internal/hub/core/health) then
 // raises battery_low_hub and mains_restored from those readings.
 //
 // Like the other domain cores, this package does no I/O, never reads the clock and

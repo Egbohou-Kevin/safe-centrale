@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"safehome/internal/escalation"
-	"safehome/internal/hub"
-	"safehome/internal/hubconfig"
+	"safehome/internal/hub/app/hub"
+	"safehome/internal/hub/config/hubconfig"
+	"safehome/internal/hub/core/escalation"
 	"safehome/internal/shared/adapter/filestore"
 	"safehome/internal/shared/adapter/mqtt/mqtttest"
 	"safehome/internal/shared/contract"

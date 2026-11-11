@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"safehome/internal/agent/config/agentconfig"
-	"safehome/internal/hubconfig"
+	"safehome/internal/hub/config/hubconfig"
 )
 
 // stateRig is an install rig with the state folder at hand.

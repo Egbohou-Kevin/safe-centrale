@@ -420,7 +420,7 @@ Reste à ajouter : les événements de journal `audit.config_applied`,
   est le moyen de l'installateur en v1. Elle est codée (voir plus haut). L'outil en
   ligne de commande `safehome-install` (par SSH, voir `operations.md`) fait le même
   travail et s'appuie sur la même logique (`internal/install/app/install`).
-- Choix faits au codage (`internal/access`) :
+- Choix faits au codage (`internal/hub/core/access`) :
   - 4 à 8 chiffres, uniquement des chiffres (c'est ce que saisit un clavier). Le schéma
     des ordres (`schemas/alarm-command.json`, `args.code`) dit la même forme au cloud,
     et un test de la centrale empêche les deux de s'écarter.
@@ -441,7 +441,7 @@ Reste à ajouter : les événements de journal `audit.config_applied`,
     dernier bon code) et le verrouillage restent dans le moteur d'alarme.
 - Le coût du hachage est à régler sur la vraie centrale : vérifier 5 codes prend
   environ 90 ms sur un Mac récent, et sera plusieurs fois plus long sur un Raspberry Pi.
-  Mesure à faire sur le matériel : `go test -run xxx -bench Verify ./internal/access`.
+  Mesure à faire sur le matériel : `go test -run xxx -bench Verify ./internal/hub/core/access`.
 - Le broker local exige un mot de passe par programme (29 octobre 2026) : aucun client
   anonyme, un nom par programme (`safehome-hub`…), plus `zigbee2mqtt` et `operator`. Le mot
   de passe d'un service lui vient de systemd (`LoadCredential`), jamais d'un fichier lisible
