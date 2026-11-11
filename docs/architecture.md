@@ -186,12 +186,12 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   plafond), sa traduction (`internal/video/core/video/wire`), sa couche application
   (`internal/video/app/videoapp`, qui déclare le port `Streamer`) et son adaptateur
   (`internal/video/adapter/go2rtc`, qui lance un go2rtc par session).
-- **L'outil de l'installateur** : une couche application (`internal/install`) sans
+- **L'outil de l'installateur** : une couche application (`internal/install/app/install`) sans
   domaine propre, avec ses ports (`Publisher`, messages reçus, `Sites`) et sans
   horloge ; l'outil en ligne de commande (`cmd/safehome-install`) et la console locale
   s'appuient dessus. Les règles de zones viennent du moteur : la table des capteurs
   acceptés par chaque type de zone est dans `internal/engine` (`engine.Accepts`).
-  `internal/install` est seul à modifier le site (zones et sirènes) : son `Editor`
+  `internal/install/app/install` est seul à modifier le site (zones et sirènes) : son `Editor`
   lit, change et écrit par le port `Sites`, pour la console comme pour l'outil.
   L'adaptateur de ce port est `hubconfig.SiteFiles`, qui garde les zones et les
   sirènes dans le dossier d'état.

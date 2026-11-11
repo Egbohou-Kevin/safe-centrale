@@ -13,7 +13,7 @@ import (
 	escwire "safehome/internal/escalation/wire"
 	"safehome/internal/health"
 	"safehome/internal/hub"
-	"safehome/internal/install"
+	"safehome/internal/install/app/install"
 	"safehome/internal/shared/config/configfile"
 )
 

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"safehome/internal/install"
+	"safehome/internal/install/app/install"
 	"safehome/internal/shared/adapter/mqtt"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/service"

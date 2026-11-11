@@ -9,7 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"safehome/internal/install"
+	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
 )
 

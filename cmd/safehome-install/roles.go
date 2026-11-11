@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"safehome/internal/hubconfig"
-	"safehome/internal/install"
+	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
 )
 

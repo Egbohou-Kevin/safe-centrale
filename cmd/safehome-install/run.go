@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"safehome/internal/hubconfig"
-	"safehome/internal/install"
+	"safehome/internal/install/app/install"
 )
 
 const usage = `usage:

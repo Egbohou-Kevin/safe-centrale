@@ -419,7 +419,7 @@ Reste à ajouter : les événements de journal `audit.config_applied`,
 - La console locale (page web de la centrale, active seulement en mode installation)
   est le moyen de l'installateur en v1. Elle est codée (voir plus haut). L'outil en
   ligne de commande `safehome-install` (par SSH, voir `operations.md`) fait le même
-  travail et s'appuie sur la même logique (`internal/install`).
+  travail et s'appuie sur la même logique (`internal/install/app/install`).
 - Choix faits au codage (`internal/access`) :
   - 4 à 8 chiffres, uniquement des chiffres (c'est ce que saisit un clavier). Le schéma
     des ordres (`schemas/alarm-command.json`, `args.code`) dit la même forme au cloud,

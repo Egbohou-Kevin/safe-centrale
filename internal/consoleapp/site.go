@@ -3,7 +3,7 @@ package consoleapp
 import (
 	"fmt"
 
-	"safehome/internal/install"
+	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
 )
 

@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"safehome/internal/install"
+	"safehome/internal/install/app/install"
 	"safehome/internal/shared/config/configfile"
 )
 

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"safehome/internal/consoleapp"
-	"safehome/internal/install"
+	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
 )
 

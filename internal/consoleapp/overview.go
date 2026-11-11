@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"safehome/internal/install"
+	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
 )
 

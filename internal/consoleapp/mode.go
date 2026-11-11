@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"safehome/internal/install"
+	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
 )
 

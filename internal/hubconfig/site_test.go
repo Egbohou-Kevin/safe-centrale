@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"safehome/internal/install"
+	"safehome/internal/install/app/install"
 )
 
 // copyExample puts a copy of the example file in a temporary directory, with its
