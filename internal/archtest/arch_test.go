@@ -42,9 +42,64 @@ func isStdlib(path string) bool {
 func internal(names ...string) []string {
 	out := make([]string, len(names))
 	for i, n := range names {
-		out[i] = module + "/internal/" + n
+		out[i] = module + "/internal/" + at(n)
 	}
 	return out
+}
+
+// moved says where each package of the former flat layout of internal/ now lives
+// (docs/rangement-par-programme.md): the rules below still name a package by its
+// former path, at turns it into the current one.
+var moved = map[string]string{}
+
+// at is the current path below internal/ of the package once at internal/old.
+func at(old string) string {
+	best := ""
+	for k := range moved {
+		if (old == k || strings.HasPrefix(old, k+"/")) && len(k) > len(best) {
+			best = k
+		}
+	}
+	if best == "" {
+		return old
+	}
+	return moved[best] + old[len(best):]
+}
+
+// dirOf is the directory, relative to the root, of the package once at internal/old.
+func dirOf(old string) string { return filepath.Join("internal", filepath.FromSlash(at(old))) }
+
+// inAdapter reports whether p, a file path relative to the root or an import path,
+// lies in an adapter: a package whose parent directory below internal/ is named adapter.
+func inAdapter(p string) bool {
+	p = strings.TrimPrefix(filepath.ToSlash(p), module+"/")
+	segs := strings.Split(p, "/")
+	if len(segs) < 3 || segs[0] != "internal" {
+		return false
+	}
+	return slices.Contains(segs[1:len(segs)-1], "adapter")
+}
+
+// packageDirs lists the directories below internal/ that hold shipped Go files,
+// slash-separated and relative to internal/.
+func packageDirs(t *testing.T) []string {
+	t.Helper()
+	base := filepath.Join(root(t), "internal")
+	var dirs []string
+	err := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		rel, _ := filepath.Rel(base, filepath.Dir(path))
+		if rel = filepath.ToSlash(rel); !slices.Contains(dirs, rel) {
+			dirs = append(dirs, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dirs
 }
 
 // parsePackage parses the non-test Go files of one directory (not recursive).
@@ -162,6 +217,7 @@ func (l layer) rejects(p string) bool {
 // layer forbids.
 func (l layer) check(t *testing.T, dir string) {
 	t.Helper()
+	dir = at(filepath.ToSlash(dir))
 	fset, files := parsePackage(t, filepath.Join(root(t), "internal", dir))
 	for name, f := range files {
 		if bad := forbiddenImports(f, l.rejects); len(bad) > 0 {

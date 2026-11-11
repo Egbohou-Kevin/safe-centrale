@@ -3,7 +3,7 @@ package archtest
 import (
 	"go/ast"
 	"go/token"
-	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -37,15 +37,11 @@ func TestContractDependsOnNothing(t *testing.T) {
 // adapter, its own library). The driver's test fakes are held to the same rule, so
 // that the driver's own tests can use them.
 func TestDriverAndAdaptersKnowNoDomain(t *testing.T) {
-	dirs := []string{filepath.Join("internal", "driver"), filepath.Join("internal", "driver", "drivertest")}
+	dirs := []string{dirOf("driver"), dirOf("driver/drivertest")}
 	// Every adapter, including those added later.
-	entries, err := os.ReadDir(filepath.Join(root(t), "internal", "adapter"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			dirs = append(dirs, filepath.Join("internal", "adapter", e.Name()))
+	for _, d := range packageDirs(t) {
+		if path.Base(path.Dir(d)) == "adapter" {
+			dirs = append(dirs, filepath.Join("internal", filepath.FromSlash(d)))
 		}
 	}
 	if len(dirs) < 3 {
@@ -146,10 +142,10 @@ func TestTheCloudConfigurationKnowsNoAdapter(t *testing.T) {
 func TestConfigFileServesOnlyTheConfigurationPackages(t *testing.T) {
 	layer{noClock: true, why: ": configfile is standard-library only"}.check(t, "configfile")
 	users := []string{"agentconfig", "consoleconfig", "gsmconfig", "hubconfig", "maintconfig", "powerconfig", "siteconfig", "videoconfig", "zigbeeconfig"}
-	configfile := module + "/internal/configfile"
+	configfile := internal("configfile")[0]
 	walkSources(t, func(rel string, f *ast.File) {
-		dir, name := filepath.Split(filepath.Dir(rel))
-		if dir == "internal"+string(filepath.Separator) && slices.Contains(users, name) {
+		dir := filepath.Dir(rel)
+		if slices.ContainsFunc(users, func(u string) bool { return dir == dirOf(u) }) {
 			return
 		}
 		if slices.Contains(importsOf(f), configfile) {
@@ -187,7 +183,7 @@ func TestTheConsoleKnowsNoAdapter(t *testing.T) {
 // interface: only SystemClock may read it, and the origin of its monotonic clock
 // (Elapsed, see driver.Monotonic).
 func TestDriverReadsTheClockOnlyInSystemClock(t *testing.T) {
-	fset, files := parsePackage(t, filepath.Join(root(t), "internal", "driver"))
+	fset, files := parsePackage(t, filepath.Join(root(t), dirOf("driver")))
 	var total int
 	for name, f := range files {
 		calls := clockCalls(fset, f)
@@ -210,16 +206,15 @@ func TestDriverReadsTheClockOnlyInSystemClock(t *testing.T) {
 // to those ports is the job of the composition root (cmd/, with internal/service
 // that only cmd/ may use, see the next rule), and nothing else.
 func TestOnlyTheCompositionRootImportsAdapters(t *testing.T) {
-	adapters := module + "/internal/adapter/"
 	walkSources(t, func(rel string, f *ast.File) {
 		if strings.HasPrefix(rel, "cmd"+string(filepath.Separator)) ||
-			strings.HasPrefix(rel, filepath.Join("internal", "service")+string(filepath.Separator)) ||
-			strings.HasPrefix(rel, filepath.Join("internal", "adapter")+string(filepath.Separator)) ||
+			strings.HasPrefix(rel, dirOf("service")+string(filepath.Separator)) ||
+			inAdapter(rel) ||
 			inVirtualKit(rel) {
 			return // the composition root, the adapters themselves and the kit's fakes
 		}
 		for _, imp := range importsOf(f) {
-			if strings.HasPrefix(imp, adapters) {
+			if isLocal(imp) && inAdapter(imp) {
 				t.Errorf("%s imports %s: only cmd/ may wire adapters", rel, imp)
 			}
 		}
@@ -237,7 +232,7 @@ func TestTheVirtualKitStaysOutside(t *testing.T) {
 				continue
 			}
 			kit := strings.HasPrefix(imp, module+"/vkit/")
-			outside := kit || strings.HasPrefix(imp, module+"/internal/adapter/")
+			outside := kit || inAdapter(imp)
 			if inVirtualKit(rel) && !outside {
 				t.Errorf("%s imports %s: the virtual kit may use only adapters, test simulators and itself", rel, imp)
 			}
@@ -259,7 +254,7 @@ func TestServiceIsSharedAssemblyForThePrograms(t *testing.T) {
 		local: internal("adapter/filestore", "adapter/mqtt", "adapter/pidfile", "adapter/sdnotify", "inbox", "outbox"),
 		why:   ": the service package only assembles adapters for cmd/",
 	}.check(t, "service")
-	service := module + "/internal/service"
+	service := internal("service")[0]
 	walkSources(t, func(rel string, f *ast.File) {
 		if strings.HasPrefix(rel, "cmd"+string(filepath.Separator)) {
 			return
@@ -274,9 +269,9 @@ func TestServiceIsSharedAssemblyForThePrograms(t *testing.T) {
 // (this already follows from "a domain imports nothing of the module", and is
 // stated here for the hub, which sits above them).
 func TestNoDomainImportsTheHub(t *testing.T) {
-	hub := module + "/internal/hub"
+	hub := internal("hub")[0]
 	for _, pkg := range []string{"engine", "health", "access", "escalation", "gsm", "zigbee", "video", "maint", "power", "contract", "driver"} {
-		_, files := parsePackage(t, filepath.Join(root(t), "internal", pkg))
+		_, files := parsePackage(t, filepath.Join(root(t), dirOf(pkg)))
 		for name, f := range files {
 			if slices.Contains(importsOf(f), hub) {
 				t.Errorf("internal/%s/%s imports the hub", pkg, name)
@@ -310,14 +305,10 @@ func TestZ2MOnlyBridgesZigbee2MQTTAndTheCore(t *testing.T) {
 // named *app, including those added later (several also have a rule of their own
 // above).
 func TestApplicationLayersUseOnlyTheClockPort(t *testing.T) {
-	dirs := []string{"hub", "gateway"}
-	entries, err := os.ReadDir(filepath.Join(root(t), "internal"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range entries {
-		if e.IsDir() && strings.HasSuffix(e.Name(), "app") {
-			dirs = append(dirs, e.Name())
+	dirs := []string{at("hub"), at("gateway")}
+	for _, d := range packageDirs(t) {
+		if strings.HasSuffix(path.Base(d), "app") {
+			dirs = append(dirs, d)
 		}
 	}
 	if len(dirs) < 8 {

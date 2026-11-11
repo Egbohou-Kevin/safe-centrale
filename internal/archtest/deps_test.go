@@ -19,7 +19,7 @@ import (
 var thirdPartyAllowed = map[string][]string{
 	// The MQTT library, and the WebSocket library it already uses: the adapter dials
 	// WebSockets itself to send each MQTT packet in one message (see dial.go).
-	filepath.Join("internal", "adapter", "mqtt"): {"github.com/eclipse/paho.golang", "github.com/gorilla/websocket"},
+	dirOf("adapter/mqtt"): {"github.com/eclipse/paho.golang", "github.com/gorilla/websocket"},
 }
 
 // allowedThirdParty reports whether a file at rel may import the package path.
@@ -42,7 +42,7 @@ func allowedThirdParty(rel, path string) bool {
 // packages are also allowed in tests, through internal/schematest.
 func TestProductionCodeHasNoThirdPartyDependencies(t *testing.T) {
 	walkSources(t, func(rel string, f *ast.File) {
-		if strings.HasPrefix(rel, filepath.Join("internal", "schematest")) {
+		if strings.HasPrefix(rel, dirOf("schematest")) {
 			return // test helper, imported by tests only (next rule)
 		}
 		if bad := forbiddenImports(f, func(p string) bool {
@@ -60,14 +60,8 @@ func TestProductionCodeHasNoThirdPartyDependencies(t *testing.T) {
 // internal/outbox/outboxtest the broker: shipped code must never import them. The
 // virtual kit's fake devices (vkit/) are test equipment too, and may.
 func TestOnlyTestsImportTestSupport(t *testing.T) {
-	testSupport := []string{
-		module + "/internal/schematest",
-		module + "/internal/driver/drivertest",
-		module + "/internal/outbox/outboxtest",
-		module + "/internal/adapter/mqtt/mqtttest",
-		module + "/internal/adapter/atmodem/attest",
-		module + "/internal/adapter/go2rtc/go2rtctest",
-	}
+	testSupport := internal("schematest", "driver/drivertest", "outbox/outboxtest",
+		"adapter/mqtt/mqtttest", "adapter/atmodem/attest", "adapter/go2rtc/go2rtctest")
 	walkSources(t, func(rel string, f *ast.File) {
 		if inVirtualKit(rel) {
 			return
@@ -81,7 +75,7 @@ func TestOnlyTestsImportTestSupport(t *testing.T) {
 }
 
 func TestThirdPartyExceptionIsNarrow(t *testing.T) {
-	mq := filepath.Join("internal", "adapter", "mqtt", "client.go")
+	mq := filepath.Join(dirOf("adapter/mqtt"), "client.go")
 	cases := []struct {
 		rel, path string
 		want      bool
@@ -91,10 +85,10 @@ func TestThirdPartyExceptionIsNarrow(t *testing.T) {
 		{mq, "github.com/gorilla/websocket", true},
 		{mq, "github.com/gorilla/mux", false},
 		{mq, "github.com/eclipse/paho.golangx", false},
-		{filepath.Join("internal", "engine", "engine.go"), "github.com/eclipse/paho.golang/autopaho", false},
-		{filepath.Join("internal", "adapter", "mqttx", "a.go"), "github.com/eclipse/paho.golang/autopaho", false},
-		{filepath.Join("internal", "adapter", "other", "a.go"), "github.com/eclipse/paho.golang/autopaho", false},
-		{filepath.Join("internal", "agent", "agent.go"), "github.com/gorilla/websocket", false},
+		{filepath.Join(dirOf("engine"), "engine.go"), "github.com/eclipse/paho.golang/autopaho", false},
+		{filepath.Join(filepath.Dir(dirOf("adapter/mqtt")), "mqttx", "a.go"), "github.com/eclipse/paho.golang/autopaho", false},
+		{filepath.Join(filepath.Dir(dirOf("adapter/mqtt")), "other", "a.go"), "github.com/eclipse/paho.golang/autopaho", false},
+		{filepath.Join(dirOf("agent"), "agent.go"), "github.com/gorilla/websocket", false},
 	}
 	for _, c := range cases {
 		if got := allowedThirdParty(c.rel, c.path); got != c.want {
@@ -108,7 +102,7 @@ func TestThirdPartyExceptionIsNarrow(t *testing.T) {
 // programs of cmd/, which call the system's tools (mmcli, systemctl). A domain or
 // an application layer that runs a process would hide a side effect from its tests.
 func allowedExec(rel string) bool {
-	return strings.HasPrefix(rel, filepath.Join("internal", "adapter")+string(filepath.Separator)) ||
+	return inAdapter(rel) ||
 		strings.HasPrefix(rel, "cmd"+string(filepath.Separator))
 }
 
@@ -129,9 +123,9 @@ func TestExecRuleIsNarrow(t *testing.T) {
 		rel  string
 		want bool
 	}{
-		{filepath.Join("internal", "adapter", "sshtunnel", "sshtunnel.go"), true},
+		{filepath.Join(dirOf("adapter/sshtunnel"), "sshtunnel.go"), true},
 		{filepath.Join("cmd", "safehome-gsm", "modem.go"), true},
-		{filepath.Join("internal", "hub", "hub.go"), false},
+		{filepath.Join(dirOf("hub"), "hub.go"), false},
 		{filepath.Join("internal", "adapterx", "a.go"), false},
 		{filepath.Join("internal", "cmd", "a.go"), false},
 		{filepath.Join("vkit", "a.go"), false},
@@ -212,7 +206,7 @@ func TestProgramsAreTestedOnTheHubsBrokerWithItsRights(t *testing.T) {
 		t.Fatal(err)
 	}
 	for rel, n := range open {
-		if !strings.HasPrefix(rel, filepath.Join("internal", "adapter", "mqtt")+string(filepath.Separator)) && openBrokers[rel] != n {
+		if !strings.HasPrefix(rel, dirOf("adapter/mqtt")+string(filepath.Separator)) && openBrokers[rel] != n {
 			t.Errorf("%s starts %d open broker(s), %d allowed: test a program on mqtttest.Start, under its name", rel, n, openBrokers[rel])
 		}
 	}

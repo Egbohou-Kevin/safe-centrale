@@ -130,7 +130,7 @@ func pairKeys(args []ast.Expr) []ast.Expr {
 func sleeps(tr *tree) []finding {
 	var found []finding
 	for _, f := range tr.files {
-		if f.test || !strings.HasPrefix(f.rel, "internal/") || strings.HasPrefix(f.rel, "internal/adapter/") || isTestSupport(f.dir()) {
+		if f.test || !strings.HasPrefix(f.rel, "internal/") || strings.Contains(f.rel, "/adapter/") || isTestSupport(f.dir()) {
 			continue
 		}
 		timePkg := importName(f.ast, "time")

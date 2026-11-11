@@ -2,7 +2,9 @@
 
 # Ranger `internal` par programme
 
-Proposition du 11/11/2026 (demande de Kevin, 23:28), **à valider avant tout déplacement**.
+Proposition du 11/11/2026 (demande de Kevin, 23:28). Kevin, 23:35 : « qu'elle enchaîne sans m'attendre » :
+le renommage suit cette table sans attendre son oui ; les choix marqués « décidé seule, à relire »
+sont les options recommandées, réversibles, prises sans lui.
 Lue sur `main` à `be47049` : 69 paquets sous `internal`, 9 programmes sous `cmd`.
 
 ```
@@ -135,18 +137,18 @@ d'imports.
    les codes du hub (`hub.OpenSiteCodes`, `access`, `hubconfig.CodesLock`) et lit `hub.json` ;
    `cmd/safehome-install` lit `hub.json` ; `consoleapp` est assise sur `install` ; `hubconfig`
    lit et écrit le site au format `install.Site`.
-   - **(recommandé) Ranger tel quel, exceptions nommées dans `archtest`** : console → `hub/app/hub`,
+   - **Décidé seule, à relire (11/11/2026). (recommandé) Ranger tel quel, exceptions nommées dans `archtest`** : console → `hub/app/hub`,
      `hub/core/access`, `hub/config/hubconfig`, `install/app/install` ; install →
      `hub/config/hubconfig` ; `hub/config/hubconfig` → `install/app/install`. Chaque exception a sa
      raison écrite, toute autre flèche entre programmes rougit. Renommage pur, rien ne change.
    - Sinon : sortir `install.Site` et les codes du site dans `shared/site`. Plus propre à terme,
      mais c'est un changement de code, pas un renommage : un lot à part, après celui-ci.
-2. **`access`** sert le hub et la console. La table le met sous `hub/core/access` (son
+2. **Décidé seule, à relire (11/11/2026).** **`access`** sert le hub et la console. La table le met sous `hub/core/access` (son
    propriétaire est le hub, la console y passe par l'exception 1) plutôt que sous `shared`, comme
    l'esquisse le proposait : le commun garde seulement ce que plusieurs programmes possèdent.
 3. **`configapp`** (la configuration reçue du cloud) n'est embarqué que par le hub : seconde
    application du hub, `hub/app/configapp`.
-4. **Un test qui croise deux programmes** : `power/wire` vérifie en test que le hub (`health`,
+4. **Décidé seule, à relire (11/11/2026).** **Un test qui croise deux programmes** : `power/wire` vérifie en test que le hub (`health`,
    `health/wire`) lit bien ce que l'alimentation publie. (recommandé) Le laisser : `archtest` ne
    juge que le code de production, comme aujourd'hui ; ce test est un contrat entre deux
    programmes.
