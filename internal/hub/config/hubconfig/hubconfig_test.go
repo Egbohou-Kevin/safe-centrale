@@ -16,8 +16,8 @@ import (
 	"safehome/internal/hub/core/escalation"
 	escwire "safehome/internal/hub/core/escalation/wire"
 	"safehome/internal/hub/core/health"
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/config/configfile"
+	sitemodel "safehome/internal/shared/core/site"
 )
 
 // parse reads and checks a configuration given as bytes.
@@ -317,10 +317,10 @@ func TestZones(t *testing.T) {
 }
 
 // A zone name goes into SMS, voice messages and the alarm events (device_name): a
-// hand-edited file follows the installer's rule (install.ValidName), and the error
+// hand-edited file follows the installer's rule (sitemodel.ValidName), and the error
 // names the zone.
 func TestAZoneNameFollowsTheInstallersRule(t *testing.T) {
-	for _, name := range []string{`Porte\nArriere`, `Porte\u202eArriere`, `Porte\u200bArriere`, `   `, strings.Repeat("a", install.MaxNameLength+1)} {
+	for _, name := range []string{`Porte\nArriere`, `Porte\u202eArriere`, `Porte\u200bArriere`, `   `, strings.Repeat("a", sitemodel.MaxNameLength+1)} {
 		body := base + `,"zones":{"dev_back":{"name":"` + name + `","kind":"entry"}}}`
 		_, err := parse([]byte(body))
 		if err == nil || !strings.Contains(err.Error(), `"dev_back"`) {
@@ -361,7 +361,7 @@ func TestSirenNames(t *testing.T) {
 		"a siren with a zone": `,"s3":"Four"`,
 		"a tab":               `,"s1":"Rue\tdu marche"`,
 		"empty":               `,"s1":" "`,
-		"too long":            `,"s1":"` + strings.Repeat("a", install.MaxNameLength+1) + `"`,
+		"too long":            `,"s1":"` + strings.Repeat("a", sitemodel.MaxNameLength+1) + `"`,
 		"invisible":           `,"s1":"Rue\u200bdu marche"`,
 	} {
 		if _, err := parse([]byte(sirens + extra + `}}`)); err == nil || !strings.Contains(err.Error(), "siren_names") {

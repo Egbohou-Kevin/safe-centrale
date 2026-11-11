@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"safehome/internal/install/app/install"
+	sitemodel "safehome/internal/shared/core/site"
 )
 
 // copyExample puts a copy of the example file in a temporary directory, with its
@@ -35,7 +35,7 @@ func TestReadSiteReadsTheFileUntilAToolWroteTheDevices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.Zones) != 7 || s.Zones["dev_door"] != (install.Zone{Name: "Entree", Kind: "entry"}) {
+	if len(s.Zones) != 7 || s.Zones["dev_door"] != (sitemodel.Zone{Name: "Entree", Kind: "entry"}) {
 		t.Fatalf("zones: %+v", s.Zones)
 	}
 	if !reflect.DeepEqual(s.SirenIDs, []string{"dev_siren1"}) {
@@ -47,7 +47,7 @@ func TestWriteSiteKeepsTheDevicesInTheStateFolder(t *testing.T) {
 	path, stateDir := copyExample(t)
 	original, _ := os.ReadFile(path)
 	s, _ := ReadSite(path)
-	s.Zones["dev_k7p2"] = install.Zone{Name: "Porte <A> & B", Kind: "instant"}
+	s.Zones["dev_k7p2"] = sitemodel.Zone{Name: "Porte <A> & B", Kind: "instant"}
 	delete(s.Zones, "dev_window")
 	s.SirenIDs = append(s.SirenIDs, "dev_siren2")
 	if err := WriteSite(path, s); err != nil {
@@ -131,7 +131,7 @@ func TestWriteSiteKeepsTheSirensNames(t *testing.T) {
 
 func TestWriteSiteEmptiesZones(t *testing.T) {
 	path, _ := copyExample(t)
-	if err := WriteSite(path, install.Site{SirenIDs: []string{"dev_siren1"}}); err != nil {
+	if err := WriteSite(path, sitemodel.Site{SirenIDs: []string{"dev_siren1"}}); err != nil {
 		t.Fatal(err)
 	}
 	s, err := ReadSite(path)
@@ -145,7 +145,7 @@ func TestWriteSiteEmptiesZones(t *testing.T) {
 func TestWriteSiteKeepsTheRoomOfAZone(t *testing.T) {
 	path, stateDir := copyExample(t)
 	s, _ := ReadSite(path)
-	s.Zones["dev_door"] = install.Zone{Name: "Entree", Kind: "entry", Room: "Salon"}
+	s.Zones["dev_door"] = sitemodel.Zone{Name: "Entree", Kind: "entry", Room: "Salon"}
 	if err := WriteSite(path, s); err != nil {
 		t.Fatal(err)
 	}
@@ -164,11 +164,11 @@ func TestWriteSiteKeepsTheRoomOfAZone(t *testing.T) {
 		t.Fatalf("zones the hub runs with: %+v", r.Hub.Engine.Zones)
 	}
 
-	s.Zones["dev_door"] = install.Zone{Name: "Entree", Kind: "entry", Room: "Salon\n"}
+	s.Zones["dev_door"] = sitemodel.Zone{Name: "Entree", Kind: "entry", Room: "Salon\n"}
 	if err := WriteSite(path, s); err == nil {
 		t.Fatal("a room with a line break was written")
 	}
-	s.Zones["dev_door"] = install.Zone{Name: "Entree", Kind: "entry"}
+	s.Zones["dev_door"] = sitemodel.Zone{Name: "Entree", Kind: "entry"}
 	if err := WriteSite(path, s); err != nil {
 		t.Fatal(err)
 	}
@@ -180,18 +180,18 @@ func TestWriteSiteKeepsTheRoomOfAZone(t *testing.T) {
 func TestWriteSiteRefusesWhatTheHubWouldRefuse(t *testing.T) {
 	path, stateDir := copyExample(t)
 	s, _ := ReadSite(path)
-	s.Zones["dev_x"] = install.Zone{Name: "X", Kind: "garage"}
+	s.Zones["dev_x"] = sitemodel.Zone{Name: "X", Kind: "garage"}
 	if err := WriteSite(path, s); err == nil {
 		t.Fatal("an unknown zone kind was written")
 	}
-	s.Zones["dev_x"] = install.Zone{Name: "", Kind: "entry"}
+	s.Zones["dev_x"] = sitemodel.Zone{Name: "", Kind: "entry"}
 	if err := WriteSite(path, s); err == nil {
 		t.Fatal("a zone without a name was written")
 	}
 	if err := CheckSite(path, s); err == nil {
 		t.Fatal("CheckSite accepted what WriteSite refuses")
 	}
-	if err := CheckSite(path, install.Site{Zones: map[string]install.Zone{}}); err != nil {
+	if err := CheckSite(path, sitemodel.Site{Zones: map[string]sitemodel.Zone{}}); err != nil {
 		t.Fatalf("a site without a siren is valid (26 October 2026): %v", err)
 	}
 	delete(s.Zones, "dev_x")
@@ -244,14 +244,14 @@ func TestWriteSiteRefusesBrokenInput(t *testing.T) {
 		if err := os.WriteFile(path, []byte(in), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := WriteSite(path, install.Site{Zones: map[string]install.Zone{}}); err == nil {
+		if err := WriteSite(path, sitemodel.Site{Zones: map[string]sitemodel.Zone{}}); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 		if _, err := ReadSite(path); err == nil {
 			t.Errorf("%s: ReadSite accepted it", name)
 		}
 	}
-	if err := WriteSite(filepath.Join(t.TempDir(), "missing.json"), install.Site{}); err == nil {
+	if err := WriteSite(filepath.Join(t.TempDir(), "missing.json"), sitemodel.Site{}); err == nil {
 		t.Error("a missing file was accepted")
 	}
 }
@@ -307,7 +307,7 @@ func TestABadRoomInTheDevicesFileCostsOnlyItself(t *testing.T) {
 		t.Fatalf("ReadSite gave %+v", site.Zones)
 	}
 	// They still refuse to write such a room.
-	site.Zones["dev_door"] = install.Zone{Name: "Entrance", Kind: "entry", Room: strings.Repeat("x", 40)}
+	site.Zones["dev_door"] = sitemodel.Zone{Name: "Entrance", Kind: "entry", Room: strings.Repeat("x", 40)}
 	if err := CheckSite(path, site); err == nil {
 		t.Fatal("CheckSite accepted a room the tools must refuse")
 	}

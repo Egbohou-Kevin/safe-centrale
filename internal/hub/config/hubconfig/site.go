@@ -10,8 +10,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/config/configfile"
+	sitemodel "safehome/internal/shared/core/site"
 )
 
 // DevicesFile is the file of the hub's state folder that holds the zones and the
@@ -39,7 +39,7 @@ const CodesFolder = "codes"
 func CodesDir(stateDir string) string { return filepath.Join(stateDir, CodesFolder) }
 
 // devicesFile is the form of DevicesFile: what the installer's tools change, the zones
-// and the sirens with their names (install.Site). Everything else (contacts,
+// and the sirens with their names (sitemodel.Site). Everything else (contacts,
 // delays...) is written by hand or sent by the cloud. A file without siren names is
 // written as before them.
 type devicesFile struct {
@@ -48,13 +48,13 @@ type devicesFile struct {
 	SirenNames map[string]string   `json:"siren_names,omitempty"`
 }
 
-// SiteFiles gives the installer's tools (install.Sites) the zones and the sirens of
+// SiteFiles gives the installer's tools (sitemodel.Sites) the zones and the sirens of
 // the hub whose configuration file is at Path.
 type SiteFiles struct{ Path string }
 
-func (s SiteFiles) Read() (install.Site, error)   { return ReadSite(s.Path) }
-func (s SiteFiles) Check(site install.Site) error { return CheckSite(s.Path, site) }
-func (s SiteFiles) Write(site install.Site) error { return WriteSite(s.Path, site) }
+func (s SiteFiles) Read() (sitemodel.Site, error)   { return ReadSite(s.Path) }
+func (s SiteFiles) Check(site sitemodel.Site) error { return CheckSite(s.Path, site) }
+func (s SiteFiles) Write(site sitemodel.Site) error { return WriteSite(s.Path, site) }
 
 // ReadSite returns the zones and the sirens the hub at path runs with: those of the
 // state folder once a tool wrote them, those of the configuration file before. A file
@@ -62,22 +62,22 @@ func (s SiteFiles) Write(site install.Site) error { return WriteSite(s.Path, sit
 // by an update) is an error: the hub leaves it aside and runs on the configuration
 // file's zones, and a tool must not show, nor check, zones the hub does not watch. A
 // room the hub would refuse is cleared, as the hub clears it.
-func ReadSite(path string) (install.Site, error) {
+func ReadSite(path string) (sitemodel.Site, error) {
 	f, err := readFile(path)
 	if err != nil {
-		return install.Site{}, err
+		return sitemodel.Site{}, err
 	}
 	out, _, _, err := withStateDevices(f) // f itself when no tool wrote the devices
 	if err != nil {
-		return install.Site{}, fmt.Errorf("%w (the hub runs on the zones and sirens of %s meanwhile: fix or remove the file)", err, path)
+		return sitemodel.Site{}, fmt.Errorf("%w (the hub runs on the zones and sirens of %s meanwhile: fix or remove the file)", err, path)
 	}
 	return siteOf(out.Zones, out.SirenIDs, out.SirenNames), nil
 }
 
-func siteOf(zones map[string]zoneFile, sirenIDs []string, sirenNames map[string]string) install.Site {
-	s := install.Site{Zones: make(map[string]install.Zone, len(zones)), SirenIDs: sirenIDs, SirenNames: sirenNames}
+func siteOf(zones map[string]zoneFile, sirenIDs []string, sirenNames map[string]string) sitemodel.Site {
+	s := sitemodel.Site{Zones: make(map[string]sitemodel.Zone, len(zones)), SirenIDs: sirenIDs, SirenNames: sirenNames}
 	for id, z := range zones {
-		s.Zones[id] = install.Zone(z)
+		s.Zones[id] = sitemodel.Zone(z)
 	}
 	return s
 }
@@ -85,7 +85,7 @@ func siteOf(zones map[string]zoneFile, sirenIDs []string, sirenNames map[string]
 // WriteSite keeps the zones and the sirens in the state folder of the hub at path,
 // once the hub's whole configuration is checked with them. The file is replaced
 // atomically, readable by the hub's user only. The hub reads it at its next start.
-func WriteSite(path string, s install.Site) error {
+func WriteSite(path string, s sitemodel.Site) error {
 	f, err := readFile(path)
 	if err != nil {
 		return err
@@ -104,7 +104,7 @@ func WriteSite(path string, s install.Site) error {
 
 // CheckSite says whether WriteSite would accept s, without writing anything: a tool
 // asks before an action that cannot be undone (removing a device from the network).
-func CheckSite(path string, s install.Site) error {
+func CheckSite(path string, s sitemodel.Site) error {
 	f, err := readFile(path)
 	if err != nil {
 		return err
@@ -142,7 +142,7 @@ func readFile(path string) (file, error) {
 }
 
 // checkSite returns the devices file for s, once the configuration builds with it.
-func checkSite(f file, s install.Site) ([]byte, error) {
+func checkSite(f file, s sitemodel.Site) ([]byte, error) {
 	d := devicesFile{Zones: make(map[string]zoneFile, len(s.Zones)), SirenIDs: s.SirenIDs, SirenNames: s.SirenNames}
 	for id, z := range s.Zones {
 		d.Zones[id] = zoneFile(z)

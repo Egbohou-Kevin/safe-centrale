@@ -13,23 +13,23 @@ import (
 	"safehome/internal/hub/core/escalation"
 	escwire "safehome/internal/hub/core/escalation/wire"
 	"safehome/internal/hub/core/health"
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/config/configfile"
+	sitemodel "safehome/internal/shared/core/site"
 )
 
-// zones reads the zones. A name follows the installer's rule (install.ValidName),
+// zones reads the zones. A name follows the installer's rule (sitemodel.ValidName),
 // even in a file edited by hand: it goes into SMS, voice messages and the alarm
-// events. A room, when there is one, follows the same rule (install.ValidRoom): it
+// events. A room, when there is one, follows the same rule (sitemodel.ValidRoom): it
 // goes to the cloud and the app in the device list. The rule holds for the
 // configuration file and for what the installer's tools write; in the devices file
 // the hub loads, clearBadRooms has cleared a room that breaks it first.
 func zones(in map[string]zoneFile) (map[string]engine.Zone, error) {
 	out := make(map[string]engine.Zone, len(in))
 	for id, z := range in {
-		if err := install.ValidName(z.Name); err != nil {
+		if err := sitemodel.ValidName(z.Name); err != nil {
 			return nil, fmt.Errorf("zone of %q: %w", id, err)
 		}
-		if err := install.ValidRoom(z.Room); err != nil {
+		if err := sitemodel.ValidRoom(z.Room); err != nil {
 			return nil, fmt.Errorf("zone of %q: %w", id, err)
 		}
 		out[id] = engine.Zone{Name: z.Name, Kind: engine.ZoneKind(z.Kind), Room: z.Room} // the kind is checked by the engine
@@ -45,22 +45,22 @@ type RoomLeftAside struct {
 	Reason string
 }
 
-// clearBadRooms clears in zones each room install.ValidRoom refuses, and names their
+// clearBadRooms clears in zones each room sitemodel.ValidRoom refuses, and names their
 // zones in a stable order. A room is optional: a sensor must never stop being watched
 // for it (a file edited by hand, a rule made stricter by an update).
 func clearBadRooms(zones map[string]zoneFile) []RoomLeftAside {
 	var left []RoomLeftAside
 	for _, id := range slices.Sorted(maps.Keys(zones)) {
 		z := zones[id]
-		err := install.ValidRoom(z.Room)
+		err := sitemodel.ValidRoom(z.Room)
 		if err == nil {
 			continue
 		}
 		reason := "it contains a control or invisible character"
 		switch {
-		case errors.Is(err, install.ErrNameTooLong):
-			reason = fmt.Sprintf("it is longer than %d characters", install.MaxNameLength)
-		case errors.Is(err, install.ErrEmptyName):
+		case errors.Is(err, sitemodel.ErrNameTooLong):
+			reason = fmt.Sprintf("it is longer than %d characters", sitemodel.MaxNameLength)
+		case errors.Is(err, sitemodel.ErrEmptyName):
 			reason = "it is blank"
 		}
 		z.Room = ""
@@ -73,7 +73,7 @@ func clearBadRooms(zones map[string]zoneFile) []RoomLeftAside {
 // sirenNames checks the sirens' list, which must be there (errNoSirenList), and their
 // names: each names a siren of the list without a zone
 // (a device with a zone has its zone's name), by the installer's rule
-// (install.ValidSirenName), since it goes into the same texts as a zone's name.
+// (sitemodel.ValidSirenName), since it goes into the same texts as a zone's name.
 func sirenNames(ids []string, zones map[string]zoneFile, names map[string]string) error {
 	if ids == nil {
 		return errNoSirenList
@@ -85,7 +85,7 @@ func sirenNames(ids []string, zones map[string]zoneFile, names map[string]string
 		if _, zoned := zones[id]; zoned {
 			return fmt.Errorf("siren_names: %q has a zone, the alerts call it by its zone's name", id)
 		}
-		if err := install.ValidSirenName(names[id]); err != nil {
+		if err := sitemodel.ValidSirenName(names[id]); err != nil {
 			return fmt.Errorf("siren_names of %q: %w", id, err)
 		}
 	}
@@ -225,7 +225,7 @@ func applyHealth(c *health.Config, h *healthFile, withoutPower bool) error {
 
 // applyEscalation reads who is told (the contacts) and how. The site name is for
 // the texts; the zones' names tell the contacts which door opened, and the sirens'
-// names which siren stays silent (install.Site.SirenName: a device with a zone keeps
+// names which siren stays silent (sitemodel.Site.SirenName: a device with a zone keeps
 // its zone's name).
 func applyEscalation(cfg *hub.Config, f file) error {
 	e := &cfg.Escalation

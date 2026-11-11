@@ -31,9 +31,6 @@ var crossPrograms = map[string]map[string]string{
 		"hub/config/hubconfig": "the installer writes the hub's site configuration",
 		"hub/core/engine":      "the installer checks zone and sensor kinds with the engine's rule",
 	},
-	"hub": {
-		"install/app/install": "the hub's configuration names the installer's zones and sirens",
-	},
 }
 
 // roleOf says why the package at dir (slash-separated, relative to internal/) has
@@ -181,6 +178,8 @@ func TestTheLayoutRulesRejectWhatTheyMustReject(t *testing.T) {
 		{"video", module + "/internal/shared/contract", false},
 		{"console", module + "/internal/hub/config/hubconfig", false},
 		{"console", module + "/internal/shared/core/access", false},
+		{"hub", module + "/internal/shared/core/site", false},
+		{"hub", module + "/internal/install/app/install", true},
 		{"console", module + "/internal/hub/core/engine/wire", true},
 		{"console", module + "/internal/hub/core/engine", true},
 		{"", module + "/internal/hub/core/engine", false},

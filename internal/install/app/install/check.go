@@ -14,11 +14,10 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"safehome/internal/hub/core/engine"
 	"safehome/internal/shared/contract"
+	sitemodel "safehome/internal/shared/core/site"
 )
 
 // Level says how serious a finding is.
@@ -66,8 +65,8 @@ func ValidKind(kind string) error {
 
 // The refusals of a zone or of a siren's name, for a tool to explain them.
 var (
-	ErrEmptyName   = errors.New("is empty")
-	ErrNameTooLong = fmt.Errorf("longer than %d characters", MaxNameLength)
+	ErrEmptyName   = sitemodel.ErrEmptyName
+	ErrNameTooLong = sitemodel.ErrNameTooLong
 	ErrCannotServe = errors.New("the device cannot trigger this kind of zone")
 )
 
@@ -92,41 +91,17 @@ func CanServe(kind string, capabilities []string) error {
 		ErrCannotServe, kind, strings.Join(sensors, ", "), strings.Join(capabilities, ", "))
 }
 
-// MaxNameLength bounds a zone's or a siren's name: it goes into SMS and voice
-// messages, and a zone's names the device in the alarm events (device_name).
-const MaxNameLength = contract.MaxDeviceName
+// MaxNameLength bounds a zone's or a siren's name (sitemodel.MaxNameLength).
+const MaxNameLength = sitemodel.MaxNameLength
 
-// ValidName checks a zone name. It refuses control characters (a line break) and
-// invisible format characters (a bidi override would show the name backwards in an
-// SMS or on the phone).
-func ValidName(name string) error { return validName("zone", name) }
+// ValidName checks a zone name (sitemodel.ValidName).
+func ValidName(name string) error { return sitemodel.ValidName(name) }
 
-// ValidSirenName checks a siren's name, by the zones' rule: it goes into the same
-// texts.
-func ValidSirenName(name string) error { return validName("siren", name) }
+// ValidSirenName checks a siren's name (sitemodel.ValidSirenName).
+func ValidSirenName(name string) error { return sitemodel.ValidSirenName(name) }
 
-// ValidRoom checks a zone's room, by the zones' rule: written by the installer, it
-// goes to the cloud and the app. Empty is no room, and is valid.
-func ValidRoom(room string) error {
-	if room == "" {
-		return nil
-	}
-	return validName("room", room)
-}
-
-func validName(what, name string) error {
-	switch {
-	case strings.TrimSpace(name) == "":
-		return fmt.Errorf("%s name %w", what, ErrEmptyName)
-	case utf8.RuneCountInString(name) > MaxNameLength:
-		return fmt.Errorf("%s name %q is %w", what, name, ErrNameTooLong)
-	case strings.IndexFunc(name, invisible) >= 0:
-		return fmt.Errorf("%s name %q contains a control or invisible character", what, name)
-	}
-	return nil
-}
-
-func invisible(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }
+// ValidRoom checks a zone's room (sitemodel.ValidRoom).
+func ValidRoom(room string) error { return sitemodel.ValidRoom(room) }
 
 // Check compares the site with the registry of paired devices.
 func Check(site Site, devices []contract.RegistryDevice) []Finding {
@@ -184,7 +159,7 @@ func (f *findings) zones(site Site, byID map[string]contract.RegistryDevice) {
 // among several sirens without a zone, one without a name is only known by its rank.
 // A siren with a zone has its zone's name.
 func (f *findings) sirens(site Site, byID map[string]contract.RegistryDevice) {
-	plain := site.plainSirens()
+	plain := site.PlainSirens()
 	for _, id := range site.SirenIDs {
 		d, paired := byID[id]
 		switch {

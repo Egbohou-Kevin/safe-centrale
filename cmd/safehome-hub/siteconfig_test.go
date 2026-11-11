@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"safehome/internal/hub/config/hubconfig"
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/adapter/mqtt/mqtttest"
 	"safehome/internal/shared/config/siteconfig"
 	"safehome/internal/shared/contract"
+	sitemodel "safehome/internal/shared/core/site"
 	"safehome/internal/shared/driver/drivertest"
 )
 
@@ -109,7 +109,7 @@ func TestTheInstallationModeAppliesNewZonesByRestarting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	devices.Zones["dev_k7p2"] = install.Zone{Name: "Reserve", Kind: "instant"}
+	devices.Zones["dev_k7p2"] = sitemodel.Zone{Name: "Reserve", Kind: "instant"}
 	if err := hubconfig.WriteSite(cfg, devices); err != nil {
 		t.Fatal(err)
 	}

@@ -159,7 +159,7 @@ func TestConfigFileServesOnlyTheConfigurationPackages(t *testing.T) {
 // The command-line tool and the web console both sit on it. It reads no clock
 // either: the program gives it one.
 func TestInstallKnowsOnlyTheContractAndTheZoneKinds(t *testing.T) {
-	layer{local: internal("contract", "engine", "inbox"), noClock: true}.check(t, "install")
+	layer{local: internal("contract", "engine", "inbox", "site"), noClock: true}.check(t, "install")
 }
 
 // The local console's application drives the network, the page and the hub's files

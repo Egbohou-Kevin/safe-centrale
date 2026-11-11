@@ -91,6 +91,7 @@ transitives, `go list -deps`), « les neuf » quand tous le font.
 | `health/wire` | `hub/core/health/wire` | traduction | console, hub, install |
 | `health` | `hub/core/health` | cœur | console, hub, install |
 | `install` | `install/app/install` | application | console, hub, install |
+| `site` (ajout du 12/11/2026) | `shared/core/site` | cœur | hub, install |
 | `adapter/sshtunnel` | `maint/adapter/sshtunnel` | adaptateur | maint |
 | `maintapp` | `maint/app/maintapp` | application | maint |
 | `maintconfig` | `maint/config/maintconfig` | réglages | maint |
@@ -150,6 +151,23 @@ d'imports.
      raison écrite, toute autre flèche entre programmes rougit. Renommage pur, rien ne change.
    - Sinon : sortir `install.Site` et les codes du site dans `shared/site`. Plus propre à terme,
      mais c'est un changement de code, pas un renommage : un lot à part, après celui-ci.
+   - **Ajout du 12/11/2026, décidé seule (la session mère), à relire.** Le lot à part est fait
+     pour le modèle du site : `Site`, `Zone`, `Sites`, les noms (`ValidName`, `ValidSirenName`,
+     `ValidRoom`, `MaxNameLength`, `ErrEmptyName`, `ErrNameTooLong`) et `ErrHasZone` vont sous
+     `shared/core/site`. `install` les garde sous les mêmes noms (alias de type, mêmes erreurs),
+     `hubconfig` lit `site` : l'exception `hubconfig` → `install/app/install` tombe. Ni
+     comportement, ni format de fichier, ni contrat ne changent. Les trois autres restent, faute
+     de quoi il faudrait changer du code et non le ranger :
+     - install → `hub/core/engine` : les types de zone et leurs capteurs sont la règle du moteur ;
+       la recopier ferait deux règles.
+     - console et install → `hub/config/hubconfig`, console → `hub/app/hub` : `hubconfig.Load`
+       lit `hub.json` en `hub.Config` (l'application du hub) et vérifie par `engine` ; les codes
+       du site (`hub.SiteCodes`) sont l'état du hub. Les sortir dans `shared` ferait importer un
+       programme par le commun, ce que la règle 3 refuse.
+     - console → `install/app/install` : la console est assise sur l'application de
+       l'installateur, par choix (une seule logique d'appairage).
+     Restent cinq exceptions nommées dans `crossPrograms` : trois sous console, deux sous
+     install, plus aucune sous hub.
 2. **Décidé seule, à relire (11/11/2026).** **`access`** sert le hub et la console. La table le met sous `hub/core/access` (son
    propriétaire est le hub, la console y passe par l'exception 1) plutôt que sous `shared`, comme
    l'esquisse le proposait : le commun garde seulement ce que plusieurs programmes possèdent.

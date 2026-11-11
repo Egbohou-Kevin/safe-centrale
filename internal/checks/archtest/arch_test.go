@@ -53,6 +53,7 @@ func internal(names ...string) []string {
 var moved = map[string]string{
 	"hub":               "hub/app/hub",
 	"access":            "shared/core/access",
+	"site":              "shared/core/site",
 	"adapter/machine":   "hub/adapter/machine",
 	"configapp":         "hub/app/configapp",
 	"engine":            "hub/core/engine",

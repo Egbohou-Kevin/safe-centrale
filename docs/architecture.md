@@ -471,3 +471,7 @@ loin reste ouverte.
    Ajout du 12/11/2026 : Kevin a tranché pour `access` (11/11/2026 23:43:15, « access dans
    shared ») : il est sous `internal/shared/core/access`, et l'exception console → `access`
    tombe ; restent quatre flèches nommées.
+   Ajout du 12/11/2026, décidé seule (la session mère), à relire : le modèle du site (`Site`,
+   `Zone`, `Sites`, la règle des noms) est sous `internal/shared/core/site` ; `hubconfig`
+   n'importe plus l'installateur. Les autres flèches restent (raisons dans
+   `rangement-par-programme.md`, cas 1).

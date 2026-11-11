@@ -9,102 +9,26 @@ import (
 	"sync"
 
 	"safehome/internal/shared/contract"
+	sitemodel "safehome/internal/shared/core/site"
 )
 
-// Zone is what a device is for: a name for people and a kind for the engine, and
-// where it is, the room ("Salon"), for the owner's list of devices; empty when the
-// installer gave none. Same fields, in the same order, as the configuration file's
-// zones (hubconfig converts one into the other).
-type Zone struct {
-	Name string
-	Kind string
-	Room string
-}
+// The site model lies in shared/core/site, used by the hub's configuration too
+// (docs/rangement-par-programme.md, 12/11/2026); these names keep the installer's.
+type (
+	Zone  = sitemodel.Zone
+	Site  = sitemodel.Site
+	Sites = sitemodel.Sites
+)
 
-// Site is the use of the devices: their zones and the sirens. SirenNames names some
-// sirens for people, by id (see SirenName).
-type Site struct {
-	Zones      map[string]Zone
-	SirenIDs   []string
-	SirenNames map[string]string
-}
-
-// Without returns a copy of the site where the device id has no zone and is no siren.
-func (s Site) Without(id string) Site {
-	out := Site{Zones: maps.Clone(s.Zones), SirenIDs: slices.DeleteFunc(slices.Clone(s.SirenIDs), func(x string) bool { return x == id }),
-		SirenNames: unnamed(s.SirenNames, id)}
-	if out.Zones == nil {
-		out.Zones = map[string]Zone{}
-	}
-	delete(out.Zones, id)
-	return out
-}
-
-// defaultSirenName is what the texts call a siren without a name ("Sirene").
-const defaultSirenName = "Sir\u00e8ne"
-
-// SirenName is what the alerts call the siren id. A device with a zone keeps its
-// zone's name. Another has the name it was given, or by default "Sirene" when it is
-// the site's only siren without a zone, and "Sirene 1", "Sirene 2"... (in the order
-// they were added) when there are several: a siren with a zone is not counted, so no
-// "Sirene 2" goes without a "Sirene 1".
-func (s Site) SirenName(id string) string {
-	if z, zoned := s.Zones[id]; zoned {
-		return z.Name
-	}
-	if n := s.SirenNames[id]; n != "" {
-		return n
-	}
-	plain := s.plainSirens()
-	rank := slices.Index(plain, id)
-	if len(plain) < 2 || rank < 0 {
-		return defaultSirenName
-	}
-	return fmt.Sprintf("%s %d", defaultSirenName, rank+1)
-}
-
-// plainSirens lists the sirens without a zone, in the order they were added: the
-// ones a name, or a default name, is for.
-func (s Site) plainSirens() []string {
-	return slices.DeleteFunc(slices.Clone(s.SirenIDs), func(id string) bool {
-		_, zoned := s.Zones[id]
-		return zoned
-	})
-}
-
-// CheckSirenName checks a name for the siren id before it is given: the zones' rule
-// (ValidSirenName), and no zone, since the alerts call a device with a zone by its
-// zone's name (ErrHasZone).
-func (s Site) CheckSirenName(id, name string) error {
-	if err := ValidSirenName(name); err != nil {
-		return err
-	}
-	if _, zoned := s.Zones[id]; zoned {
-		return fmt.Errorf("%s %w", id, ErrHasZone)
-	}
-	return nil
-}
-
-// unnamed returns a copy of names without the siren id.
 func unnamed(names map[string]string, id string) map[string]string {
-	out := maps.Clone(names)
-	delete(out, id)
-	return out
-}
-
-// Sites keeps the site: the hub's files, which the program reads and writes. Check
-// and Write refuse what the hub would refuse.
-type Sites interface {
-	Read() (Site, error)
-	Check(Site) error
-	Write(Site) error
+	return sitemodel.Unnamed(names, id)
 }
 
 // The refusals of a change of the site, for a tool to explain them.
 var (
 	ErrNoZone      = errors.New("has no zone")
 	ErrNoSiren     = errors.New("is not a siren")
-	ErrHasZone     = errors.New("has a zone: the alerts call it by its zone's name")
+	ErrHasZone     = sitemodel.ErrHasZone
 	ErrCannotSound = errors.New("cannot sound")
 	// ErrLastSiren: the installer's tools never take a site's last siren away, by a
 	// slip of the finger. A site without a siren is valid (26 October 2026), but it is

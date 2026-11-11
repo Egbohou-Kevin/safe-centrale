@@ -27,6 +27,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/hub/core/health` | La supervision (second domaine) : batterie de la centrale, piles, appareils muets, résumé quotidien, liste des appareils (`system.devices`). Mêmes règles que le moteur |
 | `internal/hub/core/health/wire` | La traduction entre la supervision et le contrat |
 | `internal/shared/core/access` | Les codes d'accès (troisième domaine) : un code par personne, 5 au maximum, stockés hachés avec un algorithme lent, vérification qui dit à qui appartient le code |
+| `internal/shared/core/site` | Le site : les zones et les sirènes des appareils, et la règle des noms lus dans les alertes ; l'installateur le modifie, la configuration de la centrale le garde sur disque |
 | `internal/hub/core/escalation` | L'escalade (quatrième domaine) : qui est prévenu, par quel canal, dans quel ordre et après combien de temps ; acquittements, relances, limite par heure |
 | `internal/hub/core/escalation/wire` | La traduction entre l'escalade et le contrat |
 | `internal/gsm/core/gsm` | La passerelle GSM (cinquième domaine) : file à priorités, lignes, reprises, réponses « 1 », surveillance du modem |
