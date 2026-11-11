@@ -5,7 +5,7 @@ package wire
 import (
 	"time"
 
-	"safehome/internal/maint"
+	"safehome/internal/maint/core/maint"
 	"safehome/internal/shared/contract"
 )
 

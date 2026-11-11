@@ -8,8 +8,8 @@ import (
 	"errors"
 	"fmt"
 
-	"safehome/internal/maint"
-	"safehome/internal/maintapp"
+	"safehome/internal/maint/app/maintapp"
+	"safehome/internal/maint/core/maint"
 	"safehome/internal/shared/config/configfile"
 )
 

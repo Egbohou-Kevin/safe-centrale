@@ -51,6 +51,10 @@ func internal(names ...string) []string {
 // (docs/rangement-par-programme.md): the rules below still name a package by its
 // former path, at turns it into the current one.
 var moved = map[string]string{
+	"maint":             "maint/core/maint",
+	"adapter/sshtunnel": "maint/adapter/sshtunnel",
+	"maintapp":          "maint/app/maintapp",
+	"maintconfig":       "maint/config/maintconfig",
 	"power":             "power/core/power",
 	"adapter/x728":      "power/adapter/x728",
 	"powerapp":          "power/app/powerapp",

@@ -18,7 +18,7 @@ func write(t *testing.T, body string) string {
 }
 
 func TestTheExample(t *testing.T) {
-	r, err := Load(filepath.Join("..", "..", "config", "maint.example.json"))
+	r, err := Load(filepath.Join("..", "..", "..", "..", "config", "maint.example.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

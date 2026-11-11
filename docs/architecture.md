@@ -77,7 +77,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   supervision de la centrale et des appareils, `internal/access` pour les codes
   d'accès, `internal/escalation` pour l'escalade des alertes, `internal/gsm` pour la
   passerelle GSM, `internal/zigbee` pour l'adaptateur Zigbee, `internal/video` pour la
-  vidéo en direct, `internal/maint` pour la maintenance à distance) sont purs : ils
+  vidéo en direct, `internal/maint/core/maint` pour la maintenance à distance) sont purs : ils
   dépendent seulement de la bibliothèque standard, n'ont aucune entrée-sortie et ne
   lisent jamais l'horloge. Ils reçoivent des entrées qui portent leur heure et
   renvoient des actions et des événements du domaine.
@@ -201,10 +201,10 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   contacts), `Set` (qui refuse qui n'est pas un contact) et `Remove`. Sa page
   (`internal/consoleapp/web`) ne connaît qu'elle. Le Wi-Fi est l'adaptateur
   `internal/adapter/hotspot` (`nmcli`).
-- **La maintenance à distance** a la forme de la vidéo : son domaine (`internal/maint`,
-  une session à la fois, une heure au plus), sa traduction (`internal/maint/wire`), sa
-  couche application (`internal/maintapp`, qui déclare le port `Tunneler`, sans
-  horloge) et son adaptateur (`internal/adapter/sshtunnel`, le client OpenSSH vers le
+- **La maintenance à distance** a la forme de la vidéo : son domaine (`internal/maint/core/maint`,
+  une session à la fois, une heure au plus), sa traduction (`internal/maint/core/maint/wire`), sa
+  couche application (`internal/maint/app/maintapp`, qui déclare le port `Tunneler`, sans
+  horloge) et son adaptateur (`internal/maint/adapter/sshtunnel`, le client OpenSSH vers le
   bastion). Détail dans `maintenance.md`.
 - **La configuration réglée depuis le cloud** (`config.set`) : sa couche application
   (`internal/configapp`) tourne dans le programme de la centrale. Elle ne connaît ni

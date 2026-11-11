@@ -36,8 +36,8 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/zigbee/wire` | La traduction entre l'adaptateur et le contrat |
 | `internal/video` | La vidéo en direct (septième domaine) : sessions, refus, durée maximale, plafond du mois en données mobiles, test des caméras |
 | `internal/video/wire` | La traduction entre la vidéo et le contrat |
-| `internal/maint` | La maintenance à distance (huitième domaine) : une session à la fois, une heure au plus, reprise après une coupure du tunnel |
-| `internal/maint/wire` | La traduction entre la maintenance et le contrat |
+| `internal/maint/core/maint` | La maintenance à distance (huitième domaine) : une session à la fois, une heure au plus, reprise après une coupure du tunnel |
+| `internal/maint/core/maint/wire` | La traduction entre la maintenance et le contrat |
 | `internal/power/core/power` | Le module batterie de la centrale (neuvième domaine) : coupure du secteur confirmée après quelques secondes, charge annoncée par paliers, arrêt propre avant la batterie vide |
 | `internal/power/core/power/wire` | La traduction entre le module batterie et le contrat (secteur et batterie de l'appareil `hub_device_id`) |
 | `internal/agent` | Le cœur de l'agent de liaison : file pour le cloud à priorités et bornée, état de l'alarme, santé et liste des appareils redits à chaque connexion au cloud, contrôle de ce qui descend du cloud, délai de prise en charge des alertes. Sans entrées-sorties ni horloge, il ne connaît que le contrat |
@@ -51,7 +51,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/zigbeeapp` | La couche application de l'adaptateur Zigbee |
 | `internal/agentapp` | La couche application de l'agent : envoi au cloud avec reprise, republication sur la centrale, `agent.status` |
 | `internal/videoapp` | La couche application de la vidéo : démarre et arrête les flux par le port `Streamer`, compte les octets, publie `video.session` et `video.status` |
-| `internal/maintapp` | La couche application de la maintenance : ouvre et ferme le tunnel par le port `Tunneler`, publie `maint.session` |
+| `internal/maint/app/maintapp` | La couche application de la maintenance : ouvre et ferme le tunnel par le port `Tunneler`, publie `maint.session` |
 | `internal/power/app/powerapp` | La couche application du module batterie : lit le module par le port `Board` chaque seconde, publie le secteur et la batterie de la centrale, demande l'arrêt |
 | `internal/install` | La couche application de l'installateur : appairage, retrait, zones et sirènes (seul à modifier le site : `Editor`, port `Sites`), vérification de la configuration contre les appareils appairés, tests en direct. L'outil en ligne de commande et la console locale s'en servent |
 | `internal/consoleapp` | La couche application de la console locale : suit le mode installation, allume le Wi-Fi de la centrale et sert la page pendant qu'il dure, fait l'appairage, les zones et les sirènes (par `internal/install`), les codes des contacts (et retire ceux d'anciens contacts) et les tests. Elle déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`) |
@@ -79,7 +79,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/zigbeeconfig` | Lecture de la configuration et des profils d'appareils (`config/profiles/`) |
 | `internal/agentconfig` | Lecture de la configuration de l'agent et du secret du cloud |
 | `internal/videoconfig` | Lecture de la configuration de la vidéo (caméras, liaison, plafond) |
-| `internal/maintconfig` | Lecture de la configuration de la maintenance |
+| `internal/maint/config/maintconfig` | Lecture de la configuration de la maintenance |
 | `internal/power/config/powerconfig` | Lecture de la configuration du module batterie |
 | `internal/consoleconfig` | Lecture de la configuration de la console et de la phrase de passe de son Wi-Fi |
 
@@ -99,7 +99,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/adapter/machine` | Lit ce que la carte dit de son numéro de série dans son device tree, pour `serial` du heartbeat (bibliothèque standard seulement) |
 | `internal/shared/adapter/pidfile` | Empêche un programme de tourner deux fois sur le même état |
 | `internal/adapter/go2rtc` | L'adaptateur go2rtc : un processus par session, piloté sur un socket Unix (bibliothèque standard seulement) ; `go2rtctest` est un faux go2rtc pour les tests |
-| `internal/adapter/sshtunnel` | Le tunnel : le client OpenSSH vers le bastion (`ssh -R`), bastion épinglé, aucune configuration lue |
+| `internal/maint/adapter/sshtunnel` | Le tunnel : le client OpenSSH vers le bastion (`ssh -R`), bastion épinglé, aucune configuration lue |
 | `internal/power/adapter/x728` | Le module batterie Geekworm X728 : ligne du secteur et bouton d'alimentation par l'interface GPIO de Linux, jauge sur le bus I2C, bibliothèque standard seule |
 | `internal/adapter/hotspot` | Le réseau Wi-Fi propre à la centrale, créé et supprimé par `nmcli` (NetworkManager), jamais démarré au boot, retiré s'il route les téléphones ailleurs (bibliothèque standard seulement) |
 

@@ -64,7 +64,7 @@ var readers = map[string][]string{
 var rereads = map[string]string{
 	"hub":     "hub.json: the contacts, and each configuration from the cloud checked against it (cmd/safehome-hub/run.go)",
 	"console": "hub.json at each access code changed (cmd/safehome-console/codes.go)",
-	"maint":   "ssh reads the key and the bastion's host key at each tunnel (internal/adapter/sshtunnel)",
+	"maint":   "ssh reads the key and the bastion's host key at each tunnel (internal/maint/adapter/sshtunnel)",
 }
 
 func TestEachUnitSeesTheFilesItsProgramReads(t *testing.T) {

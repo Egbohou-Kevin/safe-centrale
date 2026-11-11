@@ -16,8 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"safehome/internal/maint"
-	maintwire "safehome/internal/maint/wire"
+	"safehome/internal/maint/core/maint"
+	maintwire "safehome/internal/maint/core/maint/wire"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/inbox"

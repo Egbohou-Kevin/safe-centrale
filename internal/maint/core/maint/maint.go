@@ -2,10 +2,10 @@
 // the hub opens a tunnel to our bastion, for how long, and what it tells the cloud.
 // One session at a time, an hour at most, closed when its time is over or when the
 // cloud says so. The tunnel itself is the application's business
-// (internal/maintapp), which says when it is up and when it broke.
+// (internal/maint/app/maintapp), which says when it is up and when it broke.
 //
 // Like the other domain cores, this package does no I/O, never reads the clock and
-// knows nothing of the contract: inputs carry their time, internal/maint/wire
+// knows nothing of the contract: inputs carry their time, internal/maint/core/maint/wire
 // translates.
 package maint
 

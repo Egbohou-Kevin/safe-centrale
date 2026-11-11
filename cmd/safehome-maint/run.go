@@ -8,9 +8,9 @@ import (
 	"log/slog"
 	"os"
 
-	"safehome/internal/adapter/sshtunnel"
-	"safehome/internal/maintapp"
-	"safehome/internal/maintconfig"
+	"safehome/internal/maint/adapter/sshtunnel"
+	"safehome/internal/maint/app/maintapp"
+	"safehome/internal/maint/config/maintconfig"
 	"safehome/internal/shared/adapter/mqtt"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver"

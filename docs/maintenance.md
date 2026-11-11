@@ -2,8 +2,8 @@
 
 # Maintenance à distance
 
-Statut : codé côté centrale (`internal/maint`, `internal/maintapp`,
-`internal/adapter/sshtunnel`, `cmd/safehome-maint`), testé avec un faux `ssh` et
+Statut : codé côté centrale (`internal/maint/core/maint`, `internal/maint/app/maintapp`,
+`internal/maint/adapter/sshtunnel`, `cmd/safehome-maint`), testé avec un faux `ssh` et
 contre le vrai client OpenSSH (lecture de nos options). Le bastion et l'écran du cloud
 ne sont pas faits. Décidé avec Kevin le 20 octobre 2026.
 
