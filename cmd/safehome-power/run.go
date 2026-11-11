@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io"
 
-	"safehome/internal/adapter/x728"
-	"safehome/internal/powerapp"
-	"safehome/internal/powerconfig"
+	"safehome/internal/power/adapter/x728"
+	"safehome/internal/power/app/powerapp"
+	"safehome/internal/power/config/powerconfig"
 	"safehome/internal/shared/adapter/mqtt"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver"

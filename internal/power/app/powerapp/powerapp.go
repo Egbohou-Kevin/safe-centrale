@@ -17,8 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"safehome/internal/power"
-	powerwire "safehome/internal/power/wire"
+	"safehome/internal/power/core/power"
+	powerwire "safehome/internal/power/core/power/wire"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/outbox"

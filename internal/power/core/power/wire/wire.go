@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"safehome/internal/power"
+	"safehome/internal/power/core/power"
 	"safehome/internal/shared/contract"
 )
 

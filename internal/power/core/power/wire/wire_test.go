@@ -6,7 +6,7 @@ import (
 
 	"safehome/internal/health"
 	healthwire "safehome/internal/health/wire"
-	"safehome/internal/power"
+	"safehome/internal/power/core/power"
 	"safehome/internal/shared/contract"
 )
 

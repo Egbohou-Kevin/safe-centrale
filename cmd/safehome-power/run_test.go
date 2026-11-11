@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/powerconfig"
+	"safehome/internal/power/config/powerconfig"
 	"safehome/internal/shared/adapter/mqtt"
 	"safehome/internal/shared/adapter/mqtt/mqtttest"
 	"safehome/internal/shared/driver/drivertest"

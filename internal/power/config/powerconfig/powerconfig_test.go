@@ -18,7 +18,7 @@ func write(t *testing.T, body string) string {
 }
 
 func TestTheExample(t *testing.T) {
-	r, err := Load(filepath.Join("..", "..", "config", "power.example.json"))
+	r, err := Load(filepath.Join("..", "..", "..", "..", "config", "power.example.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestTheExample(t *testing.T) {
 // The example's device is the hub's: the supervision reads the readings of
 // hub_device_id only.
 func TestTheExampleTellsAsTheHubsDevice(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "config", "hub.example.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "config", "hub.example.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

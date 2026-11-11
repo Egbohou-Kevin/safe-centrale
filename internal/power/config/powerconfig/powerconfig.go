@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"safehome/internal/power"
-	"safehome/internal/powerapp"
+	"safehome/internal/power/app/powerapp"
+	"safehome/internal/power/core/power"
 	"safehome/internal/shared/config/configfile"
 )
 

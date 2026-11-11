@@ -5,7 +5,7 @@
 // raises battery_low_hub and mains_restored from those readings.
 //
 // Like the other domain cores, this package does no I/O, never reads the clock and
-// knows nothing of the contract: inputs carry their time, internal/power/wire
+// knows nothing of the contract: inputs carry their time, internal/power/core/power/wire
 // translates.
 package power
 

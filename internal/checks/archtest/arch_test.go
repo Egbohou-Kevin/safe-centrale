@@ -51,6 +51,10 @@ func internal(names ...string) []string {
 // (docs/rangement-par-programme.md): the rules below still name a package by its
 // former path, at turns it into the current one.
 var moved = map[string]string{
+	"power":             "power/core/power",
+	"adapter/x728":      "power/adapter/x728",
+	"powerapp":          "power/app/powerapp",
+	"powerconfig":       "power/config/powerconfig",
 	"archtest":          "checks/archtest",
 	"qualitytest":       "checks/qualitytest",
 	"contract":          "shared/contract",

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/power"
+	"safehome/internal/power/core/power"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/contract/schematest"
 	"safehome/internal/shared/driver/drivertest"
