@@ -7,6 +7,10 @@ le renommage suit cette table sans attendre son oui ; les choix marqués « déc
 sont les options recommandées, réversibles, prises sans lui.
 Lue sur `main` à `be47049` : 69 paquets sous `internal`, 9 programmes sous `cmd`.
 
+**Fait le 12/11/2026** (commits `f716f1e` à `8a06fe7`) : les 69 paquets sont à la place que dit
+la table, aucun dossier de rôle ne reste à plat sous `internal`, et `archtest` tient le rangement
+(`internal/checks/archtest/programs_test.go`, chaque règle vue rouge sur un import interdit posé exprès).
+
 ```
 internal/
 ├── hub/       app/{hub,configapp}  core/{engine,health,escalation,access}(+wire)  adapter/machine  config/hubconfig

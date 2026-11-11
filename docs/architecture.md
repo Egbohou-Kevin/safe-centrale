@@ -268,6 +268,10 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 
 Ces règles sont vérifiées par des tests (`internal/checks/archtest`). Ils échouent :
 
+- si un paquet n'est pas rangé sous `<programme>/{app,core,adapter,config}/`, `shared/` ou
+  `checks/` ; si un programme (`internal/X` et `cmd/safehome-X`) importe le paquet d'un
+  autre programme hors des cinq exceptions nommées ; si un cœur (`*/core/`) importe un
+  adaptateur ou une application ;
 - si un domaine importe un paquet du module (le contrat compris), une bibliothèque
   tierce ou un paquet d'entrées-sorties, ou s'il lit l'horloge ;
 - si le contrat importe un paquet du module ;
@@ -456,3 +460,11 @@ loin reste ouverte.
    systemd sur nos programmes (une boucle bloquée les fait redémarrer), système de fichiers
    en lecture seule, alerte de heartbeat dans le cloud. À reconsidérer pour la
    centrale de la phase 3.
+6. **Rangement d'`internal` par programme.** Décidé (Kevin, 11/11/2026 23:28) : chaque
+   programme a son dossier (`internal/<programme>/{app,core,adapter,config}/<paquet>`), ce
+   que plusieurs programmes utilisent va sous `internal/shared`, les garde-fous sous
+   `internal/checks`. Table complète et cas difficiles : `rangement-par-programme.md`.
+   Décidé seule, à relire : cinq flèches nommées entre programmes (console vers le hub et
+   l'installateur, installateur vers `hubconfig` et `engine`, `hubconfig` vers
+   l'installateur), `access` sous `hub/core`. Sortir le site partagé dans `shared/site`
+   reste un lot à part, à proposer.
