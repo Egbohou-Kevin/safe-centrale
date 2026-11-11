@@ -330,7 +330,7 @@ func TestTheAgentEndToEndBetweenTheHubAndATLSCloud(t *testing.T) {
 	link.restore()
 	drivertest.WaitFor(t, "the queued alarm on the cloud", func() bool { return cloud.has(contract.TypeAlarmTriggered, second) })
 	// Sent, its file is replaced by a tombstone of a few bytes, which keeps its id for
-	// a while (internal/agent/sent.go).
+	// a while (internal/agent/core/agent/sent.go).
 	drivertest.WaitFor(t, "the alarm off the disk", func() bool {
 		b, err := os.ReadFile(waiting)
 		return err == nil && strings.Contains(string(b), `"sent":true`) && !strings.Contains(string(b), "engine.alarm")

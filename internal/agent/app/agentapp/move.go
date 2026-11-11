@@ -3,12 +3,12 @@ package agentapp
 import (
 	"time"
 
-	"safehome/internal/agent"
+	"safehome/internal/agent/core/agent"
 	"safehome/internal/shared/contract"
 )
 
 // Mover carries out a move to another cell of the cloud (agent.move, see
-// internal/agent/move.go): the new configuration on disk (internal/agentconfig) and
+// internal/agent/core/agent/move.go): the new configuration on disk (internal/agent/config/agentconfig) and
 // the connection.
 type Mover interface {
 	// Pending says whether this run connects with the new configuration of a move

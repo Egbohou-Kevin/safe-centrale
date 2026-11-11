@@ -2,7 +2,7 @@
 
 # Agent de liaison
 
-Statut : v1 codée (`internal/agent`, `internal/agentapp`, `cmd/safehome-agent`), avec
+Statut : v1 codée (`internal/agent/core/agent`, `internal/agent/app/agentapp`, `cmd/safehome-agent`), avec
 les photos, le rejeu d'une plage de `seq` et la configuration venue du cloud. Voir
 « Ce qui est codé » à la fin.
 
@@ -455,13 +455,13 @@ alors directement aux canaux GSM.
 
 ## Ce qui est codé
 
-- Le cœur (`internal/agent`) : la file à priorités, ses bornes et sa sauvegarde, la
+- Le cœur (`internal/agent/core/agent`) : la file à priorités, ses bornes et sa sauvegarde, la
   numérotation et le rejeu, l'état du moment redit à chaque connexion
-  (`internal/agent/restate.go`), les photos, les contrôles de ce qui descend du cloud et
+  (`internal/agent/core/agent/restate.go`), les photos, les contrôles de ce qui descend du cloud et
   la réponse aux ordres de l'application qui ne vont pas à la centrale
-  (`internal/agent/down.go`), le délai de confirmation des alertes. Il ne
+  (`internal/agent/core/agent/down.go`), le délai de confirmation des alertes. Il ne
   fait aucune entrée-sortie et ne lit pas l'horloge ; il ne connaît que le contrat.
-- La couche application (`internal/agentapp`) : l'envoi au cloud un message à la fois
+- La couche application (`internal/agent/app/agentapp`) : l'envoi au cloud un message à la fois
   avec reprise, la republication sur la centrale, `agent.status` chaque minute.
 - Le programme (`cmd/safehome-agent`) et son service systemd. Le test de bout en bout
   fait tourner l'agent entre deux vrais brokers Mosquitto, dont un en TLS : alarme qui
@@ -475,7 +475,7 @@ alors directement aux canaux GSM.
   donc chaque paquet dans un seul message (bibliothèque `gorilla/websocket`, déjà
   utilisée par la bibliothèque MQTT).
 
-Le mode économe est codé dans le cœur (`internal/agent/economy.go`). Le test de bout en
+Le mode économe est codé dans le cœur (`internal/agent/core/agent/economy.go`). Le test de bout en
 bout couvre aussi une photo : annoncée,
 adresse reçue, envoyée en HTTPS à un faux point d'arrivée du cloud, effacée.
 

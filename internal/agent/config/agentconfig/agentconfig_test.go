@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/agent"
-	"safehome/internal/agentapp"
+	"safehome/internal/agent/app/agentapp"
+	"safehome/internal/agent/core/agent"
 )
 
 // example copies the example configuration next to a secret, in a temporary folder.
 func example(t *testing.T) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "config", "agent.example.json"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "config", "agent.example.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

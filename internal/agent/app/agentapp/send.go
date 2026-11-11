@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"safehome/internal/agent"
+	"safehome/internal/agent/core/agent"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/outbox"
 )
@@ -52,7 +52,7 @@ func (a *App) dispatch(_ context.Context, now time.Time, actions []agent.Action)
 		case agent.Upload, agent.RemovePhoto, agent.PhotoReport:
 			a.dispatchPhoto(now, act)
 		case agent.QueueSave, agent.QueueDrop, agent.UplinkSave:
-			// Before the snapshot is saved: see internal/agent/queue.go. An item not
+			// Before the snapshot is saved: see internal/agent/core/agent/queue.go. An item not
 			// saved still goes from memory; it would be lost to a crash.
 			if err := a.save(act); err != nil {
 				a.log.Error("the queue for the cloud could not be saved", "err", err)

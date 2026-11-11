@@ -146,7 +146,7 @@ absente les messages remis en QoS 0, code compris, et tout ce qui précède tomb
 cloud écrit ce réglage dans son `mosquitto.conf` plutôt que de compter sur la valeur
 par défaut : le test de bout en bout de l'agent tourne sur un Mosquitto aux réglages
 par défaut et ne prouve rien de la configuration du cloud. Côté centrale, un test
-(`internal/agent`) vérifie que les topics lus en QoS 0 sont exactement ceux dont les
+(`internal/agent/core/agent`) vérifie que les topics lus en QoS 0 sont exactement ceux dont les
 schémas ont un champ `code` (aujourd'hui `alarm/cmd`).
 
 ## Appareils et capacités
@@ -1108,7 +1108,7 @@ le cloud, à chaque changement et de nouveau chaque minute même sans changement
 
 Un ordre `alarm.command` venu du cloud ne porte jamais `args.code` en clair : l'agent le
 refuse. Le téléphone y met `args.sealed`, le code scellé pour la clé de l'agent
-(`internal/sealcode`, bibliothèque standard seule), en base64 :
+(`internal/agent/core/sealcode`, bibliothèque standard seule), en base64 :
 
 | Octets | Contenu |
 |---|---|

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/sealcode"
+	"safehome/internal/agent/core/sealcode"
 	"safehome/internal/shared/contract"
 )
 

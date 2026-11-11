@@ -17,7 +17,7 @@ import (
 func carriesCode(t *testing.T, typ string) bool {
 	t.Helper()
 	file := strings.NewReplacer(".", "-", "_", "-").Replace(typ) + ".json"
-	raw, err := os.ReadFile(filepath.Join("..", "..", "schemas", file))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "schemas", file))
 	if err != nil {
 		t.Fatalf("the schema of %s: %v", typ, err)
 	}

@@ -40,7 +40,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/maint/core/maint/wire` | La traduction entre la maintenance et le contrat |
 | `internal/power/core/power` | Le module batterie de la centrale (neuvième domaine) : coupure du secteur confirmée après quelques secondes, charge annoncée par paliers, arrêt propre avant la batterie vide |
 | `internal/power/core/power/wire` | La traduction entre le module batterie et le contrat (secteur et batterie de l'appareil `hub_device_id`) |
-| `internal/agent` | Le cœur de l'agent de liaison : file pour le cloud à priorités et bornée, état de l'alarme, santé et liste des appareils redits à chaque connexion au cloud, contrôle de ce qui descend du cloud, délai de prise en charge des alertes. Sans entrées-sorties ni horloge, il ne connaît que le contrat |
+| `internal/agent/core/agent` | Le cœur de l'agent de liaison : file pour le cloud à priorités et bornée, état de l'alarme, santé et liste des appareils redits à chaque connexion au cloud, contrôle de ce qui descend du cloud, délai de prise en charge des alertes. Sans entrées-sorties ni horloge, il ne connaît que le contrat |
 
 ### Les couches application
 
@@ -49,7 +49,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/hub` | La couche application de la centrale : relie MQTT aux domaines (moteur, supervision, codes, escalade), file d'envoi avec reprise, clavier, battement de cœur. Elle publie par `outbox.Publisher` et ne connaît aucun adaptateur. `SiteCodes` donne les codes aux outils de l'installateur : un code n'ouvre qu'une chose |
 | `internal/gateway` | La couche application de la passerelle : un fil par modem, publication des résultats et de l'état des lignes |
 | `internal/zigbeeapp` | La couche application de l'adaptateur Zigbee |
-| `internal/agentapp` | La couche application de l'agent : envoi au cloud avec reprise, republication sur la centrale, `agent.status` |
+| `internal/agent/app/agentapp` | La couche application de l'agent : envoi au cloud avec reprise, republication sur la centrale, `agent.status` |
 | `internal/video/app/videoapp` | La couche application de la vidéo : démarre et arrête les flux par le port `Streamer`, compte les octets, publie `video.session` et `video.status` |
 | `internal/maint/app/maintapp` | La couche application de la maintenance : ouvre et ferme le tunnel par le port `Tunneler`, publie `maint.session` |
 | `internal/power/app/powerapp` | La couche application du module batterie : lit le module par le port `Board` chaque seconde, publie le secteur et la batterie de la centrale, demande l'arrêt |
@@ -63,7 +63,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | Dossier | Contenu |
 |---|---|
 | `internal/shared/inbox` | La porte d'entrée partagée par toutes les couches application : le message reçu (`Message`), les abonnements (`Subscription`), la vérification d'un message (`Open`, `Envelope`) et les derniers identifiants vus (`RecentIDs`). Il ne connaît que le contrat |
-| `internal/sealcode` | Le code d'accès scellé par le téléphone pour l'agent de liaison (ECIES P-256, AES-GCM, bibliothèque standard seule) : le cloud qui porte l'ordre ne le voit jamais |
+| `internal/agent/core/sealcode` | Le code d'accès scellé par le téléphone pour l'agent de liaison (ECIES P-256, AES-GCM, bibliothèque standard seule) : le cloud qui porte l'ordre ne le voit jamais |
 | `internal/shared/outbox` | La file d'envoi MQTT partagée par toutes les couches application des programmes de la centrale : ordre, reprises, numéro de message qui survit aux redémarrages. Mêmes réglages partout (`Settings`), ouverture en un appel (`Open`), un message encodé et mis en file en un appel (`Send`, ou `SendWithCode` en QoS 0 pour un message qui porte le code d'accès) |
 | `internal/shared/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine. `Every` répète un travail sur l'horloge. |
 | `internal/shared/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre, redémarrage pour charger une nouvelle configuration du cloud (`Restart.Watch`), demande de relecture à un programme qui tourne (`Reload`). Seuls les programmes de `cmd/` s'en servent |
@@ -77,7 +77,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/shared/config/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
 | `internal/gsmconfig` | Lecture du fichier de configuration de la passerelle, avec les contacts réglés depuis le cloud |
 | `internal/zigbeeconfig` | Lecture de la configuration et des profils d'appareils (`config/profiles/`) |
-| `internal/agentconfig` | Lecture de la configuration de l'agent et du secret du cloud |
+| `internal/agent/config/agentconfig` | Lecture de la configuration de l'agent et du secret du cloud |
 | `internal/video/config/videoconfig` | Lecture de la configuration de la vidéo (caméras, liaison, plafond) |
 | `internal/maint/config/maintconfig` | Lecture de la configuration de la maintenance |
 | `internal/power/config/powerconfig` | Lecture de la configuration du module batterie |
@@ -91,9 +91,9 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/shared/adapter/filestore` | Écriture atomique de l'état sur disque (survit à une coupure de courant) ; un fichier écrit prend le propriétaire du dossier |
 | `internal/shared/adapter/filelock` | Verrou de fichier (flock) entre les programmes qui récrivent les mêmes fichiers : les codes d'accès, depuis la console et l'outil en ligne de commande |
 | `internal/adapter/atmodem` | L'adaptateur du modem : commandes AT sur le port série (bibliothèque standard seulement) ; `attest` est un faux modem pour les tests |
-| `internal/adapter/queuedir` | La file de l'agent pour le cloud sur disque : un petit fichier par message, écrit d'un coup, qui survit à une coupure de courant |
+| `internal/agent/adapter/queuedir` | La file de l'agent pour le cloud sur disque : un petit fichier par message, écrit d'un coup, qui survit à une coupure de courant |
 | `internal/shared/adapter/photodir` | Le dossier des photos prises à l'alarme : le service vidéo les y écrit, l'agent les lit et les efface ; borné en nombre et en taille |
-| `internal/adapter/upload` | L'envoi d'un fichier au cloud en HTTPS (PUT, jeton en `Authorization`), sans jamais écrire le jeton (bibliothèque standard seulement) |
+| `internal/agent/adapter/upload` | L'envoi d'un fichier au cloud en HTTPS (PUT, jeton en `Authorization`), sans jamais écrire le jeton (bibliothèque standard seulement) |
 | `internal/shared/adapter/sdnotify` | Le dialogue avec systemd : « démarré », puis « fonctionne encore » tant que les boucles répondent (chien de garde, bibliothèque standard seulement) |
 | `internal/shared/adapter/sysclock` | Dit si l'horloge du système est synchronisée, pour `clock_ok` du heartbeat (noyau Linux, bibliothèque standard seulement) |
 | `internal/adapter/machine` | Lit ce que la carte dit de son numéro de série dans son device tree, pour `serial` du heartbeat (bibliothèque standard seulement) |

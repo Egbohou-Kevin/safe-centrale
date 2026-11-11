@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"safehome/internal/agentconfig"
+	"safehome/internal/agent/config/agentconfig"
 	"safehome/internal/hubconfig"
 )
 

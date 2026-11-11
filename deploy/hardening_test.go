@@ -24,7 +24,7 @@ import (
 	"sync"
 	"testing"
 
-	"safehome/internal/agentconfig"
+	"safehome/internal/agent/config/agentconfig"
 	"safehome/internal/hubconfig"
 	"safehome/internal/shared/config/configfile"
 	"safehome/internal/shared/config/siteconfig"

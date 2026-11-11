@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"safehome/internal/agent"
+	"safehome/internal/agent/core/agent"
 )
 
 // QueueStore keeps the core's queue for the cloud on disk, one document per item
-// (see internal/agent/queue.go): draining the queue writes what moves, not the whole
-// queue. See internal/adapter/queuedir.
+// (see internal/agent/core/agent/queue.go): draining the queue writes what moves, not the whole
+// queue. See internal/agent/adapter/queuedir.
 type QueueStore interface {
 	// Put writes the item name (valid JSON), replacing it if it exists.
 	Put(name string, data []byte) error
@@ -20,7 +20,7 @@ type QueueStore interface {
 }
 
 // uplinkDoc is the document of the core's numbering for the cloud (see
-// internal/agent/queue.go): a few bytes, written at each number.
+// internal/agent/core/agent/queue.go): a few bytes, written at each number.
 type uplinkDoc struct {
 	Last uint64 `json:"last"`
 }

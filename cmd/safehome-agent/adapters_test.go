@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"safehome/internal/agentconfig"
-	"safehome/internal/sealcode"
+	"safehome/internal/agent/config/agentconfig"
+	"safehome/internal/agent/core/sealcode"
 )
 
 // keyFolders gives the agent's folder of a fresh state directory, not made yet, and that

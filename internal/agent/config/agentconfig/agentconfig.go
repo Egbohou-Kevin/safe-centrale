@@ -13,8 +13,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"safehome/internal/agent"
-	"safehome/internal/agentapp"
+	"safehome/internal/agent/app/agentapp"
+	"safehome/internal/agent/core/agent"
 	"safehome/internal/shared/config/configfile"
 )
 

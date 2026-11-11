@@ -1,5 +1,5 @@
 // Package agentapp is the application layer of the link agent: it reads the hub's
-// broker and the cloud's broker, feeds the agent core (internal/agent), sends its
+// broker and the cloud's broker, feeds the agent core (internal/agent/core/agent), sends its
 // queue to the cloud, and publishes on the hub what the cloud may send.
 //
 // It knows two publishers (the hub's broker, the cloud's broker), the queue's store,
@@ -17,8 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"safehome/internal/agent"
-	"safehome/internal/sealcode"
+	"safehome/internal/agent/core/agent"
+	"safehome/internal/agent/core/sealcode"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/inbox"
@@ -74,7 +74,7 @@ type Deps struct {
 	Photos   Photos
 	Uploader Uploader
 	NewID    func() string
-	// Key opens the access codes the phones sealed (internal/sealcode); its public half goes
+	// Key opens the access codes the phones sealed (internal/agent/core/sealcode); its public half goes
 	// to the cloud in agent.status.
 	Key *sealcode.Key
 	// Logger: never given a message's content, which may hold a video token.

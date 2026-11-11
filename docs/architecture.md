@@ -175,13 +175,13 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   d'adaptateur technique de plus, mais un paquet de traduction (`internal/zigbee/z2m`),
   seul à connaître les messages de Zigbee2MQTT, comme `wire` est seul à connaître le
   contrat.
-- **L'agent de liaison** : un cœur (`internal/agent`) qui n'est pas un domaine au sens
+- **L'agent de liaison** : un cœur (`internal/agent/core/agent`) qui n'est pas un domaine au sens
   du DDD (il ne connaît que le contrat, puisque son métier est de le transporter), mais
   qui suit les mêmes règles : ni entrées-sorties ni horloge, tournant dans la boucle du
-  pilote. Sa couche application (`internal/agentapp`) déclare deux ports de
+  pilote. Sa couche application (`internal/agent/app/agentapp`) déclare deux ports de
   publication, la centrale et le cloud, sur lesquels la racine de composition branche
   deux clients MQTT. Elle déclare aussi le port `QueueStore` : la file pour le cloud,
-  un petit fichier par message (`internal/adapter/queuedir`).
+  un petit fichier par message (`internal/agent/adapter/queuedir`).
 - **La vidéo** a la forme de la passerelle : son domaine (`internal/video/core/video`, sessions et
   plafond), sa traduction (`internal/video/core/video/wire`), sa couche application
   (`internal/video/app/videoapp`, qui déclare le port `Streamer`) et son adaptateur

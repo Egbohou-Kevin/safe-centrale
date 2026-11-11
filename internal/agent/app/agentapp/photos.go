@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"safehome/internal/agent"
+	"safehome/internal/agent/core/agent"
 	"safehome/internal/shared/contract"
 )
 

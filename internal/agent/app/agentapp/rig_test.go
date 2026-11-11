@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"reflect"
-	"safehome/internal/sealcode"
+	"safehome/internal/agent/core/sealcode"
 	"slices"
 	"sync"
 	"testing"

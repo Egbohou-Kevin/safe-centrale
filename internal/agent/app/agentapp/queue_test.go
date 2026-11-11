@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/agent"
+	"safehome/internal/agent/core/agent"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver/drivertest"
 )
@@ -55,7 +55,7 @@ func TestDrainingTheQueueWritesItemsNotTheQueue(t *testing.T) {
 	t.Logf("draining %d items wrote %d bytes of items, %d bytes of snapshots (%d saves) and %d bytes of counter",
 		n, sum(itemWrites), sum(snapWrites), len(snapWrites), sum(countWrites))
 	// Each item is written once more, with its number, then replaced by a tombstone of
-	// a few bytes, which goes 10 minutes later (internal/agent/sent.go); a few
+	// a few bytes, which goes 10 minutes later (internal/agent/core/agent/sent.go); a few
 	// agent.status join it.
 	if len(itemWrites) < 2*n || len(itemWrites) > 2*n+20 || q.removed-removed > 10 || len(q.items) < n {
 		t.Fatalf("%d items written and %d removed for %d sent, %d left", len(itemWrites), q.removed-removed, n, len(q.items))

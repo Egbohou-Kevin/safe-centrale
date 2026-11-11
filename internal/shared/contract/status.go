@@ -81,7 +81,7 @@ type AgentStatusData struct {
 	// the cloud only every 5 minutes (a change of the link goes at once).
 	Economy bool `json:"economy,omitempty"`
 	// Key is the link agent's public key (P-256, 65 bytes in base64): the phones seal
-	// the access code with it (internal/sealcode), so that the cloud never sees it.
+	// the access code with it (internal/agent/core/sealcode), so that the cloud never sees it.
 	Key string `json:"key,omitempty"`
 }
 

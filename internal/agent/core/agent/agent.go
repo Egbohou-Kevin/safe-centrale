@@ -5,7 +5,7 @@
 //
 // Its job is to move contract messages, so unlike the domain cores it knows the
 // contract. Like them it does no I/O and never reads the clock: inputs carry their
-// time, and the application (internal/agentapp) connects the two brokers.
+// time, and the application (internal/agent/app/agentapp) connects the two brokers.
 package agent
 
 import (
@@ -15,7 +15,7 @@ import (
 	"slices"
 	"time"
 
-	"safehome/internal/sealcode"
+	"safehome/internal/agent/core/sealcode"
 	"safehome/internal/shared/contract"
 )
 
@@ -53,7 +53,7 @@ type Config struct {
 	// often (EconomyEvery on mobile data paid by the client); zero sends them all.
 	Economy time.Duration
 
-	// Seal opens the access codes the phones sealed for this agent (internal/sealcode): the
+	// Seal opens the access codes the phones sealed for this agent (internal/agent/core/sealcode): the
 	// cloud carries no code in the clear. Without it, an order from the app that needs a
 	// code is refused.
 	Seal Opener
