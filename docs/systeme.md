@@ -2,7 +2,8 @@
 
 # Système de la centrale
 
-Statut : procédure v1, écrite avant le kit d'essai. Les fichiers à poser sont dans
+Statut : procédure v1, écrite avant le kit d'essai puis corrigée après l'essai sur le vrai
+Raspberry Pi du 25 octobre 2026 (voir « Essai sur le vrai Pi »). Les fichiers à poser sont dans
 `deploy/` et un test (`go test ./deploy`) vérifie qu'ils restent d'accord avec les
 programmes et leurs configurations d'exemple : même broker, même dossier d'état, même
 `base_topic`, un service par programme, redémarrage sans fin. Les étapes marquées
