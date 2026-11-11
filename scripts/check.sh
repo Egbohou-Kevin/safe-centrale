@@ -9,7 +9,7 @@
 #                              (the quality and architecture rules included; the
 #                              end-to-end scenarios and the install script skipped)
 #
-# The guardrails themselves live in internal/qualitytest and internal/archtest
+# The guardrails themselves live in internal/checks/qualitytest and internal/checks/archtest
 # (docs/architecture.md, "Les garde-fous").
 # Quiet unless CHECK_VERBOSE=1 or under CI: green says one line, red the end of the log.
 # Every line printed here lands in a session's context (creator, profiles/quiet.sh).
@@ -44,7 +44,7 @@ cd "$(dirname "$0")/.."
 
 # What is the project's own, each with its default: the packages that hold the quality and
 # architecture rules, the shell scripts to lint, the os/arch the programs are built for.
-rule_packages=${CHECK_RULE_PACKAGES:-./internal/qualitytest ./internal/archtest}
+rule_packages=${CHECK_RULE_PACKAGES:-./internal/checks/qualitytest ./internal/checks/archtest}
 shell_scripts=${CHECK_SHELL_SCRIPTS:-deploy/*.sh scripts/*.sh .githooks/pre-commit}
 target=${CHECK_TARGET:-linux/arm64}
 

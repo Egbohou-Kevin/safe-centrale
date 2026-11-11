@@ -78,7 +78,7 @@ type LocalBroker interface {
 
 // Local returns o for the hub's broker, which refuses a client without its name and
 // password: every program connects to it through Local, so that none forgets one
-// (internal/archtest keeps it so).
+// (internal/checks/archtest keeps it so).
 func Local(c LocalBroker, o mqtt.Options) mqtt.Options {
 	o.BrokerURL, o.ClientID, o.Username, o.Password = c.LocalBroker()
 	return o

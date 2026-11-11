@@ -6,7 +6,7 @@
 // It is deterministic: it does not read the clock, write anywhere or talk to any
 // hardware. It is given readings that carry their own time and returns alerts for
 // a driver to send. It knows nothing of MQTT, JSON or the event contract: the wire
-// subpackage translates. An architecture test (internal/archtest) enforces both.
+// subpackage translates. An architecture test (internal/checks/archtest) enforces both.
 //
 // A Monitor is not safe for concurrent use: the driver must feed it one input at
 // a time.

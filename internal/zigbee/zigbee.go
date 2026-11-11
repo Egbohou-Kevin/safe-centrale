@@ -7,7 +7,7 @@
 // hardware. Inputs carry their own time; actions are data for a driver. It knows the
 // shape of Zigbee2MQTT's data only as maps of fields, read through profiles; the
 // z2m subpackage parses and builds Zigbee2MQTT's messages, the wire subpackage
-// translates to the event contract. An architecture test (internal/archtest)
+// translates to the event contract. An architecture test (internal/checks/archtest)
 // enforces this.
 //
 // A Network is not safe for concurrent use: the driver feeds it one input at a time.

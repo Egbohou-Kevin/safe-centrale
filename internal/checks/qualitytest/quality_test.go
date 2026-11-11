@@ -1,7 +1,7 @@
 // Package qualitytest holds the code-quality guardrails: size, formatting, plain
 // ASCII text, duplication, dead code, re-declared test fakes and a few consistency
 // rules fixed during the review. They run with go test ./... so that new code cannot
-// drift back. The dependency rules live in internal/archtest.
+// drift back. The dependency rules live in internal/checks/archtest.
 //
 // Each failure reads "file:line: [rule] what is wrong. Fix: what to do". A justified
 // exception is never a skip: it goes in allowed (exceptions_test.go) with its reason,
@@ -69,7 +69,7 @@ func moduleRoot(t *testing.T) string {
 	if !ok {
 		t.Fatal("cannot locate the source tree")
 	}
-	return filepath.Join(filepath.Dir(here), "..", "..")
+	return filepath.Join(filepath.Dir(here), "..", "..", "..")
 }
 
 // skipDir tells the directories that hold no source of the module.

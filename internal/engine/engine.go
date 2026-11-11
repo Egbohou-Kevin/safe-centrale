@@ -8,7 +8,7 @@
 //
 // The package knows nothing about MQTT, JSON or the event contract: the wire
 // subpackage translates between this domain and the contract. An architecture test
-// (internal/archtest) enforces that boundary.
+// (internal/checks/archtest) enforces that boundary.
 //
 // An Engine is not safe for concurrent use: the driver must feed it one input at a
 // time.

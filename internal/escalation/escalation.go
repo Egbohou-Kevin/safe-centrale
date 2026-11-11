@@ -7,7 +7,7 @@
 // channel. It is given alerts, results, acknowledgements and clock ticks that carry
 // their own time, and returns the messages to send. It knows nothing of MQTT, JSON
 // or the event contract: the wire subpackage translates. An architecture test
-// (internal/archtest) enforces both.
+// (internal/checks/archtest) enforces both.
 //
 // An Escalation is not safe for concurrent use: the driver must feed it one input
 // at a time.

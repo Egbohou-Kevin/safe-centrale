@@ -1,7 +1,7 @@
 // Package drivertest fakes the driver's ports for tests: a clock that moves only
 // when told, a store in memory, a log buffer goroutines can share, and WaitFor for
 // what happens on another goroutine. Only tests may import it (see
-// internal/archtest). It knows nothing of the module, so that the driver's own
+// internal/checks/archtest). It knows nothing of the module, so that the driver's own
 // tests can use it.
 package drivertest
 

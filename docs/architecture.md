@@ -2,7 +2,7 @@
 
 # Architecture SeQ
 
-Statut : en vigueur, vérifiée par `internal/archtest`.
+Statut : en vigueur, vérifiée par `internal/checks/archtest`.
 
 ## Objectif
 
@@ -266,7 +266,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 - **DDD léger** : on le réserve aux contextes qui ont des règles (alarme, escalade). L'agent
   et la passerelle sont surtout de la plomberie et n'en ont pas besoin.
 
-Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent :
+Ces règles sont vérifiées par des tests (`internal/checks/archtest`). Ils échouent :
 
 - si un domaine importe un paquet du module (le contrat compris), une bibliothèque
   tierce ou un paquet d'entrées-sorties, ou s'il lit l'horloge ;
@@ -310,7 +310,7 @@ Ces règles sont vérifiées par des tests (`internal/archtest`). Ils échouent 
 
 ### Les garde-fous de qualité
 
-`internal/qualitytest` empêche le code de revenir en arrière sur la lisibilité. Ses
+`internal/checks/qualitytest` empêche le code de revenir en arrière sur la lisibilité. Ses
 tests tournent avec `go test ./...` (environ une seconde) :
 
 | Règle | Seuil |
@@ -331,7 +331,7 @@ tests tournent avec `go test ./...` (environ une seconde) :
 
 Lire un échec : `fichier:ligne: [règle] ce qui ne va pas. Fix: quoi faire`. On corrige
 le code. Si la règle a vraiment tort à cet endroit, l'exception va dans `allowed`
-(`internal/qualitytest/exceptions_test.go`) avec sa raison ; une exception qui ne sert
+(`internal/checks/qualitytest/exceptions_test.go`) avec sa raison ; une exception qui ne sert
 plus fait échouer le test. Les deux exceptions actuelles : le câblage du démon commun
 à `safehome-gsm` et `safehome-video`, et l'aide `publishApplied` de leurs tests (deux
 paquets `main` ne partagent pas de code de test).

@@ -1,5 +1,5 @@
 // Package outboxtest fakes the broker an outbox publishes to, for the tests of the
-// application layers. Only tests may import it (see internal/archtest).
+// application layers. Only tests may import it (see internal/checks/archtest).
 package outboxtest
 
 import (

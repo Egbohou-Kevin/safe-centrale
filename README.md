@@ -122,8 +122,8 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 
 | Dossier | Contenu |
 |---|---|
-| `internal/archtest` | Les tests d'architecture : ils échouent si les règles de dépendance sont cassées |
-| `internal/qualitytest` | Les garde-fous de qualité : tailles, gofmt, ASCII, copier-coller, code mort, faux de test redéclarés, règles de cohérence (voir « Lancer les tests ») |
+| `internal/checks/archtest` | Les tests d'architecture : ils échouent si les règles de dépendance sont cassées |
+| `internal/checks/qualitytest` | Les garde-fous de qualité : tailles, gofmt, ASCII, copier-coller, code mort, faux de test redéclarés, règles de cohérence (voir « Lancer les tests ») |
 | `internal/shared/contract/schematest` | Validation des messages contre les schémas JSON (tests seulement) |
 | `internal/shared/driver/drivertest` | Pour les tests : une fausse horloge (ses minuteries suivent une horloge monotone, comme la vraie), un faux disque, un journal partagé et de quoi attendre |
 | `internal/shared/outbox/outboxtest` | Pour les tests : un faux broker qui garde ce qu'on lui publie, et qu'on peut rendre absent, faire refuser ou faire attendre |
@@ -146,7 +146,7 @@ scripts/check.sh       # la vérification complète : gofmt, vet, règles, go te
 Go 1.27 ou plus récent.
 
 Des garde-fous tournent avec les tests : les règles d'architecture
-(`internal/archtest`) et de qualité (`internal/qualitytest` : tailles, gofmt, ASCII,
+(`internal/checks/archtest`) et de qualité (`internal/checks/qualitytest` : tailles, gofmt, ASCII,
 copier-coller, code mort, faux de test redéclarés, cohérence). Un échec dit
 `fichier:ligne: [règle] problème. Fix: quoi faire`. Les seuils et la façon d'ajouter
 une exception (dans `exceptions_test.go`, toujours avec sa raison) sont dans

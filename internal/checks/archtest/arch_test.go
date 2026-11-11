@@ -28,7 +28,7 @@ func root(t *testing.T) string {
 	if !ok {
 		t.Fatal("cannot locate the source tree")
 	}
-	return filepath.Join(filepath.Dir(file), "..", "..")
+	return filepath.Join(filepath.Dir(file), "..", "..", "..")
 }
 
 func isLocal(path string) bool { return path == module || strings.HasPrefix(path, module+"/") }
@@ -51,6 +51,8 @@ func internal(names ...string) []string {
 // (docs/rangement-par-programme.md): the rules below still name a package by its
 // former path, at turns it into the current one.
 var moved = map[string]string{
+	"archtest":          "checks/archtest",
+	"qualitytest":       "checks/qualitytest",
 	"contract":          "shared/contract",
 	"schematest":        "shared/contract/schematest",
 	"driver":            "shared/driver",
