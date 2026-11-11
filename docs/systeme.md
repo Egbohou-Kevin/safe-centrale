@@ -1375,7 +1375,8 @@ une vraie installation chez un client.
   `safehome-zigbee` : « Zigbee2MQTT refused a request », `device/options`), le code
   d'un clavier pourrait encore attendre dans `mosquitto.db`, sur la carte SD de la
   centrale elle-même, le temps d'un arrêt de l'adaptateur.
-- La console locale n'a pas encore tourné sur un vrai Pi. À vérifier : NetworkManager
+- La console locale a tourné sur le vrai Pi (Kevin, 11 novembre 2026), sans relevé
+  écrit. À relever, avec la date : NetworkManager
   et `dnsmasq-base` (mode « partagé ») présents sur Raspberry Pi OS Lite, la règle
   polkit, le script qui coupe le routage de son réseau, la portée du réseau.
 - Le script d'installation (`deploy/install.sh`) a tourné sur le vrai Pi le 25 octobre
