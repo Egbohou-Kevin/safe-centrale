@@ -12,8 +12,8 @@ import (
 
 	"safehome/internal/shared/config/siteconfig"
 	"safehome/internal/shared/contract"
-	"safehome/internal/video"
-	"safehome/internal/videoapp"
+	"safehome/internal/video/app/videoapp"
+	"safehome/internal/video/core/video"
 )
 
 func write(t *testing.T, body string) string {
@@ -26,7 +26,7 @@ func write(t *testing.T, body string) string {
 }
 
 func TestTheExampleIsValidAndRepeatsTheDefaults(t *testing.T) {
-	r, err := Load(filepath.Join("..", "..", "config", "video.example.json"))
+	r, err := Load(filepath.Join("..", "..", "..", "..", "config", "video.example.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestTheExampleIsValidAndRepeatsTheDefaults(t *testing.T) {
 }
 
 func TestTheCamerasAddressesNeverShow(t *testing.T) {
-	r, err := Load(filepath.Join("..", "..", "config", "video.example.json"))
+	r, err := Load(filepath.Join("..", "..", "..", "..", "config", "video.example.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

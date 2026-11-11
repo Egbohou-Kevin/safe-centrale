@@ -24,8 +24,8 @@ import (
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/inbox"
 	"safehome/internal/shared/outbox"
-	"safehome/internal/video"
-	videowire "safehome/internal/video/wire"
+	"safehome/internal/video/core/video"
+	videowire "safehome/internal/video/core/video/wire"
 )
 
 // Streamer pushes the cameras' streams.

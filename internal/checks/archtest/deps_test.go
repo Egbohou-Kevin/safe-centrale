@@ -55,7 +55,7 @@ func TestProductionCodeHasNoThirdPartyDependencies(t *testing.T) {
 
 // internal/shared/contract/schematest pulls in a third-party validator, internal/shared/adapter/mqtt/
 // mqtttest starts a broker process, internal/adapter/atmodem/attest pretends to be
-// a modem, internal/adapter/go2rtc/go2rtctest a video relay,
+// a modem, internal/video/adapter/go2rtc/go2rtctest a video relay,
 // internal/shared/driver/drivertest fakes the clock and the disk and
 // internal/shared/outbox/outboxtest the broker: shipped code must never import them. The
 // virtual kit's fake devices (vkit/) are test equipment too, and may.

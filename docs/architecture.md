@@ -76,7 +76,7 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
 - **Les domaines** (`internal/engine` pour l'alarme, `internal/health` pour la
   supervision de la centrale et des appareils, `internal/access` pour les codes
   d'accès, `internal/escalation` pour l'escalade des alertes, `internal/gsm` pour la
-  passerelle GSM, `internal/zigbee` pour l'adaptateur Zigbee, `internal/video` pour la
+  passerelle GSM, `internal/zigbee` pour l'adaptateur Zigbee, `internal/video/core/video` pour la
   vidéo en direct, `internal/maint/core/maint` pour la maintenance à distance) sont purs : ils
   dépendent seulement de la bibliothèque standard, n'ont aucune entrée-sortie et ne
   lisent jamais l'horloge. Ils reçoivent des entrées qui portent leur heure et
@@ -182,10 +182,10 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   publication, la centrale et le cloud, sur lesquels la racine de composition branche
   deux clients MQTT. Elle déclare aussi le port `QueueStore` : la file pour le cloud,
   un petit fichier par message (`internal/adapter/queuedir`).
-- **La vidéo** a la forme de la passerelle : son domaine (`internal/video`, sessions et
-  plafond), sa traduction (`internal/video/wire`), sa couche application
-  (`internal/videoapp`, qui déclare le port `Streamer`) et son adaptateur
-  (`internal/adapter/go2rtc`, qui lance un go2rtc par session).
+- **La vidéo** a la forme de la passerelle : son domaine (`internal/video/core/video`, sessions et
+  plafond), sa traduction (`internal/video/core/video/wire`), sa couche application
+  (`internal/video/app/videoapp`, qui déclare le port `Streamer`) et son adaptateur
+  (`internal/video/adapter/go2rtc`, qui lance un go2rtc par session).
 - **L'outil de l'installateur** : une couche application (`internal/install`) sans
   domaine propre, avec ses ports (`Publisher`, messages reçus, `Sites`) et sans
   horloge ; l'outil en ligne de commande (`cmd/safehome-install`) et la console locale

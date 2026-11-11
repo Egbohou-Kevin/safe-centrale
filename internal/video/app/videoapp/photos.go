@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"safehome/internal/shared/contract"
-	"safehome/internal/video"
+	"safehome/internal/video/core/video"
 )
 
 // takePhotos takes an alarm's photos away from the loop.

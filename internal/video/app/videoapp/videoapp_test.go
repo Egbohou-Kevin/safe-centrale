@@ -16,7 +16,7 @@ import (
 	"safehome/internal/shared/driver/drivertest"
 	"safehome/internal/shared/inbox"
 	"safehome/internal/shared/outbox/outboxtest"
-	"safehome/internal/video"
+	"safehome/internal/video/core/video"
 )
 
 const site = "tg-lom-0001"

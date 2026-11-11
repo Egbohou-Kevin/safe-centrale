@@ -2,8 +2,8 @@
 
 # Vidéo en direct
 
-Statut : service vidéo de la centrale codé (`internal/video`, `internal/videoapp`,
-`internal/adapter/go2rtc`, `cmd/safehome-video`), testé contre un faux go2rtc et le
+Statut : service vidéo de la centrale codé (`internal/video/core/video`, `internal/video/app/videoapp`,
+`internal/video/adapter/go2rtc`, `cmd/safehome-video`), testé contre un faux go2rtc et le
 vrai. Il prend aussi les **photos à l'alarme** (voir « Photos à l'alarme »). Le relais
 du cloud et l'application ne sont pas codés. Voir « Ce qui est codé » à la fin.
 
@@ -200,7 +200,7 @@ consommer les données mobiles du client.
 
 ### Le service
 
-- **Le domaine** (`internal/video`) : refus (`expired`, `unknown_camera`, `busy`,
+- **Le domaine** (`internal/video/core/video`) : refus (`expired`, `unknown_camera`, `busy`,
   `quota`), passage à `live` dès que les premiers octets partent, fin à `max_s` (le plus
   court entre la demande du cloud et le réglage du client en données mobiles), à
   l'épuisement du plafond, quand rien ne part depuis 30 s (`relay_unreachable`), ou si

@@ -6,8 +6,8 @@ import (
 
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/inbox"
-	"safehome/internal/video"
-	videowire "safehome/internal/video/wire"
+	"safehome/internal/video/core/video"
+	videowire "safehome/internal/video/core/video/wire"
 )
 
 // HandleMessage takes a message from the broker. It returns quickly. Payloads are

@@ -1,11 +1,11 @@
 // Package video is the core of the site's video service (see docs/video.md): which
 // live sessions may start, how long they may last, and the month's data allowance
 // on mobile data. The stream itself is someone else's business: the application
-// (internal/videoapp) starts and stops it and says how many bytes it sent.
+// (internal/video/app/videoapp) starts and stops it and says how many bytes it sent.
 //
 // Video never takes part in the alarm. Like the other domain cores, this package
 // does no I/O, never reads the clock and knows nothing of the contract: inputs carry
-// their time, and internal/video/wire translates.
+// their time, and internal/video/core/video/wire translates.
 package video
 
 import (

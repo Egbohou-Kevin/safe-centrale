@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"safehome/internal/shared/contract"
-	"safehome/internal/video"
+	"safehome/internal/video/core/video"
 )
 
 // mb is the megabyte of quota_mb and used_mb_month.

@@ -7,7 +7,7 @@ import (
 
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/contract/schematest"
-	"safehome/internal/video"
+	"safehome/internal/video/core/video"
 )
 
 var now = time.Date(2026, 10, 20, 21, 0, 0, 0, time.UTC)

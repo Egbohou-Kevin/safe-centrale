@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"safehome/internal/video"
+	"safehome/internal/video/core/video"
 )
 
 // stopping reports whether Run is over: nothing new starts.

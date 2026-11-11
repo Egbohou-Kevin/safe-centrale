@@ -51,6 +51,10 @@ func internal(names ...string) []string {
 // (docs/rangement-par-programme.md): the rules below still name a package by its
 // former path, at turns it into the current one.
 var moved = map[string]string{
+	"video":             "video/core/video",
+	"adapter/go2rtc":    "video/adapter/go2rtc",
+	"videoapp":          "video/app/videoapp",
+	"videoconfig":       "video/config/videoconfig",
 	"maint":             "maint/core/maint",
 	"adapter/sshtunnel": "maint/adapter/sshtunnel",
 	"maintapp":          "maint/app/maintapp",

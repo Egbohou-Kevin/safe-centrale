@@ -28,7 +28,7 @@ import (
 	"safehome/internal/hubconfig"
 	"safehome/internal/shared/config/configfile"
 	"safehome/internal/shared/config/siteconfig"
-	"safehome/internal/videoconfig"
+	"safehome/internal/video/config/videoconfig"
 )
 
 // goPackage is what go list says of a package.

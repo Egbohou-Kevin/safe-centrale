@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 
-	"safehome/internal/adapter/go2rtc"
 	"safehome/internal/shared/adapter/mqtt"
 	"safehome/internal/shared/adapter/photodir"
 	"safehome/internal/shared/adapter/sysclock"
@@ -16,8 +15,9 @@ import (
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/service"
-	"safehome/internal/videoapp"
-	"safehome/internal/videoconfig"
+	"safehome/internal/video/adapter/go2rtc"
+	"safehome/internal/video/app/videoapp"
+	"safehome/internal/video/config/videoconfig"
 )
 
 const (

@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/adapter/go2rtc/go2rtctest"
 	"safehome/internal/shared/adapter/mqtt"
 	"safehome/internal/shared/adapter/mqtt/mqtttest"
 	"safehome/internal/shared/adapter/pidfile"
@@ -20,6 +19,7 @@ import (
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/contract/schematest"
 	"safehome/internal/shared/driver/drivertest"
+	"safehome/internal/video/adapter/go2rtc/go2rtctest"
 )
 
 func TestMain(m *testing.M) {

@@ -17,8 +17,8 @@ import (
 	"safehome/internal/shared/config/configfile"
 	"safehome/internal/shared/config/siteconfig"
 	"safehome/internal/shared/contract"
-	"safehome/internal/video"
-	"safehome/internal/videoapp"
+	"safehome/internal/video/app/videoapp"
+	"safehome/internal/video/core/video"
 )
 
 // Result is what the file describes.
