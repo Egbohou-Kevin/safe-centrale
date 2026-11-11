@@ -2,8 +2,8 @@
 
 # Sécurité et installation d'un site
 
-Statut : v1, codée ; essayée sur le kit virtuel (`kit-virtuel.md`), puis sur le vrai
-Raspberry Pi (Kevin, 11 novembre 2026 ; essai sans relevé écrit, voir « Pas encore fait »).
+Statut : v1, codée ; essayée sur le kit virtuel (`kit-virtuel.md`), pas encore sur un
+vrai Raspberry Pi.
 
 Ce document décrit comment une centrale reçoit son identité, comment elle est
 installée chez un client, comment le code d'accès arrive sur le site, et ce qui se
@@ -356,8 +356,6 @@ zones de `hub.json` et le dit dans son journal.
 
 ### Pas encore fait
 
-- La console a tourné sur le vrai Pi (Kevin, 11 novembre 2026), mais les deux contrôles
-  ci-dessous n'y ont pas de relevé écrit : à relever, avec la date.
 - Le kit virtuel tourne sur Debian 13, où NetworkManager et `dnsmasq-base` (le mode
   « partagé »), la règle polkit et le réseau de la console marchent. Reste à le
   vérifier sur Raspberry Pi OS Lite, avec la vraie puce Wi-Fi et sa portée.
