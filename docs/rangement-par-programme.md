@@ -139,7 +139,9 @@ d'imports.
    lit et écrit le site au format `install.Site`.
    - **Décidé seule, à relire (11/11/2026). (recommandé) Ranger tel quel, exceptions nommées dans `archtest`** : console → `hub/app/hub`,
      `hub/core/access`, `hub/config/hubconfig`, `install/app/install` ; install →
-     `hub/config/hubconfig` ; `hub/config/hubconfig` → `install/app/install`. Chaque exception a sa
+     `hub/config/hubconfig` ; `hub/config/hubconfig` → `install/app/install`. Vue au premier
+     passage de la règle (12/11/2026), une cinquième, décidée seule de même : install →
+     `hub/core/engine` (l'installateur vérifie types de zone et capteurs par la règle du moteur). Chaque exception a sa
      raison écrite, toute autre flèche entre programmes rougit. Renommage pur, rien ne change.
    - Sinon : sortir `install.Site` et les codes du site dans `shared/site`. Plus propre à terme,
      mais c'est un changement de code, pas un renommage : un lot à part, après celui-ci.
@@ -171,7 +173,7 @@ d'imports.
 | les règles par paquet (`outbox`, `inbox`, `agent`, `videoapp`, `maintapp`, `powerapp`, `configapp`, `install`, `consoleapp`, `service`, `wire`, `z2m`, `NoDomainImportsTheHub`) | `internal("engine")`… | mêmes listes, nouveaux chemins |
 | **nouvelle** `TestEveryPackageHasARole` | — | tout paquet est sous `<programme>/{app,core,adapter,config}/…`, `shared/…` ou `checks/…` : rien à plat |
 | **nouvelle** `TestAProgramImportsNoOtherProgram` | — | `cmd/safehome-X` et `internal/X` n'importent que `internal/X`, `internal/shared` et les exceptions du cas 1 |
-| **nouvelle** `TestACoreImportsNoAdapterNorApplication` | — | un paquet sous `*/core/` n'importe que `shared/contract` et les cœurs de son programme |
+| **nouvelle** `TestACoreImportsNoAdapterNorApplication` | — | un paquet sous `*/core/` n'importe ni adaptateur (le sien, un partagé, `shared/service`) ni application (les mots de Kevin) |
 
 Chaque nouvelle règle a son témoin sur un cas positif (un import interdit écrit exprès, vu rouge).
 `qualitytest` suit aussi (préfixe `internal/adapter/` dans `consistency_test.go`), et

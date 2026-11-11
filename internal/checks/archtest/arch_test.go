@@ -47,9 +47,9 @@ func internal(names ...string) []string {
 	return out
 }
 
-// moved says where each package of the former flat layout of internal/ now lives
-// (docs/rangement-par-programme.md): the rules below still name a package by its
-// former path, at turns it into the current one.
+// moved is the index of the rules: they name a package by its short name, its path
+// in the flat layout internal/ had until 11/11/2026, and at turns it into its place
+// in the layout by program (docs/rangement-par-programme.md, programs_test.go).
 var moved = map[string]string{
 	"hub":               "hub/app/hub",
 	"access":            "hub/core/access",
