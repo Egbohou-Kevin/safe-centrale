@@ -82,7 +82,10 @@ func (c *command) watch(ctx context.Context, s *install.Session) error {
 	if len(c.args) == 1 {
 		only = c.args[0]
 	}
-	loc := c.cfg.Hub.Engine.Location
+	loc, err := c.cfg.Location()
+	if err != nil {
+		return err
+	}
 	if loc == nil {
 		loc = time.Local
 	}

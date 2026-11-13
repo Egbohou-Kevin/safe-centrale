@@ -7,6 +7,7 @@
 //	safehome-hub codes -config /etc/safehome/hub.json list
 //	safehome-hub codes -config /etc/safehome/hub.json set u_owner < code.txt
 //	safehome-hub codes -config /etc/safehome/hub.json remove u_owner
+//	safehome-hub site  -config /etc/safehome/hub.json view|read|check|write
 package main
 
 import (

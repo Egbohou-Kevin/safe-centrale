@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"safehome/internal/hub/config/hubconfig"
+	"safehome/internal/shared/adapter/hubexec"
 	"safehome/internal/shared/adapter/mqtt"
 	"safehome/internal/shared/adapter/mqtt/mqtttest"
 	"safehome/internal/shared/contract"
@@ -22,6 +23,24 @@ import (
 )
 
 const site = "tg-lom-0001"
+
+// asHub makes the test binary answer as the hub when it runs itself
+// (safehome-hub site -config FILE VERB): the tool asks a real hub's rules.
+const asHub = "SAFEHOME_TEST_AS_HUB"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(asHub) == "1" {
+		a := os.Args[1:]
+		os.Exit(hubconfig.SiteTool(a[2], a[3:], os.Stdin, os.Stdout, os.Stderr))
+	}
+	self, err := os.Executable()
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv(asHub, "1")
+	hubAt = func(config string) (hubexec.Hub, error) { return hubexec.Hub{Program: self, Config: config}, nil }
+	os.Exit(m.Run())
+}
 
 func init() {
 	connectWait = 2 * time.Second

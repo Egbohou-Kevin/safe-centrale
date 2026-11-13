@@ -70,13 +70,14 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | `internal/shared/outbox` | La file d'envoi MQTT partagée par toutes les couches application des programmes de la centrale : ordre, reprises, numéro de message qui survit aux redémarrages. Mêmes réglages partout (`Settings`), ouverture en un appel (`Open`), un message encodé et mis en file en un appel (`Send`, ou `SendWithCode` en QoS 0 pour un message qui porte le code d'accès) |
 | `internal/shared/driver` | La boucle qui fait tourner un domaine en temps réel : horloge, file d'entrées, sauvegarde, envoi des actions. Générique, elle ne connaît aucun domaine. `Every` répète un travail sur l'horloge. |
 | `internal/shared/service` | Ce que les programmes ont en commun : ligne de commande (`run`, `check`, `version`), verrou du dossier d'état, client MQTT, dialogue avec systemd, arrêt propre, redémarrage pour charger une nouvelle configuration du cloud (`Restart.Watch`), demande de relecture à un programme qui tourne (`Reload`). Seuls les programmes de `cmd/` s'en servent |
+| `internal/shared/config/hubtool` | Le contrat entre la centrale et les outils de l'installateur (ligne de commande, console locale) : `safehome-hub site -config FICHIER view\|read\|check\|write`, ce que les outils savent de la configuration (`Config`), la forme des zones et des sirènes, et `Hub`, qui interroge la centrale. La règle reste dans la centrale, écrite une fois |
 | `internal/shared/config/configfile` | Ce que les lectures de configuration ont en commun : l'en-tête des fichiers (`ProgramFile`, qui donne un `Program`), JSON strict, niveau de journal, durées, secrets, écriture atomique d'un fichier |
 
 ### La lecture des configurations
 
 | Dossier | Contenu |
 |---|---|
-| `internal/hub/config/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict), nom de son fichier de pid (`PidFile`) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) |
+| `internal/hub/config/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict), nom de son fichier de pid (`PidFile`) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) ; répond aux outils de l'installateur par `safehome-hub site` (`SiteTool`) |
 | `internal/shared/config/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
 | `internal/gsm/config/gsmconfig` | Lecture du fichier de configuration de la passerelle, avec les contacts réglés depuis le cloud |
 | `internal/zigbee/config/zigbeeconfig` | Lecture de la configuration et des profils d'appareils (`config/profiles/`) |
@@ -91,6 +92,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 | Dossier | Contenu |
 |---|---|
 | `internal/shared/adapter/mqtt` | L'adaptateur MQTT 5 (client de Mosquitto) : seul paquet qui connaît la bibliothèque MQTT |
+| `internal/shared/adapter/hubexec` | Lance la ligne de commande de la centrale pour les outils de l'installateur : borné en temps (30 s) et en sortie (1 Mio), sans les secrets du broker de l'appelant ; un refus rend les mots de la centrale |
 | `internal/shared/adapter/filestore` | Écriture atomique de l'état sur disque (survit à une coupure de courant) ; un fichier écrit prend le propriétaire du dossier |
 | `internal/shared/adapter/filelock` | Verrou de fichier (flock) entre les programmes qui récrivent les mêmes fichiers : les codes d'accès, depuis la console et l'outil en ligne de commande |
 | `internal/gsm/adapter/atmodem` | L'adaptateur du modem : commandes AT sur le port série (bibliothèque standard seulement) ; `attest` est un faux modem pour les tests |

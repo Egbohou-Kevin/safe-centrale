@@ -17,7 +17,7 @@ import (
 func (c *command) online(ctx context.Context, fn func(context.Context, *install.Session) error) error {
 	ids := contract.NewIDGenerator()
 	pub := &service.Publisher{}
-	s, err := install.NewSession(c.cfg.Hub.Site, install.Deps{Publisher: pub, Now: time.Now, NewID: ids.New}, timing)
+	s, err := install.NewSession(c.cfg.Site, install.Deps{Publisher: pub, Now: time.Now, NewID: ids.New}, timing)
 	if err != nil {
 		return err
 	}
@@ -27,7 +27,7 @@ func (c *command) online(ctx context.Context, fn func(context.Context, *install.
 	if err != nil {
 		return err
 	}
-	operator.ClientID = clientID(c.cfg.Hub.Site)
+	operator.ClientID = clientID(c.cfg.Site)
 	connCtx, stopConn := context.WithCancel(context.Background()) // outlives ctx: Ctrl-C still closes the network
 	defer stopConn()
 	client, err := mqtt.Dial(connCtx, service.Local(operator, mqtt.Options{

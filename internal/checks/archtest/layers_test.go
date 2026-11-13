@@ -146,7 +146,7 @@ func TestTheCloudConfigurationKnowsNoAdapter(t *testing.T) {
 // domain or application may.
 func TestConfigFileServesOnlyTheConfigurationPackages(t *testing.T) {
 	layer{noClock: true, why: ": configfile is standard-library only"}.check(t, "configfile")
-	users := []string{"agentconfig", "consoleconfig", "gsmconfig", "hubconfig", "maintconfig", "powerconfig", "siteconfig", "videoconfig", "zigbeeconfig"}
+	users := []string{"agentconfig", "consoleconfig", "gsmconfig", "hubconfig", "hubtool", "maintconfig", "powerconfig", "siteconfig", "videoconfig", "zigbeeconfig"}
 	configfile := internal("configfile")[0]
 	walkSources(t, func(rel string, f *ast.File) {
 		dir := filepath.Dir(rel)

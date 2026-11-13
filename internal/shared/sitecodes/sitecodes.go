@@ -11,12 +11,27 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"time"
 
 	"safehome/internal/shared/core/access"
 	"safehome/internal/shared/driver"
 )
+
+// CodesLock is the lock the installer's tools hold while they change the access codes
+// (read, change, write the whole list): the local console's page serves two phones at
+// once, and the command-line tool may run meanwhile. Without it, the second write
+// would drop the first one's code.
+const CodesLock = "codes.lock"
+
+// CodesFolder is the folder of the hub's state folder that keeps the access codes
+// (hashed) and their lock: the other services of the hub are kept out of it.
+const CodesFolder = "codes"
+
+// CodesDir is the folder of the access codes in the state folder stateDir: the only
+// place that makes its path.
+func CodesDir(stateDir string) string { return filepath.Join(stateDir, CodesFolder) }
 
 // Codes are the access codes as the installer's tools (the hub's command line, the
 // local console) change them, without running a hub: the people's and the

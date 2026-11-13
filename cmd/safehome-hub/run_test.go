@@ -84,6 +84,29 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+// The installer's tools ask the hub by safehome-hub site (hubtool): it answers its
+// configuration and its zones, and refuses what it would refuse to run with.
+func TestTheSiteCommandAnswersTheTools(t *testing.T) {
+	stateDir := t.TempDir()
+	path := writeConfig(t, "mqtt://127.0.0.1:1883", stateDir, "")
+	code, out, errb := cli(t, "", "site", "-config", path, "view")
+	if code != 0 || !strings.Contains(out, `"site":"`+site+`"`) || !strings.Contains(out, `"state_dir":"`+stateDir+`"`) {
+		t.Fatalf("view: %d %q %q", code, out, errb)
+	}
+	if code, out, errb := cli(t, "", "site", "-config", path, "read"); code != 0 || !strings.Contains(out, `"dev_door":{"name":"Entrance","kind":"entry"}`) {
+		t.Fatalf("read: %d %q %q", code, out, errb)
+	}
+	bad := `{"zones":{"dev_door":{"name":"Entrance","kind":"garage"}},"siren_ids":[]}`
+	if code, _, errb := cli(t, bad, "site", "-config", path, "write"); code != 1 || errb == "" {
+		t.Fatalf("a bad kind: %d %q", code, errb)
+	}
+	for _, args := range [][]string{{"site", "-config", path}, {"site", "view"}} {
+		if code, _, errb := cli(t, "", args...); code != 2 || errb == "" {
+			t.Errorf("%v: exit %d, stderr %q", args, code, errb)
+		}
+	}
+}
+
 // A site without a GSM line says so at the check, and names a contact nobody would
 // tell anything.
 func TestTheCheckSaysASiteHasNoGSMLine(t *testing.T) {

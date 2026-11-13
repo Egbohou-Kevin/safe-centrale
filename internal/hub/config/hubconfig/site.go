@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 
 	"safehome/internal/shared/config/configfile"
+	"safehome/internal/shared/config/hubtool"
 	sitemodel "safehome/internal/shared/core/site"
+	"safehome/internal/shared/sitecodes"
 )
 
 // DevicesFile is the file of the hub's state folder that holds the zones and the
@@ -20,23 +22,16 @@ import (
 // hub, and the devices change after the installation (a sensor added, a siren moved).
 const DevicesFile = "site-devices.json"
 
-// PidFile is the hub's pid file in its state folder. The installer's tools signal
-// the process it names to have the access codes read again.
-const PidFile = "hub.pid"
+// The hub's files the installer's tools reach: they are named in the shared
+// packages, once (hubtool, sitecodes).
+const (
+	PidFile     = hubtool.PidFile
+	CodesLock   = sitecodes.CodesLock
+	CodesFolder = sitecodes.CodesFolder
+)
 
-// CodesLock is the lock the installer's tools hold while they change the access codes
-// (read, change, write the whole list): the local console's page serves two phones at
-// once, and the command-line tool may run meanwhile. Without it, the second write
-// would drop the first one's code.
-const CodesLock = "codes.lock"
-
-// CodesFolder is the folder of the hub's state folder that keeps the access codes
-// (hashed) and their lock: the other services of the hub are kept out of it.
-const CodesFolder = "codes"
-
-// CodesDir is the folder of the access codes in the state folder stateDir: the only
-// place that makes its path.
-func CodesDir(stateDir string) string { return filepath.Join(stateDir, CodesFolder) }
+// CodesDir is the folder of the access codes in the state folder stateDir.
+func CodesDir(stateDir string) string { return sitecodes.CodesDir(stateDir) }
 
 // devicesFile is the form of DevicesFile: what the installer's tools change, the zones
 // and the sirens with their names (sitemodel.Site). Everything else (contacts,

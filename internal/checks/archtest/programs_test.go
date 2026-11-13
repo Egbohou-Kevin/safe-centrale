@@ -25,9 +25,6 @@ var crossPrograms = map[string]map[string]string{
 	"console": {
 		"hub/config/hubconfig": "the console reads and edits the hub's configuration",
 	},
-	"install": {
-		"hub/config/hubconfig": "the installer writes the hub's site configuration",
-	},
 }
 
 // roleOf says why the package at dir (slash-separated, relative to internal/) has

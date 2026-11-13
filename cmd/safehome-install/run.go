@@ -9,7 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"safehome/internal/hub/config/hubconfig"
+	"safehome/internal/shared/adapter/hubexec"
+	"safehome/internal/shared/config/hubtool"
 	"safehome/internal/shared/install"
 )
 
@@ -42,12 +43,14 @@ var (
 	timing       = install.Timing{} // the session's defaults
 	pairMax      = 10 * time.Minute // the Zigbee adapter's own bound
 	restartHint  = "restart the hub to apply: sudo systemctl restart safehome-hub"
+	hubAt        = hubexec.Beside // the hub installed next to the tool; the tests give their own
 )
 
 // command is one parsed command line.
 type command struct {
 	cmd      string
-	cfg      hubconfig.Result
+	cfg      hubtool.Config // what the hub says of its configuration
+	hub      hubtool.Hub    // the hub, asked by its command line
 	path     string
 	args     []string // the positional arguments
 	zoneName string   // -name, of a zone or a siren
@@ -70,8 +73,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return exit
 	}
-	var err error
-	if c.cfg, err = hubconfig.Load(c.path); err != nil {
+	hub, err := hubAt(c.path)
+	if err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
+	}
+	c.hub = hubtool.Hub{Call: hub.Call}
+	if c.cfg, err = c.hub.View(); err != nil {
 		fmt.Fprintln(stderr, "configuration error:", err)
 		return 1
 	}

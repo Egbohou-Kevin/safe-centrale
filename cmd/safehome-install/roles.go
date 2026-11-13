@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"safehome/internal/hub/config/hubconfig"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/install"
 )
@@ -30,7 +29,7 @@ func (c *command) registered(ctx context.Context, s *install.Session, id string)
 
 // editor changes the zones and the sirens in the hub's state folder.
 func (c *command) editor() *install.Editor {
-	return install.NewEditor(hubconfig.SiteFiles{Path: c.path})
+	return install.NewEditor(c.hub)
 }
 
 func (c *command) zone(ctx context.Context, s *install.Session) error {

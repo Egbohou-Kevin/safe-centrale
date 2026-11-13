@@ -19,6 +19,7 @@ import (
 	"safehome/internal/shared/adapter/filestore"
 	"safehome/internal/shared/adapter/mqtt"
 	"safehome/internal/shared/adapter/sysclock"
+	"safehome/internal/shared/config/hubtool"
 	"safehome/internal/shared/config/siteconfig"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver"
@@ -37,6 +38,9 @@ const usage = `usage:
   safehome-hub codes  -config FILE list       list who has an access code
   safehome-hub codes  -config FILE set USER   set the code of USER (the code is read from the standard input)
   safehome-hub codes  -config FILE remove USER
+  safehome-hub site   -config FILE view|read|check|write
+                                              answer the installer's tools (JSON; check and
+                                              write read the zones and sirens on the standard input)
   safehome-hub version
 
 The user "installer" holds the installer code: typed then "disarm" at the keypad, it
@@ -44,7 +48,7 @@ opens the installation mode (the local console) while the alarm is disarmed. It 
 apart from the people's codes and never disarms.
 `
 
-var commandLine = service.CLI{Program: "safehome-hub", Version: version, Usage: usage, Extra: []string{"codes"}}
+var commandLine = service.CLI{Program: "safehome-hub", Version: version, Usage: usage, Extra: []string{"codes", hubtool.Command}}
 
 // run is main without the process: it takes everything it needs, so tests can run
 // it. It returns the exit code.
@@ -52,6 +56,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd, exit, ok := commandLine.Parse(args, stdout, stderr)
 	if !ok {
 		return exit
+	}
+	if cmd.Name == hubtool.Command { // reads the files its own way: a site the hub would leave aside is said
+		return hubconfig.SiteTool(cmd.Config, cmd.Args, stdin, stdout, stderr)
 	}
 	cfg, err := hubconfig.Load(cmd.Config)
 	if err != nil {

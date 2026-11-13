@@ -100,6 +100,7 @@ var moved = map[string]string{
 	"outbox":            "shared/outbox",
 	"service":           "shared/service",
 	"configfile":        "shared/config/configfile",
+	"hubtool":           "shared/config/hubtool",
 	"siteconfig":        "shared/config/siteconfig",
 	"adapter/filelock":  "shared/adapter/filelock",
 	"adapter/filestore": "shared/adapter/filestore",
