@@ -159,6 +159,12 @@ func TestConfigFileServesOnlyTheConfigurationPackages(t *testing.T) {
 	})
 }
 
+// The site's codes are kept through the driver's Store port and changed by the
+// access core's rule: no adapter, no configuration, no program, no clock of their own.
+func TestSiteCodesKnowOnlyTheAccessCoreAndTheStorePort(t *testing.T) {
+	layer{local: internal("access", "driver"), noClock: true}.check(t, "sitecodes")
+}
+
 // The installer's application layer talks to the broker through its own ports and
 // knows the site only as zones and sirens: no adapter, no configuration file, no hub.
 // The command-line tool and the web console both sit on it. It reads no clock

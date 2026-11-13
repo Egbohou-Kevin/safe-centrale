@@ -23,7 +23,6 @@ var roles = []string{"adapter", "app", "config", "core"}
 // case 1).
 var crossPrograms = map[string]map[string]string{
 	"console": {
-		"hub/app/hub":          "the local console shows the hub's state the way the hub computes it",
 		"hub/config/hubconfig": "the console reads and edits the hub's configuration",
 		"install/app/install":  "the console's pairing pages sit on the installer",
 	},

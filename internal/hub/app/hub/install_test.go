@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"safehome/internal/shared/sitecodes"
 	"slices"
 	"strings"
 	"testing"
@@ -17,7 +18,7 @@ const installerCode = "259031"
 // withInstaller gives the rig an installer code.
 func (r *rig) withInstaller() {
 	r.t.Helper()
-	reg, err := openInstallerCode(testConfig().Access, r.store)
+	reg, err := sitecodes.OpenInstaller(testConfig().Access, r.store)
 	if err != nil {
 		r.t.Fatal(err)
 	}

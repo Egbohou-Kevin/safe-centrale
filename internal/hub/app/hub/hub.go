@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"safehome/internal/shared/sitecodes"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,7 +38,7 @@ const (
 	keyEngine     = "engine"
 	keyHealth     = "health"
 	keyEscalation = "escalation"
-	keyAccess     = "access"
+	keyAccess     = sitecodes.KeyPeople
 	keySeq        = "seq"
 )
 
@@ -172,7 +173,7 @@ func (h *Hub) openSaved() (err error) {
 	if h.codes, err = h.openPeopleCodes(); err != nil {
 		return err
 	}
-	if h.installer, err = openInstallerCode(h.cfg.Access, h.codesStore()); err != nil {
+	if h.installer, err = sitecodes.OpenInstaller(h.cfg.Access, h.codesStore()); err != nil {
 		return err
 	}
 	h.out, err = outbox.Open(h.deps.Store, h.deps.Publisher, keySeq, h.cfg.Site, h.cfg.Outbox, h.deps.NewID, h.log)

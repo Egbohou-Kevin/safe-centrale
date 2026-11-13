@@ -1,193 +1,40 @@
 package hub
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
-	"maps"
 	"slices"
-	"time"
 
-	"safehome/internal/hub/core/escalation"
 	"safehome/internal/shared/core/access"
 	"safehome/internal/shared/driver"
+	"safehome/internal/shared/sitecodes"
 )
 
-// SiteCodes are the access codes as the installer's tools (the command-line tool,
-// the local console) change them, without running a hub: the people's and the
-// installer's, with the site's contacts. Every change is saved before it takes
-// effect; the running hub reads the codes again when told (ReloadCodes).
-type SiteCodes struct {
-	people, installer *access.Registry
-	contacts          []escalation.Contact
-	store             driver.Store
-	now               func() time.Time
-}
-
-// keyTaken keeps when a code was refused as someone else's (see Set).
-const keyTaken = "codes-taken"
-
-// A code refused as someone else's tells that it opens the site: takenLimit of them
-// within takenWindow stop the codes from being set until the window has passed, so
-// that the installer's tools cannot be used to try the codes one after another.
-const (
-	takenLimit  = 3
-	takenWindow = 10 * time.Minute
+// SiteCodes are the access codes as the installer's tools change them
+// (sitecodes.Codes); CodeList says who has one.
+type (
+	SiteCodes = sitecodes.Codes
+	CodeList  = sitecodes.CodeList
 )
 
-// ErrTooManyTaken refuses a code while too many were refused as someone else's.
-var ErrTooManyTaken = errors.New("hub: too many codes refused as someone else's, wait 10 minutes")
+// The refusals of a code (sitecodes).
+var (
+	ErrTooManyTaken = sitecodes.ErrTooManyTaken
+	ErrNotAContact  = sitecodes.ErrNotAContact
+)
 
-// ErrNotAContact refuses a code for someone who is neither a contact of the site nor
-// the installer: the hub would leave it aside.
-var ErrNotAContact = errors.New("hub: not a contact of the site")
-
-// OpenSiteCodes opens the codes saved in store, for the contacts of cfg; clock dates
-// the codes refused as someone else's (see Set).
+// OpenSiteCodes opens the codes saved in store, for the contacts of cfg
+// (sitecodes.Open).
 func OpenSiteCodes(cfg Config, store driver.Store, clock driver.Clock) (*SiteCodes, error) {
-	people, err := openCodes(cfg.Access, store)
-	if err != nil {
-		return nil, err
-	}
-	installer, err := openInstallerCode(cfg.Access, store)
-	if err != nil {
-		return nil, err
-	}
-	return &SiteCodes{people: people, installer: installer, contacts: cfg.Escalation.Contacts, store: store, now: clock.Now}, nil
+	return sitecodes.Open(cfg.Access, CodeContacts(cfg), store, clock)
 }
 
-// openCodes opens the people's codes saved in store.
-func openCodes(cfg access.Config, store driver.Store) (*access.Registry, error) {
-	return openRegistry(cfg, store, keyAccess)
-}
-
-// openInstallerCode opens the installer code saved in store: one code at most.
-func openInstallerCode(cfg access.Config, store driver.Store) (*access.Registry, error) {
-	cfg.MaxUsers = 1
-	return openRegistry(cfg, store, keyInstaller)
-}
-
-// CodeHolder is a contact of the site, and whether they have a code.
-type CodeHolder struct {
-	escalation.Contact
-	HasCode bool
-}
-
-// CodeList says who has a code. It never holds a code.
-type CodeList struct {
-	Contacts  []CodeHolder // in the configuration's order
-	Leftovers []string     // users of codes who are not contacts, sorted: the hub leaves those codes aside
-	Installer bool         // the installer code is set
-}
-
-// List says who has a code.
-func (s *SiteCodes) List() CodeList {
-	have := map[string]bool{}
-	for _, u := range s.people.Users() {
-		have[u] = true
+// CodeContacts are the contacts of cfg, as the codes know them.
+func CodeContacts(cfg Config) []sitecodes.Contact {
+	out := make([]sitecodes.Contact, 0, len(cfg.Escalation.Contacts))
+	for _, c := range cfg.Escalation.Contacts {
+		out = append(out, sitecodes.Contact{ID: c.ID, Name: c.Name, Role: string(c.Role)})
 	}
-	var l CodeList
-	for _, ct := range s.contacts {
-		l.Contacts = append(l.Contacts, CodeHolder{Contact: ct, HasCode: have[ct.ID]})
-		delete(have, ct.ID)
-	}
-	l.Leftovers = slices.Sorted(maps.Keys(have))
-	l.Installer = len(s.installer.Users()) > 0
-	return l
-}
-
-// Set gives user, a contact of the site or the installer, a code. One code opens one
-// thing: a person's code may not be the installer's, nor the reverse
-// (access.ErrCodeTaken). The code is never in an error.
-func (s *SiteCodes) Set(user, code string) error {
-	if user != InstallerUser && !slices.ContainsFunc(s.contacts, func(c escalation.Contact) bool { return c.ID == user }) {
-		return fmt.Errorf("%w: %s", ErrNotAContact, user)
-	}
-	taken, err := s.recentTaken()
-	if err != nil {
-		return err
-	}
-	if len(taken) >= takenLimit {
-		return ErrTooManyTaken
-	}
-	own, other := s.of(user)
-	if _, theirs := other.Verify(code); theirs {
-		err = access.ErrCodeTaken
-	} else {
-		err = own.Set(user, code)
-	}
-	if errors.Is(err, access.ErrCodeTaken) {
-		if serr := s.saveTaken(append(taken, s.now())); serr != nil {
-			return serr
-		}
-	}
-	return err
-}
-
-// recentTaken returns when codes were refused as someone else's within takenWindow.
-func (s *SiteCodes) recentTaken() ([]time.Time, error) {
-	data, found, err := s.store.Load(keyTaken)
-	if err != nil || !found {
-		return nil, err
-	}
-	var at []time.Time
-	if err := json.Unmarshal(data, &at); err != nil {
-		return nil, nil // damaged: counted afresh
-	}
-	now := s.now()
-	return slices.DeleteFunc(at, func(t time.Time) bool { return !now.Before(t.Add(takenWindow)) || t.After(now) }), nil
-}
-
-func (s *SiteCodes) saveTaken(at []time.Time) error {
-	b, err := json.Marshal(at)
-	if err != nil {
-		return err
-	}
-	return s.store.Save(keyTaken, b)
-}
-
-// Remove removes the code of user (access.ErrNoSuchUser if there is none).
-func (s *SiteCodes) Remove(user string) error {
-	own, _ := s.of(user)
-	return own.Remove(user)
-}
-
-// of returns the registry of user, and the other one.
-func (s *SiteCodes) of(user string) (own, other *access.Registry) {
-	if user == InstallerUser {
-		return s.installer, s.people
-	}
-	return s.people, s.installer
-}
-
-func openRegistry(cfg access.Config, store driver.Store, key string) (*access.Registry, error) {
-	records, err := loadCodes(store, key)
-	if err != nil {
-		return nil, err
-	}
-	persist := func(rs []access.Record) error {
-		b, err := json.Marshal(rs)
-		if err != nil {
-			return err
-		}
-		return store.Save(key, b)
-	}
-	return access.New(cfg, records, persist)
-}
-
-func loadCodes(store driver.Store, key string) ([]access.Record, error) {
-	data, found, err := store.Load(key)
-	if err != nil {
-		return nil, fmt.Errorf("hub: loading the access codes: %w", err)
-	}
-	if !found {
-		return nil, nil
-	}
-	var records []access.Record
-	if err := json.Unmarshal(data, &records); err != nil {
-		return nil, fmt.Errorf("hub: reading the access codes: %w", err)
-	}
-	return records, nil
+	return out
 }
 
 // errReadOnly: the hub only reads the codes; the installer's tools change them.
@@ -197,7 +44,7 @@ var errReadOnly = errors.New("hub: the access codes are changed by the installer
 // contacts only. It never writes them, so a code left aside stays on disk for the
 // installer to see and remove.
 func (h *Hub) openPeopleCodes() (*access.Registry, error) {
-	records, err := loadCodes(h.codesStore(), keyAccess)
+	records, err := sitecodes.Load(h.codesStore(), sitecodes.KeyPeople)
 	if err != nil {
 		return nil, err
 	}
@@ -250,11 +97,11 @@ func (h *Hub) contactIDs() []string {
 func (h *Hub) ReloadCodes() error {
 	h.reloading.Lock()
 	defer h.reloading.Unlock()
-	records, err := loadCodes(h.codesStore(), keyAccess)
+	records, err := sitecodes.Load(h.codesStore(), sitecodes.KeyPeople)
 	if err != nil {
 		return err
 	}
-	installer, err := loadCodes(h.codesStore(), keyInstaller)
+	installer, err := sitecodes.Load(h.codesStore(), sitecodes.KeyInstaller)
 	if err != nil {
 		return err
 	}

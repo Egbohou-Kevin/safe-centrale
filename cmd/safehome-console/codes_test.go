@@ -14,13 +14,12 @@ import (
 	"time"
 
 	"safehome/internal/console/app/consoleapp"
-	"safehome/internal/hub/app/hub"
 	"safehome/internal/hub/config/hubconfig"
 	"safehome/internal/hub/core/escalation"
 	"safehome/internal/shared/adapter/filestore"
 	"safehome/internal/shared/adapter/pidfile"
-	"safehome/internal/shared/driver"
 	"safehome/internal/shared/driver/drivertest"
+	"safehome/internal/shared/sitecodes"
 )
 
 func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
@@ -41,11 +40,11 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool, err := hub.OpenSiteCodes(cfg.Hub, store, driver.SystemClock())
+	tool, err := openCodes(cfg, store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tool.Set(hub.InstallerUser, "3691"); err != nil {
+	if err := tool.Set(sitecodes.InstallerUser, "3691"); err != nil {
 		t.Fatal(err)
 	}
 	for code, want := range map[string]error{
@@ -91,9 +90,9 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	}
 
 	// A code left by someone no longer a contact is listed apart, and removed.
-	before := cfg.Hub
-	before.Escalation.Contacts = append(slices.Clone(before.Escalation.Contacts), escalation.Contact{ID: "u_gone"})
-	if other, err := hub.OpenSiteCodes(before, store, driver.SystemClock()); err != nil || other.Set("u_gone", "7391") != nil {
+	before := cfg
+	before.Hub.Escalation.Contacts = append(slices.Clone(before.Hub.Escalation.Contacts), escalation.Contact{ID: "u_gone"})
+	if other, err := openCodes(before, store); err != nil || other.Set("u_gone", "7391") != nil {
 		t.Fatal(err)
 	}
 	if _, leftovers, err := c.People(); err != nil || !slices.Equal(leftovers, []string{"u_gone"}) {
@@ -116,10 +115,10 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	}
 	// The installer's code is not the console's: a form posted by hand with
 	// id=installer neither replaces nor removes it.
-	if err := c.Set(hub.InstallerUser, "1593"); !errors.Is(err, consoleapp.ErrNotAContact) {
+	if err := c.Set(sitecodes.InstallerUser, "1593"); !errors.Is(err, consoleapp.ErrNotAContact) {
 		t.Fatalf("the installer's code replaced from the console: %v", err)
 	}
-	if err := c.Remove(hub.InstallerUser); !errors.Is(err, consoleapp.ErrNoSuchCode) {
+	if err := c.Remove(sitecodes.InstallerUser); !errors.Is(err, consoleapp.ErrNoSuchCode) {
 		t.Fatalf("the installer's code removed from the console: %v", err)
 	}
 	if err := c.Set("u_owner", "3691"); !errors.Is(err, consoleapp.ErrCodeTaken) {
@@ -168,11 +167,11 @@ func TestCodesGoToTheirFolderUnderItsLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool, err := hub.OpenSiteCodes(cfg.Hub, flat, driver.SystemClock())
+	tool, err := openCodes(cfg, flat)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tool.Set(hub.InstallerUser, "3691"); err != nil {
+	if err := tool.Set(sitecodes.InstallerUser, "3691"); err != nil {
 		t.Fatal(err)
 	}
 	folder := hubconfig.CodesDir(cfg.StateDir)

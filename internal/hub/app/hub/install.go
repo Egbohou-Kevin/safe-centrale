@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"maps"
+	"safehome/internal/shared/sitecodes"
 	"slices"
 	"time"
 
@@ -17,14 +18,13 @@ import (
 // The local console serves its Wi-Fi and its page while it lasts. It is owned by the
 // engine's loop, which knows whether the alarm is disarmed.
 
-// InstallerUser is the user of the installer code. That code is apart from the
-// people's codes: it takes none of their places, and never disarms.
-const InstallerUser = "installer"
+// InstallerUser is the user of the installer code (sitecodes.InstallerUser).
+const InstallerUser = sitecodes.InstallerUser
 
 // installLength is how long the mode lasts.
 const installLength = contract.InstallLength * time.Second
 
-const keyInstaller = "installer"
+const keyInstaller = sitecodes.KeyInstaller
 
 // installMode is the state of the mode. Only the engine's loop touches it.
 type installMode struct {
