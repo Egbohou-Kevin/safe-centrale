@@ -168,6 +168,32 @@ d'imports.
        l'installateur, par choix (une seule logique d'appairage).
      Restent cinq exceptions nommées dans `crossPrograms` : trois sous console, deux sous
      install, plus aucune sous hub.
+   - **Ajout du 13/11/2026 (Kevin, « 1 et 2 », 13/11/2026 17:29:55, relayé par la session mère).**
+     Trois des cinq exceptions tombent, sans changer ni comportement, ni format de fichier, ni
+     contrat :
+     - install → `hub/core/engine` : les types de zone et leurs capteurs sortent dans
+       `shared/core/zones`, un cœur pur ; le moteur les garde sous ses noms (alias). Une seule règle.
+     - console → `hub/app/hub` : les codes du site (registre, refus récents, code de
+       l'installateur) sortent dans `shared/sitecodes`, sur `access` et le port `driver.Store` ;
+       le hub et la console ouvrent le même fichier par lui.
+     - console → `install/app/install` : l'application d'appairage sert deux programmes, elle va
+       sous `shared/install` (comme `access` le 12/11/2026).
+     Restent les deux flèches vers `hub/config/hubconfig` (console et install). Elles ne tombent
+     pas par un simple rangement : `SiteFiles.Check/Write` et la surcouche du cloud refusent ce
+     que la validation complète du hub refuserait (`build`, par `engine`, `health`,
+     `escalation`). Les sortir dans `shared` ferait importer le hub par le commun ; ne vérifier
+     que la part partagée laisserait l'installateur écrire des zones que le hub refuse. **Question
+     posée à Kevin** :
+     1. (recommandé) La console et l'installateur demandent au hub lui-même, par un adaptateur
+        qui exécute `safehome-hub site show|check|write` (JSON sur l'entrée et la sortie) ; le
+        format de `hub.json` et les chemins (dossier des codes, verrou) vont dans `shared/config`.
+        Une seule règle, aucun contrat MQTT touché, mais un contrat en ligne de commande nouveau.
+     2. `shared/config/hubfile` porte le format et les surcouches ; console et install ne
+        vérifient que la part partagée. Plus simple, moins sûr.
+     3. Garder ces deux exceptions, nommées.
+     Preuve (13/11/2026) : un import console → `hub/core/engine` posé exprès rougit
+     `TestAProgramImportsNoOtherProgram`, et `shared/install` passe ; `go test -count=1 ./...` :
+     2040 tests réussis, 0 échec, 0 ignoré. Commits 7e0456d, 7aa2f58, 48f24f3.
 2. **Décidé seule, à relire (11/11/2026).** **`access`** sert le hub et la console. La table le met sous `hub/core/access` (son
    propriétaire est le hub, la console y passe par l'exception 1) plutôt que sous `shared`, comme
    l'esquisse le proposait : le commun garde seulement ce que plusieurs programmes possèdent.
