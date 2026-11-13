@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"safehome/internal/hub/config/hubconfig"
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/adapter/mqtt"
 	"safehome/internal/shared/adapter/mqtt/mqtttest"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver/drivertest"
+	"safehome/internal/shared/install"
 )
 
 const site = "tg-lom-0001"

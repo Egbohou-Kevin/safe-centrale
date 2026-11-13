@@ -65,7 +65,7 @@ var moved = map[string]string{
 	"adapter/hotspot":   "console/adapter/hotspot",
 	"consoleapp":        "console/app/consoleapp",
 	"consoleconfig":     "console/config/consoleconfig",
-	"install":           "install/app/install",
+	"install":           "shared/install",
 	"zigbee":            "zigbee/core/zigbee",
 	"zigbeeapp":         "zigbee/app/zigbeeapp",
 	"zigbeeconfig":      "zigbee/config/zigbeeconfig",

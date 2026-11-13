@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver/drivertest"
+	"safehome/internal/shared/install"
 )
 
 func TestTheConsoleLivesOnlyWhileTheInstallationModeLasts(t *testing.T) {

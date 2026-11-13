@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
+	"safehome/internal/shared/install"
 )
 
 // mode is one installation mode, as Run follows it.

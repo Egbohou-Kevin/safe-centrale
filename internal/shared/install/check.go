@@ -5,7 +5,8 @@
 // The command-line tool (cmd/safehome-install) and the local console
 // (internal/console/app/consoleapp) both sit on it. It knows no adapter and no configuration file:
 // the program gives it a publisher and the messages (Session), and the site's files
-// behind the Sites port (Editor).
+// behind the Sites port (Editor). It lies in shared/ because two programs use it
+// (docs/rangement-par-programme.md, 13/11/2026).
 package install
 
 import (

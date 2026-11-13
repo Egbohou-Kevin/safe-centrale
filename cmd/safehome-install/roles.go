@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"safehome/internal/hub/config/hubconfig"
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
+	"safehome/internal/shared/install"
 )
 
 // registered finds a device in the registry. With -force, a device the registry does

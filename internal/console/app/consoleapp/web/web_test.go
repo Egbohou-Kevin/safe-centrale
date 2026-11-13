@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"safehome/internal/console/app/consoleapp"
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
+	"safehome/internal/shared/install"
 )
 
 const host = "10.42.0.1"

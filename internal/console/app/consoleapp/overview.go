@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
+	"safehome/internal/shared/install"
 )
 
 // Overview is what the page shows.

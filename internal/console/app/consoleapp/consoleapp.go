@@ -5,7 +5,7 @@
 // The console lives only while the installation mode lasts, which the hub opens when
 // the installer code is typed at the keypad (install.mode, retained). Then it turns
 // on the network and serves the page; when the mode ends, it stops both. Its work on
-// the devices is the installer's application (internal/install/app/install), the same as the
+// the devices is the installer's application (internal/shared/install), the same as the
 // command-line tool's.
 //
 // Everything outside is a port: the network (Hotspot), the zones and sirens of the
@@ -21,10 +21,10 @@ import (
 	"sync"
 	"time"
 
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/inbox"
+	"safehome/internal/shared/install"
 )
 
 // Source names the console in the envelopes it sends.

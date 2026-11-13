@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
+	"safehome/internal/shared/install"
 )
 
 // rejectReasons explains the adapter's refusals to the installer.

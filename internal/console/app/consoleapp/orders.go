@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"safehome/internal/install/app/install"
 	"safehome/internal/shared/contract"
+	"safehome/internal/shared/install"
 )
 
 // sessionCtx returns the current installation mode's context, or ErrClosed.
