@@ -1,20 +1,19 @@
 package engine
 
-import (
-	"maps"
-	"slices"
-)
+import "safehome/internal/shared/core/zones"
 
-// ZoneKind is the type of a zone: it decides how its devices behave.
-type ZoneKind string
+// ZoneKind is the type of a zone: it decides how its devices behave. The kinds and
+// the sensors each reacts to are the rule of shared/core/zones, which the
+// installer's tools use too: the engine names them in its own words.
+type ZoneKind = zones.Kind
 
 const (
-	ZoneEntry    ZoneKind = "entry"      // entry door: entry delay
-	ZoneInstant  ZoneKind = "instant"    // perimeter: immediate alarm
-	ZoneInterior ZoneKind = "interior"   // interior motion
-	ZoneFire     ZoneKind = "24h_fire"   // smoke, always active
-	ZonePanic    ZoneKind = "24h_panic"  // panic button, always active
-	ZoneTamper   ZoneKind = "24h_tamper" // tamper, always active
+	ZoneEntry    = zones.Entry    // entry door: entry delay
+	ZoneInstant  = zones.Instant  // perimeter: immediate alarm
+	ZoneInterior = zones.Interior // interior motion
+	ZoneFire     = zones.Fire     // smoke, always active
+	ZonePanic    = zones.Panic    // panic button, always active
+	ZoneTamper   = zones.Tamper   // tamper, always active
 )
 
 // Zone describes the zone of a device. The name and the room (empty when none) come
@@ -26,32 +25,8 @@ type Zone struct {
 	Room string
 }
 
-// zoneSensors lists, for each kind of zone, the sensors it reacts to: a smoke
-// detector's tamper is not a fire. The tamper sensor of any device is apart: it
-// always means tamper, whatever the zone (see Engine.signal). The installer's tools
-// use this table too (Accepts), so that a device is never put in a zone it cannot
-// trigger.
-var zoneSensors = map[ZoneKind][]SensorKind{
-	ZoneEntry:    {SensorContact, SensorMotion, SensorVibration, SensorGlassBreak},
-	ZoneInstant:  {SensorContact, SensorMotion, SensorVibration, SensorGlassBreak},
-	ZoneInterior: {SensorMotion, SensorContact},
-	ZoneFire:     {SensorSmoke},
-	ZonePanic:    {SensorPanic},
-	ZoneTamper:   {SensorTamper},
-}
+// Accepts tells whether a zone of this kind reacts to this sensor (zones.Accepts).
+func Accepts(kind ZoneKind, sensor SensorKind) bool { return zones.Accepts(kind, sensor) }
 
-func (k ZoneKind) valid() bool {
-	_, ok := zoneSensors[k]
-	return ok
-}
-
-// Sensors returns the sensors a zone of this kind reacts to; nil for an unknown kind.
-func (k ZoneKind) Sensors() []SensorKind { return slices.Clone(zoneSensors[k]) }
-
-// Accepts tells whether a zone of this kind reacts to this sensor.
-func Accepts(kind ZoneKind, sensor SensorKind) bool {
-	return slices.Contains(zoneSensors[kind], sensor)
-}
-
-// ZoneKinds lists the kinds of zone, sorted.
-func ZoneKinds() []ZoneKind { return slices.Sorted(maps.Keys(zoneSensors)) }
+// ZoneKinds lists the kinds of zone, sorted (zones.Kinds).
+func ZoneKinds() []ZoneKind { return zones.Kinds() }

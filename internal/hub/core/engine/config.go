@@ -104,7 +104,7 @@ func (c Config) Validate() error {
 		}
 	}
 	for id, z := range c.Zones {
-		if !z.Kind.valid() {
+		if !z.Kind.Valid() {
 			return fmt.Errorf("engine: zone %q of device %q: unknown kind %q", z.Name, id, z.Kind)
 		}
 	}

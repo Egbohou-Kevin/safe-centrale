@@ -1,5 +1,7 @@
 package engine
 
+import "safehome/internal/shared/core/zones"
+
 // This file holds the domain vocabulary. It is deliberately independent of the
 // wire format: the translation to and from the event contract lives in the wire
 // subpackage, so a new contract version never forces a change here.
@@ -15,19 +17,18 @@ const (
 	ModeTriggered  Mode = "triggered"
 )
 
-// SensorKind is what a device senses. The values are spelled like the contract's
-// capabilities, which the installer's tools rely on (a test of the wire subpackage
-// keeps it so).
-type SensorKind string
+// SensorKind is what a device senses (zones.Sensor: the values are spelled like the
+// contract's capabilities, which a test of the wire subpackage keeps so).
+type SensorKind = zones.Sensor
 
 const (
-	SensorContact    SensorKind = "contact"     // door or window contact; active when open
-	SensorMotion     SensorKind = "motion"      // active on motion
-	SensorSmoke      SensorKind = "smoke"       // active on smoke
-	SensorVibration  SensorKind = "vibration"   // active on vibration
-	SensorGlassBreak SensorKind = "glass_break" // active on glass break
-	SensorPanic      SensorKind = "panic"       // active when the button is pressed
-	SensorTamper     SensorKind = "tamper"      // active when the device is tampered with
+	SensorContact    = zones.Contact    // door or window contact; active when open
+	SensorMotion     = zones.Motion     // active on motion
+	SensorSmoke      = zones.Smoke      // active on smoke
+	SensorVibration  = zones.Vibration  // active on vibration
+	SensorGlassBreak = zones.GlassBreak // active on glass break
+	SensorPanic      = zones.PanicPress // active when the button is pressed
+	SensorTamper     = zones.Tampered   // active when the device is tampered with
 )
 
 // Origin says where an order came from.

@@ -100,8 +100,8 @@ func TestAcceptsMatchesTheZoneTable(t *testing.T) {
 		t.Fatalf("ZoneKinds: %v", kinds)
 	}
 	for _, k := range kinds {
-		if !k.valid() || len(k.Sensors()) == 0 {
-			t.Errorf("%s: valid %v, sensors %v", k, k.valid(), k.Sensors())
+		if !k.Valid() || len(k.Sensors()) == 0 {
+			t.Errorf("%s: valid %v, sensors %v", k, k.Valid(), k.Sensors())
 		}
 	}
 	s := ZoneFire.Sensors()

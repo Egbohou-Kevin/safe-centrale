@@ -15,9 +15,9 @@ import (
 	"slices"
 	"strings"
 
-	"safehome/internal/hub/core/engine"
 	"safehome/internal/shared/contract"
 	sitemodel "safehome/internal/shared/core/site"
+	"safehome/internal/shared/core/zones"
 )
 
 // Level says how serious a finding is.
@@ -45,11 +45,11 @@ func (f Finding) String() string {
 	return fmt.Sprintf("%s: %s: %s", f.Level, f.DeviceID, f.Text)
 }
 
-// ZoneKinds lists the kinds of zone, for help texts. The engine owns them, with the
-// sensors each kind reacts to.
+// ZoneKinds lists the kinds of zone, for help texts. Their rule, with the sensors each
+// kind reacts to, is shared/core/zones, the engine's too.
 func ZoneKinds() []string {
 	var out []string
-	for _, k := range engine.ZoneKinds() {
+	for _, k := range zones.Kinds() {
 		out = append(out, string(k))
 	}
 	return out
@@ -57,7 +57,7 @@ func ZoneKinds() []string {
 
 // ValidKind checks a kind of zone.
 func ValidKind(kind string) error {
-	if !slices.Contains(engine.ZoneKinds(), engine.ZoneKind(kind)) {
+	if !slices.Contains(zones.Kinds(), zones.Kind(kind)) {
 		return fmt.Errorf("unknown zone kind %q (use %s)", kind, strings.Join(ZoneKinds(), ", "))
 	}
 	return nil
@@ -79,12 +79,12 @@ func CanServe(kind string, capabilities []string) error {
 	// A device with none of the sensors its zone reacts to would sit in that zone
 	// and never raise anything. Sensor kinds are spelled like the capabilities.
 	for _, c := range capabilities {
-		if engine.Accepts(engine.ZoneKind(kind), engine.SensorKind(c)) {
+		if zones.Accepts(zones.Kind(kind), zones.Sensor(c)) {
 			return nil
 		}
 	}
 	var sensors []string
-	for _, s := range engine.ZoneKind(kind).Sensors() {
+	for _, s := range zones.Kind(kind).Sensors() {
 		sensors = append(sensors, string(s))
 	}
 	return fmt.Errorf("%w: a %s zone needs one of %s, the device has %s",

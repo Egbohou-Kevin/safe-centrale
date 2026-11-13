@@ -29,7 +29,6 @@ var crossPrograms = map[string]map[string]string{
 	},
 	"install": {
 		"hub/config/hubconfig": "the installer writes the hub's site configuration",
-		"hub/core/engine":      "the installer checks zone and sensor kinds with the engine's rule",
 	},
 }
 

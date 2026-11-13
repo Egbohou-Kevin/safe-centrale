@@ -20,9 +20,14 @@ func TestDomainCoresArePure(t *testing.T) {
 		noClock: true,
 		why:     ": the domain depends on nothing but the standard library, without I/O, and inputs carry their own time",
 	}
-	for _, pkg := range []string{"engine", "health", "access", "escalation", "gsm", "zigbee", "video", "maint", "power"} {
+	for _, pkg := range []string{"zones", "health", "access", "escalation", "gsm", "zigbee", "video", "maint", "power"} {
 		pure.check(t, pkg)
 	}
+	// The engine applies the rule of the kinds of zone, a pure core it shares with the
+	// installer's tools.
+	engine := pure
+	engine.local = internal("zones")
+	engine.check(t, "engine")
 }
 
 // The contract is the published language: it depends on nothing in the module.
@@ -158,8 +163,8 @@ func TestConfigFileServesOnlyTheConfigurationPackages(t *testing.T) {
 // knows the site only as zones and sirens: no adapter, no configuration file, no hub.
 // The command-line tool and the web console both sit on it. It reads no clock
 // either: the program gives it one.
-func TestInstallKnowsOnlyTheContractAndTheZoneKinds(t *testing.T) {
-	layer{local: internal("contract", "engine", "inbox", "site"), noClock: true}.check(t, "install")
+func TestInstallKnowsOnlyTheContractAndTheSite(t *testing.T) {
+	layer{local: internal("contract", "inbox", "site", "zones"), noClock: true}.check(t, "install")
 }
 
 // The local console's application drives the network, the page and the hub's files
@@ -270,7 +275,7 @@ func TestServiceIsSharedAssemblyForThePrograms(t *testing.T) {
 // stated here for the hub, which sits above them).
 func TestNoDomainImportsTheHub(t *testing.T) {
 	hub := internal("hub")[0]
-	for _, pkg := range []string{"engine", "health", "access", "escalation", "gsm", "zigbee", "video", "maint", "power", "contract", "driver"} {
+	for _, pkg := range []string{"engine", "zones", "health", "access", "escalation", "gsm", "zigbee", "video", "maint", "power", "contract", "driver"} {
 		_, files := parsePackage(t, filepath.Join(root(t), dirOf(pkg)))
 		for name, f := range files {
 			if slices.Contains(importsOf(f), hub) {

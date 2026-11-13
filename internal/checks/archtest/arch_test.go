@@ -54,6 +54,7 @@ var moved = map[string]string{
 	"hub":               "hub/app/hub",
 	"access":            "shared/core/access",
 	"site":              "shared/core/site",
+	"zones":             "shared/core/zones",
 	"adapter/machine":   "hub/adapter/machine",
 	"configapp":         "hub/app/configapp",
 	"engine":            "hub/core/engine",

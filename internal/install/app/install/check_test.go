@@ -8,22 +8,22 @@ import (
 	"strings"
 	"testing"
 
-	"safehome/internal/hub/core/engine"
 	"safehome/internal/shared/contract"
+	"safehome/internal/shared/core/zones"
 )
 
 func dev(id string, caps ...string) contract.RegistryDevice {
 	return contract.RegistryDevice{DeviceID: id, Model: "model." + id, Capabilities: caps, Adapter: contract.AdapterZigbee}
 }
 
-func TestEveryEngineZoneKindHasItsSensors(t *testing.T) {
+func TestEveryZoneKindHasItsSensors(t *testing.T) {
 	want := []string{
-		string(engine.ZoneFire), string(engine.ZonePanic), string(engine.ZoneTamper),
-		string(engine.ZoneEntry), string(engine.ZoneInstant), string(engine.ZoneInterior),
+		string(zones.Fire), string(zones.Panic), string(zones.Tamper),
+		string(zones.Entry), string(zones.Instant), string(zones.Interior),
 	}
 	slices.Sort(want)
 	if got := ZoneKinds(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("zone kinds %v, engine has %v", got, want)
+		t.Fatalf("zone kinds %v, the rule has %v", got, want)
 	}
 }
 
