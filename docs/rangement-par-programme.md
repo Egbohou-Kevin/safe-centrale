@@ -194,6 +194,18 @@ d'imports.
      Preuve (13/11/2026) : un import console → `hub/core/engine` posé exprès rougit
      `TestAProgramImportsNoOtherProgram`, et `shared/install` passe ; `go test -count=1 ./...` :
      2040 tests réussis, 0 échec, 0 ignoré. Commits 7e0456d, 7aa2f58, 48f24f3.
+   - **Ajout du 13/11/2026 : plus aucune exception.** Kevin a choisi l'option 1 (13/11/2026
+     17:55:00, « Option 1, exec hub »). La centrale répond aux outils par sa ligne de commande,
+     `safehome-hub site -config FICHIER view|read|check|write` (JSON sur l'entrée et la sortie,
+     contrat dans `shared/config/hubtool`) ; `shared/adapter/hubexec` la lance, borné en temps
+     (30 s) et en sortie (1 Mio), sans les secrets du broker de l'appelant. La règle qui vérifie un
+     site reste dans la centrale, écrite une fois ; `hubconfig.SiteFiles` disparaît. Les chemins des
+     codes (dossier, verrou) vont dans `shared/sitecodes`, le nom du fichier de pid dans `hubtool`.
+     `crossPrograms` est supprimée : `TestAProgramImportsNoOtherProgram` refuse tout import d'un
+     autre programme, sans liste d'exceptions à rallonger. Aucun contrat MQTT touché.
+     Preuve (13/11/2026) : un import console → `hub/config/hubconfig` posé exprès rougit le test, et
+     passe une fois retiré ; `go test -count=1 ./...` : 2054 tests réussis, 0 échec, 0 ignoré.
+     Commits 87439f2 (installateur) et le suivant (console).
 2. **Décidé seule, à relire (11/11/2026).** **`access`** sert le hub et la console. La table le met sous `hub/core/access` (son
    propriétaire est le hub, la console y passe par l'exception 1) plutôt que sous `shared`, comme
    l'esquisse le proposait : le commun garde seulement ce que plusieurs programmes possèdent.

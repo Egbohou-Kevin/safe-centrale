@@ -62,6 +62,11 @@ func AccessOf(c access.Config) Access {
 	return Access{MaxUsers: c.MaxUsers, MinDigits: c.MinDigits, MaxDigits: c.MaxDigits, Iterations: c.Iterations}
 }
 
+// Config is the rule, salted from the system's secure random source.
+func (a Access) Config() access.Config {
+	return access.Config{MaxUsers: a.MaxUsers, MinDigits: a.MinDigits, MaxDigits: a.MaxDigits, Iterations: a.Iterations}
+}
+
 // Location is the site's time zone, nil for UTC (the hub's own reading).
 func (c Config) Location() (*time.Location, error) {
 	if c.Timezone == "" {

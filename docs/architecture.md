@@ -193,8 +193,10 @@ Le code suit une architecture hexagonale, adaptée à Go plutôt que recopiée d
   acceptés par chaque type de zone est dans `internal/hub/core/engine` (`engine.Accepts`).
   `internal/shared/install` est seul à modifier le site (zones et sirènes) : son `Editor`
   lit, change et écrit par le port `Sites`, pour la console comme pour l'outil.
-  L'adaptateur de ce port est `hubconfig.SiteFiles`, qui garde les zones et les
-  sirènes dans le dossier d'état.
+  Ce port est tenu par `hubtool.Hub` (`internal/shared/config/hubtool`), qui pose la
+  question à la centrale par sa ligne de commande (`safehome-hub site`, lancée par
+  `internal/shared/adapter/hubexec`) : la centrale vérifie par ses propres règles et
+  garde les zones et les sirènes dans son dossier d'état.
 - **La console locale** : sa couche application (`internal/console/app/consoleapp`) suit le mode
   installation et déclare ses ports (`Hotspot`, `Sites`, `Codes`, `Serve`). `Sites` est
   `install.Sites` ; `Codes` a `People` (les contacts, et à part les codes d'anciens
@@ -475,3 +477,6 @@ loin reste ouverte.
    `Zone`, `Sites`, la règle des noms) est sous `internal/shared/core/site` ; `hubconfig`
    n'importe plus l'installateur. Les autres flèches restent (raisons dans
    `rangement-par-programme.md`, cas 1).
+   Ajout du 13/11/2026 : plus aucune flèche entre programmes. Kevin a choisi
+   (13/11/2026 17:55, « Option 1, exec hub ») : la console et l'installateur
+   interrogent la centrale par `safehome-hub site`, ils n'importent plus `hubconfig`.

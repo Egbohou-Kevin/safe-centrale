@@ -77,7 +77,7 @@ Documents en français. Code, commentaires et messages d'erreur en anglais.
 
 | Dossier | Contenu |
 |---|---|
-| `internal/hub/config/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict), nom de son fichier de pid (`PidFile`) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`, adaptateur `SiteFiles` du port `install.Sites`) ; répond aux outils de l'installateur par `safehome-hub site` (`SiteTool`) |
+| `internal/hub/config/hubconfig` | Lecture et validation du fichier de configuration de la centrale (JSON strict), nom de son fichier de pid (`PidFile`) ; les zones et les sirènes réglées sur place, gardées dans le dossier d'état (`site-devices.json`) ; les outils de l'installateur les lisent et les changent par `safehome-hub site` (`SiteTool`), jamais en lisant ces fichiers |
 | `internal/shared/config/siteconfig` | La configuration réglée depuis l'application (`config.set`), gardée dans le dossier d'état ; la centrale, la passerelle GSM et la vidéo la lisent et la posent sur leur propre fichier au démarrage |
 | `internal/gsm/config/gsmconfig` | Lecture du fichier de configuration de la passerelle, avec les contacts réglés depuis le cloud |
 | `internal/zigbee/config/zigbeeconfig` | Lecture de la configuration et des profils d'appareils (`config/profiles/`) |

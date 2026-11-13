@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"safehome/internal/console/app/consoleapp"
-	"safehome/internal/hub/config/hubconfig"
 	"safehome/internal/shared/adapter/filelock"
 	"safehome/internal/shared/adapter/filestore"
+	"safehome/internal/shared/config/hubtool"
 	"safehome/internal/shared/core/access"
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/service"
@@ -19,10 +19,11 @@ import (
 // codes fits the hub's access codes to the console's Codes port. Each call reads the
 // hub's files again: the contacts may have changed from the app, the codes from the
 // command line. A change holds the codes' lock from the read to the write (see
-// hubconfig.CodesLock): two phones may set codes at once.
+// sitecodes.CodesLock): two phones may set codes at once. The hub says where its
+// state folder is, who its contacts are and its codes' rule (safehome-hub site view).
 type codes struct {
-	hubConfig string
-	log       *slog.Logger
+	hub hubtool.Hub
+	log *slog.Logger
 }
 
 // codesWait bounds the wait for the codes' lock: a change hashes a few codes, some
@@ -31,7 +32,7 @@ const codesWait = 30 * time.Second
 
 // change runs do on the codes opened under their lock, then tells a running hub.
 func (c codes) change(do func(*sitecodes.Codes) error) error {
-	cfg, err := hubconfig.Load(c.hubConfig)
+	cfg, err := c.hub.View()
 	if err != nil {
 		return fmt.Errorf("the hub's configuration: %w", err)
 	}
@@ -39,7 +40,7 @@ func (c codes) change(do func(*sitecodes.Codes) error) error {
 	if err != nil {
 		return err
 	}
-	release, err := filelock.Hold(hubconfig.CodesDir(cfg.StateDir), hubconfig.CodesLock, codesWait)
+	release, err := filelock.Hold(sitecodes.CodesDir(cfg.StateDir), sitecodes.CodesLock, codesWait)
 	if err != nil {
 		return err
 	}
@@ -56,7 +57,7 @@ func (c codes) change(do func(*sitecodes.Codes) error) error {
 }
 
 func (c codes) open() (*sitecodes.Codes, error) {
-	cfg, err := hubconfig.Load(c.hubConfig)
+	cfg, err := c.hub.View()
 	if err != nil {
 		return nil, fmt.Errorf("the hub's configuration: %w", err)
 	}
@@ -68,18 +69,18 @@ func (c codes) open() (*sitecodes.Codes, error) {
 }
 
 // openCodes opens the codes in store for the contacts of the hub's configuration.
-func openCodes(cfg hubconfig.Result, store *filestore.Store) (*sitecodes.Codes, error) {
-	contacts := make([]sitecodes.Contact, 0, len(cfg.Hub.Escalation.Contacts))
-	for _, c := range cfg.Hub.Escalation.Contacts {
-		contacts = append(contacts, sitecodes.Contact{ID: c.ID, Name: c.Name, Role: string(c.Role)})
+func openCodes(cfg hubtool.Config, store *filestore.Store) (*sitecodes.Codes, error) {
+	contacts := make([]sitecodes.Contact, 0, len(cfg.Contacts))
+	for _, c := range cfg.Contacts {
+		contacts = append(contacts, sitecodes.Contact(c))
 	}
-	return sitecodes.Open(cfg.Hub.Access, contacts, store, driver.SystemClock())
+	return sitecodes.Open(cfg.Access.Config(), contacts, store, driver.SystemClock())
 }
 
 // openStore opens the folder of the hub's access codes. The codes not moved there
 // yet (by install.sh) are read where they were, in the state folder itself.
-func openStore(cfg hubconfig.Result) (*filestore.Store, error) {
-	store, err := filestore.OpenMoved(hubconfig.CodesDir(cfg.StateDir), cfg.StateDir, nil)
+func openStore(cfg hubtool.Config) (*filestore.Store, error) {
+	store, err := filestore.OpenMoved(sitecodes.CodesDir(cfg.StateDir), cfg.StateDir, nil)
 	if err != nil {
 		return nil, fmt.Errorf("the state directory: %w", err)
 	}
@@ -145,7 +146,7 @@ func (c codes) Remove(user string) error {
 }
 
 func (c codes) notifyHub(dir string) {
-	switch pid, err := service.Reload(dir, hubconfig.PidFile); {
+	switch pid, err := service.Reload(dir, hubtool.PidFile); {
 	case errors.Is(err, service.ErrNotRunning):
 		c.log.Warn("no hub is running: the new code applies at its next start")
 	case err != nil:

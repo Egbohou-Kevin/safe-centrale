@@ -14,29 +14,28 @@ import (
 	"time"
 
 	"safehome/internal/console/app/consoleapp"
-	"safehome/internal/hub/config/hubconfig"
-	"safehome/internal/hub/core/escalation"
 	"safehome/internal/shared/adapter/filestore"
 	"safehome/internal/shared/adapter/pidfile"
+	"safehome/internal/shared/config/hubtool"
 	"safehome/internal/shared/driver/drivertest"
 	"safehome/internal/shared/sitecodes"
 )
 
 func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 	_, hubPath, _ := setup(t, "mqtt://127.0.0.1:1883", 80)
-	cfg, err := hubconfig.Load(hubPath)
+	cfg, err := testHub(t, hubPath).View()
 	if err != nil {
 		t.Fatal(err)
 	}
 	logs := drivertest.Logs(t)
-	c := codes{hubConfig: hubPath, log: slog.New(slog.NewTextHandler(logs, nil))}
+	c := codes{hub: testHub(t, hubPath), log: slog.New(slog.NewTextHandler(logs, nil))}
 
 	people, leftovers, err := c.People()
 	if err != nil || len(leftovers) != 0 || len(people) != 4 || people[0].ID != "u_owner" || people[0].Role != "owner" || people[0].HasCode {
 		t.Fatalf("%+v %v", people, err)
 	}
 
-	store, err := filestore.Open(hubconfig.CodesDir(cfg.StateDir), nil)
+	store, err := filestore.Open(sitecodes.CodesDir(cfg.StateDir), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,11 +62,11 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { stand.Process.Kill() })
-	running, err := pidfile.Lock(cfg.StateDir, hubconfig.PidFile) // a running hub holds its pid file
+	running, err := pidfile.Lock(cfg.StateDir, hubtool.PidFile) // a running hub holds its pid file
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(cfg.StateDir, hubconfig.PidFile), []byte(strconv.Itoa(stand.Process.Pid)+"\n"), 0o600)
+	os.WriteFile(filepath.Join(cfg.StateDir, hubtool.PidFile), []byte(strconv.Itoa(stand.Process.Pid)+"\n"), 0o600)
 	if err := c.Set("u_owner", "2580"); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +90,7 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 
 	// A code left by someone no longer a contact is listed apart, and removed.
 	before := cfg
-	before.Hub.Escalation.Contacts = append(slices.Clone(before.Hub.Escalation.Contacts), escalation.Contact{ID: "u_gone"})
+	before.Contacts = append(slices.Clone(before.Contacts), hubtool.Contact{ID: "u_gone"})
 	if other, err := openCodes(before, store); err != nil || other.Set("u_gone", "7391") != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +133,7 @@ func TestCodesGoToTheHubsFilesAndTheHubIsTold(t *testing.T) {
 // both are told; a code set by the command-line tool meanwhile too.
 func TestCodesSetAtOnceAreAllKept(t *testing.T) {
 	_, hubPath, _ := setup(t, "mqtt://127.0.0.1:1883", 80)
-	c := codes{hubConfig: hubPath, log: slog.New(slog.DiscardHandler)}
+	c := codes{hub: testHub(t, hubPath), log: slog.New(slog.DiscardHandler)}
 	errs := make(chan error, 2)
 	for user, code := range map[string]string{"u_owner": "2580", "u_deputy": "3917"} {
 		go func() { errs <- c.Set(user, code) }()
@@ -159,7 +158,7 @@ func TestCodesSetAtOnceAreAllKept(t *testing.T) {
 // those not moved there yet are still read where they were, in the state folder.
 func TestCodesGoToTheirFolderUnderItsLock(t *testing.T) {
 	_, hubPath, _ := setup(t, "mqtt://127.0.0.1:1883", 80)
-	cfg, err := hubconfig.Load(hubPath)
+	cfg, err := testHub(t, hubPath).View()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,24 +173,24 @@ func TestCodesGoToTheirFolderUnderItsLock(t *testing.T) {
 	if err := tool.Set(sitecodes.InstallerUser, "3691"); err != nil {
 		t.Fatal(err)
 	}
-	folder := hubconfig.CodesDir(cfg.StateDir)
+	folder := sitecodes.CodesDir(cfg.StateDir)
 	if _, err := os.Stat(folder); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the folder is there before the console: %v", err)
 	}
 
-	c := codes{hubConfig: hubPath, log: slog.New(slog.DiscardHandler)}
+	c := codes{hub: testHub(t, hubPath), log: slog.New(slog.DiscardHandler)}
 	if err := c.Set("u_owner", "3691"); !errors.Is(err, consoleapp.ErrCodeTaken) {
 		t.Fatalf("the installer's code kept in the state folder is not read: %v", err)
 	}
 	if err := c.Set("u_owner", "2580"); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{hubconfig.CodesLock, "access.json", "codes-taken.json"} {
+	for _, name := range []string{sitecodes.CodesLock, "access.json", "codes-taken.json"} {
 		if info, err := os.Lstat(filepath.Join(folder, name)); err != nil || !info.Mode().IsRegular() {
 			t.Errorf("%s is not in the codes' folder: %v", name, err)
 		}
 	}
-	for _, name := range []string{hubconfig.CodesLock, "access.json", "codes-taken.json"} {
+	for _, name := range []string{sitecodes.CodesLock, "access.json", "codes-taken.json"} {
 		if _, err := os.Lstat(filepath.Join(cfg.StateDir, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s is written in the state folder: %v", name, err)
 		}

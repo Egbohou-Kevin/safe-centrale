@@ -18,15 +18,6 @@ var programs = []string{"agent", "console", "gsm", "hub", "install", "maint", "p
 // roles are the folders a program's packages sit in.
 var roles = []string{"adapter", "app", "config", "core"}
 
-// crossPrograms are the only packages of another program a program may import,
-// with the reason. Decided alone, to be reviewed (docs/rangement-par-programme.md,
-// case 1).
-var crossPrograms = map[string]map[string]string{
-	"console": {
-		"hub/config/hubconfig": "the console reads and edits the hub's configuration",
-	},
-}
-
 // roleOf says why the package at dir (slash-separated, relative to internal/) has
 // its place, or "" when it has none.
 func roleOf(dir string) string {
@@ -56,7 +47,9 @@ func programOf(rel string) string {
 }
 
 // crossProgram reports whether a file of program from may not import imp: a package
-// of another program that crossPrograms does not name.
+// of another program. There is no exception (docs/rangement-par-programme.md, case 1,
+// 13/11/2026): what two programs share lies in internal/shared, and one learns
+// another's state by the bus, a file read through an adapter, or its command line.
 func crossProgram(from, imp string) bool {
 	rest, ok := strings.CutPrefix(imp, module+"/internal/")
 	if !ok || from == "" {
@@ -66,8 +59,7 @@ func crossProgram(from, imp string) bool {
 	if other == from || !slices.Contains(programs, other) {
 		return false
 	}
-	_, allowed := crossPrograms[from][rest]
-	return !allowed
+	return true
 }
 
 // roleOfImport says which role an import path of the module lies in.
@@ -170,7 +162,7 @@ func TestTheLayoutRulesRejectWhatTheyMustReject(t *testing.T) {
 		{"video", module + "/internal/hub/core/engine", true},
 		{"video", module + "/internal/video/core/video", false},
 		{"video", module + "/internal/shared/contract", false},
-		{"console", module + "/internal/hub/config/hubconfig", false},
+		{"console", module + "/internal/hub/config/hubconfig", true},
 		{"console", module + "/internal/shared/core/access", false},
 		{"hub", module + "/internal/shared/core/site", false},
 		{"hub", module + "/internal/console/app/consoleapp", true},

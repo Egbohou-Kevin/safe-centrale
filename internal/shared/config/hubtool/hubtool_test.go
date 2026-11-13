@@ -26,7 +26,7 @@ func TestASiteGoesAndComesBackWhole(t *testing.T) {
 
 func TestTheAccessRuleKeepsItsNumbers(t *testing.T) {
 	c := access.Config{MaxUsers: 8, MinDigits: 4, MaxDigits: 8, Iterations: 1000}
-	if got := AccessOf(c); got != (Access{8, 4, 8, 1000}) {
+	if got := AccessOf(c); got != (Access{8, 4, 8, 1000}) || got.Config() != c {
 		t.Fatalf("%+v", got)
 	}
 }

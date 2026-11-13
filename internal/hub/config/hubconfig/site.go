@@ -43,14 +43,6 @@ type devicesFile struct {
 	SirenNames map[string]string   `json:"siren_names,omitempty"`
 }
 
-// SiteFiles gives the installer's tools (sitemodel.Sites) the zones and the sirens of
-// the hub whose configuration file is at Path.
-type SiteFiles struct{ Path string }
-
-func (s SiteFiles) Read() (sitemodel.Site, error)   { return ReadSite(s.Path) }
-func (s SiteFiles) Check(site sitemodel.Site) error { return CheckSite(s.Path, site) }
-func (s SiteFiles) Write(site sitemodel.Site) error { return WriteSite(s.Path, site) }
-
 // ReadSite returns the zones and the sirens the hub at path runs with: those of the
 // state folder once a tool wrote them, those of the configuration file before. A file
 // of the state folder the hub would refuse (edited by hand, or a rule made stricter

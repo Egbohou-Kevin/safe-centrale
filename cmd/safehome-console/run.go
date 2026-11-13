@@ -17,8 +17,9 @@ import (
 	"safehome/internal/console/app/consoleapp"
 	"safehome/internal/console/app/consoleapp/web"
 	"safehome/internal/console/config/consoleconfig"
-	"safehome/internal/hub/config/hubconfig"
+	"safehome/internal/shared/adapter/hubexec"
 	"safehome/internal/shared/adapter/mqtt"
+	"safehome/internal/shared/config/hubtool"
 	"safehome/internal/shared/contract"
 	"safehome/internal/shared/driver"
 	"safehome/internal/shared/service"
@@ -51,7 +52,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return exit
 	}
-	cfg, hub, ok := loadConfig(cmd.Config, stderr)
+	cfg, tool, hub, ok := loadConfig(cmd.Config, stderr)
 	if !ok {
 		return 1
 	}
@@ -66,30 +67,45 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
-	return runConsole(ctx, cfg, hub, stderr)
+	return runConsole(ctx, cfg, tool, hub, stderr)
 }
 
-// loadConfig reads the console's configuration and the hub's, and says on stderr
-// what is wrong with them.
-func loadConfig(path string, stderr io.Writer) (consoleconfig.Result, hubconfig.Result, bool) {
+// hubAt is the hub the console asks (safehome-hub site), installed next to it; the
+// tests give their own.
+var hubAt = hubexec.Beside
+
+// theHub is the hub whose configuration is at path, asked by its command line.
+func theHub(path string) (hubtool.Hub, error) {
+	h, err := hubAt(path)
+	return hubtool.Hub{Call: h.Call}, err
+}
+
+// loadConfig reads the console's configuration and asks the hub for its own, and
+// says on stderr what is wrong with them.
+func loadConfig(path string, stderr io.Writer) (consoleconfig.Result, hubtool.Hub, hubtool.Config, bool) {
 	cfg, err := consoleconfig.Load(path)
 	if err != nil {
 		fmt.Fprintln(stderr, "configuration error:", err)
-		return cfg, hubconfig.Result{}, false
+		return cfg, hubtool.Hub{}, hubtool.Config{}, false
 	}
-	hub, err := hubconfig.Load(cfg.HubConfig)
+	tool, err := theHub(cfg.HubConfig)
+	if err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		return cfg, tool, hubtool.Config{}, false
+	}
+	hub, err := tool.View()
 	if err != nil {
 		fmt.Fprintln(stderr, "configuration error: the hub's:", err)
-		return cfg, hub, false
+		return cfg, tool, hub, false
 	}
 	// The zones and sirens go to the hub's state folder: the console must be allowed
 	// to write there, which its service grants for its own state folder.
-	if filepath.Clean(hub.StateDir) != filepath.Clean(cfg.StateDir) || hub.Hub.Site != cfg.App.Site {
+	if filepath.Clean(hub.StateDir) != filepath.Clean(cfg.StateDir) || hub.Site != cfg.App.Site {
 		fmt.Fprintf(stderr, "configuration error: site %s and state_dir %s must be the hub's (%s, %s)\n",
-			cfg.App.Site, cfg.StateDir, hub.Hub.Site, hub.StateDir)
-		return cfg, hub, false
+			cfg.App.Site, cfg.StateDir, hub.Site, hub.StateDir)
+		return cfg, tool, hub, false
 	}
-	return cfg, hub, true
+	return cfg, tool, hub, true
 }
 
 // serve serves the page on addr until ctx ends. The address exists only once the
@@ -127,8 +143,13 @@ func serve(ctx context.Context, addr string, h http.Handler, log *slog.Logger) e
 	}
 }
 
-func runConsole(ctx context.Context, cfg consoleconfig.Result, hub hubconfig.Result, stderr io.Writer) int {
+func runConsole(ctx context.Context, cfg consoleconfig.Result, tool hubtool.Hub, hub hubtool.Config, stderr io.Writer) int {
 	log := service.Logger(stderr, cfg.LogLevel)
+	loc, err := hub.Location()
+	if err != nil {
+		log.Error("the hub's time zone", "err", err)
+		return 1
+	}
 	release, err := service.Lock(name, cfg.StateDir, pidName)
 	if err != nil {
 		log.Error("cannot start", "err", err)
@@ -146,15 +167,15 @@ func runConsole(ctx context.Context, cfg consoleconfig.Result, hub hubconfig.Res
 	pub := &service.Publisher{}
 	var page atomic.Pointer[web.Handler] // the page needs the application, which serves it
 	app, err := consoleapp.New(cfg.App, consoleapp.Deps{
-		Clock: driver.SystemClock(), Publisher: pub, NewID: ids.New, Hotspot: spot, Sites: hubconfig.SiteFiles{Path: cfg.HubConfig},
-		Codes: codes{hubConfig: cfg.HubConfig, log: log}, Logger: log,
+		Clock: driver.SystemClock(), Publisher: pub, NewID: ids.New, Hotspot: spot, Sites: tool,
+		Codes: codes{hub: tool, log: log}, Logger: log,
 		Serve: func(ctx context.Context) error { return serve(ctx, cfg.Listen(), page.Load(), log) },
 	})
 	if err != nil {
 		log.Error("cannot start the console", "err", err)
 		return 1
 	}
-	h, err := web.New(app, cfg.Host(), cfg.Clients(), hub.Hub.Engine.Location)
+	h, err := web.New(app, cfg.Host(), cfg.Clients(), loc)
 	if err != nil {
 		log.Error("cannot build the page", "err", err)
 		return 1
