@@ -48,9 +48,40 @@ rule_packages=${CHECK_RULE_PACKAGES:-./internal/checks/qualitytest ./internal/ch
 shell_scripts=${CHECK_SHELL_SCRIPTS:-deploy/*.sh scripts/*.sh .githooks/pre-commit}
 target=${CHECK_TARGET:-linux/arm64}
 
-step() { printf '\n==> %s\n' "$*"; }
+# One line per run in a journal that stays, the same eight columns as the other profiles (17/11/2026:
+# safeHome made 27 commits in a week and nothing said what its checks cost; creator metrics reads this
+# journal for the monitoring): date, mode, vert or rouge:code, seconds, step, branch, first failing
+# line of the log (empty when green or with no log kept), seconds per step. In the git common dir,
+# shared by the worktrees, capped, best effort.
+mode=full current="" steps="" mark=$SECONDS
+[ "$quick" = true ] && mode=quick
+journal() {
+	local status=$? file log first="" last=$current
+	[ -n "$current" ] && steps="$steps${steps:+ }$current=$((SECONDS - mark))"
+	file="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/creator-runs.log" || return 0
+	log="$(git rev-parse --absolute-git-dir 2>/dev/null)/creator-check.log"
+	if [ "$status" != 0 ]; then
+		first="$(grep -m1 -E '^--- FAIL|^FAIL|\.go:[0-9]+:[0-9]+: ' "$log" 2>/dev/null | tr '\t\r' '  ' | cut -c1-160)" || first=""
+	else
+		last=""
+	fi
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "$mode" \
+		"$([ "$status" = 0 ] && echo vert || echo "rouge:$status")" "$SECONDS" "$last" \
+		"$(git branch --show-current 2>/dev/null)" "$first" "$steps" >>"$file" 2>/dev/null || return 0
+	if [ "$(wc -l <"$file" | tr -d ' ')" -gt 5000 ]; then
+		tail -n 2000 "$file" >"$file.tmp" && mv "$file.tmp" "$file"
+	fi
+}
+trap journal EXIT
 
-step "gofmt"
+# step KEY TEXT: KEY names the step in the journal (empty: the end, nothing more to time).
+step() {
+	[ -n "$current" ] && steps="$steps${steps:+ }$current=$((SECONDS - mark))"
+	current=$1 mark=$SECONDS
+	printf '\n==> %s\n' "$2"
+}
+
+step gofmt "gofmt"
 unformatted="$(gofmt -l .)"
 if [ -n "$unformatted" ]; then
 	echo "not gofmt-formatted (run gofmt -w on them):" >&2
@@ -58,29 +89,30 @@ if [ -n "$unformatted" ]; then
 	exit 1
 fi
 
-step "go vet"
+step vet "go vet"
 go vet ./...
 
 if [ "$quick" = true ]; then
-	step "go test -short"
+	step test "go test -short"
 	go test -short ./...
+	step "" "all checks passed"
 	exit 0
 fi
 
-step "quality and architecture rules (sizes, ASCII, duplication, dead code, dependencies...)"
+step rules "quality and architecture rules (sizes, ASCII, duplication, dead code, dependencies...)"
 go test -count=1 $rule_packages
 
-step "go test -race"
+step race "go test -race"
 go test -race ./...
 
-step "shell scripts"
+step shell "shell scripts"
 if command -v shellcheck >/dev/null 2>&1; then
 	shellcheck --severity=error $shell_scripts
 else
 	echo "shellcheck is not installed: skipped"
 fi
 
-step "build every program for the target ($target)"
+step build "build every program for the target ($target)"
 CGO_ENABLED=0 GOOS="${target%/*}" GOARCH="${target#*/}" go build ./cmd/...
 
-step "all checks passed"
+step "" "all checks passed"
