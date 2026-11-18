@@ -1,6 +1,6 @@
 module safehome
 
-go 1.27.2
+go 1.27.4
 
 require (
 	github.com/eclipse/paho.golang v0.23.0
@@ -9,6 +9,6 @@ require (
 )
 
 require (
-	golang.org/x/net v0.43.0 // indirect
-	golang.org/x/text v0.28.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 )
