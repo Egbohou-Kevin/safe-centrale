@@ -42,6 +42,17 @@ esac
 
 cd "$(dirname "$0")/.."
 
+# The project's own settings (the "env" of .creator.json) hold for every caller, not only the
+# pre-commit hook; the caller's own value wins (19/11/2026: a lot's start check called this script
+# directly, and station-backend's quick ran with the base and one fork, 436 s median by day and
+# 2 239 s by night, against 87 s through the hook; creator, profiles/project-env.sh).
+if [ -f .creator.json ]; then
+	eval "$(python3 -c 'import json, shlex, sys
+for k, v in json.load(open(sys.argv[1])).get("env", {}).items():
+    if k.isidentifier():
+        print("[ -n \"${%s+x}\" ] || export %s=%s" % (k, k, shlex.quote(str(v))))' .creator.json)"
+fi
+
 # What is the project's own, each with its default: the packages that hold the quality and
 # architecture rules, the shell scripts to lint, the os/arch the programs are built for.
 rule_packages=${CHECK_RULE_PACKAGES:-./internal/checks/qualitytest ./internal/checks/archtest}
