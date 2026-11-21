@@ -2,7 +2,6 @@
   "profile": "go",
   "base_version": "2026-10-27.1",
   "laid": {
-    ".claude/launch.json": "4a6ee2954530d1a0b753ec9c41da93156432458eaa7cd7463a4ec382efccca07",
     ".githooks/pre-commit": "1cb2a50a666849448020f0ec9224ff89784076632ee84f892e239a4d0acbba94",
     "CLAUDE.md": "8fd186473a689303234ad4f5a7e61dfede8e99f21cf1c15ec09e54361869aca2",
     "scripts/check.sh": "d2ab796facd771ebe031249360a0fe485d2e3b4118d7d8c08baff21d603efb9e"
