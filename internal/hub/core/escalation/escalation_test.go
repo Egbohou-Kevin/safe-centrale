@@ -2,7 +2,9 @@ package escalation
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -355,6 +357,120 @@ func TestFireTellsEveryoneAndSendsTheSMSWithTheInternet(t *testing.T) {
 		"manager/whatsapp/1", "manager/sms/1", "other/sms/1")
 	// 60 s later, the calls are added for those who accept them.
 	want(t, "insisting", sends(tick(e, t0.Add(time.Minute))), "owner/call/1")
+}
+
+// --- duress -----------------------------------------------------------------------------
+
+// A disarm under threat rings nothing on site: the contacts are the only help, so a
+// duress takes the panic's plan, everyone at once with the SMS, doubled by the GSM.
+func TestADuressTellsEveryoneAtOnceLikeAPanic(t *testing.T) {
+	if !reflect.DeepEqual(DefaultPlans()[KindDuress], DefaultPlans()[KindPanic]) {
+		t.Fatalf("duress plan %+v, want the panic's %+v", DefaultPlans()[KindDuress], DefaultPlans()[KindPanic])
+	}
+	e := newEsc(t)
+	got := sends(raise(e, t0, KindDuress, "dev_keypad"))
+	want(t, "duress", got,
+		"owner/app/1", "owner/sms/1", "deputy/app/1", "deputy/sms/1", "guard/sms/1", "guard/call/1",
+		"manager/whatsapp/1", "manager/sms/1", "other/sms/1")
+	want(t, "insisting", sends(tick(e, t0.Add(time.Minute))), "owner/call/1")
+}
+
+// Past the hourly limit, a duress still reaches everyone: it is never held back.
+func TestADuressIsNeverThrottled(t *testing.T) {
+	e := newEsc(t)
+	held := 0
+	for i := range 25 {
+		for _, a := range e.Handle(Raise{Now: t0.Add(time.Duration(i) * time.Second), Incident: fmt.Sprintf("i%d", i), Kind: KindIntrusion, Urgency: UrgencyCritical}) {
+			if _, ok := a.(Throttled); ok {
+				held++
+			}
+		}
+	}
+	if held == 0 {
+		t.Fatal("25 intrusions must reach the hourly limit")
+	}
+	for i := range 25 {
+		at := t0.Add(time.Minute + time.Duration(i)*time.Second)
+		out := e.Handle(Raise{Now: at, Incident: fmt.Sprintf("d%d", i), Kind: KindDuress, Urgency: UrgencyCritical})
+		for _, a := range out {
+			if th, ok := a.(Throttled); ok && th.Incident == fmt.Sprintf("d%d", i) {
+				t.Fatalf("duress %d throttled: %+v", i, th)
+			}
+		}
+		if got := sends(out); !slices.Contains(got, "owner/sms/1") || !slices.Contains(got, "guard/call/1") {
+			t.Fatalf("duress %d: %v", i, got)
+		}
+	}
+}
+
+// The reverse: 25 duress alerts within the hour use up nothing, the intrusion that
+// follows still reaches its contacts.
+func TestADuressDoesNotCountInTheHourlyLimit(t *testing.T) {
+	e := newEsc(t)
+	for i := range 25 {
+		e.Handle(Raise{Now: t0.Add(time.Duration(i) * time.Second), Incident: fmt.Sprintf("d%d", i), Kind: KindDuress, Urgency: UrgencyCritical})
+	}
+	out := e.Handle(Raise{Now: t0.Add(time.Minute), Incident: "x", Kind: KindIntrusion, Urgency: UrgencyCritical})
+	for _, a := range out {
+		if th, ok := a.(Throttled); ok {
+			t.Fatalf("the intrusion is throttled after duress alerts: %+v", th)
+		}
+	}
+	var first []string
+	for _, m := range sendsOf(out, "x") {
+		first = append(first, fmt.Sprintf("%s/%s/%d", m.Contact, m.Channel, m.Wave))
+	}
+	want(t, "the intrusion's first wave", first, "deputy/app/1", "guard/sms/1", "guard/call/1")
+}
+
+// A duress names no device: the keypad could name who typed the code, in the cloud's
+// own text or in the app.
+func TestADuressSendsNoDeviceNorZone(t *testing.T) {
+	e := newEsc(t, func(c *Config) { c.ZoneNames = map[string]string{"dev_keypad": "Clavier de Afi"} })
+	out := e.Handle(Raise{Now: t0, Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical, Devices: []string{"dev_keypad"}})
+	if len(sends(out)) == 0 {
+		t.Fatal("nothing was told")
+	}
+	for _, a := range out {
+		if s, ok := a.(Send); ok && (len(s.Devices) != 0 || s.ZoneName != "") {
+			t.Fatalf("a duress names its keypad: %+v", s)
+		}
+	}
+}
+
+// A duress naming an alarm already handled stays loud: someone under threat has no
+// other help. The call goes, the urgency stays critical, the text asks for an answer.
+func TestADuressInAHandledAlarmIsNeverQuiet(t *testing.T) {
+	e := newEsc(t)
+	e.Handle(Raise{Now: t0, Incident: "x", Kind: KindIntrusion, Urgency: UrgencyCritical, Devices: []string{"dev_back"}})
+	e.Handle(Ack{Now: t0.Add(5 * time.Second), Incident: "x", Contact: "owner"})
+	out := e.Handle(Raise{Now: t0.Add(10 * time.Second), Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical, Alarm: "x"})
+	out = append(out, tick(e, t0.Add(10*time.Second+time.Minute))...)
+	for _, a := range out {
+		if w, ok := a.(Withheld); ok {
+			t.Fatalf("a duress call is withheld: %+v", w)
+		}
+		if s, ok := a.(Send); ok && s.Incident == "d" &&
+			(s.Urgency != UrgencyCritical || s.AlarmHandled || !strings.Contains(s.Text, "sous contrainte")) {
+			t.Fatalf("a quiet duress: %+v", s)
+		}
+	}
+	if got := sends(out); !slices.Contains(got, "guard/call/1") || !slices.Contains(got, "owner/call/1") {
+		t.Fatalf("the duress must call: %v", got)
+	}
+	// An acknowledgement of the alarm after the duress does not quieten it either.
+	e2 := newEsc(t)
+	e2.Handle(Raise{Now: t0, Incident: "x", Kind: KindIntrusion, Urgency: UrgencyCritical, Devices: []string{"dev_back"}})
+	e2.Handle(Raise{Now: t0.Add(time.Second), Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical, Alarm: "x"})
+	e2.Handle(Ack{Now: t0.Add(5 * time.Second), Incident: "x", Contact: "owner"})
+	for _, a := range tick(e2, t0.Add(time.Hour)) {
+		if s, ok := a.(Send); ok && s.Incident == "d" && (s.Urgency != UrgencyCritical || s.AlarmHandled) {
+			t.Fatalf("the duress was quietened: %+v", s)
+		}
+	}
+	if in := e2.s.Incidents[incidentKey("d", KindDuress)]; in.Quiet {
+		t.Fatalf("the duress is quiet: %+v", in)
+	}
 }
 
 // --- siren failed ------------------------------------------------------------------------

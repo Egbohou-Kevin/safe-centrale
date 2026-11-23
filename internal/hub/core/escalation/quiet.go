@@ -57,9 +57,10 @@ func (e *Escalation) firstReport(r Raise) bool {
 }
 
 // quietFor reports whether an alert of this alarm is told without ringing: the alarm
-// is handled and no fire or panic is still escalated.
-func (e *Escalation) quietFor(alarm string) bool {
-	if alarm == "" {
+// is handled and no fire or panic is still escalated. A duress is never quiet: it is
+// the only help of someone under threat, whatever alarm it names.
+func (e *Escalation) quietFor(kind AlertKind, alarm string) bool {
+	if alarm == "" || kind == KindDuress {
 		return false
 	}
 	_, handled := e.s.Handled[alarm]
@@ -85,7 +86,7 @@ func (e *Escalation) settle() []Action {
 	var out []Action
 	for _, key := range slices.Sorted(maps.Keys(e.s.Incidents)) {
 		in := e.s.Incidents[key]
-		if in.Alarm == "" || in.Quiet || !e.quietFor(in.Alarm) {
+		if in.Alarm == "" || in.Quiet || !e.quietFor(in.Kind, in.Alarm) {
 			continue
 		}
 		quieten(&in)

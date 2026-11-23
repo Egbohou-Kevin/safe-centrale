@@ -222,7 +222,7 @@ func TestSchemaEnumsMatchConstants(t *testing.T) {
 	check("system-heartbeat.json", "engine", []string{StateDisarmed, StateArming, StateArmed, StateEntryDelay, StateTriggered})
 	check("system-health.json", "mains", []string{ValPresent, ValLost, MainsNone})
 	check("alert-request.json", "kind", []string{AlertIntrusion, AlertFire, AlertPanic, AlertTamper,
-		AlertAuthFailed, AlertArmingBypassed, AlertBatteryLowHub, AlertMainsRestored, AlertDeviceOffline, AlertBatteryLow, AlertGSMDegraded, AlertZigbeeDown, AlertSirenFailed, alertDuress})
+		AlertAuthFailed, AlertArmingBypassed, AlertBatteryLowHub, AlertMainsRestored, AlertDeviceOffline, AlertBatteryLow, AlertGSMDegraded, AlertZigbeeDown, AlertSirenFailed, AlertDuress})
 	check("alert-request.json", "urgency", []string{UrgencyCritical, UrgencyHigh, UrgencyLow})
 	check("alert-request.json", "channel", []string{ChannelApp, ChannelWhatsApp, ChannelSMS, ChannelCall})
 	check("alert-result.json", "status", []string{ResultQueued, ResultSent, ResultDelivered, ResultFailed})

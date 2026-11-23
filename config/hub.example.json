@@ -30,6 +30,7 @@
       },
       "fire":  { "waves": [{ "to": ["everyone"], "sms_now": true, "double": true }], "repeat": { "every": "10m", "times": 3 } },
       "panic": { "waves": [{ "to": ["everyone"], "sms_now": true, "double": true }], "repeat": { "every": "10m", "times": 3 } },
+      "duress": { "waves": [{ "to": ["everyone"], "sms_now": true, "double": true }], "repeat": { "every": "10m", "times": 3 } },
 
       "tamper":          { "waves": [{ "to": ["first"], "double": true }] },
       "auth_failed":     { "waves": [{ "to": ["first"], "double": true }] },

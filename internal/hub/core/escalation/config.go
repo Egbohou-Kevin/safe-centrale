@@ -168,6 +168,9 @@ func DefaultPlans() map[AlertKind]Plan {
 		// like the alarm, whose own plan goes on beside it and insists. Once the
 		// alarm is handled, it is told without ringing (see quiet.go).
 		KindSirenFailed: {Waves: []Wave{{To: []Audience{AudienceFirst, AudienceGuard}, Double: true}}},
+		// A disarm under threat: nothing rings on site, the contacts are the only help.
+		// Everyone at once with the SMS, doubled, with reminders, as a panic.
+		KindDuress: everyone,
 	}
 }
 

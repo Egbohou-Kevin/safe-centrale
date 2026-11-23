@@ -137,6 +137,39 @@ func TestAPlanReplacesOnlyItsKind(t *testing.T) {
 	}
 }
 
+// A hub.json written before the duress (vkit's site among them) names no plan for it:
+// the duress takes its default plan, the panic's, and is not lost.
+func TestAHubWithoutADuressPlanTakesTheDefault(t *testing.T) {
+	r, err := parse([]byte(base + `,
+  "escalation": { "plans": {
+    "panic": { "waves": [ { "to": ["owner"] } ] }
+  } }
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := r.Hub.Escalation.Plans[escalation.KindDuress]
+	if def := escalation.DefaultPlans()[escalation.KindDuress]; !ok || len(got.Waves) == 0 || !reflect.DeepEqual(got, def) {
+		t.Fatalf("duress: %+v %v, want the default %+v", got, ok, def)
+	}
+}
+
+// A duress plan in hub.json is read as the contract names it.
+func TestADuressPlanIsAccepted(t *testing.T) {
+	r, err := parse([]byte(base + `,
+  "escalation": { "plans": {
+    "duress": { "waves": [ { "to": ["owner", "guard"], "sms_now": true, "double": true } ] }
+  } }
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := escalation.Plan{Waves: []escalation.Wave{{To: []escalation.Audience{escalation.AudienceOwner, escalation.AudienceGuard}, SMSNow: true, Double: true}}}
+	if got := r.Hub.Escalation.Plans[escalation.KindDuress]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("duress: %+v", got)
+	}
+}
+
 func TestBadPlansAreRefusedWithTheirPlace(t *testing.T) {
 	for want, plans := range map[string]string{
 		`unknown alert kind "flood"`:                                        `"flood": { "waves": [ { "to": ["owner"] } ] }`,

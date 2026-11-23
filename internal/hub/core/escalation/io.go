@@ -55,12 +55,15 @@ const (
 	KindGSMDegraded    AlertKind = "gsm_degraded"
 	KindZigbeeDown     AlertKind = "zigbee_down"
 	KindSirenFailed    AlertKind = "siren_failed"
+	// KindDuress: a disarm made with a duress code. Nothing rings on site; it is
+	// critical, and its texts name neither the code nor who typed it.
+	KindDuress AlertKind = "duress"
 )
 
 var allKinds = []AlertKind{
 	KindIntrusion, KindFire, KindPanic, KindTamper, KindAuthFailed, KindArmingBypassed,
 	KindHubBatteryLow, KindMainsRestored, KindDeviceOffline, KindBatteryLow, KindGSMDegraded, KindZigbeeDown,
-	KindSirenFailed,
+	KindSirenFailed, KindDuress,
 }
 
 // Urgency ranks how fast someone must react to an alert.

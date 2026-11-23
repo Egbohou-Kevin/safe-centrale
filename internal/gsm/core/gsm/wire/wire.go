@@ -64,7 +64,8 @@ func Acked(d contract.AlertAckData) (gsm.Cancel, bool) {
 // priority: what protects lives first, then intrusions, then the rest.
 func priority(kind string) gsm.Priority {
 	switch kind {
-	case contract.AlertFire, contract.AlertPanic:
+	case contract.AlertFire, contract.AlertPanic, contract.AlertDuress:
+		// A duress rings nothing on site: the SMS is the only help, it goes first.
 		return gsm.PriorityLifeSafety
 	case contract.AlertIntrusion, contract.AlertSirenFailed:
 		// A silent siren belongs to the alarm going on: it leaves with the intrusion,
