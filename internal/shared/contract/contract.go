@@ -220,9 +220,8 @@ const (
 	AlertGSMDegraded    = "gsm_degraded"
 	AlertZigbeeDown     = "zigbee_down"
 	AlertSirenFailed    = "siren_failed"
-	// alertDuress: a disarm made with a duress code; critical, nothing rings on site.
-	// Unexported until its first user outside the contract (escalation, lot D2b).
-	alertDuress = "duress"
+	// AlertDuress: a disarm made with a duress code; critical, nothing rings on site.
+	AlertDuress = "duress"
 )
 
 // Alert urgency.

@@ -139,7 +139,7 @@ func (e *Escalation) zoneName(in IncidentSnap) string {
 }
 
 // allow applies the hourly limit of one contact and counts the message when it
-// may go. Fire and panic are never held back, and do not count. Nor is a silent
+// may go. Fire, panic and duress are never held back, and do not count. Nor is a silent
 // siren: it is the one message that says the shop is silent, it must not be held
 // back by the alarm's own waves and reminders, and it is bounded on its own (one
 // wave, once per siren and per alarm). An intrusion may use the whole limit; the other
@@ -147,7 +147,7 @@ func (e *Escalation) zoneName(in IncidentSnap) string {
 // keypad tried every ten minutes, or covers opened one after the other, must not use
 // up the messages the intrusion that follows needs to reach the owner.
 func (e *Escalation) allow(kind AlertKind, contact string, at time.Time) bool {
-	if kind == KindFire || kind == KindPanic || kind == KindSirenFailed {
+	if kind == KindFire || kind == KindPanic || kind == KindDuress || kind == KindSirenFailed {
 		return true
 	}
 	recent := lastHour(e.s.Recent, contact, at)

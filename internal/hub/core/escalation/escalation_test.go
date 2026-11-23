@@ -2,6 +2,7 @@ package escalation
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -355,6 +356,50 @@ func TestFireTellsEveryoneAndSendsTheSMSWithTheInternet(t *testing.T) {
 		"manager/whatsapp/1", "manager/sms/1", "other/sms/1")
 	// 60 s later, the calls are added for those who accept them.
 	want(t, "insisting", sends(tick(e, t0.Add(time.Minute))), "owner/call/1")
+}
+
+// --- duress -----------------------------------------------------------------------------
+
+// A disarm under threat rings nothing on site: the contacts are the only help, so a
+// duress takes the panic's plan, everyone at once with the SMS, doubled by the GSM.
+func TestADuressTellsEveryoneAtOnceLikeAPanic(t *testing.T) {
+	if !reflect.DeepEqual(DefaultPlans()[KindDuress], DefaultPlans()[KindPanic]) {
+		t.Fatalf("duress plan %+v, want the panic's %+v", DefaultPlans()[KindDuress], DefaultPlans()[KindPanic])
+	}
+	e := newEsc(t)
+	got := sends(raise(e, t0, KindDuress, "dev_keypad"))
+	want(t, "duress", got,
+		"owner/app/1", "owner/sms/1", "deputy/app/1", "deputy/sms/1", "guard/sms/1", "guard/call/1",
+		"manager/whatsapp/1", "manager/sms/1", "other/sms/1")
+	want(t, "insisting", sends(tick(e, t0.Add(time.Minute))), "owner/call/1")
+}
+
+// Past the hourly limit, a duress still reaches everyone: it is never held back.
+func TestADuressIsNeverThrottled(t *testing.T) {
+	e := newEsc(t)
+	held := 0
+	for i := range 25 {
+		for _, a := range e.Handle(Raise{Now: t0.Add(time.Duration(i) * time.Second), Incident: fmt.Sprintf("i%d", i), Kind: KindIntrusion, Urgency: UrgencyCritical}) {
+			if _, ok := a.(Throttled); ok {
+				held++
+			}
+		}
+	}
+	if held == 0 {
+		t.Fatal("25 intrusions must reach the hourly limit")
+	}
+	for i := range 25 {
+		at := t0.Add(time.Minute + time.Duration(i)*time.Second)
+		out := e.Handle(Raise{Now: at, Incident: fmt.Sprintf("d%d", i), Kind: KindDuress, Urgency: UrgencyCritical})
+		for _, a := range out {
+			if th, ok := a.(Throttled); ok && th.Incident == fmt.Sprintf("d%d", i) {
+				t.Fatalf("duress %d throttled: %+v", i, th)
+			}
+		}
+		if got := sends(out); !slices.Contains(got, "owner/sms/1") || !slices.Contains(got, "guard/call/1") {
+			t.Fatalf("duress %d: %v", i, got)
+		}
+	}
 }
 
 // --- siren failed ------------------------------------------------------------------------

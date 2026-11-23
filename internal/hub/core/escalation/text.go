@@ -51,6 +51,9 @@ func (e *Escalation) message(in IncidentSnap) (msg string, answer bool) {
 		return fmt.Sprintf("ALARME INCENDIE %s: fumee detectee%s a %s.", site, where, hour), true
 	case KindPanic:
 		return fmt.Sprintf("ALARME PANIQUE %s: bouton panique%s a %s.", site, where, hour), true
+	case KindDuress:
+		// The site and the hour only: neither the code, nor who typed it, nor the keypad.
+		return fmt.Sprintf("ALARME %s: desarmement sous contrainte a %s.", site, hour), true
 	case KindTamper:
 		return fmt.Sprintf("ALERTE %s: sabotage%s a %s.", site, where, hour), true
 	case KindAuthFailed:

@@ -14,7 +14,7 @@ var now = time.Date(2026, 10, 17, 21, 4, 0, 0, time.UTC)
 
 func TestRequest(t *testing.T) {
 	for kind, want := range map[string]gsm.Priority{
-		contract.AlertFire: gsm.PriorityLifeSafety, contract.AlertPanic: gsm.PriorityLifeSafety,
+		contract.AlertFire: gsm.PriorityLifeSafety, contract.AlertPanic: gsm.PriorityLifeSafety, contract.AlertDuress: gsm.PriorityLifeSafety,
 		contract.AlertIntrusion: gsm.PriorityIntrusion, contract.AlertSirenFailed: gsm.PriorityIntrusion, contract.AlertTamper: gsm.PriorityOther,
 		contract.AlertMainsRestored: gsm.PriorityOther,
 	} {

@@ -304,3 +304,32 @@ func TestAFiresRemindersStillSayTheSilentSirens(t *testing.T) {
 		t.Fatalf("a reminder after a restart: %q", text)
 	}
 }
+
+// A duress text says the site is under duress, and nothing more: neither the code
+// typed, nor who typed it, nor the keypad, which could name the person.
+func TestTheDuressTextSaysUnderDuressAndTheSiteOnly(t *testing.T) {
+	e := newEsc(t, func(c *Config) {
+		c.Location = time.FixedZone("UTC+1", 3600)
+		c.DeviceNames["dev_keypad"] = "Clavier de Afi"
+	})
+	out := raise(e, t0, KindDuress, "dev_keypad")
+	for _, ch := range []Channel{ChannelSMS, ChannelApp, ChannelWhatsApp} {
+		text := textOf(t, out, ch)
+		checkText(t, text)
+		for _, part := range []string{"ALARME", "sous contrainte", "Boutique Lome", "22:04"} {
+			if !strings.Contains(text, part) {
+				t.Errorf("%s: %q misses %q", ch, text, part)
+			}
+		}
+		for _, name := range []string{"Afi", "Clavier", "dev_keypad", "Owner", "Deputy", "Guard", "Manager"} {
+			if strings.Contains(text, name) {
+				t.Errorf("%s: %q names %q", ch, text, name)
+			}
+		}
+		// No digit but the hour's and the SMS answer's: no code.
+		rest := strings.NewReplacer("22:04", "", ackHint, "").Replace(text)
+		if strings.ContainsAny(rest, "0123456789") {
+			t.Errorf("%s: %q carries digits", ch, text)
+		}
+	}
+}

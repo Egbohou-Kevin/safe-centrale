@@ -173,6 +173,7 @@ passerelle muette reste une panne.
 | `gsm_degraded` | secours SMS inutilisable depuis 10 minutes ; une passerelle GSM muette compte comme en panne après 3 minutes, l'alerte part donc 13 minutes après son dernier message | Propriétaire, par internet seulement |
 | `zigbee_down` | capteurs injoignables depuis 3 minutes (Zigbee2MQTT ou sa clé arrêtés) ; un adaptateur muet compte comme en panne après 3 minutes, l'alerte part donc après 6 minutes : l'alarme est aveugle | Premier contact (responsable ou propriétaire) tout de suite, doublé par SMS et appel ; « 1 » pour acquitter |
 | `siren_failed` | pendant une alarme, une sirène refuse l'ordre de sonner, renvois compris (voir `adapter-zigbee.md`) ; une fois par sirène et par alarme, urgence `high`, la sirène dans `devices`, sous un incident à elle qui nomme l'alarme (`alarm_incident`) | Premier contact (responsable ou propriétaire) **et** gardien tout de suite, doublé par SMS et appel, sans relance : le plan de l'alarme insiste déjà ; « 1 » pour acquitter. Une fois l'alarme prise en charge, discrète : sans appel ni sonnerie (voir « Sirène muette pendant une alarme ») |
+| `duress` | ajout du 23 novembre 2026 : désarmement avec un code de contrainte, sous la menace ; rien ne sonne sur place. Urgence `critical` (« Critique » au centre). Le genre est connu de l'escalade ; le moteur ne le lève pas encore (lot D2c) | Le plan de `panic` : tous les contacts tout de suite, SMS avec la notification, doublé par SMS et appel, relances toutes les 10 minutes (3 fois) ; jamais bridé par la limite horaire ; priorité GSM des alertes vitales. Texte : « ALARME <site>: desarmement sous contrainte a <heure>. », sans le code, ni qui l'a tapé, ni le clavier. Un `hub.json` sans plan `duress` prend ce plan par défaut |
 
 ### Intrusion : vagues
 
@@ -496,7 +497,9 @@ consigne du SMS à côté de son propre bouton.
   `siren_failed` ne sont jamais bridées. Pour la
   sirène, c'est le seul message qui dit que le magasin est silencieux : il ne doit pas
   être retenu après les vagues et les relances de l'alarme. Son volume est borné
-  autrement : une vague sans relance, une fois par sirène et par alarme.
+  autrement : une vague sans relance, une fois par sirène et par alarme. Ajout du
+  23 novembre 2026 : `duress` non plus ; rien ne sonne sur place, les contacts sont le
+  seul secours.
 - Un incident a un identifiant, repris dans tous ses messages et événements.
 
 ## Côté cloud
@@ -617,7 +620,8 @@ supervision, et publie ce qu'il décide. Là où le document laissait un doute :
   la moitié au plus (10), comptée à part, pour qu'il en reste toujours aux intrusions.
   Un message retenu est journalisé. Corrigé le 25 octobre 2026 après une revue : un
   flot d'alertes moins graves (codes faux, sabotages) pouvait user la limite avant
-  l'intrusion.
+  l'intrusion. Ajout du 23 novembre 2026 : `duress` n'est jamais bridée non plus, et ne
+  compte pas.
 - **Alertes non urgentes** (résumés, retour du courant, protection dégradée) : internet
   seulement. Si internet est coupé elles attendent son retour. Le retour du courant peut
   partir par GSM après une heure sans internet.

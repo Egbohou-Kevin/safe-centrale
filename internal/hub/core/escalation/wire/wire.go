@@ -26,6 +26,7 @@ var kinds = map[escalation.AlertKind]string{
 	escalation.KindGSMDegraded:    contract.AlertGSMDegraded,
 	escalation.KindZigbeeDown:     contract.AlertZigbeeDown,
 	escalation.KindSirenFailed:    contract.AlertSirenFailed,
+	escalation.KindDuress:         contract.AlertDuress,
 }
 
 // Kind returns the escalation kind of an alert kind of the contract: the site's
