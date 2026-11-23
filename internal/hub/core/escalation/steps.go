@@ -5,31 +5,47 @@ import (
 	"time"
 )
 
-func (e *Escalation) raise(r Raise) {
+func (e *Escalation) raise(r Raise) []Action {
 	if !slices.Contains(allKinds, r.Kind) {
-		return
+		return nil
 	}
 	key := incidentKey(r.Incident, r.Kind)
 	if in, ok := e.s.Incidents[key]; ok {
 		// Another detector in the same incident: it is grouped, not told again.
 		in.Devices = unionSorted(in.Devices, r.Devices)
 		in.Silent = unionSorted(in.Silent, r.Silent)
+		e.spare(&in, r.Spared)
 		e.s.Incidents[key] = in
-		return
+		return e.finishIfDone(key) // the dropped round may have been the last one owed
 	}
 	if r.Alarm != "" {
 		e.forget(r.Now)
 		if r.Kind == KindSirenFailed && !e.firstReport(r) {
-			return
+			return nil
 		}
 	}
 	e.s.Incidents[key] = IncidentSnap{
 		ID: r.Incident, Kind: r.Kind, Urgency: r.Urgency,
 		Devices: unionSorted(nil, r.Devices), Percent: r.Percent, RaisedAt: r.Now,
 		Alarm: r.Alarm, Quiet: e.quietFor(r.Kind, r.Alarm), Silent: unionSorted(nil, r.Silent),
+		Spared: unionSorted(nil, r.Spared),
 		NextAt: r.Now.Add(e.cfg.Plans[r.Kind].stepAt(0)),
 		Rounds: map[string]Round{}, Deliveries: map[uint64]Delivery{},
 	}
+	return nil
+}
+
+// spare adds the contacts a merged raise spares. One already told by an earlier wave
+// is insisted on no more: their round is dropped, so no GSM takeover, internet retry
+// or wait on them follows, and the later waves and reminders leave them out.
+func (e *Escalation) spare(in *IncidentSnap, ids []string) {
+	in.Spared = unionSorted(in.Spared, ids)
+	for _, id := range ids {
+		delete(in.Rounds, id)
+	}
+	in.WaveContacts = slices.DeleteFunc(in.WaveContacts, func(c string) bool {
+		return slices.Contains(ids, c)
+	})
 }
 
 func unionSorted(a, b []string) []string {
@@ -154,7 +170,13 @@ func (e *Escalation) runStep(in *IncidentSnap, at time.Time) []Action {
 			in.NextAt = in.RaisedAt.Add(in.Moved + plan.stepAt(in.Step))
 		}
 		wave := plan.step(step)
-		contacts := slices.DeleteFunc(e.contactsOf(wave.To), func(ct Contact) bool { return !e.reachable(*in, ct) })
+		// The person who typed the duress code (Spared) is left out of every wave: no
+		// round is opened for them, so no reminder, GSM takeover or retry reaches them
+		// either. Spared the only contact, the hub tells nobody; the monitoring centre
+		// is told by the cloud (alarm.triggered), not here.
+		contacts := slices.DeleteFunc(e.contactsOf(wave.To), func(ct Contact) bool {
+			return slices.Contains(in.Spared, ct.ID) || !e.reachable(*in, ct)
+		})
 		if len(contacts) == 0 {
 			continue
 		}
