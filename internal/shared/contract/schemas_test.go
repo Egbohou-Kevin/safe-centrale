@@ -222,7 +222,7 @@ func TestSchemaEnumsMatchConstants(t *testing.T) {
 	check("system-heartbeat.json", "engine", []string{StateDisarmed, StateArming, StateArmed, StateEntryDelay, StateTriggered})
 	check("system-health.json", "mains", []string{ValPresent, ValLost, MainsNone})
 	check("alert-request.json", "kind", []string{AlertIntrusion, AlertFire, AlertPanic, AlertTamper,
-		AlertAuthFailed, AlertArmingBypassed, AlertBatteryLowHub, AlertMainsRestored, AlertDeviceOffline, AlertBatteryLow, AlertGSMDegraded, AlertZigbeeDown, AlertSirenFailed})
+		AlertAuthFailed, AlertArmingBypassed, AlertBatteryLowHub, AlertMainsRestored, AlertDeviceOffline, AlertBatteryLow, AlertGSMDegraded, AlertZigbeeDown, AlertSirenFailed, alertDuress})
 	check("alert-request.json", "urgency", []string{UrgencyCritical, UrgencyHigh, UrgencyLow})
 	check("alert-request.json", "channel", []string{ChannelApp, ChannelWhatsApp, ChannelSMS, ChannelCall})
 	check("alert-result.json", "status", []string{ResultQueued, ResultSent, ResultDelivered, ResultFailed})
@@ -640,5 +640,17 @@ func TestVideoSchemasRefuseWhatTheContractRefuses(t *testing.T) {
 	}
 	if err := schematest.Check("video-session.json", []byte(`{"session":"s","camera":"c","status":"paused"}`)); err == nil {
 		t.Error("unknown status accepted")
+	}
+}
+
+// A disarm under threat raises an alert of kind duress (critical, nothing rings on
+// site). The schema must take that kind, and still refuse a kind it does not know.
+func TestADuressAlertPassesTheSchemaAndAnUnknownKindDoesNot(t *testing.T) {
+	const ok = `{"incident":"x","incident_at":"2026-11-23T12:42:00.000Z","zone":"Africa/Lome","kind":"duress","urgency":"critical","contact":"u_guard","channel":"call"}`
+	if err := schematest.Check("alert-request.json", []byte(ok)); err != nil {
+		t.Fatalf("a duress alert refused: %v", err)
+	}
+	if raw := strings.Replace(ok, `"duress"`, `"coercion"`, 1); schematest.Check("alert-request.json", []byte(raw)) == nil {
+		t.Errorf("an unknown kind accepted: %s", raw)
 	}
 }

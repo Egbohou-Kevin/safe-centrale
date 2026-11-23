@@ -37,7 +37,8 @@
         "arming_bypassed",
         "gsm_degraded",
         "zigbee_down",
-        "siren_failed"
+        "siren_failed",
+        "duress"
       ]
     },
     "urgency": {
