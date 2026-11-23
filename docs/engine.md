@@ -488,9 +488,13 @@ contrainte**.
 - Un code de contrainte tapé alors que tout est déjà désarmé lève aussi l'alerte : la
   menace est la même, et la réponse (`done`) celle d'un code ordinaire. Chaque désarmement
   sous contrainte lève sa propre alerte.
-- Faire taire (`CmdSilence`) ou clore (`CmdEnd`) avec un code de contrainte agit comme le
-  code de la personne, sans alerte de plus (décidé seule, à relire ; témoin :
-  `TestOnlyADisarmWithADuressCodeRaisesIt`).
+- Faire taire (`CmdSilence`) ou clore (`CmdEnd`) avec un code de contrainte agit sur
+  place comme le code de la personne, **et lève aussi l'alerte `duress`** (corrigé le
+  23/11/2026 à la relecture ; d'abord écrit « sans alerte de plus », ce qui était faux) :
+  ces deux ordres passent par `clearIncident`, qui émet `Cleared` et `Ended`, et le
+  cloud clôt l'alarme. Sans alerte, une personne forcée de couper la sirène laisserait
+  le centre sans rien d'ouvert. À relire par Kevin (témoin :
+  `TestOnlyADuressCodeRaisesItAndSilenceOrEndToo`).
 - L'événement `DuressRaised` part en `alarm.triggered` (`engine/wire`) : `capability:
   "duress"`, l'incident neuf, et pour `device_id` et `zone` l'origine de la commande
   (`keypad` pour le clavier, `app` pour l'application, la seule autre voie d'un ordre :

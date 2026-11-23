@@ -5,8 +5,9 @@ package engine
 // that nothing on site shows the threat. The alert has an incident of its own, which
 // the engine keeps nowhere: no Ended carries it, no disarm closes it at the centre,
 // no siren rings for it, and a restart does not raise it again (the escalation keeps
-// it). Silencing or ending with a duress code raises nothing: the person is already
-// in charge of an alarm the centre sees.
+// it). Silencing or ending with a duress code raises it too: both clear the alarm at
+// the centre (Cleared, Ended), so without it a person forced to stop the siren would
+// leave the centre with nothing open.
 func (e *Engine) duress(origin Origin, user string) []Action {
 	al := e.alert(AlertDuress, nil)
 	al.User = user

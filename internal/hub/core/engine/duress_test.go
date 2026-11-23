@@ -119,8 +119,9 @@ func TestADuressRaisesOneAlertOfItsOwn(t *testing.T) {
 }
 
 // A person's own code raises nothing more than before; a duress code that silences
-// the siren or ends the alarm acts as the person's code, without an alert.
-func TestOnlyADisarmWithADuressCodeRaisesIt(t *testing.T) {
+// the siren or ends the alarm acts on site as the person's code and raises one duress
+// alert too, since both clear the alarm at the centre.
+func TestOnlyADuressCodeRaisesItAndSilenceOrEndToo(t *testing.T) {
 	h := newHarness(t)
 	h.armed()
 	h.breakWindow()
@@ -136,8 +137,21 @@ func TestOnlyADisarmWithADuressCodeRaisesIt(t *testing.T) {
 		}
 		want := plain.cmd(name, goodCode("u_owner"), withID("m-1"))
 		got := duress.cmd(name, duressCode("u_owner"), withID("m-1"))
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("%s with a duress code:\n got %v\nwant %v", name, got, want)
+		if !reflect.DeepEqual(onSite(got), want) {
+			t.Fatalf("%s with a duress code shows on site:\n got %v\nwant %v", name, onSite(got), want)
+		}
+		var raised []Alert
+		for _, al := range alertsOf(got) {
+			if al.Kind == AlertDuress {
+				raised = append(raised, al)
+			}
+		}
+		if len(raised) != 1 || raised[0].User != "u_owner" || raised[0].Urgency != UrgencyCritical ||
+			slices.Contains(endedOf(got), raised[0].Incident) {
+			t.Fatalf("%s with a duress code: want one open duress alert, got %v", name, got)
+		}
+		if ev := onlyEvent[DuressRaised](t, got); ev.Incident != raised[0].Incident {
+			t.Fatalf("%s: the duress event %+v", name, ev)
 		}
 	}
 }
