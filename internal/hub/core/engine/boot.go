@@ -35,6 +35,9 @@ import (
 // a later one, a live step forward since would widen it, and every state the engine
 // heard before that step would look dated before NTP set the clock, news: a movement
 // heard rang again (28 October 2026).
+//
+// Last, the duress alerts the escalation did not hold on disk yet are raised again,
+// with their incident (see duress, 23 November 2026).
 func (e *Engine) Boot(now time.Time, booted Booted, current []Signal) []Action {
 	e.awaitingBoot = false
 	e.s.Checking = nil // the checks under way did not survive the restart
@@ -70,7 +73,7 @@ func (e *Engine) Boot(now time.Time, booted Booted, current []Signal) []Action {
 			e.move(key, Signal{Active: true, Now: began}) // as the broker keeps it
 		}
 	}
-	return out
+	return append(out, e.raiseKept()...)
 }
 
 // bootRef is what Boot compares the devices' states with: now, when the system started

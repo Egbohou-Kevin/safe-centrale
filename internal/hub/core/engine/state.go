@@ -147,6 +147,10 @@ type Snapshot struct {
 	// from the keypad and the app alike: every LockoutAttempts of them alert the
 	// contacts, locked or not. A lockout does not start it over.
 	WrongCodes int `json:"wrong_codes,omitempty"`
+	// Duress are the duress alerts raised that the escalation does not hold on disk yet
+	// (see duress): Boot raises them again. Nothing published says them, neither State
+	// nor an event nor a reply, and DuressHeld empties it within moments.
+	Duress []DuressGuard `json:"duress,omitempty"`
 }
 
 func (s Snapshot) clone() Snapshot {
@@ -164,6 +168,7 @@ func (s Snapshot) clone() Snapshot {
 	s.Waiting = slices.Clone(s.Waiting)
 	s.Sounding = slices.Clone(s.Sounding)
 	s.Checking = maps.Clone(s.Checking)
+	s.Duress = slices.Clone(s.Duress)
 	s.EntryCause = clonePtr(s.EntryCause)
 	s.Incident = clonePtr(s.Incident)
 	s.LastTrigger = clonePtr(s.LastTrigger)

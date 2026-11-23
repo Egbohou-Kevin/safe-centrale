@@ -2,6 +2,9 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"sync"
 	"time"
 
 	"safehome/internal/hub/core/engine"
@@ -9,6 +12,7 @@ import (
 	escwire "safehome/internal/hub/core/escalation/wire"
 	"safehome/internal/hub/core/health"
 	"safehome/internal/shared/contract"
+	"safehome/internal/shared/driver"
 	"safehome/internal/shared/inbox"
 )
 
@@ -82,6 +86,9 @@ func (h *Hub) escalateEngine(now time.Time, actions []engine.Action) {
 			if kind == escalation.KindDuress && v.User != "" {
 				raise.Spared = []string{v.User} // the person under threat must not be called
 			}
+			if kind == escalation.KindDuress {
+				h.awaitHeld(v.Incident)
+			}
 			h.escalate(raise)
 		case engine.Ended:
 			for _, id := range v.Incidents {
@@ -89,6 +96,78 @@ func (h *Hub) escalateEngine(now time.Time, actions []engine.Action) {
 			}
 		}
 	}
+}
+
+// heldDuress are the duress alerts handed to the escalation that the engine still
+// keeps (engine.DuressGuard, 23 November 2026). Once the escalation's saved state holds
+// one, the engine is told (engine.DuressHeld) and a restart no longer raises it; until
+// then a restart raises it again, with its incident. The engine's loop adds to it, the
+// escalation's takes from it.
+type heldDuress struct {
+	mu      sync.Mutex
+	awaited map[string]bool
+}
+
+// awaitHeld waits for the escalation to save the duress alert of this incident. It
+// runs on the engine's loop, before the alert is handed over.
+func (h *Hub) awaitHeld(incident string) {
+	h.held.mu.Lock()
+	defer h.held.mu.Unlock()
+	if h.held.awaited == nil {
+		h.held.awaited = map[string]bool{}
+	}
+	h.held.awaited[incident] = true
+}
+
+// tellHeld runs on the escalation's loop after each change. It reads the state as
+// saved, not as it is in memory: OnChange runs whether the save worked or not, and a
+// failed save is retried at the next change, which looks again.
+func (h *Hub) tellHeld() {
+	h.held.mu.Lock()
+	defer h.held.mu.Unlock()
+	if len(h.held.awaited) == 0 {
+		return
+	}
+	data, found, err := h.deps.Store.Load(keyEscalation)
+	if err != nil || !found {
+		h.log.Error("reading the escalation's saved state failed", "err", err, "found", found)
+		return
+	}
+	var saved escalation.Snapshot
+	if err := json.Unmarshal(data, &saved); err != nil {
+		h.log.Error("reading the escalation's saved state failed", "err", err)
+		return
+	}
+	for id := range duressOf(saved) {
+		if h.held.awaited[id] {
+			delete(h.held.awaited, id)
+			go h.engineHeld(id)
+		}
+	}
+}
+
+// engineHeld tells the engine that the escalation saved the alert, from a goroutine of
+// its own: the engine's loop hands alerts to the escalation's, so the escalation's
+// never waits on the engine's. An engine already stopped keeps it: the next start
+// sees it saved by the escalation (New).
+func (h *Hub) engineHeld(incident string) {
+	err := h.alarm.loop.Submit(h.life, func(now time.Time) engine.Input {
+		return engine.DuressHeld{Now: now, Incident: incident}
+	})
+	if err != nil && !errors.Is(err, driver.ErrStopped) && h.life.Err() == nil {
+		h.log.Error("telling the engine an alert is saved failed", "err", err)
+	}
+}
+
+// duressOf lists the duress alerts an escalation state holds, by incident.
+func duressOf(s escalation.Snapshot) map[string]bool {
+	ids := map[string]bool{}
+	for _, in := range s.Incidents {
+		if in.Kind == escalation.KindDuress {
+			ids[in.ID] = true
+		}
+	}
+	return ids
 }
 
 // escalateHealth feeds the monitor's alerts to the escalation.

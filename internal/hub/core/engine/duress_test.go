@@ -77,8 +77,22 @@ func TestADuressDisarmsExactlyAsThePersonsCode(t *testing.T) {
 			if plain.e.Mode() != duress.e.Mode() || duress.e.Mode() != ModeDisarmed {
 				t.Fatalf("mode %q, the person's code gives %q", duress.e.Mode(), plain.e.Mode())
 			}
+			if !reflect.DeepEqual(plain.e.State(duress.now), duress.e.State(duress.now)) {
+				t.Fatalf("a duress shows in the published state:\n%+v\n%+v", duress.e.State(duress.now), plain.e.State(plain.now))
+			}
+			// The state saved keeps the alert until the escalation holds it, and nothing else.
+			kept := duress.e.Snapshot()
+			if len(kept.Duress) != 1 || kept.Duress[0] != (DuressGuard{Incident: alertsOf(got)[0].Incident, Origin: OriginKeypad, User: "u_owner"}) {
+				t.Fatalf("the duress kept: %+v", kept.Duress)
+			}
+			if plain.e.Snapshot().Duress != nil {
+				t.Fatalf("a person's code keeps a duress: %+v", plain.e.Snapshot().Duress)
+			}
+			if as := duress.e.Handle(DuressHeld{Now: duress.now, Incident: kept.Duress[0].Incident}); len(as) != 0 {
+				t.Fatalf("the escalation holding it acts: %v", as)
+			}
 			if !reflect.DeepEqual(plain.e.Snapshot(), duress.e.Snapshot()) {
-				t.Fatalf("a duress leaves a trace in the state:\n%+v\n%+v", duress.e.Snapshot(), plain.e.Snapshot())
+				t.Fatalf("a duress the escalation holds leaves a trace in the state:\n%+v\n%+v", duress.e.Snapshot(), plain.e.Snapshot())
 			}
 		})
 	}
@@ -156,21 +170,59 @@ func TestOnlyADuressCodeRaisesItAndSilenceOrEndToo(t *testing.T) {
 	}
 }
 
-// A restart right after the duress raises it no second time: the alert lives in the
-// escalation, not in the engine's state.
-func TestARestartAfterADuressDoesNotRaiseItAgain(t *testing.T) {
+// A restart before the escalation holds the duress raises it once more, with the same
+// incident, person and origin: the effects leave before the state is saved, so a power
+// cut right after the code may have lost them. It stays kept, and raised at each
+// restart, until the escalation holds it (DuressHeld); then a restart raises nothing.
+func TestARestartBeforeTheEscalationHoldsADuressRaisesItAgain(t *testing.T) {
 	h := newHarness(t)
 	h.armed()
 	h.breakWindow()
-	if n := len(alertsOf(h.cmd(CmdDisarm, duressCode("u_owner")))); n != 1 {
-		t.Fatalf("%d duress alerts", n)
-	}
+	live := h.cmd(CmdDisarm, duressCode("u_owner"))
 	h.now = h.now.Add(time.Second)
 	h.e = restart(t, h)
 	as := h.e.Boot(h.now, Booted{}, nil)
 	as = append(as, h.advance(time.Hour)...)
-	if len(alertsOf(as)) != 0 || len(eventsOf[DuressRaised](as)) != 0 {
-		t.Fatalf("the restart raises again: %v", as)
+	if !reflect.DeepEqual(alertsOf(as), alertsOf(live)) {
+		t.Fatalf("the restart raises %v, the code raised %v", alertsOf(as), alertsOf(live))
+	}
+	if !reflect.DeepEqual(eventsOf[DuressRaised](as), eventsOf[DuressRaised](live)) {
+		t.Fatalf("the restart tells %v, the code told %v", eventsOf[DuressRaised](as), eventsOf[DuressRaised](live))
+	}
+	if count[SirenOn](as) != 0 || len(eventsOf[Triggered](as)) != 0 {
+		t.Fatalf("the duress raised again rings: %v", as)
 	}
 	h.mustBe(ModeDisarmed)
+
+	h.e.Handle(DuressHeld{Now: h.now, Incident: alertsOf(live)[0].Incident})
+	h.e = restart(t, h)
+	as = h.e.Boot(h.now, Booted{}, nil)
+	as = append(as, h.advance(time.Hour)...)
+	if len(alertsOf(as)) != 0 || len(eventsOf[DuressRaised](as)) != 0 {
+		t.Fatalf("a duress the escalation holds is raised again: %v", as)
+	}
+}
+
+// Only a duress code keeps an alert: a person's code that disarms, silences or ends
+// keeps none, and another incident held changes nothing.
+func TestAPersonsCodeKeepsNoDuress(t *testing.T) {
+	for _, name := range []CommandName{CmdDisarm, CmdSilence, CmdEnd} {
+		h := newHarness(t)
+		h.armed()
+		h.breakWindow()
+		h.cmd(name, goodCode("u_owner"))
+		if s := h.e.Snapshot(); s.Duress != nil {
+			t.Fatalf("%s with a person's code keeps %+v", name, s.Duress)
+		}
+		h.e = restart(t, h)
+		if as := h.e.Boot(h.now, Booted{}, nil); len(eventsOf[DuressRaised](as)) != 0 {
+			t.Fatalf("%s with a person's code: the restart raises %v", name, as)
+		}
+	}
+	h := newHarness(t)
+	h.cmd(CmdDisarm, duressCode("u_owner"))
+	h.e.Handle(DuressHeld{Now: h.now, Incident: "another"})
+	if n := len(h.e.Snapshot().Duress); n != 1 {
+		t.Fatalf("another incident held leaves %d duress kept", n)
+	}
 }

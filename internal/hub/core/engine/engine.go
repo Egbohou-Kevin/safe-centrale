@@ -150,6 +150,8 @@ func (e *Engine) Handle(in Input) []Action {
 		e.forget(v.DeviceID)
 	case CodeEntered:
 		e.codeEntered(v)
+	case DuressHeld:
+		e.Held(v.Incident)
 	}
 	if _, typed := in.(CodeEntered); !typed {
 		e.checked(ref, in.at())
