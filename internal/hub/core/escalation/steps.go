@@ -26,7 +26,7 @@ func (e *Escalation) raise(r Raise) {
 	e.s.Incidents[key] = IncidentSnap{
 		ID: r.Incident, Kind: r.Kind, Urgency: r.Urgency,
 		Devices: unionSorted(nil, r.Devices), Percent: r.Percent, RaisedAt: r.Now,
-		Alarm: r.Alarm, Quiet: e.quietFor(r.Alarm), Silent: unionSorted(nil, r.Silent),
+		Alarm: r.Alarm, Quiet: e.quietFor(r.Kind, r.Alarm), Silent: unionSorted(nil, r.Silent),
 		NextAt: r.Now.Add(e.cfg.Plans[r.Kind].stepAt(0)),
 		Rounds: map[string]Round{}, Deliveries: map[uint64]Delivery{},
 	}

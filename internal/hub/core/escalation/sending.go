@@ -115,13 +115,17 @@ func (e *Escalation) send(in *IncidentSnap, ct Contact, ch Channel, round *Round
 	if !slices.Contains(round.Sent, ch) {
 		round.Sent = append(round.Sent, ch)
 	}
+	devices := slices.Clone(in.Devices)
+	if in.Kind == KindDuress {
+		devices = nil // the keypad could name who typed the code
+	}
 	urgency := in.Urgency
 	if in.Quiet {
 		urgency = UrgencyLow // nothing is urgent any more; it decides nothing either
 	}
 	return []Action{Send{
 		Key: key, Incident: in.ID, RaisedAt: in.RaisedAt, Kind: in.Kind, Urgency: urgency, Wave: round.Step + 1,
-		Contact: ct.ID, Channel: ch, Devices: slices.Clone(in.Devices), Percent: in.Percent,
+		Contact: ct.ID, Channel: ch, Devices: devices, Percent: in.Percent,
 		Text: e.text(*in, ch), Alarm: in.Alarm, AlarmHandled: in.Quiet, ZoneName: e.zoneName(*in),
 	}}
 }
