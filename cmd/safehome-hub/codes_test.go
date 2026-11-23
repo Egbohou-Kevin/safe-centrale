@@ -282,6 +282,18 @@ func TestCodesDuress(t *testing.T) {
 	if _, out, _ := cli(t, "", "codes", "-config", path, "list"); out != "u_owner\n" {
 		t.Fatalf("%q", out)
 	}
+
+	// Removing the person's code removes their duress code too; none without it.
+	cli(t, "730264\n", "codes", "-config", path, "set", "u_owner", "--duress")
+	if code, out, _ := cli(t, "", "codes", "-config", path, "remove", "u_owner"); code != 0 || !strings.Contains(out, "code removed for u_owner") {
+		t.Fatalf("%d %q", code, out)
+	}
+	if _, out, _ := cli(t, "", "codes", "-config", path, "list"); out != "no access code is set\n" {
+		t.Fatalf("the duress code of a removed person stays: %q", out)
+	}
+	if code, _, errb := cli(t, "730264\n", "codes", "-config", path, "set", "u_owner", "--duress"); code != 1 || !strings.Contains(errb, "no code of their own") {
+		t.Fatalf("a duress code without the person's code: %d %q", code, errb)
+	}
 }
 
 // A duress code set while the hub runs is known after its SIGHUP, and disarms as the
@@ -290,6 +302,9 @@ func TestADuressCodeSetWhileTheHubRunsDisarms(t *testing.T) {
 	broker := mqtttest.Start(t, "safehome-hub")
 	state := t.TempDir()
 	cfg := writeConfig(t, broker.URL(), state, "")
+	if code, _, errb := cli(t, "482915\n", "codes", "-config", cfg, "set", "u_owner"); code != 0 { // a duress code needs it
+		t.Fatalf("%d %q", code, errb)
+	}
 	l := startLive(t, broker, state, cfg)
 	l.waitState("disarmed")
 	l.event("dev_keypad", contract.CapKeypad, "arm", "")

@@ -456,6 +456,21 @@ Reste au lot D2 : l'alarme silencieuse elle-même (le moteur lit `Auth.Duress` e
 alerte à part, jamais dans `Ended` ni dans l'incident, sans sirène), son événement, son
 escalade et le centre qui la voit en Critique.
 
+Ajout du 23/11/2026, après relecture du lot D1 :
+- Un code de contrainte va avec le code de sa personne : `SetDuress` le refuse à un contact
+  sans code (`ErrNoPersonCode`), et `codes remove <user>` (sans `--duress`, la console de
+  même) retire les deux : une personne dont on retire l'accès ne désarme plus du tout. Le
+  hub, au démarrage et au SIGHUP, écarte en silence tout code de contrainte sans code de
+  personne à côté ; seul le code de la personne écarté se dit au journal, une ligne par
+  ancien contact (témoins : `TestRemovingAPersonsCodeRemovesTheirDuressCode`,
+  `TestADuressCodeWithoutItsPersonsCodeIsLeftAsideSilently`).
+- Les trois registres se vérifient **en même temps** (`checkCode`, une goroutine chacun) :
+  une vérification dure le temps du plus gros registre, 5 codes, environ 5 s sur le hub,
+  et non 5 + 5 + 1 = 11 s qui dépasseraient l'attente de 10 s du délai d'entrée
+  (`engine.CodeCheckHold`). Toujours le même temps quel que soit le code (témoin :
+  `TestAFullSiteIsCheckedWithinTheHold`, qui rougit si les registres se vérifient l'un
+  après l'autre).
+
 ### Un code par personne
 
 Chaque personne autorisée (5 au maximum) a son propre code, lié à son identifiant

@@ -82,6 +82,9 @@ func TestDuressCodeOpensOneThing(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if err := site.Set("u_guard", "591736"); err != nil { // a duress code needs its person's code
+			t.Fatal(err)
+		}
 		return site
 	}
 	const code = "482915"
@@ -185,5 +188,49 @@ func TestCodesRefusedAsTakenAreLimited(t *testing.T) {
 	}
 	if user, ok := open().people.Verify("482915"); !ok || user != "u_owner" {
 		t.Fatal("the owner's code is untouched")
+	}
+}
+
+// A duress code is a person's only beside their own code: refused without it, and
+// removed with it, so that a person whose access is removed no longer disarms.
+func TestADuressCodeGoesWithItsPersonsCode(t *testing.T) {
+	cfg := testConfig()
+	store := drivertest.NewMemStore()
+	site, err := Open(cfg, []Contact{{ID: "u_owner", Name: "Owner"}}, store, driver.SystemClock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := site.SetDuress("u_owner", "259031"); !errors.Is(err, ErrNoPersonCode) {
+		t.Fatalf("a duress code without the person's code: %v", err)
+	}
+	if site.Set("u_owner", "730264") != nil || site.SetDuress("u_owner", "259031") != nil {
+		t.Fatal("a person's code and their duress code")
+	}
+	if err := site.Remove("u_owner"); err != nil {
+		t.Fatal(err)
+	}
+	if l := site.List(); l.Contacts[0].HasCode || l.Contacts[0].HasDuress {
+		t.Fatalf("%+v", l)
+	}
+	d, err := OpenDuress(cfg, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := d.Verify("259031"); ok {
+		t.Fatal("the duress code of a removed person is still known")
+	}
+	if err := site.Remove("u_owner"); !errors.Is(err, access.ErrNoSuchUser) {
+		t.Fatalf("%v", err)
+	}
+
+	// A duress code left alone on disk (an older tool) is removed by the same remove.
+	if d.Set("u_owner", "259031") != nil {
+		t.Fatal("a duress code alone")
+	}
+	if site, err = Open(cfg, []Contact{{ID: "u_owner", Name: "Owner"}}, store, driver.SystemClock()); err != nil {
+		t.Fatal(err)
+	}
+	if err := site.Remove("u_owner"); err != nil || site.List().Contacts[0].HasDuress {
+		t.Fatalf("a duress code alone stays: %v", err)
 	}
 }

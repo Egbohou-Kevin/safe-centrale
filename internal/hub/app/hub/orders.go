@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -186,9 +187,18 @@ func (h *Hub) checkOrder(o order) {
 // tells so to the engine only (Auth.Duress).
 func (h *Hub) checkCode(cmd contract.AlarmCommandData) (auth engine.Auth, install bool) {
 	code := cmd.Args.Code
-	user, ok := h.codes.Verify(code)
-	duser, duress := h.duress.Verify(code)
-	iuser, inst := h.installer.Verify(code)
+	var (
+		user, duser, iuser string
+		ok, duress, inst   bool
+		wg                 sync.WaitGroup
+	)
+	// The three at once: a check takes the time of the largest registry, not of the
+	// three together, so that a full site (5 + 5 + 1 codes, about a second each on the
+	// hub) is checked within engine.CodeCheckHold. Still the same time for any code.
+	wg.Go(func() { user, ok = h.codes.Verify(code) })
+	wg.Go(func() { duser, duress = h.duress.Verify(code) })
+	wg.Go(func() { iuser, inst = h.installer.Verify(code) })
+	wg.Wait()
 	switch {
 	case ok:
 		return engine.Auth{Checked: true, OK: true, User: user}, false

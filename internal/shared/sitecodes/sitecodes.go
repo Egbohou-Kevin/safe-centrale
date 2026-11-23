@@ -81,6 +81,10 @@ var ErrTooManyTaken = errors.New("hub: too many codes refused as someone else's,
 // the installer: the hub would leave it aside.
 var ErrNotAContact = errors.New("hub: not a contact of the site")
 
+// ErrNoPersonCode refuses a duress code for a contact who has no code of their own:
+// a duress code disarms, it is never someone's only access.
+var ErrNoPersonCode = errors.New("hub: no code of their own")
+
 // Open opens the codes saved in store, with the settings cfg, for these contacts;
 // clock dates the codes refused as someone else's (see Set).
 func Open(cfg access.Config, contacts []Contact, store driver.Store, clock driver.Clock) (*Codes, error) {
@@ -167,11 +171,15 @@ func (s *Codes) Set(user, code string) error {
 	return s.set(own, others, user, code)
 }
 
-// SetDuress gives user, a contact of the site, a duress code: never the installer.
-// It may be neither a person's code (theirs included) nor the installer's.
+// SetDuress gives user, a contact of the site who has a code, a duress code: never
+// the installer, never someone without access (ErrNoPersonCode). It may be neither a
+// person's code (theirs included) nor the installer's.
 func (s *Codes) SetDuress(user, code string) error {
 	if !s.contact(user) {
 		return fmt.Errorf("%w: %s", ErrNotAContact, user)
+	}
+	if !slices.Contains(s.people.Users(), user) {
+		return fmt.Errorf("%w: %s", ErrNoPersonCode, user)
 	}
 	return s.set(s.duress, []*access.Registry{s.people, s.installer}, user, code)
 }
@@ -224,10 +232,24 @@ func (s *Codes) saveTaken(at []time.Time) error {
 	return s.store.Save(keyTaken, b)
 }
 
-// Remove removes the code of user (access.ErrNoSuchUser if there is none).
+// Remove removes the code of user (access.ErrNoSuchUser if there is none), and for a
+// person their duress code too: a person whose access is removed must no longer
+// disarm in any way. The duress code goes first, so that a failure never leaves it
+// without the person's code on disk (the hub leaves such a one aside anyway).
 func (s *Codes) Remove(user string) error {
 	own, _ := s.of(user)
-	return own.Remove(user)
+	if own == s.installer {
+		return own.Remove(user)
+	}
+	derr := s.duress.Remove(user)
+	if derr != nil && !errors.Is(derr, access.ErrNoSuchUser) {
+		return derr
+	}
+	err := own.Remove(user)
+	if errors.Is(err, access.ErrNoSuchUser) && derr == nil {
+		return nil // only a duress code was left
+	}
+	return err
 }
 
 // RemoveDuress removes the duress code of user (access.ErrNoSuchUser if there is none).

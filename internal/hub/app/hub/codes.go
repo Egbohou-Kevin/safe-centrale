@@ -20,6 +20,7 @@ type (
 var (
 	ErrTooManyTaken = sitecodes.ErrTooManyTaken
 	ErrNotAContact  = sitecodes.ErrNotAContact
+	ErrNoPersonCode = sitecodes.ErrNoPersonCode
 )
 
 // OpenSiteCodes opens the codes saved in store, for the contacts of cfg
@@ -40,15 +41,28 @@ func CodeContacts(cfg Config) []sitecodes.Contact {
 // errReadOnly: the hub only reads the codes; the installer's tools change them.
 var errReadOnly = errors.New("hub: the access codes are changed by the installer's tools only")
 
-// openContactCodes opens the codes saved under key (the people's, the duress ones) for
-// the hub itself: those of the site's contacts only. It never writes them, so a code
-// left aside stays on disk for the installer to see and remove.
-func (h *Hub) openContactCodes(key string) (*access.Registry, error) {
-	records, err := sitecodes.Load(h.codesStore(), key)
+// openContactCodes opens the people's codes and the duress codes for the hub itself:
+// those of the site's contacts only, and a duress code only beside its person's code
+// (withPersonCode). It never writes them, so a code left aside stays on disk for the
+// installer to see and remove.
+func (h *Hub) openContactCodes() (people, duress *access.Registry, err error) {
+	records, err := sitecodes.Load(h.codesStore(), sitecodes.KeyPeople)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return access.New(h.cfg.Access, h.contactsOnly(records), func([]access.Record) error { return errReadOnly })
+	drecords, err := sitecodes.Load(h.codesStore(), sitecodes.KeyDuress)
+	if err != nil {
+		return nil, nil, err
+	}
+	records = h.contactsOnly(records)
+	readOnly := func([]access.Record) error { return errReadOnly }
+	if people, err = access.New(h.cfg.Access, records, readOnly); err != nil {
+		return nil, nil, err
+	}
+	if duress, err = access.New(h.cfg.Access, withPersonCode(drecords, records), readOnly); err != nil {
+		return nil, nil, err
+	}
+	return people, duress, nil
 }
 
 // codesStore is where the hub reads the access codes.
@@ -70,6 +84,16 @@ func (h *Hub) contactsOnly(records []access.Record) []access.Record {
 		}
 		h.log.Warn("access code left aside: its user is not a contact of the site (remove it from the console, or: safehome-hub codes remove)", "user", r.User)
 		return true
+	})
+}
+
+// withPersonCode keeps the duress codes of the users of people only: a duress code
+// disarms, so it goes when its person's code goes (left aside with it, or removed).
+// Silently: the log never tells that a duress code exists, the person's code left
+// aside is logged once by contactsOnly.
+func withPersonCode(duress, people []access.Record) []access.Record {
+	return slices.DeleteFunc(duress, func(d access.Record) bool {
+		return !slices.ContainsFunc(people, func(p access.Record) bool { return p.User == d.User })
 	})
 }
 
@@ -109,7 +133,8 @@ func (h *Hub) ReloadCodes() error {
 	if err != nil {
 		return err
 	}
-	records, duress = h.contactsOnly(records), h.contactsOnly(duress)
+	records = h.contactsOnly(records)
+	duress = withPersonCode(duress, records)
 	if err := h.codes.Reload(records); err != nil {
 		return err
 	}

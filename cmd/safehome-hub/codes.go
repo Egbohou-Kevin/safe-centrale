@@ -135,6 +135,8 @@ func set(site *hub.SiteCodes, user, code string, duress bool, stdout io.Writer) 
 	}
 	if err := setCode(user, code); errors.Is(err, hub.ErrNotAContact) {
 		return fmt.Errorf("the %s was not set: %s is not a contact of the site (see the configuration), the hub would leave it aside", what, user)
+	} else if errors.Is(err, hub.ErrNoPersonCode) {
+		return fmt.Errorf("the %s was not set: %s has no code of their own, set it first", what, user)
 	} else if err != nil {
 		return fmt.Errorf("the %s was not set: %s", what, describe(err))
 	}
@@ -142,6 +144,8 @@ func set(site *hub.SiteCodes, user, code string, duress bool, stdout io.Writer) 
 	return nil
 }
 
+// remove removes the code of user, and a person's duress code with it; with duress,
+// the duress code only.
 func remove(site *hub.SiteCodes, user string, duress bool, stdout io.Writer) error {
 	removeCode, what := site.Remove, "code"
 	if duress {
