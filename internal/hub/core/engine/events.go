@@ -44,6 +44,13 @@ type Triggered struct {
 	Cause    Cause
 }
 
+// DuressRaised: a disarm was made with a duress code. It leaves as an alarm.triggered
+// of its own incident, which no disarm ends; Origin says where the code was typed.
+type DuressRaised struct {
+	Incident string
+	Origin   Origin
+}
+
 // SirenCycleStarted: a siren cycle has begun.
 type SirenCycleStarted struct {
 	Incident string
@@ -89,6 +96,7 @@ func (Armed) isEvent()             {}
 func (Disarmed) isEvent()          {}
 func (EntryDelayStarted) isEvent() {}
 func (Triggered) isEvent()         {}
+func (DuressRaised) isEvent()      {}
 func (SirenCycleStarted) isEvent() {}
 func (Cleared) isEvent()           {}
 func (AuthFailed) isEvent()        {}

@@ -679,6 +679,17 @@ ni les appareils du site, seulement le centre et les contacts hors du site ; ici
 cela veut dire épargner la personne qui a tapé le code. Le moteur ne lève pas
 encore `duress`, et la centrale ne remplit pas encore `Spared` (lot D2c).
 
+Ajout du 23/11/2026 (lot D2c) : ce qui précède sur le moteur et `Spared` n'est plus
+vrai. Le moteur lève `duress` (`engine.AlertDuress`, urgence `critical`, un incident
+neuf) à chaque désarmement par code de contrainte, et aussi quand un code de
+contrainte fait taire la sirène (`CmdSilence`) ou clôt l'alarme (`CmdEnd`) : ces deux
+ordres closent l'alarme au centre, qui sans cela ne verrait plus rien d'ouvert.
+`escalate.go` traduit `engine.AlertDuress` en `KindDuress` (`engineKinds`) et remplit
+`Spared` avec la personne du code (`engine.Alert.User`, l'id de son contact) ;
+`devices` part vide. L'`alarm.triggered` (capacité `duress`) que le moteur émet en
+même temps est décrit dans `docs/engine.md` (ajout du 23/11/2026, lot D2c). La ligne
+`duress` de la table des genres, plus haut, est à lire avec cet ajout.
+
 ## Questions ouvertes
 
 Aucune question ouverte pour le moment.

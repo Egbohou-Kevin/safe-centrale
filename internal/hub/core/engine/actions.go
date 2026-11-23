@@ -25,7 +25,7 @@ type Auth struct {
 	Checked bool
 	OK      bool
 	User    string // the person this code identifies
-	Duress  bool   // OK with a duress code: the person disarms under threat (not acted on yet)
+	Duress  bool   // OK with a duress code: the person disarms under threat (see duress)
 }
 
 // Command is an order to the engine.
@@ -85,6 +85,7 @@ type Alert struct {
 	Urgency  Urgency
 	Cause    *Cause
 	Devices  []string // devices concerned, when the alert is about several
+	User     string   // for a duress, the person whose duress code was typed
 }
 
 // Ended says that a person ended these incidents: by disarming, or by stopping the

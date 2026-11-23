@@ -175,12 +175,24 @@ func (e *Engine) disarmOrSilence(c Command) []Action {
 	if refusal != nil {
 		return refusal
 	}
+	var out []Action
 	switch c.Name {
 	case CmdSilence:
-		return e.silence(c, user)
+		out = e.silence(c, user)
 	case CmdEnd:
-		return e.end(c, user)
+		out = e.end(c, user)
+	default:
+		out = e.disarmBy(c, user)
 	}
+	if c.Auth.Duress {
+		out = append(out, e.duress(c.Origin, user)...)
+	}
+	return out
+}
+
+// disarmBy disarms on a person's order: the alarm ringing ends with it, and so do the
+// alarms of this arming whose siren already ran out.
+func (e *Engine) disarmBy(c Command, user string) []Action {
 	if e.s.Mode == ModeDisarmed {
 		return done(c)
 	}

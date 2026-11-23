@@ -4,6 +4,7 @@
 package wire
 
 import (
+	"cmp"
 	"fmt"
 	"time"
 
@@ -150,6 +151,19 @@ func sirenSeconds(d time.Duration) int {
 	return int((d + time.Second - 1) / time.Second)
 }
 
+// duressSource names the place of a duress typed from no known origin: the hub.
+const duressSource = "hub"
+
+// duressTriggered says the fact, as for any alarm: the cloud makes a critical duress
+// alarm of the capability, and no disarm lists the incident, so it stays open at the
+// centre. No device detected it: the place the code was typed stands for it.
+func duressTriggered(v engine.DuressRaised) Event {
+	source := cmp.Or(string(v.Origin), duressSource)
+	return Event{contract.TypeAlarmTriggered, contract.TriggeredData{
+		Incident: v.Incident, DeviceID: source, Capability: contract.AlertDuress, Zone: source,
+	}}
+}
+
 var clearedBy = map[engine.ClearedBy]string{
 	engine.ClearedByUser:    contract.OriginUser,
 	engine.ClearedByTimeout: contract.OriginTimeout,
@@ -184,6 +198,8 @@ func translateEvent(e engine.Event) (Event, error) {
 			Incident: v.Incident, DeviceID: v.Cause.DeviceID, DeviceName: contract.DeviceName(v.Cause.Zone),
 			Capability: string(v.Cause.Sensor), Zone: v.Cause.Zone,
 		}}, nil
+	case engine.DuressRaised:
+		return duressTriggered(v), nil
 	case engine.SirenCycleStarted:
 		return Event{contract.TypeAlarmSirenCycle, contract.SirenCycleData{Incident: v.Incident, Cycle: v.Cycle, Of: v.Of}}, nil
 	case engine.Cleared:

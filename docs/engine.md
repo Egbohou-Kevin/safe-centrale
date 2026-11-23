@@ -471,6 +471,40 @@ Ajout du 23/11/2026, après relecture du lot D1 :
   `TestAFullSiteIsCheckedWithinTheHold`, qui rougit si les registres se vérifient l'un
   après l'autre).
 
+Ajout du 23/11/2026 (chantier contrainte, lot D2c) : le moteur **lève l'alerte sous
+contrainte**.
+- Un désarmement (`CmdDisarm`) avec `Auth.Duress` est, sur place, celui du code de la
+  personne (`disarmBy`) : même mode, même sirène coupée, même accusé, même `alarm.disarmed`,
+  même état sauvé. Rien ne dit « contrainte » au clavier, dans l'accusé ni au journal
+  (témoins : `TestADuressDisarmsExactlyAsThePersonsCode` dans cinq états, armé, délai
+  d'entrée, sirène, sirène épuisée, déjà désarmé ; `TestADuressDisarmPublishesWhatThePersonsCodeDoes`,
+  octet pour octet sur le fil).
+- En plus, `duress` (`engine/duress.go`) lève une alerte `duress` (`AlertDuress`, urgence
+  critique) d'un **incident neuf**, que le moteur ne garde nulle part : jamais dans `Ended`,
+  ni dans `e.s.Incident`, ni dans `TimedOut`, jamais par `trigger`, donc ni sirène ni mode
+  `Triggered`. Aucun désarmement ne la liste : elle reste ouverte au centre. Un
+  redémarrage ne la relève pas : elle vit dans l'escalade (témoins :
+  `TestADuressRaisesOneAlertOfItsOwn`, `TestARestartAfterADuressDoesNotRaiseItAgain`).
+- Un code de contrainte tapé alors que tout est déjà désarmé lève aussi l'alerte : la
+  menace est la même, et la réponse (`done`) celle d'un code ordinaire. Chaque désarmement
+  sous contrainte lève sa propre alerte.
+- Faire taire (`CmdSilence`) ou clore (`CmdEnd`) avec un code de contrainte agit sur
+  place comme le code de la personne, **et lève aussi l'alerte `duress`** (corrigé le
+  23/11/2026 à la relecture ; d'abord écrit « sans alerte de plus », ce qui était faux) :
+  ces deux ordres passent par `clearIncident`, qui émet `Cleared` et `Ended`, et le
+  cloud clôt l'alarme. Sans alerte, une personne forcée de couper la sirène laisserait
+  le centre sans rien d'ouvert. À relire par Kevin (témoin :
+  `TestOnlyADuressCodeRaisesItAndSilenceOrEndToo`).
+- L'événement `DuressRaised` part en `alarm.triggered` (`engine/wire`) : `capability:
+  "duress"`, l'incident neuf, et pour `device_id` et `zone` l'origine de la commande
+  (`keypad` pour le clavier, `app` pour l'application, la seule autre voie d'un ordre :
+  le contrat n'admet que `keypad`, `app`, `schedule` ; `hub` si l'origine manque), jamais vides (témoin : `TestADuressLeavesAsAnAlarmTriggered`,
+  schéma compris). La centrale dit le fait ; le cloud en fait une alarme Critique (AD-23).
+- L'escalade reçoit `KindDuress` (`engineKinds`) et `Raise.Spared` = la personne du code
+  (`Alert.User`) : les autres contacts sont prévenus, pas elle. La ligne « escalation
+  over » du journal omet `kind` pour une contrainte (témoin :
+  `TestADuressCodeAlertsTheOthersAndSparesItsPerson`).
+
 ### Un code par personne
 
 Chaque personne autorisée (5 au maximum) a son propre code, lié à son identifiant
