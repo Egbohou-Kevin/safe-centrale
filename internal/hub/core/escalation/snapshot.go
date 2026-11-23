@@ -50,6 +50,8 @@ type IncidentSnap struct {
 	Quiet bool   `json:"quiet,omitempty"`
 	// Silent: the sirens known not to sound as the alert was raised (Raise.Silent).
 	Silent []string `json:"silent,omitempty"`
+	// Spared: the contact this alert tells nothing (Raise.Spared).
+	Spared string `json:"spared,omitempty"`
 
 	Step         int                 `json:"step"`          // steps already run
 	NextAt       time.Time           `json:"next_at"`       // when the next step is due, zero if none

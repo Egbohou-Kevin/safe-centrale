@@ -27,6 +27,7 @@ func (e *Escalation) raise(r Raise) {
 		ID: r.Incident, Kind: r.Kind, Urgency: r.Urgency,
 		Devices: unionSorted(nil, r.Devices), Percent: r.Percent, RaisedAt: r.Now,
 		Alarm: r.Alarm, Quiet: e.quietFor(r.Kind, r.Alarm), Silent: unionSorted(nil, r.Silent),
+		Spared: r.Spared,
 		NextAt: r.Now.Add(e.cfg.Plans[r.Kind].stepAt(0)),
 		Rounds: map[string]Round{}, Deliveries: map[uint64]Delivery{},
 	}
@@ -154,7 +155,13 @@ func (e *Escalation) runStep(in *IncidentSnap, at time.Time) []Action {
 			in.NextAt = in.RaisedAt.Add(in.Moved + plan.stepAt(in.Step))
 		}
 		wave := plan.step(step)
-		contacts := slices.DeleteFunc(e.contactsOf(wave.To), func(ct Contact) bool { return !e.reachable(*in, ct) })
+		// The person who typed the duress code (Spared) is left out of every wave: no
+		// round is opened for them, so no reminder, GSM takeover or retry reaches them
+		// either. Spared the only contact, the hub tells nobody; the monitoring centre
+		// is told by the cloud (alarm.triggered), not here.
+		contacts := slices.DeleteFunc(e.contactsOf(wave.To), func(ct Contact) bool {
+			return ct.ID == in.Spared || !e.reachable(*in, ct)
+		})
 		if len(contacts) == 0 {
 			continue
 		}

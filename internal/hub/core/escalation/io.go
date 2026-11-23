@@ -110,6 +110,12 @@ type Raise struct {
 	// say so, the people on the site are not warned by them. The hub gives them to a
 	// fire raised during an alarm whose siren failed.
 	Silent []string
+	// Spared is the id of the contact who typed the duress code (a person's code is
+	// their contact's id): this alert tells them nothing, at no wave, by no reminder,
+	// on no channel, since their phone may be in the hands of whoever threatens them.
+	// It holds for this alert only. Empty, or naming no contact, it changes nothing.
+	// Set by the raise that opens the alert; a raise merged into it does not change it.
+	Spared string
 }
 
 // Result is a channel's report about a message sent with Send. Ref, when set, is

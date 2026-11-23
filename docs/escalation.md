@@ -649,6 +649,31 @@ application et WhatsApp partent par l'agent de liaison vers le cloud (dépôt
 fait : le changement des plans depuis le cloud (les contacts, eux, arrivent par
 `config.set`, que le cloud envoie dès qu'ils changent).
 
+### La personne sous contrainte n'est pas prévenue (ajout du 23 novembre 2026)
+
+Une alerte `duress` porte `Spared` : l'id du contact dont le code de contrainte a été
+tapé (le code d'une personne suit son contact, son id est celui du contact). Ce
+contact n'est prévenu de cette alerte par aucun canal : ni à la première vague, ni
+par un rappel, ni par la reprise GSM, ni par un renvoi au retour d'internet. Son
+téléphone est peut-être sous les yeux de celui qui menace. L'escalade le retire de
+chaque vague (`runStep`) : aucune série de messages ne s'ouvre pour lui, donc aucun
+minuteur ne le rattrape. Les autres contacts sont prévenus comme avant.
+
+- `Spared` est gardé avec l'incident (`spared` dans l'instantané) : après un
+  redémarrage, les rappels l'épargnent encore.
+- Vide, ou ne nommant aucun contact, il ne change rien et ne fait pas d'erreur.
+- Il ne vaut que pour l'alerte qui le porte : une autre alerte du site, même un
+  autre `duress`, prévient ce contact comme avant. Il est fixé par la levée qui
+  ouvre l'alerte ; une levée regroupée dans la même ne le change pas.
+- Si la personne épargnée est le seul contact du site, la centrale ne prévient
+  personne et l'alerte se termine sans réponse : le centre de télésurveillance est
+  prévenu par le cloud (`alarm.triggered`, lot D2c), pas par l'escalade.
+
+Décidé sans Kevin, à relire : le chantier contrainte ne prévient ni le propriétaire
+ni les appareils du site, seulement le centre et les contacts hors du site ; ici,
+cela veut dire épargner la personne qui a tapé le code. Le moteur ne lève pas
+encore `duress`, et la centrale ne remplit pas encore `Spared` (lot D2c).
+
 ## Questions ouvertes
 
 Aucune question ouverte pour le moment.
