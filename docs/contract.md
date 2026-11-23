@@ -489,7 +489,7 @@ lecteur ne le montre pas comme un compte à rebours en cours (« reprend à 16:2
 - `alert.request` : l'escalade demande à un canal d'envoyer un message à un contact
   (une demande par contact et par canal, voir `escalation.md`). Champs : `incident`,
   `kind` (`intrusion`, `fire`, `panic`, `tamper`, `auth_failed`,
-  `arming_bypassed`, `battery_low_hub`, `mains_restored`, `device_offline`, `battery_low`, `gsm_degraded`, `zigbee_down`, `siren_failed`), `urgency` (`critical`, `high`, `low`),
+  `arming_bypassed`, `battery_low_hub`, `mains_restored`, `device_offline`, `battery_low`, `gsm_degraded`, `zigbee_down`, `siren_failed`, `duress`), `urgency` (`critical`, `high`, `low`),
   `incident_at`, `zone`, `wave`, `contact`, `channel` (`app`, `whatsapp`, `sms`, `call`) et `text`, écrit
   pour son canal : seul le texte d'un SMS dit comment acquitter (`Repondre 1 si vous
   gerez.`), l'application et WhatsApp ont leur propre bouton. Le texte d'un `fire` levé
@@ -537,6 +537,12 @@ lecteur ne le montre pas comme un compte à rebours en cours (« reprend à 16:2
   ou des piles). À ne pas confondre avec `zone`, le fuseau. Sans lui, l'alerte se dit
   comme avant. Le schéma ne le borne pas : un nom vide ou trop long ne doit jamais
   faire refuser l'alerte, celui qui le lit le coupe ou l'ignore.
+  `duress` (ajouté le 23 novembre 2026, chantier contrainte, lot D2a) : quelqu'un a
+  désarmé sous la menace avec un code de contrainte. Rien ne sonne sur place, et le
+  centre voit l'alerte comme Critique. Ce lot met seulement le genre au schéma ; rien
+  ne la lève encore (l'escalade la connaîtra au lot D2b, le moteur la lèvera au lot
+  D2c). Un genre hors enum est refusé par le cloud sans réponse : le cloud qui lit
+  `duress` se déploie avant la centrale qui l'envoie.
 - `alert.result` : le canal répond. Champs : `ref` (l'`id` du `alert.request`),
   `status` (`queued`, `sent`, `delivered`, `failed`) et `reason` en cas d'échec
   (`no_network`, `no_credit`, `modem_error`, `timeout`, `busy`, `unreachable`,
