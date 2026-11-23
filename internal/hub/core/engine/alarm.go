@@ -291,7 +291,7 @@ func (e *Engine) alert(kind AlertKind, cause *Cause) Alert {
 
 func urgency(kind AlertKind) Urgency {
 	switch kind {
-	case AlertFire, AlertPanic:
+	case AlertFire, AlertPanic, AlertDuress:
 		return UrgencyCritical
 	}
 	return UrgencyHigh

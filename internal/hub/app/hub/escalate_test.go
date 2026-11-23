@@ -382,3 +382,46 @@ func TestEscalationConfigurationIsChecked(t *testing.T) {
 		t.Fatal("a bad contact must be refused at configuration time")
 	}
 }
+
+// A disarm with a duress code reaches the escalation as a critical duress alert of its
+// own incident, which the disarm does not end: the others are told, the person who
+// typed the code is spared, and the journal read on site never names the duress.
+func TestADuressCodeAlertsTheOthersAndSparesItsPerson(t *testing.T) {
+	r := newRig(t, nil, withContacts)
+	r.start()
+	r.armedNow()
+	r.withDuress()
+	r.keypad(contract.ValDisarm, duressCode)
+	drivertest.WaitFor(t, "disarmed", func() bool { return len(eventsOf(r, contract.TypeAlarmDisarmed)) == 1 })
+	r.mustBe(engine.ModeDisarmed)
+	r.settle()
+
+	reqs := eventsOf(r, contract.TypeAlertRequest)
+	if len(reqs) == 0 {
+		t.Fatalf("the duress alert is lost:\n%s", r.logs.String())
+	}
+	first := dataOf[contract.AlertRequestData](t, reqs[0])
+	for _, m := range reqs {
+		d := dataOf[contract.AlertRequestData](t, m)
+		if d.Kind != contract.AlertDuress || d.Urgency != "critical" || d.Incident != first.Incident || d.Contact == "u_owner" {
+			t.Fatalf("a duress request: %+v", d)
+		}
+	}
+	triggered := eventsOf(r, contract.TypeAlarmTriggered)
+	if len(triggered) != 1 {
+		t.Fatalf("%d alarm.triggered", len(triggered))
+	}
+	if d := dataOf[contract.TriggeredData](t, triggered[0]); d.Capability != "duress" || d.Incident != first.Incident || d.DeviceID == "" || d.Zone == "" {
+		t.Fatalf("the duress alarm: %+v", d)
+	}
+	if d := dataOf[contract.DisarmedData](t, eventsOf(r, contract.TypeAlarmDisarmed)[0]); slices.Contains(d.Incidents, first.Incident) {
+		t.Fatalf("the disarm ends the duress: %+v", d)
+	}
+
+	r.send(contract.AlertAckTopic(site), contract.TypeAlertAck, contract.AlertAckData{Incident: first.Incident, Contact: "u_guard", Via: "sms"})
+	r.settle()
+	logs := r.logs.String()
+	if !strings.Contains(logs, "escalation over") || strings.Contains(logs, "duress") {
+		t.Fatalf("the journal must tell the end, never the duress:\n%s", logs)
+	}
+}

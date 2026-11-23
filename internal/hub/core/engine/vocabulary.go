@@ -57,9 +57,12 @@ const (
 type AlertKind string
 
 const (
-	AlertIntrusion  AlertKind = "intrusion"
-	AlertFire       AlertKind = "fire"
-	AlertPanic      AlertKind = "panic"
+	AlertIntrusion AlertKind = "intrusion"
+	AlertFire      AlertKind = "fire"
+	AlertPanic     AlertKind = "panic"
+	// AlertDuress: a disarm made with a duress code, the person under threat. Nothing
+	// rings or shows on site; the monitoring centre sees it as critical.
+	AlertDuress     AlertKind = "duress"
 	AlertTamper     AlertKind = "tamper"
 	AlertAuthFailed AlertKind = "auth_failed"
 	// AlertArmingBypassed: the system armed with open zones, which are therefore not

@@ -21,6 +21,7 @@ var engineKinds = map[engine.AlertKind]escalation.AlertKind{
 	engine.AlertIntrusion:      escalation.KindIntrusion,
 	engine.AlertFire:           escalation.KindFire,
 	engine.AlertPanic:          escalation.KindPanic,
+	engine.AlertDuress:         escalation.KindDuress,
 	engine.AlertTamper:         escalation.KindTamper,
 	engine.AlertAuthFailed:     escalation.KindAuthFailed,
 	engine.AlertArmingBypassed: escalation.KindArmingBypassed,
@@ -78,6 +79,9 @@ func (h *Hub) escalateEngine(now time.Time, actions []engine.Action) {
 			if kind == escalation.KindFire {
 				raise.Silent = h.silentSirens()
 			}
+			if kind == escalation.KindDuress && v.User != "" {
+				raise.Spared = []string{v.User} // the person under threat must not be called
+			}
 			h.escalate(raise)
 		case engine.Ended:
 			for _, id := range v.Incidents {
@@ -132,7 +136,13 @@ func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []esc
 		case escalation.Noted:
 			h.log.Info("a contact has seen the alert; the escalation goes on for the others", "incident", v.Incident, "contact", v.Contact)
 		case escalation.Concluded:
-			h.log.Info("escalation over", "incident", v.Incident, "kind", v.Kind, "outcome", v.Outcome, "by", v.By)
+			// The journal read on site (SSH, console) never names a duress: whoever made
+			// the person disarm may stand next to it. The centre has the kind.
+			attrs := []any{"incident", v.Incident}
+			if v.Kind != escalation.KindDuress {
+				attrs = append(attrs, "kind", v.Kind)
+			}
+			h.log.Info("escalation over", append(attrs, "outcome", v.Outcome, "by", v.By)...)
 		}
 	}
 	return nil

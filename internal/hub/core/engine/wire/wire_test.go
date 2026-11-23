@@ -292,6 +292,7 @@ func TestEverythingTheEnginePublishesMatchesTheSchemas(t *testing.T) {
 	force := func(c *engine.Command) { c.Force = true; c.User = "u_42" }
 	bad := func(c *engine.Command) { c.Auth = engine.Auth{Checked: true} }
 	good := func(c *engine.Command) { c.Auth = engine.Auth{Checked: true, OK: true, User: "u_42"} }
+	duress := func(c *engine.Command) { c.Auth = engine.Auth{Checked: true, OK: true, User: "u_42", Duress: true} }
 
 	signal("dev_back", engine.SensorContact, true)
 	cmd(engine.CmdArm, force) // arming, forced
@@ -314,7 +315,8 @@ func TestEverythingTheEnginePublishesMatchesTheSchemas(t *testing.T) {
 	}
 	signal("dev_smoke", engine.SensorSmoke, true)
 	signal("dev_panic", engine.SensorPanic, true)
-	cmd(engine.CmdArmNow) // refused: reply with a reason
+	cmd(engine.CmdArmNow)         // refused: reply with a reason
+	cmd(engine.CmdDisarm, duress) // the duress alarm.triggered
 
 	out, err := Translate(all)
 	if err != nil {
