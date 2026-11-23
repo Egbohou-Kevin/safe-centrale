@@ -25,6 +25,7 @@ type Auth struct {
 	Checked bool
 	OK      bool
 	User    string // the person this code identifies
+	Duress  bool   // OK with a duress code: the person disarms under threat (not acted on yet)
 }
 
 // Command is an order to the engine.

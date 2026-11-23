@@ -432,6 +432,45 @@ doit aussi connaître le code.
 Idée pour plus tard, hors v1 : un code de contrainte, qui désarme normalement
 mais envoie une alerte silencieuse, utile en cas de braquage.
 
+Ajout du 23/11/2026 (chantier contrainte, lot D1) : la centrale **reconnaît** un code de
+contrainte, sans encore rien émettre.
+- Un 3e registre, à part comme celui de l'installateur : clé `duress` du dossier des codes
+  (`sitecodes.OpenDuress`), un code de contrainte au plus par contact, jamais pour
+  l'installateur. Un registre plutôt qu'un champ dans `access.Record` : un registre tient
+  un code par personne, et une personne a son code et son code de contrainte.
+- Un code n'a qu'un sens : un code de personne, de contrainte ou d'installateur est refusé
+  s'il est déjà dans l'un des deux autres registres (le sien compris), dans les trois sens.
+- `safehome-hub codes set|remove <user> --duress` le pose ou le retire, sous `codes.lock` ;
+  `list` le montre (« u_owner (duress code) ») ; le hub le relit au SIGHUP (`ReloadCodes`),
+  pour les seuls contacts du site comme les codes des personnes.
+- Ordre de vérification d'un ordre : personnes, puis contrainte, puis installateur. Les
+  **trois** registres sont toujours vérifiés, quel que soit le code tapé : le temps de
+  réponse (PBKDF2) ne trahit pas un code de contrainte (témoin : `TestEveryCodeTakesTheSameChecks`,
+  qui compte les codes hachés par ordre, `access.Registry.Hashed`).
+- Un code de contrainte juste rend `engine.Auth{Checked, OK, User, Duress: true}` : le moteur
+  désarme comme pour le code de la personne (même `alarm.disarmed`, même `user`, même ack,
+  `WrongCodes` remis à 0, aucun `auth_failed`) ; un code de contrainte faux est un code faux.
+  Le journal du hub ne dit jamais qu'un code est de contrainte, ni qu'il en existe.
+
+Reste au lot D2 : l'alarme silencieuse elle-même (le moteur lit `Auth.Duress` et émet une
+alerte à part, jamais dans `Ended` ni dans l'incident, sans sirène), son événement, son
+escalade et le centre qui la voit en Critique.
+
+Ajout du 23/11/2026, après relecture du lot D1 :
+- Un code de contrainte va avec le code de sa personne : `SetDuress` le refuse à un contact
+  sans code (`ErrNoPersonCode`), et `codes remove <user>` (sans `--duress`, la console de
+  même) retire les deux : une personne dont on retire l'accès ne désarme plus du tout. Le
+  hub, au démarrage et au SIGHUP, écarte en silence tout code de contrainte sans code de
+  personne à côté ; seul le code de la personne écarté se dit au journal, une ligne par
+  ancien contact (témoins : `TestRemovingAPersonsCodeRemovesTheirDuressCode`,
+  `TestADuressCodeWithoutItsPersonsCodeIsLeftAsideSilently`).
+- Les trois registres se vérifient **en même temps** (`checkCode`, une goroutine chacun) :
+  une vérification dure le temps du plus gros registre, 5 codes, environ 5 s sur le hub,
+  et non 5 + 5 + 1 = 11 s qui dépasseraient l'attente de 10 s du délai d'entrée
+  (`engine.CodeCheckHold`). Toujours le même temps quel que soit le code (témoin :
+  `TestAFullSiteIsCheckedWithinTheHold`, qui rougit si les registres se vérifient l'un
+  après l'autre).
+
 ### Un code par personne
 
 Chaque personne autorisée (5 au maximum) a son propre code, lié à son identifiant

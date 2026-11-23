@@ -27,6 +27,7 @@ import (
 	"io"
 	"slices"
 	"sync"
+	"sync/atomic"
 )
 
 // Errors returned by Set and Remove. None of them ever contains a code.
@@ -99,7 +100,13 @@ type Registry struct {
 
 	mu      sync.Mutex
 	records []Record
+
+	hashed atomic.Int64 // codes hashed by Verify, see Hashed
 }
+
+// Hashed is how many saved codes Verify has hashed so far: the cost of the checks,
+// which must not depend on the code typed (a test of the hub counts it per order).
+func (r *Registry) Hashed() int64 { return r.hashed.Load() }
 
 // New creates a registry from the records saved earlier (nil for a new site).
 // persist is called with the complete list of records before any change takes
@@ -265,6 +272,7 @@ func (r *Registry) Verify(code string) (user string, ok bool) {
 	r.mu.Lock()
 	records := r.records
 	r.mu.Unlock()
+	r.hashed.Add(int64(len(records)))
 	for _, rec := range records {
 		if matches(rec, code) && !ok {
 			user, ok = rec.User, true

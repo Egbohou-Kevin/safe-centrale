@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -169,13 +170,44 @@ func (h *Hub) checkOrder(o order) {
 		h.submitCommand(o, engine.Auth{})
 		return
 	}
-	user, ok := h.codes.Verify(o.cmd.Args.Code)
-	if !ok && h.installerCode(o.cmd) {
+	auth, install := h.checkCode(o.cmd)
+	if install {
 		h.openInstall(o)
 		return
 	}
 	o.cmd.Args.Code = "" // the code has done its work
-	h.submitCommand(o, engine.Auth{Checked: true, OK: ok, User: user})
+	h.submitCommand(o, auth)
+}
+
+// checkCode checks the code of cmd against the people's codes, then the duress codes,
+// then the installer's: install tells the code opens the installer mode. Every code
+// is checked against the three registries, whichever matches: the time of the check
+// (PBKDF2, see access.Config.Iterations) must not tell a duress code from the others,
+// the one who typed it may be watched. A duress code disarms as a person's code, and
+// tells so to the engine only (Auth.Duress).
+func (h *Hub) checkCode(cmd contract.AlarmCommandData) (auth engine.Auth, install bool) {
+	code := cmd.Args.Code
+	var (
+		user, duser, iuser string
+		ok, duress, inst   bool
+		wg                 sync.WaitGroup
+	)
+	// The three at once: a check takes the time of the largest registry, not of the
+	// three together, so that a full site (5 + 5 + 1 codes, about a second each on the
+	// hub) is checked within engine.CodeCheckHold. Still the same time for any code.
+	wg.Go(func() { user, ok = h.codes.Verify(code) })
+	wg.Go(func() { duser, duress = h.duress.Verify(code) })
+	wg.Go(func() { iuser, inst = h.installer.Verify(code) })
+	wg.Wait()
+	switch {
+	case ok:
+		return engine.Auth{Checked: true, OK: true, User: user}, false
+	case duress:
+		return engine.Auth{Checked: true, OK: true, User: duser, Duress: true}, false
+	case inst && h.installerCode(cmd, iuser):
+		return engine.Auth{}, true
+	}
+	return engine.Auth{Checked: true}, false
 }
 
 func (h *Hub) submitCommand(o order, auth engine.Auth) {

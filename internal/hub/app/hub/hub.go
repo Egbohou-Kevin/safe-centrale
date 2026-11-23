@@ -56,6 +56,7 @@ type Hub struct {
 
 	codes     *access.Registry
 	installer *access.Registry // the installer code, apart from the people's
+	duress    *access.Registry // the duress codes, apart too (sitecodes.OpenDuress)
 	reloading sync.Mutex       // one ReloadCodes at a time, so the last one read wins
 
 	out  *outbox.Outbox
@@ -170,7 +171,7 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 // openSaved opens what the hub keeps apart from the domains' states: the access
 // codes and the message counter.
 func (h *Hub) openSaved() (err error) {
-	if h.codes, err = h.openPeopleCodes(); err != nil {
+	if h.codes, h.duress, err = h.openContactCodes(); err != nil {
 		return err
 	}
 	if h.installer, err = sitecodes.OpenInstaller(h.cfg.Access, h.codesStore()); err != nil {

@@ -35,20 +35,22 @@ func CodesDir(stateDir string) string { return filepath.Join(stateDir, CodesFold
 
 // Codes are the access codes as the installer's tools (the hub's command line, the
 // local console) change them, without running a hub: the people's and the
-// installer's, with the site's contacts. Every change is saved before it takes
+// installer's and the duress codes, with the site's contacts. Every change is saved before it takes
 // effect; the running hub reads the codes again when told.
 type Codes struct {
-	people, installer *access.Registry
-	contacts          []Contact
-	store             driver.Store
-	now               func() time.Time
+	people, installer, duress *access.Registry
+	contacts                  []Contact
+	store                     driver.Store
+	now                       func() time.Time
 }
 
-// The keys of the codes in their store: the people's, the installer's, and when a
-// code was refused as someone else's (see Set). The hub reads the first two.
+// The keys of the codes in their store: the people's, the installer's, the duress
+// codes, and when a code was refused as someone else's (see Set). The hub reads the
+// first three.
 const (
 	KeyPeople    = "access"
 	KeyInstaller = "installer"
+	KeyDuress    = "duress"
 	keyTaken     = "codes-taken"
 )
 
@@ -79,6 +81,10 @@ var ErrTooManyTaken = errors.New("hub: too many codes refused as someone else's,
 // the installer: the hub would leave it aside.
 var ErrNotAContact = errors.New("hub: not a contact of the site")
 
+// ErrNoPersonCode refuses a duress code for a contact who has no code of their own:
+// a duress code disarms, it is never someone's only access.
+var ErrNoPersonCode = errors.New("hub: no code of their own")
+
 // Open opens the codes saved in store, with the settings cfg, for these contacts;
 // clock dates the codes refused as someone else's (see Set).
 func Open(cfg access.Config, contacts []Contact, store driver.Store, clock driver.Clock) (*Codes, error) {
@@ -90,7 +96,11 @@ func Open(cfg access.Config, contacts []Contact, store driver.Store, clock drive
 	if err != nil {
 		return nil, err
 	}
-	return &Codes{people: people, installer: installer, contacts: contacts, store: store, now: clock.Now}, nil
+	duress, err := OpenDuress(cfg, store)
+	if err != nil {
+		return nil, err
+	}
+	return &Codes{people: people, installer: installer, duress: duress, contacts: contacts, store: store, now: clock.Now}, nil
 }
 
 // OpenPeople opens the people's codes saved in store; a change is saved there.
@@ -104,10 +114,20 @@ func OpenInstaller(cfg access.Config, store driver.Store) (*access.Registry, err
 	return openRegistry(cfg, store, KeyInstaller)
 }
 
+// OpenDuress opens the duress codes saved in store: a contact made to disarm under
+// threat types theirs instead of their own code. It disarms the same, and tells the
+// hub (engine.Auth.Duress). A registry apart, as the installer's: a Record holds no
+// kind, and a registry holds one code per user (access.Registry.Set). At most one
+// per contact, as many places as the people's codes.
+func OpenDuress(cfg access.Config, store driver.Store) (*access.Registry, error) {
+	return openRegistry(cfg, store, KeyDuress)
+}
+
 // CodeHolder is a contact of the site, and whether they have a code.
 type CodeHolder struct {
 	Contact
-	HasCode bool
+	HasCode   bool
+	HasDuress bool // a duress code is set too
 }
 
 // CodeList says who has a code. It never holds a code.
@@ -115,31 +135,61 @@ type CodeList struct {
 	Contacts  []CodeHolder // in the configuration's order
 	Leftovers []string     // users of codes who are not contacts, sorted: the hub leaves those codes aside
 	Installer bool         // the installer code is set
+
+	DuressLeftovers []string // users of duress codes who are not contacts, sorted: left aside the same
 }
 
 // List says who has a code.
 func (s *Codes) List() CodeList {
-	have := map[string]bool{}
+	have, duress := map[string]bool{}, map[string]bool{}
 	for _, u := range s.people.Users() {
 		have[u] = true
 	}
+	for _, u := range s.duress.Users() {
+		duress[u] = true
+	}
 	var l CodeList
 	for _, ct := range s.contacts {
-		l.Contacts = append(l.Contacts, CodeHolder{Contact: ct, HasCode: have[ct.ID]})
+		l.Contacts = append(l.Contacts, CodeHolder{Contact: ct, HasCode: have[ct.ID], HasDuress: duress[ct.ID]})
 		delete(have, ct.ID)
+		delete(duress, ct.ID)
 	}
 	l.Leftovers = slices.Sorted(maps.Keys(have))
+	l.DuressLeftovers = slices.Sorted(maps.Keys(duress))
 	l.Installer = len(s.installer.Users()) > 0
 	return l
 }
 
 // Set gives user, a contact of the site or the installer, a code. One code opens one
-// thing: a person's code may not be the installer's, nor the reverse
+// thing: a code is in one registry only, people's, installer's or duress
 // (access.ErrCodeTaken). The code is never in an error.
 func (s *Codes) Set(user, code string) error {
-	if user != InstallerUser && !slices.ContainsFunc(s.contacts, func(c Contact) bool { return c.ID == user }) {
+	if user != InstallerUser && !s.contact(user) {
 		return fmt.Errorf("%w: %s", ErrNotAContact, user)
 	}
+	own, others := s.of(user)
+	return s.set(own, others, user, code)
+}
+
+// SetDuress gives user, a contact of the site who has a code, a duress code: never
+// the installer, never someone without access (ErrNoPersonCode). It may be neither a
+// person's code (theirs included) nor the installer's.
+func (s *Codes) SetDuress(user, code string) error {
+	if !s.contact(user) {
+		return fmt.Errorf("%w: %s", ErrNotAContact, user)
+	}
+	if !slices.Contains(s.people.Users(), user) {
+		return fmt.Errorf("%w: %s", ErrNoPersonCode, user)
+	}
+	return s.set(s.duress, []*access.Registry{s.people, s.installer}, user, code)
+}
+
+func (s *Codes) contact(user string) bool {
+	return slices.ContainsFunc(s.contacts, func(c Contact) bool { return c.ID == user })
+}
+
+// set gives user the code in own, unless it is in one of others.
+func (s *Codes) set(own *access.Registry, others []*access.Registry, user, code string) error {
 	taken, err := s.recentTaken()
 	if err != nil {
 		return err
@@ -147,8 +197,7 @@ func (s *Codes) Set(user, code string) error {
 	if len(taken) >= takenLimit {
 		return ErrTooManyTaken
 	}
-	own, other := s.of(user)
-	if _, theirs := other.Verify(code); theirs {
+	if slices.ContainsFunc(others, func(r *access.Registry) bool { _, theirs := r.Verify(code); return theirs }) {
 		err = access.ErrCodeTaken
 	} else {
 		err = own.Set(user, code)
@@ -183,18 +232,35 @@ func (s *Codes) saveTaken(at []time.Time) error {
 	return s.store.Save(keyTaken, b)
 }
 
-// Remove removes the code of user (access.ErrNoSuchUser if there is none).
+// Remove removes the code of user (access.ErrNoSuchUser if there is none), and for a
+// person their duress code too: a person whose access is removed must no longer
+// disarm in any way. The duress code goes first, so that a failure never leaves it
+// without the person's code on disk (the hub leaves such a one aside anyway).
 func (s *Codes) Remove(user string) error {
 	own, _ := s.of(user)
-	return own.Remove(user)
+	if own == s.installer {
+		return own.Remove(user)
+	}
+	derr := s.duress.Remove(user)
+	if derr != nil && !errors.Is(derr, access.ErrNoSuchUser) {
+		return derr
+	}
+	err := own.Remove(user)
+	if errors.Is(err, access.ErrNoSuchUser) && derr == nil {
+		return nil // only a duress code was left
+	}
+	return err
 }
 
-// of returns the registry of user, and the other one.
-func (s *Codes) of(user string) (own, other *access.Registry) {
+// RemoveDuress removes the duress code of user (access.ErrNoSuchUser if there is none).
+func (s *Codes) RemoveDuress(user string) error { return s.duress.Remove(user) }
+
+// of returns the registry of user's code, and the other ones.
+func (s *Codes) of(user string) (own *access.Registry, others []*access.Registry) {
 	if user == InstallerUser {
-		return s.installer, s.people
+		return s.installer, []*access.Registry{s.people, s.duress}
 	}
-	return s.people, s.installer
+	return s.people, []*access.Registry{s.installer, s.duress}
 }
 
 func openRegistry(cfg access.Config, store driver.Store, key string) (*access.Registry, error) {
@@ -212,7 +278,7 @@ func openRegistry(cfg access.Config, store driver.Store, key string) (*access.Re
 	return access.New(cfg, records, persist)
 }
 
-// Load reads the codes saved under key in store (KeyPeople, KeyInstaller): the hub
+// Load reads the codes saved under key in store (KeyPeople, KeyInstaller, KeyDuress): the hub
 // reads them so.
 func Load(store driver.Store, key string) ([]access.Record, error) {
 	data, found, err := store.Load(key)

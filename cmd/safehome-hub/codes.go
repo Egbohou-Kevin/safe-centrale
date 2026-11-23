@@ -18,6 +18,9 @@ import (
 	"safehome/internal/shared/service"
 )
 
+// duressFlag makes "set" and "remove" act on the duress code of the user.
+const duressFlag = "--duress"
+
 // codes runs "safehome-hub codes": it lists, sets or removes the access codes, then
 // tells a running hub to read them again.
 func codes(cfg hubconfig.Result, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -25,11 +28,12 @@ func codes(cfg hubconfig.Result, args []string, stdin io.Reader, stdout, stderr 
 		fmt.Fprint(stderr, usage)
 		return 2
 	}
+	duress := len(args) == 3 && args[2] == duressFlag
 	switch {
 	case args[0] != "list" && args[0] != "set" && args[0] != "remove":
 		fmt.Fprintf(stderr, "unknown codes command %q\n%s", args[0], usage)
 		return 2
-	case args[0] != "list" && len(args) != 2:
+	case args[0] != "list" && len(args) != 2 && !duress:
 		fmt.Fprint(stderr, usage)
 		return 2
 	}
@@ -52,9 +56,9 @@ func codes(cfg hubconfig.Result, args []string, stdin io.Reader, stdout, stderr 
 		list(site.List(), stdout)
 		return 0
 	case "set":
-		err = set(site, args[1], code, stdout)
+		err = set(site, args[1], code, duress, stdout)
 	case "remove":
-		err = remove(site, args[1], stdout)
+		err = remove(site, args[1], duress, stdout)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -97,14 +101,22 @@ func openCodesStore(dir string, log *slog.Logger) (*filestore.Store, error) {
 
 func list(l hub.CodeList, stdout io.Writer) {
 	empty := len(l.Leftovers) == 0 && !l.Installer
+	empty = empty && len(l.DuressLeftovers) == 0
 	for _, c := range l.Contacts {
 		if c.HasCode {
 			fmt.Fprintln(stdout, c.ID)
 			empty = false
 		}
+		if c.HasDuress {
+			fmt.Fprintf(stdout, "%s (duress code)\n", c.ID)
+			empty = false
+		}
 	}
 	for _, u := range l.Leftovers {
 		fmt.Fprintf(stdout, "%s (not a contact of the site: the hub leaves this code aside, remove it)\n", u)
+	}
+	for _, u := range l.DuressLeftovers {
+		fmt.Fprintf(stdout, "%s (duress code, not a contact of the site: the hub leaves it aside, remove it with %s)\n", u, duressFlag)
 	}
 	if l.Installer {
 		fmt.Fprintln(stdout, hub.InstallerUser)
@@ -115,22 +127,34 @@ func list(l hub.CodeList, stdout io.Writer) {
 }
 
 // set gives the code read on the standard input to user, a contact of the site or
-// the installer.
-func set(site *hub.SiteCodes, user, code string, stdout io.Writer) error {
-	if err := site.Set(user, code); errors.Is(err, hub.ErrNotAContact) {
-		return fmt.Errorf("the code was not set: %s is not a contact of the site (see the configuration), the hub would leave it aside", user)
-	} else if err != nil {
-		return fmt.Errorf("the code was not set: %s", describe(err))
+// the installer; with duress, the duress code of user, a contact.
+func set(site *hub.SiteCodes, user, code string, duress bool, stdout io.Writer) error {
+	setCode, what := site.Set, "code"
+	if duress {
+		setCode, what = site.SetDuress, "duress code"
 	}
-	fmt.Fprintf(stdout, "code set for %s\n", user)
+	if err := setCode(user, code); errors.Is(err, hub.ErrNotAContact) {
+		return fmt.Errorf("the %s was not set: %s is not a contact of the site (see the configuration), the hub would leave it aside", what, user)
+	} else if errors.Is(err, hub.ErrNoPersonCode) {
+		return fmt.Errorf("the %s was not set: %s has no code of their own, set it first", what, user)
+	} else if err != nil {
+		return fmt.Errorf("the %s was not set: %s", what, describe(err))
+	}
+	fmt.Fprintf(stdout, "%s set for %s\n", what, user)
 	return nil
 }
 
-func remove(site *hub.SiteCodes, user string, stdout io.Writer) error {
-	if err := site.Remove(user); err != nil {
+// remove removes the code of user, and a person's duress code with it; with duress,
+// the duress code only.
+func remove(site *hub.SiteCodes, user string, duress bool, stdout io.Writer) error {
+	removeCode, what := site.Remove, "code"
+	if duress {
+		removeCode, what = site.RemoveDuress, "duress code"
+	}
+	if err := removeCode(user); err != nil {
 		return fmt.Errorf("nothing was removed: %s", describe(err))
 	}
-	fmt.Fprintf(stdout, "code removed for %s\n", user)
+	fmt.Fprintf(stdout, "%s removed for %s\n", what, user)
 	return nil
 }
 
@@ -155,7 +179,7 @@ func describe(err error) string {
 	case errors.Is(err, access.ErrWeakCode):
 		return "too easy to guess (no repeated digit, no straight run of digits)"
 	case errors.Is(err, access.ErrCodeTaken):
-		return "another person already has this code"
+		return "this code is already in use (another person's, the installer's, or a duress code)"
 	case errors.Is(err, hub.ErrTooManyTaken):
 		return "too many codes refused as another person's: wait 10 minutes"
 	case errors.Is(err, access.ErrTooManyUsers):

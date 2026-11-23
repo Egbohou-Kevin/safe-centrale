@@ -71,6 +71,86 @@ func TestCodes(t *testing.T) {
 	}
 }
 
+// A duress code opens one thing too: it is in one registry only, whichever is set
+// first, in the three ways (person's, installer's, duress). It is a contact's only,
+// and the list shows it apart.
+func TestDuressCodeOpensOneThing(t *testing.T) {
+	cfg := testConfig()
+	contacts := []Contact{{ID: "u_owner", Name: "Owner"}, {ID: "u_guard", Name: "Guard"}}
+	open := func() *Codes {
+		site, err := Open(cfg, contacts, drivertest.NewMemStore(), driver.SystemClock())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := site.Set("u_guard", "591736"); err != nil { // a duress code needs its person's code
+			t.Fatal(err)
+		}
+		return site
+	}
+	const code = "482915"
+	person := func(s *Codes) error { return s.Set("u_owner", code) }
+	guard := func(s *Codes) error { return s.Set("u_guard", code) }
+	installer := func(s *Codes) error { return s.Set(InstallerUser, code) }
+	duress := func(s *Codes) error { return s.SetDuress("u_guard", code) }
+	ownDuress := func(s *Codes) error { return s.SetDuress("u_owner", code) }
+	for _, c := range []struct {
+		name          string
+		first, second func(*Codes) error
+	}{
+		{"person then duress", person, duress},
+		{"person then own duress", person, ownDuress},
+		{"duress then person", duress, person},
+		{"duress then own person code", duress, guard},
+		{"installer then duress", installer, duress},
+		{"duress then installer", duress, installer},
+		{"person then installer", person, installer},
+		{"installer then person", installer, person},
+	} {
+		site := open()
+		if err := c.first(site); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if err := c.second(site); !errors.Is(err, access.ErrCodeTaken) {
+			t.Errorf("%s: %v, want %v", c.name, err, access.ErrCodeTaken)
+		}
+	}
+
+	site := open()
+	if err := site.SetDuress(InstallerUser, "259031"); !errors.Is(err, ErrNotAContact) {
+		t.Fatalf("a duress code for the installer: %v", err)
+	}
+	if err := site.SetDuress("u_stranger", "259031"); !errors.Is(err, ErrNotAContact) {
+		t.Fatalf("a duress code for a stranger: %v", err)
+	}
+	if site.Set("u_owner", "730264") != nil || site.SetDuress("u_owner", "259031") != nil {
+		t.Fatal("a person's code and their duress code")
+	}
+	l := site.List()
+	if !l.Contacts[0].HasCode || !l.Contacts[0].HasDuress || l.Contacts[1].HasDuress || len(l.DuressLeftovers) != 0 {
+		t.Fatalf("%+v", l)
+	}
+	if err := site.RemoveDuress("u_owner"); err != nil || site.List().Contacts[0].HasDuress || !site.List().Contacts[0].HasCode {
+		t.Fatalf("removing the duress code: %v %+v", err, site.List())
+	}
+	if err := site.RemoveDuress("u_owner"); !errors.Is(err, access.ErrNoSuchUser) {
+		t.Fatalf("%v", err)
+	}
+
+	// A duress code whose user is no longer a contact is listed apart.
+	store := drivertest.NewMemStore()
+	d, err := OpenDuress(cfg, store)
+	if err != nil || d.Set("u_gone", "615273") != nil {
+		t.Fatal(err)
+	}
+	site, err = Open(cfg, contacts, store, driver.SystemClock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l := site.List(); !slices.Equal(l.DuressLeftovers, []string{"u_gone"}) || len(l.Leftovers) != 0 {
+		t.Fatalf("%+v", l)
+	}
+}
+
 // A code refused as someone else's tells that it opens the site: three of them within
 // ten minutes stop the codes from being set, so that the installer's tools cannot be
 // used to try the codes one after another. The refusals are kept on disk: the
@@ -108,5 +188,49 @@ func TestCodesRefusedAsTakenAreLimited(t *testing.T) {
 	}
 	if user, ok := open().people.Verify("482915"); !ok || user != "u_owner" {
 		t.Fatal("the owner's code is untouched")
+	}
+}
+
+// A duress code is a person's only beside their own code: refused without it, and
+// removed with it, so that a person whose access is removed no longer disarms.
+func TestADuressCodeGoesWithItsPersonsCode(t *testing.T) {
+	cfg := testConfig()
+	store := drivertest.NewMemStore()
+	site, err := Open(cfg, []Contact{{ID: "u_owner", Name: "Owner"}}, store, driver.SystemClock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := site.SetDuress("u_owner", "259031"); !errors.Is(err, ErrNoPersonCode) {
+		t.Fatalf("a duress code without the person's code: %v", err)
+	}
+	if site.Set("u_owner", "730264") != nil || site.SetDuress("u_owner", "259031") != nil {
+		t.Fatal("a person's code and their duress code")
+	}
+	if err := site.Remove("u_owner"); err != nil {
+		t.Fatal(err)
+	}
+	if l := site.List(); l.Contacts[0].HasCode || l.Contacts[0].HasDuress {
+		t.Fatalf("%+v", l)
+	}
+	d, err := OpenDuress(cfg, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := d.Verify("259031"); ok {
+		t.Fatal("the duress code of a removed person is still known")
+	}
+	if err := site.Remove("u_owner"); !errors.Is(err, access.ErrNoSuchUser) {
+		t.Fatalf("%v", err)
+	}
+
+	// A duress code left alone on disk (an older tool) is removed by the same remove.
+	if d.Set("u_owner", "259031") != nil {
+		t.Fatal("a duress code alone")
+	}
+	if site, err = Open(cfg, []Contact{{ID: "u_owner", Name: "Owner"}}, store, driver.SystemClock()); err != nil {
+		t.Fatal(err)
+	}
+	if err := site.Remove("u_owner"); err != nil || site.List().Contacts[0].HasDuress {
+		t.Fatalf("a duress code alone stays: %v", err)
 	}
 }
