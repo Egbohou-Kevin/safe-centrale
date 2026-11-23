@@ -93,7 +93,7 @@ func (e *Escalation) Handle(in Input) []Action {
 	out := e.advance(in.at())
 	switch v := in.(type) {
 	case Raise:
-		e.raise(v)
+		out = append(out, e.raise(v)...)
 	case Result:
 		out = append(out, e.result(v)...)
 	case Ack:

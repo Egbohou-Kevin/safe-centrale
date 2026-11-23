@@ -651,20 +651,25 @@ fait : le changement des plans depuis le cloud (les contacts, eux, arrivent par
 
 ### La personne sous contrainte n'est pas prévenue (ajout du 23 novembre 2026)
 
-Une alerte `duress` porte `Spared` : l'id du contact dont le code de contrainte a été
-tapé (le code d'une personne suit son contact, son id est celui du contact). Ce
-contact n'est prévenu de cette alerte par aucun canal : ni à la première vague, ni
-par un rappel, ni par la reprise GSM, ni par un renvoi au retour d'internet. Son
-téléphone est peut-être sous les yeux de celui qui menace. L'escalade le retire de
-chaque vague (`runStep`) : aucune série de messages ne s'ouvre pour lui, donc aucun
-minuteur ne le rattrape. Les autres contacts sont prévenus comme avant.
+Une alerte `duress` porte `Spared` : la liste des ids des contacts dont le code de
+contrainte a été tapé (le code d'une personne suit son contact, son id est celui du
+contact). Ces contacts ne sont prévenus de cette alerte par aucun canal : ni à la première vague, ni
+par un rappel, ni par la reprise GSM, ni par un renvoi au retour d'internet. Leur
+téléphone est peut-être sous les yeux de celui qui menace. L'escalade les retire de
+chaque vague (`runStep`) : aucune série de messages ne s'ouvre pour eux, donc aucun
+minuteur ne les rattrape. Les autres contacts sont prévenus comme avant.
 
 - `Spared` est gardé avec l'incident (`spared` dans l'instantané) : après un
   redémarrage, les rappels l'épargnent encore.
 - Vide, ou ne nommant aucun contact, il ne change rien et ne fait pas d'erreur.
 - Il ne vaut que pour l'alerte qui le porte : une autre alerte du site, même un
-  autre `duress`, prévient ce contact comme avant. Il est fixé par la levée qui
-  ouvre l'alerte ; une levée regroupée dans la même ne le change pas.
+  autre `duress`, prévient ce contact comme avant.
+- Une levée regroupée dans la même alerte (même incident, même genre) ajoute son
+  `Spared` à celui de l'alerte : une deuxième personne menacée, ou une levée reprise
+  qui connaît enfin le code, est épargnée à son tour. Si elle a déjà été prévenue
+  par une vague passée, on n'insiste plus : sa série de messages est abandonnée,
+  sans rappel, reprise GSM ni renvoi ; si plus rien n'est dû, l'alerte se termine.
+  Risque qui reste : ce qui lui est parti avant la levée regroupée ne se rattrape pas.
 - Si la personne épargnée est le seul contact du site, la centrale ne prévient
   personne et l'alerte se termine sans réponse : le centre de télésurveillance est
   prévenu par le cloud (`alarm.triggered`, lot D2c), pas par l'escalade.

@@ -11,7 +11,7 @@ import (
 // spareRun raises a duress sparing the given contact, then ticks every minute for
 // three hours: every wave, reminder and GSM takeover falls in. It returns every
 // action, so that a message on any channel, a withheld call or a throttled one shows.
-func spareRun(e *Escalation, spared string) []Action {
+func spareRun(e *Escalation, spared ...string) []Action {
 	out := e.Handle(Raise{Now: t0, Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical, Spared: spared})
 	for m := 1; m <= 180; m++ {
 		out = append(out, tick(e, t0.Add(time.Duration(m)*time.Minute))...)
@@ -78,19 +78,19 @@ func TestASparedOnlyContactLeavesTheHubTellingNobody(t *testing.T) {
 // person.
 func TestSparedSurvivesARestart(t *testing.T) {
 	a := newEsc(t)
-	first := a.Handle(Raise{Now: t0, Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical, Spared: "owner"})
+	first := a.Handle(Raise{Now: t0, Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical, Spared: []string{"owner"}})
 	raw, err := json.Marshal(a.Snapshot())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"spared":"owner"`) {
+	if !strings.Contains(string(raw), `"spared":["owner"]`) {
 		t.Fatalf("the snapshot does not keep Spared: %s", raw)
 	}
 	var snap Snapshot
 	if err := json.Unmarshal(raw, &snap); err != nil {
 		t.Fatal(err)
 	}
-	if got := snap.Incidents[incidentKey("d", KindDuress)].Spared; got != "owner" {
+	if got := snap.Incidents[incidentKey("d", KindDuress)].Spared; len(got) != 1 || got[0] != "owner" {
 		t.Fatalf("Spared after the round trip: %q", got)
 	}
 	b := newEsc(t)
@@ -120,7 +120,7 @@ func TestAnEmptyOrUnknownSparedChangesNothing(t *testing.T) {
 // meanwhile, tells that contact as before.
 func TestAnotherAlertStillTellsTheSparedContact(t *testing.T) {
 	e := newEsc(t)
-	out := e.Handle(Raise{Now: t0, Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical, Spared: "owner"})
+	out := e.Handle(Raise{Now: t0, Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical, Spared: []string{"owner"}})
 	out = append(out, e.Handle(Raise{Now: t0.Add(time.Second), Incident: "p", Kind: KindPanic, Urgency: UrgencyCritical})...)
 	out = append(out, e.Handle(Raise{Now: t0.Add(2 * time.Second), Incident: "d2", Kind: KindDuress, Urgency: UrgencyCritical})...)
 	for m := 1; m <= 30; m++ {
@@ -136,5 +136,67 @@ func TestAnotherAlertStillTellsTheSparedContact(t *testing.T) {
 				t.Fatalf("%s must tell the owner as before (%s): %v", inc, w, got)
 			}
 		}
+	}
+}
+
+// tickFor ticks every minute from t0 for three hours, after the raises.
+func tickFor(e *Escalation) []Action {
+	var out []Action
+	for m := 1; m <= 180; m++ {
+		out = append(out, tick(e, t0.Add(time.Duration(m)*time.Minute))...)
+	}
+	return out
+}
+
+// A second person types their duress code in the same incident: the raise is merged
+// into the open alert, and spares them too. Already told by the first wave, they get
+// nothing more: no reminder, no GSM takeover. The first person stays spared.
+func TestAMergedDuressSparesItsPersonToo(t *testing.T) {
+	e := newEsc(t)
+	e.Handle(Raise{Now: t0, Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical, Spared: []string{"owner"}})
+	after := e.Handle(Raise{Now: t0.Add(time.Second), Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical, Spared: []string{"deputy"}})
+	want(t, "spared", e.Snapshot().Incidents[incidentKey("d", KindDuress)].Spared, "deputy", "owner")
+	after = append(after, tickFor(e)...)
+	for _, id := range []string{"owner", "deputy"} {
+		if got := toldTo(after, "d", id); len(got) != 0 {
+			t.Fatalf("%s, under threat, was told after the merge: %v", id, got)
+		}
+	}
+	if got := toldTo(after, "d", "guard"); len(got) < 3 {
+		t.Fatalf("the others must still be reminded: %v", got)
+	}
+}
+
+// A first raise without Spared (the code not yet known), then a retry that names the
+// person: from the merge on, that person is told nothing more, and the alert still
+// concludes.
+func TestALateSparedStopsTellingThePerson(t *testing.T) {
+	e := newEsc(t)
+	e.Handle(Raise{Now: t0, Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical})
+	after := e.Handle(Raise{Now: t0.Add(time.Second), Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical, Spared: []string{"owner"}})
+	after = append(after, tickFor(e)...)
+	if got := toldTo(after, "d", "owner"); len(got) != 0 {
+		t.Fatalf("the person under threat was told after the late Spared: %v", got)
+	}
+	if got := toldTo(after, "d", "deputy"); len(got) < 3 {
+		t.Fatalf("the others must still be reminded: %v", got)
+	}
+	if c := concluded(after); len(c) != 1 {
+		t.Fatalf("the duress must still conclude: %+v", c)
+	}
+}
+
+// Every contact spared after the first wave: nothing is owed any more, and the alert
+// concludes at once rather than waiting on rounds nobody may be told by.
+func TestSparingEveryoneLateConcludesTheAlert(t *testing.T) {
+	e := newEsc(t, func(c *Config) { c.Contacts = c.Contacts[:1] })
+	e.Handle(Raise{Now: t0, Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical})
+	after := e.Handle(Raise{Now: t0.Add(time.Second), Incident: "d", Kind: KindDuress, Urgency: UrgencyCritical, Spared: []string{"owner"}})
+	after = append(after, tickFor(e)...)
+	if got := toldTo(after, "d", "owner"); len(got) != 0 {
+		t.Fatalf("the only contact, under threat, was told after the merge: %v", got)
+	}
+	if c := concluded(after); len(c) != 1 || c[0].Outcome != OutcomeUnanswered {
+		t.Fatalf("the duress must conclude: %+v", c)
 	}
 }
