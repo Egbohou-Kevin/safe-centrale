@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -423,5 +424,176 @@ func TestADuressCodeAlertsTheOthersAndSparesItsPerson(t *testing.T) {
 	logs := r.logs.String()
 	if !strings.Contains(logs, "escalation over") || strings.Contains(logs, "duress") {
 		t.Fatalf("the journal must tell the end, never the duress:\n%s", logs)
+	}
+}
+
+// escalationSnapshot reads the escalation's state from its loop's goroutine.
+func (r *rig) escalationSnapshot() (s escalation.Snapshot) {
+	r.t.Helper()
+	if err := r.hub.escal.loop.Do(context.Background(), func(time.Time) []escalation.Action { s = r.hub.escal.esc.Snapshot(); return nil }); err != nil {
+		r.t.Fatal(err)
+	}
+	return s
+}
+
+// duressRun disarms with the duress code, waits until the engine heard that the
+// escalation saved the alert, and stops. It returns the incident, and the escalation's
+// state as saved before the code.
+func duressRun(t *testing.T, r *rig) (incident string, before []byte) {
+	t.Helper()
+	r.start()
+	r.armedNow()
+	r.withDuress()
+	before, err := json.Marshal(r.escalationSnapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.keypad(contract.ValDisarm, duressCode)
+	drivertest.WaitFor(t, "disarmed", func() bool { return len(eventsOf(r, contract.TypeAlarmDisarmed)) == 1 })
+	r.mustBe(engine.ModeDisarmed)
+	drivertest.WaitFor(t, "the engine told the escalation saved it", func() bool { return r.engineSnapshot().Duress == nil })
+	triggered := eventsOf(r, contract.TypeAlarmTriggered)
+	if len(triggered) != 1 {
+		t.Fatalf("%d alarm.triggered", len(triggered))
+	}
+	r.stop()
+	return dataOf[contract.TriggeredData](t, triggered[0]).Incident, before
+}
+
+// keepDuress puts the duress alert back in the engine's saved state: the engine had
+// saved the disarm and the alert, and the hub went down before it heard that the
+// escalation saved it.
+func keepDuress(t *testing.T, store *drivertest.MemStore, incident string) {
+	t.Helper()
+	data, _, err := store.Load(keyEngine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s engine.Snapshot
+	if err := json.Unmarshal(data, &s); err != nil {
+		t.Fatal(err)
+	}
+	s.Duress = append(s.Duress, engine.DuressGuard{Incident: incident, Origin: engine.OriginKeypad, User: "u_owner"})
+	if data, err = json.Marshal(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(keyEngine, data); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The power cut right after the duress code, before the escalation saved the alert
+// (study F1): the engine saved the disarm and kept the alert, and the restart raises it
+// once, with the same incident, the person still spared. The engine keeps it no more
+// once the escalation saved it.
+func TestADuressTheEscalationLostIsRaisedAgainAtRestart(t *testing.T) {
+	first := newRig(t, nil, withContacts)
+	incident, before := duressRun(t, first)
+	if err := first.store.Save(keyEscalation, before); err != nil {
+		t.Fatal(err)
+	}
+	keepDuress(t, first.store, incident)
+
+	second := newRigAt(t, first.clock.Now(), first.store, withContacts)
+	second.start()
+	second.settle()
+	triggered := eventsOf(second, contract.TypeAlarmTriggered)
+	if len(triggered) != 1 {
+		t.Fatalf("the restart tells the duress %d times", len(triggered))
+	}
+	if d := dataOf[contract.TriggeredData](t, triggered[0]); d.Capability != "duress" || d.Incident != incident || d.DeviceID != "keypad" {
+		t.Fatalf("the duress raised again: %+v", d)
+	}
+	reqs := eventsOf(second, contract.TypeAlertRequest)
+	if len(reqs) == 0 {
+		t.Fatalf("the duress alert is lost:\n%s", second.logs.String())
+	}
+	for _, m := range reqs {
+		if d := dataOf[contract.AlertRequestData](t, m); d.Kind != contract.AlertDuress || d.Incident != incident || d.Contact == "u_owner" {
+			t.Fatalf("a request after the restart: %+v", d)
+		}
+	}
+	held := duressOf(second.escalationSnapshot())
+	if len(held) != 1 || !held[incident] {
+		t.Fatalf("the escalation holds %v, want %s", held, incident)
+	}
+	for _, in := range second.escalationSnapshot().Incidents {
+		if !slices.Equal(in.Spared, []string{"u_owner"}) {
+			t.Fatalf("the person is no longer spared: %+v", in.Spared)
+		}
+	}
+	drivertest.WaitFor(t, "the engine told the escalation saved it", func() bool { return second.engineSnapshot().Duress == nil })
+	second.mustBe(engine.ModeDisarmed)
+	if strings.Contains(strings.ToLower(second.logs.String()), "duress") {
+		t.Fatalf("the journal tells the duress:\n%s", second.logs.String())
+	}
+}
+
+// The power cut after the escalation saved the alert, before the engine heard so: the
+// restart raises nothing, and nothing goes twice, neither the alarm nor a message.
+func TestADuressTheEscalationSavedIsNotRaisedAgainAtRestart(t *testing.T) {
+	first := newRig(t, nil, withContacts)
+	incident, _ := duressRun(t, first)
+	keepDuress(t, first.store, incident)
+
+	second := newRigAt(t, first.clock.Now(), first.store, withContacts)
+	second.start()
+	second.settle()
+	if n := len(eventsOf(second, contract.TypeAlarmTriggered)); n != 0 {
+		t.Fatalf("the restart tells the duress again, %d times", n)
+	}
+	if got := requested(t, second); len(got) != 0 {
+		t.Fatalf("the restart sends again: %v", got)
+	}
+	if s := second.engineSnapshot(); s.Duress != nil {
+		t.Fatalf("the engine still keeps %+v", s.Duress)
+	}
+	if held := duressOf(second.escalationSnapshot()); len(held) != 1 || !held[incident] {
+		t.Fatalf("the escalation holds %v, want %s", held, incident)
+	}
+}
+
+// The escalation saved the alert and concluded and forgot it, but the engine's saved
+// state still keeps it (its writes failed all along): a restart then raises nothing,
+// so no second wave.
+func TestADuressTheEscalationConcludedIsNotRaisedAgainAtRestart(t *testing.T) {
+	first := newRig(t, nil, withContacts)
+	first.start()
+	first.armedNow()
+	first.withDuress()
+	first.keypad(contract.ValDisarm, duressCode)
+	first.mustBe(engine.ModeDisarmed)
+	drivertest.WaitFor(t, "the engine told the escalation saved it", func() bool { return first.engineSnapshot().Duress == nil })
+	held := duressOf(first.escalationSnapshot())
+	if len(held) != 1 {
+		t.Fatalf("the escalation holds %v, want one duress", held)
+	}
+	var incident string
+	for id := range held {
+		incident = id
+	}
+	for i := 0; len(duressOf(first.escalationSnapshot())) != 0; i++ {
+		if i == 40 {
+			t.Fatalf("the escalation never concludes: %+v", first.escalationSnapshot().Incidents)
+		}
+		first.clock.Advance(5 * time.Minute)
+		first.settle()
+	}
+	first.stop()
+	keepDuress(t, first.store, incident)
+
+	second := newRigAt(t, first.clock.Now(), first.store, withContacts)
+	second.start()
+	second.settle()
+	if s := second.engineSnapshot(); s.Duress != nil {
+		t.Fatalf("the engine still keeps %+v", s.Duress)
+	}
+	second.clock.Advance(time.Hour)
+	second.settle()
+	if n := len(eventsOf(second, contract.TypeAlarmTriggered)); n != 0 {
+		t.Fatalf("the restart tells the duress again, %d times", n)
+	}
+	if got := requested(t, second); len(got) != 0 {
+		t.Fatalf("a second wave after the restart: %v", got)
 	}
 }

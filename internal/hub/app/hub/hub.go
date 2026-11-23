@@ -40,6 +40,8 @@ const (
 	keyEscalation = "escalation"
 	keyAccess     = sitecodes.KeyPeople
 	keySeq        = "seq"
+	// keyConcluded holds the duress alerts the escalation concluded (concludedDuress).
+	keyConcluded = "duress-concluded"
 )
 
 // Hub is the application of the hub.
@@ -53,6 +55,8 @@ type Hub struct {
 	monitor healthSide
 	escal   escalationSide
 	startup bootState
+	// held: the duress alerts the engine keeps until the escalation saved them (escalate.go).
+	held heldDuress
 
 	codes     *access.Registry
 	installer *access.Registry // the installer code, apart from the people's
@@ -165,6 +169,16 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 	if err := h.buildEscalation(); err != nil {
 		return nil, err
 	}
+	// A duress alert the escalation saved is the engine's to keep no more: the hub went
+	// down after the escalation's save, before the engine heard of it. Nothing runs yet.
+	for id := range duressOf(h.escal.esc.Snapshot()) {
+		h.alarm.eng.Held(id)
+	}
+	// One it concluded and forgot is not the engine's to keep either: raised again, it
+	// would be a second wave.
+	for _, id := range h.concludedDuress() {
+		h.alarm.eng.Held(id)
+	}
 	return h, nil
 }
 
@@ -243,6 +257,7 @@ func (h *Hub) buildEscalation() (err error) {
 			Tick: func(t time.Time) escalation.Input { return escalation.Tick{Now: t} }, Stepped: h.escal.esc.Stepped,
 		},
 		Dispatch: h.dispatchEscalation,
+		OnChange: func(context.Context, time.Time) { h.tellHeld() },
 	})
 	return err
 }

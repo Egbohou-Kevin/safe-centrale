@@ -505,6 +505,82 @@ contrainte**.
   over » du journal omet `kind` pour une contrainte (témoin :
   `TestADuressCodeAlertsTheOthersAndSparesItsPerson`).
 
+Ajout du 23/11/2026 (chantier contrainte, lot D2d) : l'alerte sous contrainte **survit à
+une coupure juste après le code**. Ceci remplace « un redémarrage ne la relève pas » du
+lot D2c, vrai seulement une fois l'escalade sur disque.
+
+    code de contrainte (loop moteur)        loop escalade
+      duress() : garde + DuressRaised + Alert
+      Dispatch -> Raise ------------------>  raise() ; instantané "escalation" écrit
+      persist "engine" (garde comprise)      OnChange -> tellHeld : relit le disque
+                                    <------  DuressHeld{incident} (goroutine à part)
+      Held : garde retirée, persist "engine"
+
+- Le trou fermé (fenêtre F1 de l'étude `duree-de-vie-alerte-contrainte`) : la loop fait
+  les effets avant d'écrire l'état. Le `Raise` attend dans la file mémoire de l'escalade.
+  Si le courant tombait avant l'instantané de l'escalade, il ne restait que « désarmé » sur
+  disque : aucune alerte, rien au centre. Une intrusion, elle, garde `Triggered`.
+- Le moteur garde l'alerte levée et pas encore prise : `Snapshot.Duress`, une
+  `DuressGuard{Incident, Origin, User}` par contrainte. `Boot` la relève à la fin, avec
+  les mêmes actions qu'en direct : `DuressRaised` (même incident, même origine) et l'`Alert`
+  (même `User`, donc même `Raise.Spared`).
+- Le signal de prise : une entrée du moteur, `DuressHeld{Incident}`, envoyée par le hub
+  quand l'instantané de l'escalade **sur disque** contient l'incident. Le hub note
+  l'incident attendu en le passant à l'escalade (`awaitHeld`, loop moteur). Après chaque
+  changement de l'escalade (`OnChange`, `tellHeld`), il relit l'instantané par
+  `Store.Load`, pas la mémoire : `OnChange` tourne même si l'écriture a échoué, et
+  l'écriture suivante se revérifie. Pourquoi ce signal et pas l'instantané de l'escalade
+  écrit avant le Dispatch : il ne change ni le `driver` partagé ni l'ordre « effets
+  d'abord ». La loop escalade ne fait jamais attendre la loop moteur : `DuressHeld` part
+  d'une goroutine à part, sinon les deux files pleines pourraient s'attendre l'une l'autre.
+- Au démarrage, avant que les loops tournent, `New` retire du moteur toute garde dont
+  l'incident est dans l'instantané restauré de l'escalade. Le hub s'est arrêté après
+  l'écriture de l'escalade, avant que le moteur l'apprenne : rien n'est relevé, ni
+  `alarm.triggered` ni message envoyé deux fois.
+- Relevée au démarrage, une contrainte que l'escalade tient encore se regrouperait sans
+  prévenir deux fois (`raise`, `steps.go`). Une contrainte que l'escalade a **conclue et
+  oubliée** n'est plus relevée : sa garde a été retirée dès l'écriture de l'escalade,
+  quelques millisecondes après le code. Elle ne se conclut qu'après ses rappels, des
+  minutes plus tard.
+- Rien de lisible sur place : `State` (donc `alarm.state`), l'accusé, les événements et le
+  journal du hub ne disent pas la garde. `DuressHeld` ne rend aucune action. Une fois
+  `DuressHeld` reçu, l'état sauvé est celui du code ordinaire, champ pour champ. Un code
+  ordinaire ne laisse aucune garde.
+- Témoins (chacun vu rouge une fois en cassant le mécanisme) :
+  - moteur : `TestADuressDisarmsExactlyAsThePersonsCode` (même `State`, garde puis état
+    identique après `DuressHeld`), `TestARestartBeforeTheEscalationHoldsADuressRaisesItAgain`,
+    `TestAPersonsCodeKeepsNoDuress` ;
+  - hub : `TestADuressTheEscalationLostIsRaisedAgainAtRestart` (relevée une fois, même
+    incident, propriétaire toujours épargné), `TestADuressTheEscalationSavedIsNotRaisedAgainAtRestart`,
+    `TestADuressTheEscalationConcludedIsNotRaisedAgainAtRestart`.
+- Reste ouvert :
+  - si l'écriture de l'état moteur échoue pendant toute la vie de l'incident, et que
+    l'escalade le conclut puis que le hub redémarre, la garde restée sur disque relève une
+    deuxième vague. Le fermer demanderait que l'escalade se souvienne des contraintes
+    conclues (hors de ce lot) ;
+  - relevée au démarrage (cas F1), `alarm.triggered` peut arriver deux fois au cloud avec
+    le même incident, si la première était partie avant la coupure ;
+  - l'outbox en mémoire (F4) est pareille pour l'intrusion, hors de ce lot.
+- Ajout du 23 novembre 2026 (relecture) : le premier point « Reste ouvert » est fermé.
+  La fiche demande « aucune deuxième vague » ; une garde restée sur disque ne relève plus
+  rien après la conclusion. Quand l'escalade conclut une contrainte, le hub inscrit son
+  incident sous la clé `duress-concluded` (les 32 dernières, au nombre et non à l'âge :
+  une garde oubliée reste sur disque aussi longtemps qu'on veut). Il l'écrit comme effet
+  de la conclusion, donc avant que l'escalade sauve un état sans elle (« effets
+  d'abord ») : au redémarrage, l'incident est soit tenu par l'escalade, soit inscrit, et
+  `New` retire du moteur toute garde dans l'un ou l'autre cas. Le journal dit « escalade
+  terminée » et un échec d'écriture sans nommer la contrainte. Ce choix reste dans le hub
+  et ne touche pas `internal/hub/core/escalation`. Garder les conclues dans l'instantané
+  de l'escalade serait atomique, mais sortirait du périmètre du lot ; c'est à Kevin de
+  décider s'il le préfère. Un seul trou demeure : l'écriture de `duress-concluded`
+  échoue, celle de l'escalade réussit, et la garde du moteur est restée. Il faut alors
+  que toutes les écritures du moteur aient échoué pendant l'incident, et celle-ci aussi,
+  sur le même disque où celles de l'escalade réussissent. Le témoin
+  `TestADuressTheEscalationConcludedIsNotRaisedAgainAtRestart` remet la garde sur disque
+  après la conclusion et exige qu'aucun `alarm.triggered` ni message ne parte au
+  redémarrage. Il était rouge avant le correctif : la contrainte a été racontée une fois
+  de plus.
+
 ### Un code par personne
 
 Chaque personne autorisée (5 au maximum) a son propre code, lié à son identifiant
