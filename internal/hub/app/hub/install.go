@@ -53,14 +53,12 @@ func (h *Hub) Quiet(ctx context.Context, quiet func(state string) bool) bool {
 	return err == nil && ok
 }
 
-// installerCode tells whether a code that is nobody's is the installer's. Only a
-// "disarm" from a keypad may open the mode: never an order from the app.
-func (h *Hub) installerCode(cmd contract.AlarmCommandData) bool {
-	if cmd.Command != contract.CmdDisarm || cmd.Origin != contract.OriginKeypad {
-		return false
-	}
-	user, ok := h.installer.Verify(cmd.Args.Code)
-	return ok && user == InstallerUser
+// installerCode tells whether the code of cmd, nobody's and found in the installer's
+// registry for user, opens the installer mode. Only a "disarm" from a keypad may open
+// it: never an order from the app. The code itself is checked by checkCode, with the
+// others, so that it takes the same time.
+func (h *Hub) installerCode(cmd contract.AlarmCommandData, user string) bool {
+	return cmd.Command == contract.CmdDisarm && cmd.Origin == contract.OriginKeypad && user == InstallerUser
 }
 
 // openInstall opens the mode, if the alarm is disarmed and the keypad not locked: the

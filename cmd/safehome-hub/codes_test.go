@@ -60,7 +60,7 @@ func TestCodesCommands(t *testing.T) {
 	}{
 		"weak code":     {"1234\n", []string{"set", "u_deputy"}, "too easy to guess"},
 		"not digits":    {"48a915\n", []string{"set", "u_deputy"}, "4 to 8 digits"},
-		"taken":         {"482915\n", []string{"set", "u_deputy"}, "already has this code"},
+		"taken":         {"482915\n", []string{"set", "u_deputy"}, "already in use"},
 		"no code":       {"", []string{"set", "u_deputy"}, "no code given"},
 		"blank code":    {"   \n", []string{"set", "u_deputy"}, "no code given"},
 		"not a contact": {"615273\n", []string{"set", "u_x"}, "u_x is not a contact of the site"},
@@ -92,13 +92,13 @@ func TestCodesCommands(t *testing.T) {
 	}
 
 	// The installer code: apart from the people's, and never the same as one of them.
-	if code, _, errb := cli(t, "482915\n", "codes", "-config", path, "set", "installer"); code != 1 || !strings.Contains(errb, "already has this code") {
+	if code, _, errb := cli(t, "482915\n", "codes", "-config", path, "set", "installer"); code != 1 || !strings.Contains(errb, "already in use") {
 		t.Fatalf("an installer code equal to the owner's: %d %q", code, errb)
 	}
 	if code, out, errb := cli(t, "259031\n", "codes", "-config", path, "set", "installer"); code != 0 || !strings.Contains(out, "code set for installer") {
 		t.Fatalf("%d %q %q", code, out, errb)
 	}
-	if code, _, errb := cli(t, "259031\n", "codes", "-config", path, "set", "u_guard"); code != 1 || !strings.Contains(errb, "already has this code") {
+	if code, _, errb := cli(t, "259031\n", "codes", "-config", path, "set", "u_guard"); code != 1 || !strings.Contains(errb, "already in use") {
 		t.Fatalf("a person's code equal to the installer's: %d %q", code, errb)
 	}
 	if _, out, _ := cli(t, "", "codes", "-config", path, "list"); out != "u_owner\ninstaller\n" {
@@ -251,4 +251,67 @@ func TestCodesSetWhileTheHubRunsTakeEffectWithoutARestart(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 	l.validateEverything("730264")
+}
+
+// A duress code is set, listed and removed apart from the person's code, and may be
+// neither theirs nor anyone else's code.
+func TestCodesDuress(t *testing.T) {
+	state := t.TempDir()
+	path := writeConfig(t, "mqtt://127.0.0.1:1883", state, "")
+
+	cli(t, "482915\n", "codes", "-config", path, "set", "u_owner")
+	code, out, errb := cli(t, "730264\n", "codes", "-config", path, "set", "u_owner", "--duress")
+	if code != 0 || !strings.Contains(out, "duress code set for u_owner") || strings.Contains(out+errb, "730264") {
+		t.Fatalf("%d %q %q", code, out, errb)
+	}
+	if _, out, _ := cli(t, "", "codes", "-config", path, "list"); out != "u_owner\nu_owner (duress code)\n" {
+		t.Fatalf("%q", out)
+	}
+	if code, _, errb := cli(t, "482915\n", "codes", "-config", path, "set", "u_owner", "--duress"); code != 1 || !strings.Contains(errb, "already in use") {
+		t.Fatalf("the owner's own code as their duress code: %d %q", code, errb)
+	}
+	if code, _, errb := cli(t, "615273\n", "codes", "-config", path, "set", "installer", "--duress"); code != 1 || !strings.Contains(errb, "not a contact") {
+		t.Fatalf("a duress code for the installer: %d %q", code, errb)
+	}
+	if code, _, _ := cli(t, "", "codes", "-config", path, "remove", "u_owner", "--other"); code != 2 {
+		t.Fatalf("an unknown option: %d", code)
+	}
+	if code, out, _ := cli(t, "", "codes", "-config", path, "remove", "u_owner", "--duress"); code != 0 || !strings.Contains(out, "duress code removed for u_owner") {
+		t.Fatalf("%d %q", code, out)
+	}
+	if _, out, _ := cli(t, "", "codes", "-config", path, "list"); out != "u_owner\n" {
+		t.Fatalf("%q", out)
+	}
+}
+
+// A duress code set while the hub runs is known after its SIGHUP, and disarms as the
+// person's code: the same disarm, the same user, and the log never says duress.
+func TestADuressCodeSetWhileTheHubRunsDisarms(t *testing.T) {
+	broker := mqtttest.Start(t, "safehome-hub")
+	state := t.TempDir()
+	cfg := writeConfig(t, broker.URL(), state, "")
+	l := startLive(t, broker, state, cfg)
+	l.waitState("disarmed")
+	l.event("dev_keypad", contract.CapKeypad, "arm", "")
+	l.waitState("arming")
+	l.event("dev_keypad", contract.CapKeypad, "arm_now", "")
+	l.waitState("armed")
+
+	code, out, errb := cli(t, "846029\n", "codes", "-config", cfg, "set", "u_owner", "--duress")
+	if code != 0 || !strings.Contains(out, "told to reload") {
+		t.Fatalf("%d %q %q", code, out, errb)
+	}
+	drivertest.WaitFor(t, "the reload", func() bool { return strings.Contains(l.logs.String(), "access codes reloaded") })
+	l.event("dev_keypad", contract.CapKeypad, "disarm", "846029")
+	l.waitState("disarmed")
+	if d, _ := contract.DecodeData[contract.DisarmedData](l.seen(contract.TypeAlarmDisarmed)[0]); d.User != "u_owner" {
+		t.Fatalf("%+v", d)
+	}
+	if len(l.seen(contract.TypeAlarmAuthFailed)) != 0 {
+		t.Fatal("a duress code refused")
+	}
+	if strings.Contains(strings.ToLower(l.logs.String()), "duress") {
+		t.Fatal("the log tells a duress code")
+	}
+	l.validateEverything("846029")
 }

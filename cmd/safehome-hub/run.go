@@ -38,6 +38,9 @@ const usage = `usage:
   safehome-hub codes  -config FILE list       list who has an access code
   safehome-hub codes  -config FILE set USER   set the code of USER (the code is read from the standard input)
   safehome-hub codes  -config FILE remove USER
+  safehome-hub codes  -config FILE set|remove USER --duress
+                                              the duress code of USER: it disarms as their code,
+                                              and tells the hub the disarm is under threat
   safehome-hub site   -config FILE view|read|check|write
                                               answer the installer's tools (JSON; check and
                                               write read the zones and sirens on the standard input)

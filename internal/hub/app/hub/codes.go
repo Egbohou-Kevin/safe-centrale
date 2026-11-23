@@ -40,11 +40,11 @@ func CodeContacts(cfg Config) []sitecodes.Contact {
 // errReadOnly: the hub only reads the codes; the installer's tools change them.
 var errReadOnly = errors.New("hub: the access codes are changed by the installer's tools only")
 
-// openPeopleCodes opens the people's codes for the hub itself: those of the site's
-// contacts only. It never writes them, so a code left aside stays on disk for the
-// installer to see and remove.
-func (h *Hub) openPeopleCodes() (*access.Registry, error) {
-	records, err := sitecodes.Load(h.codesStore(), sitecodes.KeyPeople)
+// openContactCodes opens the codes saved under key (the people's, the duress ones) for
+// the hub itself: those of the site's contacts only. It never writes them, so a code
+// left aside stays on disk for the installer to see and remove.
+func (h *Hub) openContactCodes(key string) (*access.Registry, error) {
+	records, err := sitecodes.Load(h.codesStore(), key)
 	if err != nil {
 		return nil, err
 	}
@@ -105,13 +105,21 @@ func (h *Hub) ReloadCodes() error {
 	if err != nil {
 		return err
 	}
-	records = h.contactsOnly(records)
+	duress, err := sitecodes.Load(h.codesStore(), sitecodes.KeyDuress)
+	if err != nil {
+		return err
+	}
+	records, duress = h.contactsOnly(records), h.contactsOnly(duress)
 	if err := h.codes.Reload(records); err != nil {
 		return err
 	}
 	if err := h.installer.Reload(installer); err != nil {
 		return err
 	}
+	if err := h.duress.Reload(duress); err != nil {
+		return err
+	}
+	// The log never tells that duress codes exist: whoever reads it may be the threat.
 	h.log.Info("access codes reloaded", "users", len(records), "installer", len(installer) > 0)
 	return nil
 }
