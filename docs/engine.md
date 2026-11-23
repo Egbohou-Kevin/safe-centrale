@@ -561,6 +561,25 @@ lot D2c, vrai seulement une fois l'escalade sur disque.
   - relevée au démarrage (cas F1), `alarm.triggered` peut arriver deux fois au cloud avec
     le même incident, si la première était partie avant la coupure ;
   - l'outbox en mémoire (F4) est pareille pour l'intrusion, hors de ce lot.
+- Ajout du 23 novembre 2026 (relecture) : le premier point « Reste ouvert » est fermé.
+  La fiche demande « aucune deuxième vague » ; une garde restée sur disque ne relève plus
+  rien après la conclusion. Quand l'escalade conclut une contrainte, le hub inscrit son
+  incident sous la clé `duress-concluded` (les 32 dernières, au nombre et non à l'âge :
+  une garde oubliée reste sur disque aussi longtemps qu'on veut). Il l'écrit comme effet
+  de la conclusion, donc avant que l'escalade sauve un état sans elle (« effets
+  d'abord ») : au redémarrage, l'incident est soit tenu par l'escalade, soit inscrit, et
+  `New` retire du moteur toute garde dans l'un ou l'autre cas. Le journal dit « escalade
+  terminée » et un échec d'écriture sans nommer la contrainte. Ce choix reste dans le hub
+  et ne touche pas `internal/hub/core/escalation`. Garder les conclues dans l'instantané
+  de l'escalade serait atomique, mais sortirait du périmètre du lot ; c'est à Kevin de
+  décider s'il le préfère. Un seul trou demeure : l'écriture de `duress-concluded`
+  échoue, celle de l'escalade réussit, et la garde du moteur est restée. Il faut alors
+  que toutes les écritures du moteur aient échoué pendant l'incident, et celle-ci aussi,
+  sur le même disque où celles de l'escalade réussissent. Le témoin
+  `TestADuressTheEscalationConcludedIsNotRaisedAgainAtRestart` remet la garde sur disque
+  après la conclusion et exige qu'aucun `alarm.triggered` ni message ne parte au
+  redémarrage. Il était rouge avant le correctif : la contrainte a été racontée une fois
+  de plus.
 
 ### Un code par personne
 

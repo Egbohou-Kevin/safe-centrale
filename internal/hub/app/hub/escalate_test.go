@@ -553,8 +553,9 @@ func TestADuressTheEscalationSavedIsNotRaisedAgainAtRestart(t *testing.T) {
 	}
 }
 
-// The escalation saved the alert, the engine heard so, and the escalation concluded
-// and forgot it: a restart then raises nothing, so no second wave.
+// The escalation saved the alert and concluded and forgot it, but the engine's saved
+// state still keeps it (its writes failed all along): a restart then raises nothing,
+// so no second wave.
 func TestADuressTheEscalationConcludedIsNotRaisedAgainAtRestart(t *testing.T) {
 	first := newRig(t, nil, withContacts)
 	first.start()
@@ -563,6 +564,14 @@ func TestADuressTheEscalationConcludedIsNotRaisedAgainAtRestart(t *testing.T) {
 	first.keypad(contract.ValDisarm, duressCode)
 	first.mustBe(engine.ModeDisarmed)
 	drivertest.WaitFor(t, "the engine told the escalation saved it", func() bool { return first.engineSnapshot().Duress == nil })
+	held := duressOf(first.escalationSnapshot())
+	if len(held) != 1 {
+		t.Fatalf("the escalation holds %v, want one duress", held)
+	}
+	var incident string
+	for id := range held {
+		incident = id
+	}
 	for i := 0; len(duressOf(first.escalationSnapshot())) != 0; i++ {
 		if i == 40 {
 			t.Fatalf("the escalation never concludes: %+v", first.escalationSnapshot().Incidents)
@@ -571,10 +580,14 @@ func TestADuressTheEscalationConcludedIsNotRaisedAgainAtRestart(t *testing.T) {
 		first.settle()
 	}
 	first.stop()
+	keepDuress(t, first.store, incident)
 
 	second := newRigAt(t, first.clock.Now(), first.store, withContacts)
 	second.start()
 	second.settle()
+	if s := second.engineSnapshot(); s.Duress != nil {
+		t.Fatalf("the engine still keeps %+v", s.Duress)
+	}
 	second.clock.Advance(time.Hour)
 	second.settle()
 	if n := len(eventsOf(second, contract.TypeAlarmTriggered)); n != 0 {

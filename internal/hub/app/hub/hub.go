@@ -40,6 +40,8 @@ const (
 	keyEscalation = "escalation"
 	keyAccess     = sitecodes.KeyPeople
 	keySeq        = "seq"
+	// keyConcluded holds the duress alerts the escalation concluded (concludedDuress).
+	keyConcluded = "duress-concluded"
 )
 
 // Hub is the application of the hub.
@@ -170,6 +172,11 @@ func New(cfg Config, deps Deps) (*Hub, error) {
 	// A duress alert the escalation saved is the engine's to keep no more: the hub went
 	// down after the escalation's save, before the engine heard of it. Nothing runs yet.
 	for id := range duressOf(h.escal.esc.Snapshot()) {
+		h.alarm.eng.Held(id)
+	}
+	// One it concluded and forgot is not the engine's to keep either: raised again, it
+	// would be a second wave.
+	for _, id := range h.concludedDuress() {
 		h.alarm.eng.Held(id)
 	}
 	return h, nil

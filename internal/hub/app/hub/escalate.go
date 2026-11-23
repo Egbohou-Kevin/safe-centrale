@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -159,6 +160,52 @@ func (h *Hub) engineHeld(incident string) {
 	}
 }
 
+// keptConcluded is how many concluded duress alerts the hub remembers, the latest
+// ones. A count rather than an age: a guard the engine failed to drop stays on its
+// disk however long ago it was raised, and duress alerts are rare.
+const keptConcluded = 32
+
+// noteConcluded records that the escalation concluded the duress alert of this
+// incident (23 November 2026). It runs as an effect of the conclusion, so before the
+// escalation saves a state without it (driver: effects first): a restart sees the
+// alert either held by the escalation or recorded here, and a guard the engine's
+// failed writes left on disk raises no second wave (New).
+func (h *Hub) noteConcluded(incident string) {
+	ids := h.concludedDuress()
+	if slices.Contains(ids, incident) {
+		return
+	}
+	ids = append(ids, incident)
+	if len(ids) > keptConcluded {
+		ids = ids[len(ids)-keptConcluded:]
+	}
+	data, err := json.Marshal(ids)
+	if err == nil {
+		err = h.deps.Store.Save(keyConcluded, data)
+	}
+	if err != nil {
+		h.log.Error("recording a concluded alert failed", "incident", incident, "err", err)
+	}
+}
+
+// concludedDuress returns the duress alerts recorded as concluded, oldest first.
+func (h *Hub) concludedDuress() []string {
+	data, found, err := h.deps.Store.Load(keyConcluded)
+	if err != nil {
+		h.log.Error("reading the concluded alerts failed", "err", err)
+		return nil
+	}
+	var ids []string
+	if !found {
+		return nil
+	}
+	if err := json.Unmarshal(data, &ids); err != nil {
+		h.log.Error("reading the concluded alerts failed", "err", err)
+		return nil
+	}
+	return ids
+}
+
 // duressOf lists the duress alerts an escalation state holds, by incident.
 func duressOf(s escalation.Snapshot) map[string]bool {
 	ids := map[string]bool{}
@@ -220,6 +267,8 @@ func (h *Hub) dispatchEscalation(_ context.Context, now time.Time, actions []esc
 			attrs := []any{"incident", v.Incident}
 			if v.Kind != escalation.KindDuress {
 				attrs = append(attrs, "kind", v.Kind)
+			} else {
+				h.noteConcluded(v.Incident)
 			}
 			h.log.Info("escalation over", append(attrs, "outcome", v.Outcome, "by", v.By)...)
 		}
